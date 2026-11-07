@@ -8,6 +8,7 @@ export * from "./mcp.js";
 export * from "./request-type.js";
 export * from "./review-item.js";
 export * from "./team.js";
+export { TomlLineIndex } from "./toml-lines.js";
 export {
   createValidator,
   type FieldError,

@@ -49,6 +49,23 @@ answer was yes and `SELFHOST_TELEMETRY_URL` is set.
 `SELFHOST_CONFIG`, then the nearest file from the current directory up to the repository root)
 and validates it. It exits 1 when the file is invalid.
 
+`selfhost policy promote <rule> [--team <name>] [--to observe|off] [--config <path>]` sets a
+rule's mode in `selfhost.toml` (default `enforce`) and prints the file's `git diff`. Only the
+`mode` line changes, or one line is added after the rule's `id`, so comments and formatting stay
+as they are. With `--team` the mode goes into `[teams.<name>.rules.<rule>]`, added at the end of
+the file when missing. Nothing is staged or committed: the change is reviewed in a pull request
+like any other. A rule already in that mode is left alone (exit 0), and an edit that would not
+parse is never written.
+
+`selfhost policy report [--since 7d] [--config <path>] [--json]` reads the observe-mode
+`policy.evaluated` events from the ledger (`--database` / `--data-dir` as for `spend`) and lists,
+per rule, how many tool calls it would have blocked or sent for approval, in how many sessions,
+the most frequent calls and the likely false positives: a path rule that names no tool matching
+a read-only tool, and a command rule matching only inside quotes, a comment or the arguments of
+echo, grep or rg. The window is whole UTC days through today. `--json` prints the
+`selfhost.review_item/v1` item of kind `policy_report`; its id depends only on the window, so
+the same week gives the same item.
+
 `selfhost agents` lists Claude Code, Codex, OpenCode, Goose and Cursor CLI: installed, version,
 login and settings file, then the context files (CLAUDE.md, AGENTS.md, skills) in the
 repository and the home config. It never asks for an API key; an agent with no login gets its
@@ -105,6 +122,7 @@ vendors directly; no model traffic goes through selfhost.
 Every command takes `--json` and prints one object with a `schema` tag: `selfhost.doctor/v1`,
 `selfhost.import/v1` (plus one `selfhost.import_batch/v1` line per batch with `--watch`),
 `selfhost.agents/v1`, `selfhost.agents_configure/v1`, `selfhost.scan/v1`,
+`selfhost.policy_promote/v1`, `selfhost.review_item/v1` (from `policy report`),
 `selfhost.team_init/v1`, `selfhost.join/v1`, `selfhost.status/v1` and
 `selfhost.team_leave/v1`. Errors print `selfhost.error/v1` and exit 1. In solo mode no command
 needs a network connection.
