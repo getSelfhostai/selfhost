@@ -6,8 +6,9 @@ The open backend for your coding agent fleet: one ledger, one review list, one t
 
 Early. Not ready for use. The repository has the toolchain, the v1 contracts, the ledger store,
 an API server that ingests and searches events, importers for local Claude Code and Codex
-session logs, and `selfhost agents`, which finds installed agents and their logins and writes
-selfhost's settings into each agent's own config. The review list and team config come next.
+session logs, commit and pull request attribution to agents and models, and `selfhost agents`,
+which finds installed agents and their logins and writes selfhost's settings into each agent's
+own config. The review list and team config come next.
 
 ## What it is
 
@@ -22,20 +23,21 @@ It runs as a laptop install (embedded Postgres via PGlite, no Docker), a self-ho
 
 ## Repository layout
 
-| Path                 | What                                                                                        |
-| -------------------- | ------------------------------------------------------------------------------------------- |
-| `packages/schema`    | v1 contracts: ledger event, `selfhost.toml`, review item, hook payloads, OpenAPI, MCP tools |
-| `packages/ledger`    | Append-only ledger store on Postgres or PGlite, plus a mapper per event source              |
-| `packages/importers` | Local session log importers for Claude Code and Codex (pricing ported from ccusage, MIT)    |
-| `packages/spend`     | Spend by request type, agent, model and person, and the waste detector                      |
-| `packages/agents`    | Agent and login detection, context file listing, and config writing for five agent CLIs     |
-| `packages/sdk`       | API client (placeholder)                                                                    |
-| `apps/server`        | HTTP API server (Hono)                                                                      |
-| `apps/cli`           | `selfhost` command line                                                                     |
-| `apps/console`       | Web console (placeholder)                                                                   |
-| `adapters/`          | Per-agent and per-system integrations (none yet)                                            |
-| `ee/`                | Commercial code under a separate license (empty)                                            |
-| `docs/build-plan`    | Milestones and acceptance criteria                                                          |
+| Path                   | What                                                                                        |
+| ---------------------- | ------------------------------------------------------------------------------------------- |
+| `packages/schema`      | v1 contracts: ledger event, `selfhost.toml`, review item, hook payloads, OpenAPI, MCP tools |
+| `packages/ledger`      | Append-only ledger store on Postgres or PGlite, plus a mapper per event source              |
+| `packages/importers`   | Local session log importers for Claude Code and Codex (pricing ported from ccusage, MIT)    |
+| `packages/spend`       | Spend by request type, agent, model and person, and the waste detector                      |
+| `packages/agents`      | Agent and login detection, context file listing, and config writing for five agent CLIs     |
+| `packages/attribution` | Links commits and pull requests to the agent and model that produced them, with merge stats |
+| `packages/sdk`         | API client (placeholder)                                                                    |
+| `apps/server`          | HTTP API server (Hono)                                                                      |
+| `apps/cli`             | `selfhost` command line                                                                     |
+| `apps/console`         | Web console (placeholder)                                                                   |
+| `adapters/`            | Per-agent and per-system integrations (none yet)                                            |
+| `ee/`                  | Commercial code under a separate license (empty)                                            |
+| `docs/build-plan`      | Milestones and acceptance criteria                                                          |
 
 ## Development
 

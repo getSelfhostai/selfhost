@@ -1,0 +1,56 @@
+{
+  "url": "https://api.github.com/repos/acme/acme-api/pulls/101",
+  "id": 2700000101,
+  "node_id": "PR_101",
+  "html_url": "https://github.com/acme/acme-api/pull/101",
+  "number": 101,
+  "state": "closed",
+  "locked": false,
+  "title": "Add per-key rate limiting",
+  "user": {
+    "login": "alice",
+    "id": 5100001,
+    "node_id": "U_5100001",
+    "avatar_url": "https://avatars.githubusercontent.com/u/5100001?v=4",
+    "url": "https://api.github.com/users/alice",
+    "html_url": "https://github.com/alice",
+    "type": "User",
+    "site_admin": false
+  },
+  "body": "Adds a token bucket per API key.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+  "created_at": "2026-10-05T09:00:00Z",
+  "updated_at": "2026-10-05T15:00:00Z",
+  "closed_at": "2026-10-05T15:00:00Z",
+  "merged_at": "2026-10-05T15:00:00Z",
+  "merge_commit_sha": "bc65dc3efe1b485dd575003dc0c4cd170fb35c0d",
+  "draft": false,
+  "head": {
+    "label": "acme:claude/add-rate-limit",
+    "ref": "claude/add-rate-limit",
+    "sha": "5786c5c9d81ca4218b7e44bf0007f5580f66c489"
+  },
+  "base": {
+    "label": "acme:main",
+    "ref": "main",
+    "sha": "c3b8739bdcca2b4e2f5bdead2a8f238916813446"
+  },
+  "author_association": "MEMBER",
+  "merged": true,
+  "mergeable": null,
+  "comments": 1,
+  "review_comments": 3,
+  "commits": 2,
+  "additions": 90,
+  "deletions": 30,
+  "changed_files": 2,
+  "merged_by": {
+    "login": "bob",
+    "id": 5100002,
+    "node_id": "U_5100002",
+    "avatar_url": "https://avatars.githubusercontent.com/u/5100002?v=4",
+    "url": "https://api.github.com/users/bob",
+    "html_url": "https://github.com/bob",
+    "type": "User",
+    "site_admin": false
+  }
+}

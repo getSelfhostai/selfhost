@@ -1,0 +1,55 @@
+[
+  {
+    "sha": "4aab9d7fa3d35803c0af941e5f893bcb3669727d",
+    "node_id": "C_4aab9d7fa3d3",
+    "commit": {
+      "author": {
+        "name": "Bob Example",
+        "email": "bob@example.com",
+        "date": "2026-10-10T07:30:00Z"
+      },
+      "committer": {
+        "name": "Bob Example",
+        "email": "bob@example.com",
+        "date": "2026-10-10T07:30:00Z"
+      },
+      "message": "Keep return_to across login\n\nCo-authored-by: Claude Monet <claude.monet@example.com>",
+      "tree": {
+        "sha": "687fc672516343a6a4c01b80cb3996024e331a9f",
+        "url": "https://api.github.com/repos/acme/acme-api/git/trees/687fc672516343a6a4c01b80cb3996024e331a9f"
+      },
+      "url": "https://api.github.com/repos/acme/acme-api/git/commits/4aab9d7fa3d35803c0af941e5f893bcb3669727d",
+      "comment_count": 0,
+      "verification": {
+        "verified": false,
+        "reason": "unsigned",
+        "signature": null,
+        "payload": null,
+        "verified_at": null
+      }
+    },
+    "url": "https://api.github.com/repos/acme/acme-api/commits/4aab9d7fa3d35803c0af941e5f893bcb3669727d",
+    "html_url": "https://github.com/acme/acme-api/commit/4aab9d7fa3d35803c0af941e5f893bcb3669727d",
+    "author": {
+      "login": "bob",
+      "id": 5100002,
+      "node_id": "U_5100002",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5100002?v=4",
+      "url": "https://api.github.com/users/bob",
+      "html_url": "https://github.com/bob",
+      "type": "User",
+      "site_admin": false
+    },
+    "committer": {
+      "login": "bob",
+      "id": 5100002,
+      "node_id": "U_5100002",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5100002?v=4",
+      "url": "https://api.github.com/users/bob",
+      "html_url": "https://github.com/bob",
+      "type": "User",
+      "site_admin": false
+    },
+    "parents": []
+  }
+]

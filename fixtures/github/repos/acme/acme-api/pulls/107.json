@@ -1,0 +1,56 @@
+{
+  "url": "https://api.github.com/repos/acme/acme-api/pulls/107",
+  "id": 2700000107,
+  "node_id": "PR_107",
+  "html_url": "https://github.com/acme/acme-api/pull/107",
+  "number": 107,
+  "state": "closed",
+  "locked": false,
+  "title": "Add CSV export for audit log",
+  "user": {
+    "login": "devin-ai-integration[bot]",
+    "id": 158243242,
+    "node_id": "U_158243242",
+    "avatar_url": "https://avatars.githubusercontent.com/u/158243242?v=4",
+    "url": "https://api.github.com/users/devin-ai-integration[bot]",
+    "html_url": "https://github.com/devin-ai-integration[bot]",
+    "type": "Bot",
+    "site_admin": false
+  },
+  "body": "Adds CSV export to the audit log page.\n\nRequested by: @carol",
+  "created_at": "2026-10-12T10:00:00Z",
+  "updated_at": "2026-10-12T18:00:00Z",
+  "closed_at": "2026-10-12T18:00:00Z",
+  "merged_at": "2026-10-12T18:00:00Z",
+  "merge_commit_sha": "260f90c17929c37e1377b8d218e531407564998f",
+  "draft": false,
+  "head": {
+    "label": "acme:devin/1760262000-audit-csv",
+    "ref": "devin/1760262000-audit-csv",
+    "sha": "88ee1cbce0f2a60ac5a3fc7bed75a8fcea7da2b4"
+  },
+  "base": {
+    "label": "acme:main",
+    "ref": "main",
+    "sha": "c5c963b4b467a94c5d4060183daf319798d96055"
+  },
+  "author_association": "CONTRIBUTOR",
+  "merged": true,
+  "mergeable": null,
+  "comments": 1,
+  "review_comments": 0,
+  "commits": 1,
+  "additions": 80,
+  "deletions": 2,
+  "changed_files": 1,
+  "merged_by": {
+    "login": "bob",
+    "id": 5100002,
+    "node_id": "U_5100002",
+    "avatar_url": "https://avatars.githubusercontent.com/u/5100002?v=4",
+    "url": "https://api.github.com/users/bob",
+    "html_url": "https://github.com/bob",
+    "type": "User",
+    "site_admin": false
+  }
+}

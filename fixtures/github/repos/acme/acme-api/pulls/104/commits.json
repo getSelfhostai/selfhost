@@ -1,0 +1,55 @@
+[
+  {
+    "sha": "01f736b6060b5ebab392270ed76d6bdaf4ddf3dd",
+    "node_id": "C_01f736b6060b",
+    "commit": {
+      "author": {
+        "name": "Carol Example",
+        "email": "carol@example.com",
+        "date": "2026-10-20T07:55:00Z"
+      },
+      "committer": {
+        "name": "Carol Example",
+        "email": "carol@example.com",
+        "date": "2026-10-20T07:55:00Z"
+      },
+      "message": "Document rate limit headers",
+      "tree": {
+        "sha": "34e93171891ff64aa7c87da0b1d01dd2cae58bfb",
+        "url": "https://api.github.com/repos/acme/acme-api/git/trees/34e93171891ff64aa7c87da0b1d01dd2cae58bfb"
+      },
+      "url": "https://api.github.com/repos/acme/acme-api/git/commits/01f736b6060b5ebab392270ed76d6bdaf4ddf3dd",
+      "comment_count": 0,
+      "verification": {
+        "verified": false,
+        "reason": "unsigned",
+        "signature": null,
+        "payload": null,
+        "verified_at": null
+      }
+    },
+    "url": "https://api.github.com/repos/acme/acme-api/commits/01f736b6060b5ebab392270ed76d6bdaf4ddf3dd",
+    "html_url": "https://github.com/acme/acme-api/commit/01f736b6060b5ebab392270ed76d6bdaf4ddf3dd",
+    "author": {
+      "login": "carol",
+      "id": 5100003,
+      "node_id": "U_5100003",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5100003?v=4",
+      "url": "https://api.github.com/users/carol",
+      "html_url": "https://github.com/carol",
+      "type": "User",
+      "site_admin": false
+    },
+    "committer": {
+      "login": "carol",
+      "id": 5100003,
+      "node_id": "U_5100003",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5100003?v=4",
+      "url": "https://api.github.com/users/carol",
+      "html_url": "https://github.com/carol",
+      "type": "User",
+      "site_admin": false
+    },
+    "parents": []
+  }
+]

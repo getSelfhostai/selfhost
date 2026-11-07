@@ -1,0 +1,71 @@
+[
+  {
+    "id": 8101,
+    "node_id": "PRRC_8101",
+    "pull_request_review_id": null,
+    "user": {
+      "login": "bob",
+      "id": 5100002,
+      "node_id": "U_5100002",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5100002?v=4",
+      "url": "https://api.github.com/users/bob",
+      "html_url": "https://github.com/bob",
+      "type": "User",
+      "site_admin": false
+    },
+    "body": "Should the bucket size come from config?",
+    "path": "src/limit.ts",
+    "line": 12,
+    "side": "RIGHT",
+    "created_at": "2026-10-05T13:00:00Z",
+    "updated_at": "2026-10-05T13:00:00Z",
+    "html_url": "https://github.com/acme/acme-api/pull/101#discussion_r8101",
+    "author_association": "MEMBER"
+  },
+  {
+    "id": 8102,
+    "node_id": "PRRC_8102",
+    "pull_request_review_id": null,
+    "user": {
+      "login": "bob",
+      "id": 5100002,
+      "node_id": "U_5100002",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5100002?v=4",
+      "url": "https://api.github.com/users/bob",
+      "html_url": "https://github.com/bob",
+      "type": "User",
+      "site_admin": false
+    },
+    "body": "Nit: name this refill_ms.",
+    "path": "src/limit.ts",
+    "line": 12,
+    "side": "RIGHT",
+    "created_at": "2026-10-05T13:05:00Z",
+    "updated_at": "2026-10-05T13:05:00Z",
+    "html_url": "https://github.com/acme/acme-api/pull/101#discussion_r8102",
+    "author_association": "MEMBER"
+  },
+  {
+    "id": 8103,
+    "node_id": "PRRC_8103",
+    "pull_request_review_id": null,
+    "user": {
+      "login": "cursor[bot]",
+      "id": 206951365,
+      "node_id": "U_206951365",
+      "avatar_url": "https://avatars.githubusercontent.com/u/206951365?v=4",
+      "url": "https://api.github.com/users/cursor[bot]",
+      "html_url": "https://github.com/cursor[bot]",
+      "type": "Bot",
+      "site_admin": false
+    },
+    "body": "Possible off-by-one in refill.",
+    "path": "src/limit.ts",
+    "line": 12,
+    "side": "RIGHT",
+    "created_at": "2026-10-05T12:00:00Z",
+    "updated_at": "2026-10-05T12:00:00Z",
+    "html_url": "https://github.com/acme/acme-api/pull/101#discussion_r8103",
+    "author_association": "MEMBER"
+  }
+]

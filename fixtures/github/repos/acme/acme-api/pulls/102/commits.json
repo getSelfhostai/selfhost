@@ -1,0 +1,90 @@
+[
+  {
+    "sha": "c56f07a6c5ead1635e563fbb509383418e0fe1e5",
+    "node_id": "C_c56f07a6c5ea",
+    "commit": {
+      "author": {
+        "name": "copilot-swe-agent[bot]",
+        "email": "198982749+Copilot@users.noreply.github.com",
+        "date": "2026-10-06T10:01:00Z"
+      },
+      "committer": {
+        "name": "GitHub",
+        "email": "noreply@github.com",
+        "date": "2026-10-06T10:01:00Z"
+      },
+      "message": "Initial plan",
+      "tree": {
+        "sha": "f2f807188fd9c75ecaa3e401568c56d0870ea6de",
+        "url": "https://api.github.com/repos/acme/acme-api/git/trees/f2f807188fd9c75ecaa3e401568c56d0870ea6de"
+      },
+      "url": "https://api.github.com/repos/acme/acme-api/git/commits/c56f07a6c5ead1635e563fbb509383418e0fe1e5",
+      "comment_count": 0,
+      "verification": {
+        "verified": true,
+        "reason": "valid",
+        "signature": null,
+        "payload": null,
+        "verified_at": null
+      }
+    },
+    "url": "https://api.github.com/repos/acme/acme-api/commits/c56f07a6c5ead1635e563fbb509383418e0fe1e5",
+    "html_url": "https://github.com/acme/acme-api/commit/c56f07a6c5ead1635e563fbb509383418e0fe1e5",
+    "author": {
+      "login": "Copilot",
+      "id": 198982749,
+      "node_id": "U_198982749",
+      "avatar_url": "https://avatars.githubusercontent.com/u/198982749?v=4",
+      "url": "https://api.github.com/users/Copilot",
+      "html_url": "https://github.com/Copilot",
+      "type": "Bot",
+      "site_admin": false
+    },
+    "committer": null,
+    "parents": []
+  },
+  {
+    "sha": "63a65ebeffbc2c9a859f7826ef46e0a390537679",
+    "node_id": "C_63a65ebeffbc",
+    "commit": {
+      "author": {
+        "name": "copilot-swe-agent[bot]",
+        "email": "198982749+Copilot@users.noreply.github.com",
+        "date": "2026-10-06T10:20:00Z"
+      },
+      "committer": {
+        "name": "GitHub",
+        "email": "noreply@github.com",
+        "date": "2026-10-06T10:20:00Z"
+      },
+      "message": "Use fake timers in session expiry test\n\nCo-authored-by: alice <alice@example.com>",
+      "tree": {
+        "sha": "e88c38df017c4fb24ffc5d2cd5b10a3a50d5401e",
+        "url": "https://api.github.com/repos/acme/acme-api/git/trees/e88c38df017c4fb24ffc5d2cd5b10a3a50d5401e"
+      },
+      "url": "https://api.github.com/repos/acme/acme-api/git/commits/63a65ebeffbc2c9a859f7826ef46e0a390537679",
+      "comment_count": 0,
+      "verification": {
+        "verified": true,
+        "reason": "valid",
+        "signature": null,
+        "payload": null,
+        "verified_at": null
+      }
+    },
+    "url": "https://api.github.com/repos/acme/acme-api/commits/63a65ebeffbc2c9a859f7826ef46e0a390537679",
+    "html_url": "https://github.com/acme/acme-api/commit/63a65ebeffbc2c9a859f7826ef46e0a390537679",
+    "author": {
+      "login": "Copilot",
+      "id": 198982749,
+      "node_id": "U_198982749",
+      "avatar_url": "https://avatars.githubusercontent.com/u/198982749?v=4",
+      "url": "https://api.github.com/users/Copilot",
+      "html_url": "https://github.com/Copilot",
+      "type": "Bot",
+      "site_admin": false
+    },
+    "committer": null,
+    "parents": []
+  }
+]

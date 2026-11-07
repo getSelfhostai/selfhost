@@ -1,0 +1,47 @@
+{
+  "url": "https://api.github.com/repos/acme/acme-api/pulls/111",
+  "id": 2700000111,
+  "node_id": "PR_111",
+  "html_url": "https://github.com/acme/acme-api/pull/111",
+  "number": 111,
+  "state": "open",
+  "locked": false,
+  "title": "Pairing on retries",
+  "user": {
+    "login": "alice",
+    "id": 5100001,
+    "node_id": "U_5100001",
+    "avatar_url": "https://avatars.githubusercontent.com/u/5100001?v=4",
+    "url": "https://api.github.com/users/alice",
+    "html_url": "https://github.com/alice",
+    "type": "User",
+    "site_admin": false
+  },
+  "body": "Two agents took a pass at retry handling.",
+  "created_at": "2026-10-18T12:00:00Z",
+  "updated_at": "2026-10-18T12:00:00Z",
+  "closed_at": null,
+  "merged_at": null,
+  "merge_commit_sha": null,
+  "draft": false,
+  "head": {
+    "label": "acme:feature/pairing",
+    "ref": "feature/pairing",
+    "sha": "3b28ce051b270d77b76113c3cff95c404690950a"
+  },
+  "base": {
+    "label": "acme:main",
+    "ref": "main",
+    "sha": "0507525496aeea5e0d5f62c54a8d17fe07f39cab"
+  },
+  "author_association": "MEMBER",
+  "merged": false,
+  "mergeable": true,
+  "comments": 0,
+  "review_comments": 0,
+  "commits": 2,
+  "additions": 50,
+  "deletions": 20,
+  "changed_files": 2,
+  "merged_by": null
+}

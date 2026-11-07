@@ -1,0 +1,18 @@
+{
+  "synthetic": true,
+  "description": "GitHub REST API responses for repository acme/acme-api, in the shape `gh api` prints them, for packages/attribution. Paths mirror the API path: repos/acme/acme-api/pulls.json is GET /repos/acme/acme-api/pulls?state=all&sort=updated&direction=desc (page 1), and pulls/<n>.json, pulls/<n>/reviews.json, pulls/<n>/comments.json and pulls/<n>/commits.json are the single pull request, its reviews, its review comments and its commits. People are alice, bob and carol at example.com; agent accounts and noreply addresses are the vendors' real ones.",
+  "since": "2026-10-01T00:00:00Z",
+  "pulls": [
+    { "number": 101, "state": "merged", "case": "Claude Code commit trailers naming Claude Sonnet 4.5, on a claude/ branch; approved by bob with two review comments plus one from cursor[bot]; 120 changed lines." },
+    { "number": 102, "state": "merged", "case": "Copilot coding agent: opened by Copilot (type Bot) from copilot/, commits authored by copilot-swe-agent[bot] with alice as co-author; the only approval came after the merge." },
+    { "number": 103, "state": "closed", "case": "Codex cloud task link in the body on a codex/ branch; bob approved, then requested changes." },
+    { "number": 104, "state": "open", "case": "Only a cursor/ branch prefix; no trailers, no bot, no session." },
+    { "number": 105, "state": "merged", "case": "Commit and body name local Claude Code session 7b0c2c1e; 820 changed lines approved with no review comments." },
+    { "number": 106, "state": "merged", "case": "Plain human pull request; a co-author named Claude Monet at example.com is a person, not an agent; reviewed with comments." },
+    { "number": 107, "state": "merged", "case": "Opened and committed by devin-ai-integration[bot]; approved only by another bot." },
+    { "number": 108, "state": "closed", "case": "Plain branch and commit; the local commit matches a Goose session by files and time." },
+    { "number": 109, "state": "merged", "case": "Created before the window, merged inside it; Codex co-author trailer only on GitHub (the commit is not in the local clone); 350 lines approved with one review comment." },
+    { "number": 110, "state": "closed", "case": "Updated before the window: listed, never fetched (no per pull request files)." },
+    { "number": 111, "state": "open", "case": "One Claude Code commit and one Codex commit: conflicting evidence, so unattributed." }
+  ]
+}

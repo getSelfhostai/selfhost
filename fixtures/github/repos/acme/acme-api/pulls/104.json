@@ -1,0 +1,47 @@
+{
+  "url": "https://api.github.com/repos/acme/acme-api/pulls/104",
+  "id": 2700000104,
+  "node_id": "PR_104",
+  "html_url": "https://github.com/acme/acme-api/pull/104",
+  "number": 104,
+  "state": "open",
+  "locked": false,
+  "title": "Update API docs",
+  "user": {
+    "login": "carol",
+    "id": 5100003,
+    "node_id": "U_5100003",
+    "avatar_url": "https://avatars.githubusercontent.com/u/5100003?v=4",
+    "url": "https://api.github.com/users/carol",
+    "html_url": "https://github.com/carol",
+    "type": "User",
+    "site_admin": false
+  },
+  "body": "Docs for the new limiter.",
+  "created_at": "2026-10-20T08:00:00Z",
+  "updated_at": "2026-10-20T08:30:00Z",
+  "closed_at": null,
+  "merged_at": null,
+  "merge_commit_sha": null,
+  "draft": false,
+  "head": {
+    "label": "acme:cursor/update-docs-1a2b",
+    "ref": "cursor/update-docs-1a2b",
+    "sha": "01f736b6060b5ebab392270ed76d6bdaf4ddf3dd"
+  },
+  "base": {
+    "label": "acme:main",
+    "ref": "main",
+    "sha": "557a94f38007c9631221dec545569787ed871da6"
+  },
+  "author_association": "MEMBER",
+  "merged": false,
+  "mergeable": true,
+  "comments": 0,
+  "review_comments": 0,
+  "commits": 1,
+  "additions": 60,
+  "deletions": 4,
+  "changed_files": 1,
+  "merged_by": null
+}

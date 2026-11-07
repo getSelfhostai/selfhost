@@ -1,0 +1,22 @@
+[
+  {
+    "id": 9107,
+    "node_id": "PRR_9107",
+    "user": {
+      "login": "ci-approver[bot]",
+      "id": 5200001,
+      "node_id": "U_5200001",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5200001?v=4",
+      "url": "https://api.github.com/users/ci-approver[bot]",
+      "html_url": "https://github.com/ci-approver[bot]",
+      "type": "Bot",
+      "site_admin": false
+    },
+    "body": "Auto-approved: checks passed.",
+    "state": "APPROVED",
+    "html_url": "https://github.com/acme/acme-api/pull/107#pullrequestreview-9107",
+    "submitted_at": "2026-10-12T17:00:00Z",
+    "commit_id": "88ee1cbce0f2a60ac5a3fc7bed75a8fcea7da2b4",
+    "author_association": "NONE"
+  }
+]
