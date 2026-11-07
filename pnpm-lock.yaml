@@ -80,6 +80,9 @@ importers:
 
   apps/cli:
     dependencies:
+      '@selfhost/agents':
+        specifier: workspace:*
+        version: link:../../packages/agents
       '@selfhost/importers':
         specifier: workspace:*
         version: link:../../packages/importers
@@ -139,6 +142,31 @@ importers:
       tsx:
         specifier: 'catalog:'
         version: 4.23.15
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.12(@types/node@20.19.43)(vite@8.3.6(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
+
+  packages/agents:
+    dependencies:
+      '@selfhost/schema':
+        specifier: workspace:*
+        version: link:../schema
+      smol-toml:
+        specifier: 'catalog:'
+        version: 1.9.1
+      yaml:
+        specifier: 'catalog:'
+        version: 2.9.1
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 20.19.43
+      tsup:
+        specifier: 'catalog:'
+        version: 8.5.1(postcss@8.5.32)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)
       typescript:
         specifier: 'catalog:'
         version: 5.9.3

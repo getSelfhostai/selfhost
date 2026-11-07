@@ -58,6 +58,18 @@ jobs:
         run: |
           ./apps/cli/dist/selfhost-linux-x64 --version
           ./apps/cli/dist/selfhost-linux-x64 doctor
+      - name: Run the binary with an empty environment and no Node or Bun on PATH
+        run: |
+          bin="$PWD/apps/cli/dist/selfhost-linux-x64"
+          empty="$(mktemp -d)"
+          if env -i PATH="$empty" /bin/sh -c 'command -v node || command -v bun'; then
+            echo "node or bun is still reachable on PATH" >&2
+            exit 1
+          fi
+          env -i PATH="$empty" "$bin" --version
+          env -i PATH="$empty" "$bin" agents --json > agents.json
+          env -i PATH="$empty" "$bin" doctor --json
+          grep -q '"schema": "selfhost.agents/v1"' agents.json
       - uses: actions/upload-artifact@v4
         with:
           name: selfhost-cli

@@ -13,6 +13,24 @@ export interface ImportCommandOptions {
   person?: string;
   claudeDir?: string;
   codexDir?: string;
+  /** Print JSON instead of text: one object, or one line per batch with --watch. */
+  json?: boolean;
+}
+
+/** `selfhost import --json`. */
+export interface ImportReport {
+  schema: "selfhost.import/v1";
+  files: number;
+  accepted: number;
+  duplicates: number;
+  /** Where the events went: "Postgres (DATABASE_URL)" or the embedded ledger folder. */
+  ledger: string;
+}
+
+/** One line per batch from `selfhost import --watch --json`. */
+export interface ImportBatchReport {
+  schema: "selfhost.import_batch/v1";
+  accepted: number;
 }
 
 interface Io {
@@ -87,18 +105,27 @@ export async function runImport(
   options: ImportCommandOptions,
   io: Io,
   ledger?: Ledger,
-): Promise<{ files: number; accepted: number; duplicates: number }> {
+): Promise<ImportReport> {
   const opts = importOptions(options, io);
   const url = options.database ?? io.env.DATABASE_URL;
   const target = ledger ?? (await openLedger({ url, dataDir: options.dataDir }));
   try {
     const result = await importAll(target, opts);
-    io.write(
-      `Imported ${result.accepted} new events from ${result.files} log files ` +
-        `(${result.duplicates} already in the ledger).`,
-    );
-    io.write(`Ledger: ${describeTarget(options, io)}`);
-    return result;
+    const report: ImportReport = {
+      schema: "selfhost.import/v1",
+      ...result,
+      ledger: describeTarget(options, io),
+    };
+    if (options.json) {
+      io.write(options.watch ? JSON.stringify(report) : JSON.stringify(report, null, 2));
+    } else {
+      io.write(
+        `Imported ${result.accepted} new events from ${result.files} log files ` +
+          `(${result.duplicates} already in the ledger).`,
+      );
+      io.write(`Ledger: ${report.ledger}`);
+    }
+    return report;
   } finally {
     if (!ledger) await target.close();
   }
@@ -109,9 +136,11 @@ export async function runWatch(options: ImportCommandOptions, io: Io): Promise<v
   const url = options.database ?? io.env.DATABASE_URL;
   const ledger = await openLedger({ url, dataDir: options.dataDir });
   await runImport(options, io, ledger);
-  io.write("Watching for new log lines. Press Ctrl+C to stop.");
+  if (!options.json) io.write("Watching for new log lines. Press Ctrl+C to stop.");
   const watcher = watchLogs(ledger, importOptions(options, io), (n) => {
-    if (n > 0) io.write(`+${n} events`);
+    if (n === 0) return;
+    const batch: ImportBatchReport = { schema: "selfhost.import_batch/v1", accepted: n };
+    io.write(options.json ? JSON.stringify(batch) : `+${n} events`);
   });
   await new Promise<void>((resolve) => {
     const stop = () => resolve();

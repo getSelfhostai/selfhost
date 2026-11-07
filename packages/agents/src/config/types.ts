@@ -1,0 +1,144 @@
+import type { AgentId, Env } from "../types.js";
+
+export interface McpServerSpec {
+  /** A stdio server: the executable and its arguments. */
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  /** A streamable HTTP server. */
+  url?: string;
+  headers?: Record<string, string>;
+}
+
+export type OtlpProtocol = "http/protobuf" | "http/json" | "grpc";
+
+export interface OtelSpec {
+  /** Base OTLP endpoint, such as http://127.0.0.1:4318. */
+  endpoint: string;
+  /** Defaults to http/protobuf. */
+  protocol?: OtlpProtocol;
+  headers?: Record<string, string>;
+  /** Export prompt text. Off unless set. */
+  logUserPrompts?: boolean;
+  /** Export traces as well as metrics and logs, where the agent supports it. */
+  traces?: boolean;
+}
+
+export interface HooksSpec {
+  /**
+   * The command each agent runs on its hook events, with the event JSON on stdin.
+   * `{agent}` is replaced with the agent id, for example `selfhost hook --agent {agent}`.
+   */
+  command: string;
+}
+
+export interface AgentConfigInput {
+  hooks?: HooksSpec;
+  /** Environment variables for the agent's own process. */
+  env?: Record<string, string>;
+  mcpServers?: Record<string, McpServerSpec>;
+  otel?: OtelSpec;
+}
+
+export interface PlanOptions extends AgentConfigInput {
+  home: string;
+  /** Process environment, read for CLAUDE_CONFIG_DIR, CODEX_HOME, XDG_* and similar. */
+  processEnv?: Env;
+  platform?: NodeJS.Platform;
+}
+
+export type ItemStatus =
+  | "create"
+  | "update"
+  | "unchanged"
+  | "remove"
+  | "conflict"
+  | "unsupported"
+  | "error";
+
+export interface PlanItem {
+  /** env, otel, hooks or mcp:<name>. */
+  item: string;
+  status: ItemStatus;
+  /** The file the item lives in, or null when the agent has no place for it. */
+  path: string | null;
+  message: string | null;
+}
+
+export interface FileChange {
+  path: string;
+  /** config is an agent's own file; state is selfhost's record of what it owns. */
+  role: "config" | "state";
+  /** Content when the plan was made; null when the file did not exist. */
+  before: string | null;
+  /** Content to write; null deletes the file. */
+  after: string | null;
+}
+
+export interface AgentConfigPlan {
+  agent: AgentId;
+  items: PlanItem[];
+  /** Only files whose content changes. */
+  changes: FileChange[];
+}
+
+export type HookStyle = "claude" | "cursor";
+
+/** One change selfhost makes inside a settings file. */
+export type Edit =
+  | { kind: "key"; path: string[]; value: unknown }
+  | { kind: "hook"; path: string[]; style: HookStyle; command: string };
+
+/** What selfhost recorded as its own in a file, so a re-run or removal touches only that. */
+export type Owned =
+  | { kind: "key"; item: string; path: string[] }
+  | { kind: "container"; path: string[] }
+  | { kind: "hook"; item: string; path: string[]; style: HookStyle; command: string };
+
+export interface ManifestFile {
+  format: "json" | "yaml" | "toml";
+  /** True when selfhost created the file, so removal may delete it once it is empty. */
+  created: boolean;
+  owned: Owned[];
+}
+
+export interface Manifest {
+  schema: "selfhost.agent_config/v1";
+  agent: AgentId;
+  files: Record<string, ManifestFile>;
+}
+
+export interface DesiredItem {
+  item: string;
+  edits: Edit[];
+  /** Shown with the item's status, such as a follow-up step in the agent. */
+  note?: string;
+}
+
+/** A JSON or YAML settings file, merged key by key. */
+export interface TreeTarget {
+  kind: "tree";
+  path: string;
+  format: "json" | "yaml";
+  items: DesiredItem[];
+}
+
+export interface TomlItem {
+  item: string;
+  /** The TOML for this item inside selfhost's block. Empty when it is already set. */
+  snippet(base: Record<string, unknown>): string;
+  /** A reason the item can't be written next to what the file already has. */
+  conflict(base: Record<string, unknown>): string | undefined;
+  /** Whether a parsed TOML document holds this item. */
+  presentIn(doc: Record<string, unknown>): boolean;
+  note?: string;
+}
+
+/** A TOML file, where selfhost keeps its settings in one marked block. */
+export interface TomlTarget {
+  kind: "toml";
+  path: string;
+  items: TomlItem[];
+}
+
+export type Target = TreeTarget | TomlTarget;
