@@ -8,6 +8,7 @@ import {
   configureCommand,
 } from "./agents.js";
 import { defaultConfigPath } from "./config-file.js";
+import { registerDecisions } from "./decisions.js";
 import { doctor } from "./doctor.js";
 import { type ImportCommandOptions, type ImportIo, runImport, runWatch } from "./import.js";
 import { registerPolicy } from "./policy/commands.js";
@@ -233,7 +234,25 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
 
   registerPolicyEditing(
     program,
-    () => ({ env: deps.env, cwd: deps.cwd, write: deps.write, now: deps.now }),
+    () => ({
+      env: deps.env,
+      cwd: deps.cwd,
+      write: deps.write,
+      now: deps.now,
+      configPath: deps.configPath ?? defaultConfigPath(),
+    }),
+    fail,
+  );
+
+  registerDecisions(
+    program,
+    () => ({
+      env: deps.env,
+      cwd: deps.cwd,
+      write: deps.write,
+      now: deps.now,
+      configPath: deps.configPath ?? defaultConfigPath(),
+    }),
     fail,
   );
 

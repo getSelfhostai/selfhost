@@ -3,7 +3,7 @@ openapi: 3.1.0
 info:
   title: selfhost API
   version: "1"
-  description: "HTTP API of the selfhost server: ledger ingest and search, the review list and team policy. Laptop, self-hosted and hosted installs serve the same API."
+  description: "HTTP API of the selfhost server: ledger ingest and search, the review list, the decision log and team policy. Laptop, self-hosted and hosted installs serve the same API."
   license:
     name: Apache-2.0
     identifier: Apache-2.0
@@ -250,6 +250,158 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /v1/decisions:
+    get:
+      operationId: listDecisions
+      summary: Search human decisions and rule verdicts.
+      description: decision.recorded and policy.evaluated events, newest first. path matches a file, the files under a folder and the folders that hold it; topic needs every word in the question or reason. The MCP tool search_decisions makes the same call.
+      parameters:
+        - name: path
+          in: query
+          required: false
+          description: File or folder path relative to the repository root. Matches decisions on that file, on files under that folder, and on folders that hold it.
+          schema:
+            minLength: 1
+            type: string
+        - name: topic
+          in: query
+          required: false
+          description: Words to match in the decision's question and reason. Every word must appear; case is ignored.
+          schema:
+            minLength: 1
+            type: string
+        - name: text
+          in: query
+          required: false
+          description: Words to match in the decision reason.
+          schema:
+            type: string
+        - name: rule_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: verdict
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - allow
+              - block
+              - ask
+              - approve
+              - deny
+              - answer
+              - override
+        - name: repo
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: target
+          in: query
+          required: false
+          description: "Substring of the target value: file path, command or URL."
+          schema:
+            type: string
+        - name: person
+          in: query
+          required: false
+          description: Who decided.
+          schema:
+            type: string
+        - name: item_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: false
+          schema:
+            format: date-time
+            type: string
+        - name: to
+          in: query
+          required: false
+          schema:
+            format: date-time
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of results.
+          schema:
+            minimum: 1
+            maximum: 1000
+            default: 100
+            type: integer
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque cursor from next_cursor of the previous page.
+          schema:
+            type: string
+        - name: format
+          in: query
+          required: false
+          description: "json (default) or text: the same page as plain text, one block per decision with its id and links."
+          schema:
+            type: string
+            enum:
+              - json
+              - text
+            default: json
+      responses:
+        "200":
+          description: One page of decisions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DecisionsPage"
+            text/plain:
+              schema:
+                type: string
+        "400":
+          description: Invalid filter.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createDecision
+      summary: Record a human decision.
+      description: "Every surface records decisions through this call: GitHub reviews and comments on agent pull requests, rule promotions, exception approvals, the CLI inbox, and Slack and Telegram buttons. Writes one decision.recorded event. Decisions are never edited: to correct or overturn one, record a new decision with replaces_event_id. With key and ts, sending the same action again returns the stored decision with duplicate true. Needs the admin token."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDecisionRequest"
+      responses:
+        "200":
+          description: This action was already recorded. Nothing new was written.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateDecisionResponse"
+        "201":
+          description: Decision recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateDecisionResponse"
+        "400":
+          description: Invalid decision, or replaces_event_id names no decision. Nothing was written.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /v1/policy:
     get:
       operationId: getPolicy
@@ -614,6 +766,127 @@ components:
           $ref: "#/components/schemas/ReviewItem"
         decision_event:
           $ref: "#/components/schemas/LedgerEvent"
+    DecisionsPage:
+      additionalProperties: false
+      title: DecisionsPage
+      type: object
+      required:
+        - decisions
+        - next_cursor
+      properties:
+        decisions:
+          description: decision.recorded and policy.evaluated events, newest first.
+          type: array
+          items:
+            $ref: "#/components/schemas/LedgerEvent"
+        next_cursor:
+          description: Pass as cursor to get the next page. null on the last page.
+          anyOf:
+            - type: string
+            - type: "null"
+    CreateDecisionRequest:
+      additionalProperties: false
+      title: CreateDecisionRequest
+      type: object
+      required:
+        - verdict
+        - by
+      properties:
+        verdict:
+          type: string
+          enum:
+            - approve
+            - deny
+            - answer
+            - override
+        by:
+          minLength: 1
+          description: Person who decided, such as a git email or GitHub login.
+          type: string
+        name:
+          description: Display name of the person.
+          type: string
+        reason:
+          description: Why, in the person's own words. For a question, the answer.
+          type: string
+        question:
+          description: "What was decided, in one line: the review item title, the pull request title or the rule change. Topic search matches it along with the reason."
+          type: string
+        item_id:
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+          description: Review item this decision answers.
+          type: string
+        run_id:
+          minLength: 1
+          description: Run this decision answers.
+          type: string
+        rule_id:
+          minLength: 1
+          description: Rule from selfhost.toml it is about.
+          type: string
+        repo:
+          pattern: ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$
+          description: Repository as owner/name.
+          type: string
+        paths:
+          maxItems: 1000
+          description: Files or folders the decision is about, relative to the repository root. Path search matches them.
+          type: array
+          items:
+            minLength: 1
+            type: string
+        pr_url:
+          format: uri
+          description: Pull request URL.
+          type: string
+        run_url:
+          format: uri
+          description: CI run or agent run URL.
+          type: string
+        commit_sha:
+          pattern: ^[0-9a-f]{7,64}$
+          description: Git commit SHA.
+          type: string
+        replaces_event_id:
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+          description: Decision this one corrects or overturns. The earlier event stays as it was; item, run, rule, question, paths and links not given here are carried over from it.
+          type: string
+        surface:
+          default: api
+          description: Where the person decided.
+          type: string
+          enum:
+            - cli
+            - rule_promotion
+            - exception_approval
+            - github_review
+            - github_comment
+            - slack
+            - telegram
+            - mcp
+            - api
+        key:
+          minLength: 1
+          maxLength: 256
+          description: "Idempotency key: the surface's own id for this action, such as a GitHub review id or a Slack action id. Sent again with the same ts, it writes nothing new."
+          type: string
+        ts:
+          format: date-time
+          description: "When the person decided. Default: now. Required with key."
+          type: string
+    CreateDecisionResponse:
+      additionalProperties: false
+      title: CreateDecisionResponse
+      type: object
+      required:
+        - decision_event
+        - duplicate
+      properties:
+        decision_event:
+          $ref: "#/components/schemas/LedgerEvent"
+        duplicate:
+          description: true when this action was already recorded, so nothing new was written.
+          type: boolean
     PolicyResponse:
       additionalProperties: false
       title: PolicyResponse

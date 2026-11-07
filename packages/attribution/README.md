@@ -137,3 +137,22 @@ of trailer, bot authors, agent branches (unmerged, merged, remote only), session
 time matches and plain commits, and plays recorded `gh api` responses from
 [`fixtures/github`](../../fixtures/github/manifest.json) covering merged, closed, open,
 unreviewed, large-diff and conflicting pull requests. No test calls GitHub or runs `gh`.
+
+## Decisions from GitHub
+
+`githubDecision(event, payload, { person? })` turns a GitHub webhook delivery (`event` is the
+`X-GitHub-Event` header) into the decision to pass to `recordDecision` or `POST /v1/decisions`,
+or undefined when it is not a person's answer on an agent's pull request:
+
+| Event                 | Action      | Verdict                                                                             |
+| --------------------- | ----------- | ----------------------------------------------------------------------------------- |
+| `pull_request_review` | `submitted` | approved is `approve`, changes_requested is `deny`, commented with text is `answer` |
+| `issue_comment`       | `created`   | `answer`, only on pull requests                                                     |
+
+The review or comment text is the reason, `#<number> <title>` the question, and GitHub's review
+or comment id the idempotency key, so a redelivered webhook records nothing new. The pull request
+counts as an agent's when its body, author or branch names one (`webhookPullAgent`, the same
+signals as above minus commits). Bots, edits, dismissals and comment-only reviews with no text
+give nothing. `person` maps a GitHub login to a selfhost person id; by default the login is used.
+The GitHub App that receives these webhooks comes later; fixtures are in
+`fixtures/github/webhooks/`.

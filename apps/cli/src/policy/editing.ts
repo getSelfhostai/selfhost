@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, relative } from "node:path";
+import { basename, dirname, relative, sep } from "node:path";
 import { promisify } from "node:util";
 import { type Ledger, openLedger } from "@selfhost/ledger";
 import {
@@ -13,8 +13,10 @@ import {
   type RuleMode,
 } from "@selfhost/schema";
 import type { Command } from "commander";
+import { decider, recordFromCli } from "../decisions.js";
 import { findConfig } from "../find-config.js";
 import { parseSince } from "../import.js";
+import { repoDir } from "../scan/index.js";
 import { promoteRule } from "./promote.js";
 import { buildPolicyReport, reportWindow } from "./report.js";
 
@@ -26,13 +28,18 @@ export interface PolicyIo {
   cwd: string;
   write: (line: string) => void;
   now?: Date;
+  /** Where the team membership is kept; a joined person decides under that id. */
+  configPath?: string;
 }
 
 export interface PromoteCommandOptions {
   team?: string;
   to?: string;
+  reason?: string;
   config?: string;
   json?: boolean;
+  database?: string;
+  dataDir?: string;
 }
 
 /** `selfhost policy promote --json`. */
@@ -46,6 +53,8 @@ export interface PromoteReport {
   changed: boolean;
   /** `git diff` of the file after the change; null when nothing changed or there is no git. */
   diff: string | null;
+  /** The decision.recorded event for the change; null when nothing changed. */
+  decision_event_id: string | null;
 }
 
 export interface PolicyReportCommandOptions {
@@ -90,13 +99,46 @@ async function gitDiff(file: string): Promise<string | undefined> {
 }
 
 /**
- * Writes the new mode into selfhost.toml and prints the file's git diff. Nothing is staged or
- * committed: the change goes through review like any other edit.
+ * Records the promotion in the decision log: who changed the rule (the git email in the
+ * repository), approve when the rule moves to enforce and override otherwise, with the reason.
+ */
+async function recordPromotion(
+  ledger: Ledger,
+  path: string,
+  ruleId: string,
+  change: { from: RuleMode; to: RuleMode; team?: string; reason?: string },
+  io: PolicyIo,
+): Promise<string> {
+  const dir = dirname(path);
+  const root = repoDir(undefined, dir);
+  const file = root ? relative(root, path).split(sep).join("/") : basename(path);
+  const team = change.team ? ` for team ${change.team}` : "";
+  const { event } = await recordFromCli(
+    ledger,
+    {
+      verdict: change.to === "enforce" ? "approve" : "override",
+      by: decider(undefined, io, dir),
+      ...(change.reason !== undefined ? { reason: change.reason } : {}),
+      question: `Change rule ${ruleId} from ${change.from} to ${change.to}${team}`,
+      rule_id: ruleId,
+      paths: [file],
+      surface: "rule_promotion",
+    },
+    io.now,
+  );
+  return event.id;
+}
+
+/**
+ * Writes the new mode into selfhost.toml, records the change as a decision in the ledger and
+ * prints the file's git diff. Nothing is staged or committed: the change goes through review
+ * like any other edit. Pass a ledger to reuse an open one.
  */
 export async function runPromote(
   ruleId: string,
   options: PromoteCommandOptions,
   io: PolicyIo,
+  ledger?: Ledger,
 ): Promise<PromoteReport> {
   const to = parseMode(options.to);
   const path = locateConfig(io, options.config);
@@ -112,13 +154,29 @@ export async function runPromote(
     to,
     changed: result.changed,
     diff: null,
+    decision_event_id: null,
   };
   if (!result.changed) {
     if (options.json) io.write(JSON.stringify(report, null, 2));
     else io.write(`${who} is already in ${to} mode in ${file}. Nothing changed.`);
     return report;
   }
-  writeFileSync(path, result.text);
+  // Open the ledger before touching the file, so a ledger that cannot open changes nothing.
+  const target =
+    ledger ??
+    (await openLedger({ url: options.database ?? io.env.DATABASE_URL, dataDir: options.dataDir }));
+  try {
+    writeFileSync(path, result.text);
+    report.decision_event_id = await recordPromotion(
+      target,
+      path,
+      ruleId,
+      { from: result.from, to, team: options.team, reason: options.reason },
+      io,
+    );
+  } finally {
+    if (!ledger) await target.close();
+  }
   const diff = await gitDiff(path);
   report.diff = diff ?? null;
   if (options.json) {
@@ -136,6 +194,7 @@ export async function runPromote(
     io.write("");
     io.write("Review the change and commit it through a pull request.");
   }
+  io.write(`Recorded decision ${report.decision_event_id} in the ledger.`);
   return report;
 }
 
@@ -225,8 +284,11 @@ export function registerPolicyEditing(
     .argument("<rule>", "rule id from selfhost.toml")
     .option("--team <name>", "set the mode only for this team, in [teams.<name>.rules.<rule>]")
     .option("--to <mode>", "enforce, observe or off", "enforce")
+    .option("--reason <text>", "why, recorded with the decision in the ledger")
     .option("-c, --config <path>", "path to selfhost.toml")
     .option("--json", "print JSON")
+    .option("--database <url>", "Postgres url (default: DATABASE_URL, else the embedded ledger)")
+    .option("--data-dir <path>", "embedded ledger folder (default: ~/.selfhost/data)")
     .action(async (rule: string, options: PromoteCommandOptions) => {
       try {
         await runPromote(rule, options, io());

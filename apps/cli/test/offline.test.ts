@@ -99,6 +99,22 @@ describe("every command works with --json and no network", () => {
     expect(attempts).toEqual([]);
   });
 
+  it("decide and decisions", async () => {
+    const data = tempDir("offline-decisions").root;
+    const attempts = blockNetwork();
+    const deps = { env: { SELFHOST_PERSON: "dev@example.com" } };
+
+    const decide = await run(
+      ["decide", "run-1", "approve", "--reason", "fine", "--json", "--data-dir", data],
+      deps,
+    );
+    expect(JSON.parse(decide.out).duplicate).toBe(false);
+    const found = await run(["decisions", "--topic", "fine", "--json", "--data-dir", data], deps);
+    expect(JSON.parse(found.out).decisions).toHaveLength(1);
+
+    expect(attempts).toEqual([]);
+  });
+
   it("scan uploads nothing, even with a yes to the agent count", async () => {
     const work = tempDir("offline-scan");
     mkdirSync(work.path(".git"));

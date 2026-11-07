@@ -40,11 +40,13 @@ describe("openapi.yaml", () => {
     );
     expect(operations.sort()).toEqual(
       [
+        "GET /v1/decisions",
         "GET /v1/events",
         "GET /v1/health",
         "GET /v1/me",
         "GET /v1/policy",
         "GET /v1/review-items",
+        "POST /v1/decisions",
         "POST /v1/events",
         "POST /v1/join",
         "POST /v1/review-items/{id}/decision",

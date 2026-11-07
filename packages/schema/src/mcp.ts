@@ -53,7 +53,7 @@ export const MCP_TOOLS: readonly McpToolDefinition[] = [
   {
     name: "search_decisions",
     description:
-      "Search past rule verdicts and human decisions, for example to check whether a person already decided a similar case.",
+      "Search past rule verdicts and human decisions by file path, topic, rule or person, for example to check whether a person already decided a similar case before asking again.",
     inputSchema: DecisionQuerySchema,
     outputSchema: DecisionsPageSchema,
   },

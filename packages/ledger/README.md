@@ -49,6 +49,56 @@ The API has no update or delete. A trigger on `events` (`ENABLE ALWAYS`, so it a
 set `selfhost.retention = 'on'`. Only the retention job does that, with `SET LOCAL` inside its own
 transaction. Corrections are new events that point at the old one.
 
+## Decisions
+
+The human decision log lives in the same `events` table: one `decision.recorded` event per human
+answer, next to the `policy.evaluated` rule verdicts. `src/decisions/` holds the one write path
+and the one read path every surface uses, so a decision made in GitHub, the CLI, a chat button
+or the console reads the same everywhere.
+
+```ts
+import { recordDecision, renderDecisions } from "@selfhost/ledger";
+
+const { event, duplicate } = await recordDecision(ledger, {
+  verdict: "deny",
+  by: "alice@example.com",
+  reason: "Keep the old index until the backfill finishes",
+  question: "Drop the users_email index?",
+  run_id: "run-42",
+  paths: ["db/migrations/0007_drop_index.sql"],
+  surface: "cli",
+});
+const page = await ledger.decisions.search({ path: "db/migrations", topic: "index" });
+console.log(renderDecisions(page));
+```
+
+- `recordDecision(writer, input)` takes a `CreateDecisionRequest` (the `POST /v1/decisions`
+  body, from `@selfhost/schema`), validates it, builds the event and writes it with
+  `ledger.append`, so retention and redaction in the write path apply; the event it returns is
+  read back as stored. It needs who (`by`) and what the decision answers (`item_id`, `run_id`,
+  `rule_id` or `pr_url`). One file becomes the event's `target`, several go in `data.paths`; the
+  question goes in `data.question` and the surface in `data.surface`. Invalid input throws
+  `DecisionInputError` and writes nothing.
+- Idempotency: with `key` (the surface's own id for the action, such as a GitHub review id) and
+  `ts`, the event id is derived from the surface, key and time, so a redelivery stores nothing
+  new and returns the stored decision with `duplicate: true`. Without a key every call records a
+  decision.
+- Corrections: decisions are never edited. `replaces_event_id` records a correction or overturn
+  as a new event linked to the decision or rule verdict it changes; item, run, rule, question,
+  paths and links it leaves out are carried over, so searches find both.
+- `ledger.decisions.search(query)` takes a `DecisionQuery` and returns both kinds newest first
+  with keyset pages. `path` matches on whole path segments: the file itself, files under a
+  folder, folders that hold the file, and an absolute path in a rule verdict that ends with it.
+  `topic` needs every word, case ignored, in the question or reason. `replacedBy` on the page
+  lists, for each decision on it, the later decisions that replaced it. The HTTP API, the CLI
+  and the MCP tool `search_decisions` all call it.
+- `renderDecisions(page)` is the plain text all three print: each decision's id, time, verdict
+  and who, then question, reason, rule, item, run, files and links, one block each.
+- `chatDecision(press)` is the seam for the Slack and Telegram apps, which are not built yet:
+  given a verified button press mapped to a person, it returns the decision with a one-line
+  reason and the press id as key. The GitHub mapper is `githubDecision` in
+  [`@selfhost/attribution`](../attribution/README.md#decisions-from-github).
+
 ## Teams
 
 `ledger.teams` stores team mode's rows for the server (see

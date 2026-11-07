@@ -1,0 +1,94 @@
+{
+  "action": "submitted",
+  "review": {
+    "id": 9104,
+    "node_id": "PRR_9104",
+    "user": {
+      "login": "bob",
+      "id": 5100002,
+      "node_id": "U_5100002",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5100002?v=4",
+      "url": "https://api.github.com/users/bob",
+      "html_url": "https://github.com/bob",
+      "type": "User",
+      "site_admin": false
+    },
+    "body": "This drops env overrides. Keep SELFHOST_CONFIG working before the refactor lands.",
+    "commit_id": "630fd1bdaea3e303e5bd761c2ca9da76467bc366",
+    "submitted_at": "2026-10-08T12:00:00Z",
+    "state": "changes_requested",
+    "html_url": "https://github.com/acme/acme-api/pull/103#pullrequestreview-9104",
+    "pull_request_url": "https://api.github.com/repos/acme/acme-api/pulls/103",
+    "author_association": "MEMBER"
+  },
+  "pull_request": {
+    "url": "https://api.github.com/repos/acme/acme-api/pulls/103",
+    "id": 2700000103,
+    "node_id": "PR_103",
+    "html_url": "https://github.com/acme/acme-api/pull/103",
+    "number": 103,
+    "state": "open",
+    "locked": false,
+    "title": "Refactor config loading",
+    "user": {
+      "login": "alice",
+      "id": 5100001,
+      "node_id": "U_5100001",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5100001?v=4",
+      "url": "https://api.github.com/users/alice",
+      "html_url": "https://github.com/alice",
+      "type": "User",
+      "site_admin": false
+    },
+    "body": "Moves config parsing into one module.\n\n[Codex Task](https://chatgpt.com/codex/cloud/tasks/task_e_68f1c2a9d4b84c0e9a7f3b2d1c0e5a64)",
+    "created_at": "2026-10-07T09:00:00Z",
+    "updated_at": "2026-10-08T12:00:00Z",
+    "closed_at": null,
+    "merged_at": null,
+    "draft": false,
+    "head": {
+      "label": "acme:codex/refactor-config",
+      "ref": "codex/refactor-config",
+      "sha": "630fd1bdaea3e303e5bd761c2ca9da76467bc366"
+    },
+    "base": {
+      "label": "acme:main",
+      "ref": "main",
+      "sha": "337a5271bf2cf383cc35091ccb4d2dde90c1a15c"
+    },
+    "author_association": "MEMBER"
+  },
+  "repository": {
+    "id": 810000001,
+    "node_id": "R_810000001",
+    "name": "acme-api",
+    "full_name": "acme/acme-api",
+    "private": true,
+    "owner": {
+      "login": "acme",
+      "id": 5000001,
+      "node_id": "U_5000001",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5000001?v=4",
+      "url": "https://api.github.com/users/acme",
+      "html_url": "https://github.com/acme",
+      "type": "Organization",
+      "site_admin": false
+    },
+    "html_url": "https://github.com/acme/acme-api",
+    "default_branch": "main"
+  },
+  "sender": {
+    "login": "bob",
+    "id": 5100002,
+    "node_id": "U_5100002",
+    "avatar_url": "https://avatars.githubusercontent.com/u/5100002?v=4",
+    "url": "https://api.github.com/users/bob",
+    "html_url": "https://github.com/bob",
+    "type": "User",
+    "site_admin": false
+  },
+  "installation": {
+    "id": 61000001,
+    "node_id": "MDIzOkludGVncmF0aW9uSW5zdGFsbGF0aW9uNjEwMDAwMDE="
+  }
+}

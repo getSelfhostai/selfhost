@@ -87,11 +87,15 @@ export function parseVendor(value: string | undefined): Vendor | undefined {
   return vendor;
 }
 
-/** The person sessions belong to: --person, then the git email, then the OS user name. */
-export function defaultPerson(env: NodeJS.ProcessEnv): string {
+/**
+ * The person sessions belong to: SELFHOST_PERSON, then the git email (of the repository in
+ * `cwd` when given), then the OS user name.
+ */
+export function defaultPerson(env: NodeJS.ProcessEnv, cwd?: string): string {
   if (env.SELFHOST_PERSON) return env.SELFHOST_PERSON;
   try {
     const email = execFileSync("git", ["config", "--get", "user.email"], {
+      cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     }).trim();

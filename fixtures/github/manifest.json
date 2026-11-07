@@ -14,5 +14,13 @@
     { "number": 109, "state": "merged", "case": "Created before the window, merged inside it; Codex co-author trailer only on GitHub (the commit is not in the local clone); 350 lines approved with one review comment." },
     { "number": 110, "state": "closed", "case": "Updated before the window: listed, never fetched (no per pull request files)." },
     { "number": 111, "state": "open", "case": "One Claude Code commit and one Codex commit: conflicting evidence, so unattributed." }
-  ]
+  ],
+  "webhooks": {
+    "description": "Webhook deliveries as a GitHub App receives them, for the decision mapper in packages/attribution: the body, with the X-GitHub-Event header as the first part of the file name.",
+    "files": [
+      { "file": "webhooks/pull_request_review.approved.json", "case": "bob approves Claude Code pull request 101 with a reason." },
+      { "file": "webhooks/pull_request_review.changes_requested.json", "case": "bob requests changes on Codex pull request 103." },
+      { "file": "webhooks/issue_comment.created.json", "case": "carol answers in the conversation of Claude Code pull request 101." }
+    ]
+  }
 }

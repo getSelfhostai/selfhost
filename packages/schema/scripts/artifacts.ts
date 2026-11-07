@@ -5,10 +5,14 @@ import {
   ClaudeCodeHookInputSchema,
   CodexHookInputSchema,
   CodexNotifySchema,
+  CreateDecisionRequestSchema,
+  CreateDecisionResponseSchema,
   CreateTeamRequestSchema,
   CreateTeamResponseSchema,
+  DecisionQuerySchema,
   DecisionRequestSchema,
   DecisionResponseSchema,
+  DecisionsPageSchema,
   EventQuerySchema,
   EventsPageSchema,
   HealthResponseSchema,
@@ -107,6 +111,9 @@ const COMPONENT_SCHEMAS: ReadonlyArray<readonly [name: string, schema: TSchema]>
   ["ReviewItemsPage", ReviewItemsPageSchema],
   ["DecisionRequest", DecisionRequestSchema],
   ["DecisionResponse", DecisionResponseSchema],
+  ["DecisionsPage", DecisionsPageSchema],
+  ["CreateDecisionRequest", CreateDecisionRequestSchema],
+  ["CreateDecisionResponse", CreateDecisionResponseSchema],
   ["PolicyResponse", PolicyResponseSchema],
   ["SetPolicyRequest", SetPolicyRequestSchema],
   ["InvalidPolicyError", InvalidPolicyErrorSchema],
@@ -143,6 +150,15 @@ function queryParameters(schema: TObject): Json[] {
   });
 }
 
+const formatParameter = {
+  name: "format",
+  in: "query",
+  required: false,
+  description:
+    "json (default) or text: the same page as plain text, one block per decision with its id and links.",
+  schema: { type: "string", enum: ["json", "text"], default: "json" },
+};
+
 const teamParameter = {
   name: "team",
   in: "query",
@@ -161,7 +177,7 @@ function openApiDocument(): Json {
       title: "selfhost API",
       version: "1",
       description:
-        "HTTP API of the selfhost server: ledger ingest and search, the review list and team policy. Laptop, self-hosted and hosted installs serve the same API.",
+        "HTTP API of the selfhost server: ledger ingest and search, the review list, the decision log and team policy. Laptop, self-hosted and hosted installs serve the same API.",
       license: { name: "Apache-2.0", identifier: "Apache-2.0" },
     },
     security: [{ bearerAuth: [] }],
@@ -241,6 +257,47 @@ function openApiDocument(): Json {
             ...authErrors,
             "404": errorResponse("No such review item."),
             "409": errorResponse("The item is no longer open."),
+          },
+        },
+      },
+      "/v1/decisions": {
+        get: {
+          operationId: "listDecisions",
+          summary: "Search human decisions and rule verdicts.",
+          description:
+            "decision.recorded and policy.evaluated events, newest first. path matches a file, the files under a folder and the folders that hold it; topic needs every word in the question or reason. The MCP tool search_decisions makes the same call.",
+          parameters: [...queryParameters(DecisionQuerySchema), formatParameter],
+          responses: {
+            "200": {
+              description: "One page of decisions.",
+              content: {
+                ...jsonContent("DecisionsPage"),
+                "text/plain": { schema: { type: "string" } },
+              },
+            },
+            "400": errorResponse("Invalid filter."),
+            ...authErrors,
+          },
+        },
+        post: {
+          operationId: "createDecision",
+          summary: "Record a human decision.",
+          description:
+            "Every surface records decisions through this call: GitHub reviews and comments on agent pull requests, rule promotions, exception approvals, the CLI inbox, and Slack and Telegram buttons. Writes one decision.recorded event. Decisions are never edited: to correct or overturn one, record a new decision with replaces_event_id. With key and ts, sending the same action again returns the stored decision with duplicate true. Needs the admin token.",
+          requestBody: { required: true, content: jsonContent("CreateDecisionRequest") },
+          responses: {
+            "201": {
+              description: "Decision recorded.",
+              content: jsonContent("CreateDecisionResponse"),
+            },
+            "200": {
+              description: "This action was already recorded. Nothing new was written.",
+              content: jsonContent("CreateDecisionResponse"),
+            },
+            "400": errorResponse(
+              "Invalid decision, or replaces_event_id names no decision. Nothing was written.",
+            ),
+            ...authErrors,
           },
         },
       },
