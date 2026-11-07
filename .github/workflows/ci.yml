@@ -53,6 +53,11 @@ jobs:
         with:
           bun-version: 1.4.4
       - run: pnpm install --frozen-lockfile
+      - name: Smoke test the Node bundle
+        run: |
+          pnpm --filter @selfhost/cli build
+          node apps/cli/dist/main.js --version
+          node apps/cli/dist/main.js policy --help
       - run: pnpm build:cli
       - name: Smoke test the linux-x64 binary
         run: |

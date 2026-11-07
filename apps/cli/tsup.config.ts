@@ -8,4 +8,8 @@ export default defineConfig({
   clean: true,
   // Workspace packages export TypeScript source, so they are bundled in.
   noExternal: [/^@selfhost\//],
+  // Their CommonJS dependencies (yaml, picomatch) call require, which ESM output lacks.
+  banner: {
+    js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);',
+  },
 });
