@@ -48,7 +48,7 @@ export interface AgentsReport {
   context: ContextFile[];
 }
 
-interface Scope {
+export interface Scope {
   home: string;
   env: Env;
   probes: Probes;
@@ -59,7 +59,7 @@ interface Scope {
  * the environment variables that move agent folders are dropped, and the keychain and
  * version probes are off, because they would look at this machine's real logins.
  */
-function scope(homeFlag: string | undefined, io: AgentsIo): Scope {
+export function agentScope(homeFlag: string | undefined, io: AgentsIo): Scope {
   if (homeFlag === undefined) {
     const home = homedir();
     if (!home) throw new Error("could not find the home directory; pass --home");
@@ -70,7 +70,7 @@ function scope(homeFlag: string | undefined, io: AgentsIo): Scope {
   return { home: resolve(io.cwd, homeFlag), env, probes: { which: io.probes.which } };
 }
 
-function tilde(path: string, home: string): string {
+export function tilde(path: string, home: string): string {
   const rel = relative(home, path);
   if (rel === "") return "~";
   return rel.startsWith("..") || isAbsolute(rel) ? path : `~${sep}${rel}`;
@@ -99,7 +99,7 @@ function size(bytes: number): string {
 }
 
 export function agentsReport(options: AgentsOptions, io: AgentsIo): AgentsReport {
-  const { home, env, probes } = scope(options.home, io);
+  const { home, env, probes } = agentScope(options.home, io);
   return {
     schema: "selfhost.agents/v1",
     home,
@@ -184,7 +184,7 @@ export interface ConfigureReport {
   }[];
 }
 
-const AGENT_ALIASES: Record<string, AgentId> = {
+export const AGENT_ALIASES: Record<string, AgentId> = {
   claude: "claude_code",
   "claude-code": "claude_code",
   claude_code: "claude_code",
@@ -275,24 +275,33 @@ const ACTION_OF = (before: string | null, after: string | null) =>
 
 const PAST = { create: "created", update: "updated", delete: "deleted" } as const;
 
-/**
- * `selfhost agents configure`: writes selfhost's hooks, env, MCP servers and OpenTelemetry
- * settings into each agent's own settings files (never a shell profile). --dry-run prints
- * the changes as a unified diff; --remove takes selfhost's settings out again.
- */
-export function configureCommand(options: ConfigureOptions, io: AgentsIo): number {
-  const scoped = scope(options.home, io);
+/** The agents to configure and the changes for each. Nothing is written. */
+export function planConfigure(
+  options: ConfigureOptions,
+  io: AgentsIo,
+): { home: string; plans: AgentConfigPlan[] } {
+  const scoped = agentScope(options.home, io);
   const input = options.remove ? {} : configInput(options);
   if (!options.remove && Object.keys(input).length === 0) {
     throw new Error("nothing to configure: pass --otel-endpoint, --hook-command, --mcp or --env");
   }
   const agents = chooseAgents(options, scoped, io);
   const planOptions = { home: scoped.home, processEnv: scoped.env, platform: io.platform };
-  const plans: AgentConfigPlan[] = agents.map((agent) =>
+  const plans = agents.map((agent) =>
     options.remove
       ? removeAgentConfig(agent, planOptions)
       : planAgentConfig(agent, { ...planOptions, ...input }),
   );
+  return { home: scoped.home, plans };
+}
+
+/** Writes the plans, unless dryRun, and describes them as `selfhost agents configure --json`. */
+export function applyConfigure(
+  home: string,
+  plans: AgentConfigPlan[],
+  options: Pick<ConfigureOptions, "dryRun" | "remove">,
+  io: Pick<AgentsIo, "now">,
+): ConfigureReport {
   const applied = new Map<string, AppliedChange>();
   if (!options.dryRun) {
     for (const plan of plans) {
@@ -300,10 +309,9 @@ export function configureCommand(options: ConfigureOptions, io: AgentsIo): numbe
         applied.set(change.path, change);
     }
   }
-
-  const report: ConfigureReport = {
+  return {
     schema: "selfhost.agents_configure/v1",
-    home: scoped.home,
+    home,
     dryRun: options.dryRun ?? false,
     remove: options.remove ?? false,
     agents: plans.map((plan) => ({
@@ -318,13 +326,22 @@ export function configureCommand(options: ConfigureOptions, io: AgentsIo): numbe
       })),
     })),
   };
+}
+
+/**
+ * `selfhost agents configure`: writes selfhost's hooks, env, MCP servers and OpenTelemetry
+ * settings into each agent's own settings files (never a shell profile). --dry-run prints
+ * the changes as a unified diff; --remove takes selfhost's settings out again.
+ */
+export function configureCommand(options: ConfigureOptions, io: AgentsIo): number {
+  const { home, plans } = planConfigure(options, io);
+  const report = applyConfigure(home, plans, options, io);
   const failed = plans.some((plan) => plan.items.some((item) => item.status === "error"));
   if (options.json) {
     io.write(JSON.stringify(report, null, 2));
     return failed ? 1 : 0;
   }
 
-  const home = scoped.home;
   if (plans.length === 0) {
     io.write("No agents found to configure. Pass --agent to choose one.");
     return 0;

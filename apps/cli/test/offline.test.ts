@@ -76,7 +76,14 @@ describe("every command works with --json and no network", () => {
     );
     expect(imported.err).toBe("");
     const report = JSON.parse(imported.out);
-    expect(Object.keys(report)).toEqual(["schema", "files", "accepted", "duplicates", "ledger"]);
+    expect(Object.keys(report)).toEqual([
+      "schema",
+      "files",
+      "accepted",
+      "duplicates",
+      "ledger",
+      "hooks",
+    ]);
     expect(report.accepted).toBeGreaterThan(0);
 
     expect(attempts).toEqual([]);

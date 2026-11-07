@@ -8,6 +8,11 @@
   "bin": {
     "selfhost": "./dist/main.js"
   },
+  "files": [
+    "dist/*.js",
+    "AGENTS.md",
+    "llms.txt"
+  ],
   "engines": {
     "node": ">=20"
   },

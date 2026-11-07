@@ -9,6 +9,8 @@ import {
 } from "@selfhost/importers";
 import { isPostgresUrl, type Ledger, openLedger, resolveDataDir } from "@selfhost/ledger";
 import { defaultConfigPath } from "./config-file.js";
+import { drainSpool, type SpoolReport, watchSpool } from "./hooks/drain.js";
+import { spoolDir } from "./hooks/receive.js";
 import type { Fetch } from "./team/client.js";
 import { type Membership, readMembership, readSyncState } from "./team/config.js";
 import type { RemoteWriterOptions } from "./team/remote-writer.js";
@@ -24,6 +26,8 @@ export interface ImportCommandOptions {
   person?: string;
   claudeDir?: string;
   codexDir?: string;
+  /** Hook spool folder. Default: ~/.selfhost/spool. */
+  spoolDir?: string;
   /** Print JSON instead of text: one object, or one line per batch with --watch. */
   json?: boolean;
 }
@@ -36,6 +40,8 @@ export interface ImportReport {
   duplicates: number;
   /** Where the events went: "Postgres (DATABASE_URL)" or the embedded ledger folder. */
   ledger: string;
+  /** Hook events from `selfhost hook`, drained from the spool. */
+  hooks: SpoolReport;
   /** Team mode only: what went to the team server. */
   sync?: SyncReport;
 }
@@ -151,10 +157,16 @@ export async function runImport(
   const target = ledger ?? (await openLedger({ url, dataDir: options.dataDir }));
   try {
     const result = await importAll(target, opts);
+    const hooks = await drainSpool(target, options.spoolDir ?? spoolDir(io.env), {
+      person: opts.actorId ?? "",
+      logPrompts: opts.logPrompts,
+      now: io.now,
+    });
     const report: ImportReport = {
       schema: "selfhost.import/v1",
       ...result,
       ledger: describeTarget(options, io),
+      hooks,
     };
     if (membership) {
       report.sync = await syncLedger(target, teamSyncFor(membership, io), opts.since);
@@ -166,6 +178,12 @@ export async function runImport(
         `Imported ${result.accepted} new events from ${result.files} log files ` +
           `(${result.duplicates} already in the ledger).`,
       );
+      if (hooks.lines > 0) {
+        io.write(
+          `Imported ${hooks.accepted} new hook events from the spool (${hooks.duplicates} already ` +
+            `in the ledger, ${hooks.malformed} malformed lines skipped).`,
+        );
+      }
       io.write(`Ledger: ${report.ledger}`);
       if (report.sync) for (const line of describeSync(report.sync)) io.write(line);
     }
@@ -211,17 +229,25 @@ export async function runWatch(options: ImportCommandOptions, io: ImportIo): Pro
     writer = syncingWriter(ledger, sync.remote, catchUp);
     synced = () => markSynced(sync.configPath, readSyncState(sync.configPath, membership));
   }
-  const watcher = watchLogs(writer, opts, (n) => {
+  const onBatch = (n: number) => {
     synced();
     if (n === 0) return;
     const batch: ImportBatchReport = { schema: "selfhost.import_batch/v1", accepted: n };
     io.write(options.json ? JSON.stringify(batch) : `+${n} events`);
-  });
+  };
+  const watcher = watchLogs(writer, opts, onBatch);
+  const hookWatcher = watchSpool(
+    writer,
+    options.spoolDir ?? spoolDir(io.env),
+    { person: opts.actorId ?? "", logPrompts: opts.logPrompts },
+    onBatch,
+  );
   await new Promise<void>((resolve) => {
     const stop = () => resolve();
     process.once("SIGINT", stop);
     process.once("SIGTERM", stop);
   });
   await watcher.close();
+  await hookWatcher.close();
   await ledger.close();
 }
