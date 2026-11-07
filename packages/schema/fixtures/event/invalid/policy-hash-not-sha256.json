@@ -1,0 +1,34 @@
+{
+  "id": "01930c4e-2f1a-7b2c-8d3e-4f5a6b7c8d08",
+  "schema": "selfhost.event/v1",
+  "ts": "2026-11-07T09:31:12.481Z",
+  "source": "cli",
+  "kind": "policy.evaluated",
+  "actor": {
+    "kind": "system",
+    "id": "selfhost-policy"
+  },
+  "repo": "acme/api",
+  "agent": {
+    "vendor": "codex",
+    "version": "0.142.5"
+  },
+  "model": "gpt-5.5",
+  "session_id": "01a10ca6-8deb-75c0-92f6-bb789b300b1a",
+  "tool": {
+    "name": "mcp__slack__post_message"
+  },
+  "decision": {
+    "verdict": "block",
+    "by": "selfhost-policy",
+    "reason": "MCP server \"slack\" is not in [mcp] allow.",
+    "rule_id": "mcp.allow",
+    "mode": "observe",
+    "policy_commit": "4f2a9c1e8b7d6a5f4e3d2c1b0a9f8e7d6c5b4a39",
+    "policy_hash": "sha256:9b2d4c6e"
+  },
+  "data": {
+    "tool_event_id": "01930c4e-2f1a-7b2c-8d3e-4f5a6b7c8d02",
+    "evaluated_at": "2026-11-08T10:00:00.000Z"
+  }
+}

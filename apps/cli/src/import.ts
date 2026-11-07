@@ -117,7 +117,11 @@ function importOptions(
   };
 }
 
-function describeTarget(options: ImportCommandOptions, io: ImportIo): string {
+/** Where events go: "Postgres (DATABASE_URL)" or the embedded ledger folder. */
+export function describeTarget(
+  options: Pick<ImportCommandOptions, "database" | "dataDir">,
+  io: Pick<ImportIo, "env">,
+): string {
   const url = options.database ?? io.env.DATABASE_URL;
   if (url && isPostgresUrl(url)) return "Postgres (DATABASE_URL)";
   return resolveDataDir(options.dataDir, io.env);

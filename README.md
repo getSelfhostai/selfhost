@@ -32,6 +32,7 @@ from the same code.
 | `packages/ledger`      | Append-only ledger store on Postgres or PGlite, plus a mapper per event source              |
 | `packages/importers`   | Local session log importers for Claude Code and Codex (pricing ported from ccusage, MIT)    |
 | `packages/spend`       | Spend by request type, agent, model and person, and the waste detector                      |
+| `packages/policy`      | Evaluates `selfhost.toml` rules against tool calls and records would-block events           |
 | `packages/agents`      | Agent and login detection, context file listing, and config writing for five agent CLIs     |
 | `packages/attribution` | Links commits and pull requests to the agent and model that produced them, with merge stats |
 | `packages/sdk`         | API client (placeholder)                                                                    |
@@ -72,6 +73,15 @@ See where the spend goes and which overhead started growing (request types are l
 
 ```sh
 pnpm --filter @selfhost/cli dev spend --since 7d --by request_type,model --threshold 10
+```
+
+Check `selfhost.toml`, try a rule on a made-up tool call, and record what each rule would have
+blocked in the tool calls already in the ledger (observe mode: nothing is stopped):
+
+```sh
+pnpm --filter @selfhost/cli dev policy check
+pnpm --filter @selfhost/cli dev policy test --tool Bash --command "git push --force"
+pnpm --filter @selfhost/cli dev policy observe --since 30d
 ```
 
 Audit the last 30 days of local agent logs in one command, with no account and nothing uploaded:

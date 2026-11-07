@@ -251,6 +251,60 @@
         }
       }
     },
+    "mcp": {
+      "additionalProperties": false,
+      "default": {},
+      "description": "Allowed MCP servers. A call outside the list gets a block verdict recorded under rule id \"mcp.allow\".",
+      "type": "object",
+      "properties": {
+        "mode": {
+          "description": "observe records calls that break the allow list, enforce blocks them, off turns the check off. Set it per team with [teams.<name>.rules.\"mcp.allow\"].",
+          "default": "observe",
+          "type": "string",
+          "enum": [
+            "observe",
+            "enforce",
+            "off"
+          ]
+        },
+        "allow": {
+          "default": [],
+          "description": "Names or globs of the MCP servers agents may use, matched against the server part of the tool name, mcp__<server>__<tool>. Empty or absent allows every MCP server.",
+          "type": "array",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          }
+        }
+      }
+    },
+    "models": {
+      "additionalProperties": false,
+      "default": {},
+      "description": "Allowed models. A call outside the list gets a block verdict recorded under rule id \"models.allow\".",
+      "type": "object",
+      "properties": {
+        "mode": {
+          "description": "observe records calls that break the allow list, enforce blocks them, off turns the check off. Set it per team with [teams.<name>.rules.\"models.allow\"].",
+          "default": "observe",
+          "type": "string",
+          "enum": [
+            "observe",
+            "enforce",
+            "off"
+          ]
+        },
+        "allow": {
+          "default": [],
+          "description": "Names or globs of the models agents may use, matched against the model id the agent reports. Empty or absent allows every model.",
+          "type": "array",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          }
+        }
+      }
+    },
     "alerts": {
       "additionalProperties": false,
       "default": {},
@@ -285,7 +339,7 @@
             },
             "rules": {
               "default": {},
-              "description": "Per-rule overrides for this team, keyed by rule id.",
+              "description": "Per-rule overrides for this team, keyed by rule id. \"mcp.allow\" and \"models.allow\" override the [mcp] and [models] checks.",
               "type": "object",
               "patternProperties": {
                 "^(.*)$": {

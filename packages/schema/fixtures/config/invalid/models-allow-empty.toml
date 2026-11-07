@@ -1,0 +1,4 @@
+version = 1
+
+[models]
+allow = ["claude-opus-*", ""]

@@ -1,0 +1,5 @@
+version = 1
+
+[mcp]
+mode = "strict"
+allow = ["github"]

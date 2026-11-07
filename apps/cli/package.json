@@ -23,6 +23,7 @@
     "@selfhost/attribution": "workspace:*",
     "@selfhost/importers": "workspace:*",
     "@selfhost/ledger": "workspace:*",
+    "@selfhost/policy": "workspace:*",
     "@selfhost/schema": "workspace:*",
     "@selfhost/spend": "workspace:*",
     "commander": "catalog:"

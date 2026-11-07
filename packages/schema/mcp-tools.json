@@ -312,6 +312,60 @@
                   }
                 }
               },
+              "mcp": {
+                "additionalProperties": false,
+                "default": {},
+                "description": "Allowed MCP servers. A call outside the list gets a block verdict recorded under rule id \"mcp.allow\".",
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "description": "observe records calls that break the allow list, enforce blocks them, off turns the check off. Set it per team with [teams.<name>.rules.\"mcp.allow\"].",
+                    "default": "observe",
+                    "type": "string",
+                    "enum": [
+                      "observe",
+                      "enforce",
+                      "off"
+                    ]
+                  },
+                  "allow": {
+                    "default": [],
+                    "description": "Names or globs of the MCP servers agents may use, matched against the server part of the tool name, mcp__<server>__<tool>. Empty or absent allows every MCP server.",
+                    "type": "array",
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "models": {
+                "additionalProperties": false,
+                "default": {},
+                "description": "Allowed models. A call outside the list gets a block verdict recorded under rule id \"models.allow\".",
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "description": "observe records calls that break the allow list, enforce blocks them, off turns the check off. Set it per team with [teams.<name>.rules.\"models.allow\"].",
+                    "default": "observe",
+                    "type": "string",
+                    "enum": [
+                      "observe",
+                      "enforce",
+                      "off"
+                    ]
+                  },
+                  "allow": {
+                    "default": [],
+                    "description": "Names or globs of the models agents may use, matched against the model id the agent reports. Empty or absent allows every model.",
+                    "type": "array",
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  }
+                }
+              },
               "alerts": {
                 "additionalProperties": false,
                 "default": {},
@@ -346,7 +400,7 @@
                       },
                       "rules": {
                         "default": {},
-                        "description": "Per-rule overrides for this team, keyed by rule id.",
+                        "description": "Per-rule overrides for this team, keyed by rule id. \"mcp.allow\" and \"models.allow\" override the [mcp] and [models] checks.",
                         "type": "object",
                         "patternProperties": {
                           "^(.*)$": {
@@ -1290,7 +1344,7 @@
                       "type": "string"
                     },
                     "rule_id": {
-                      "description": "Rule id from selfhost.toml when a rule decided.",
+                      "description": "Rule id from selfhost.toml when a rule decided, or \"mcp.allow\" and \"models.allow\" for the [mcp] and [models] allow lists.",
                       "type": "string"
                     },
                     "mode": {
@@ -1300,6 +1354,16 @@
                         "observe",
                         "enforce"
                       ]
+                    },
+                    "policy_commit": {
+                      "pattern": "^[0-9a-f]{7,64}$",
+                      "description": "Last git commit that changed the selfhost.toml the rule came from. Absent when the file is not committed.",
+                      "type": "string"
+                    },
+                    "policy_hash": {
+                      "pattern": "^[0-9a-f]{64}$",
+                      "description": "SHA-256 of the selfhost.toml bytes the rule came from, in hex. Differs from the file at policy_commit when it had uncommitted changes.",
+                      "type": "string"
                     },
                     "item_id": {
                       "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
@@ -1801,7 +1865,7 @@
                       "type": "string"
                     },
                     "rule_id": {
-                      "description": "Rule id from selfhost.toml when a rule decided.",
+                      "description": "Rule id from selfhost.toml when a rule decided, or \"mcp.allow\" and \"models.allow\" for the [mcp] and [models] allow lists.",
                       "type": "string"
                     },
                     "mode": {
@@ -1811,6 +1875,16 @@
                         "observe",
                         "enforce"
                       ]
+                    },
+                    "policy_commit": {
+                      "pattern": "^[0-9a-f]{7,64}$",
+                      "description": "Last git commit that changed the selfhost.toml the rule came from. Absent when the file is not committed.",
+                      "type": "string"
+                    },
+                    "policy_hash": {
+                      "pattern": "^[0-9a-f]{64}$",
+                      "description": "SHA-256 of the selfhost.toml bytes the rule came from, in hex. Differs from the file at policy_commit when it had uncommitted changes.",
+                      "type": "string"
                     },
                     "item_id": {
                       "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
@@ -2508,7 +2582,7 @@
                     "type": "string"
                   },
                   "rule_id": {
-                    "description": "Rule id from selfhost.toml when a rule decided.",
+                    "description": "Rule id from selfhost.toml when a rule decided, or \"mcp.allow\" and \"models.allow\" for the [mcp] and [models] allow lists.",
                     "type": "string"
                   },
                   "mode": {
@@ -2518,6 +2592,16 @@
                       "observe",
                       "enforce"
                     ]
+                  },
+                  "policy_commit": {
+                    "pattern": "^[0-9a-f]{7,64}$",
+                    "description": "Last git commit that changed the selfhost.toml the rule came from. Absent when the file is not committed.",
+                    "type": "string"
+                  },
+                  "policy_hash": {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "description": "SHA-256 of the selfhost.toml bytes the rule came from, in hex. Differs from the file at policy_commit when it had uncommitted changes.",
+                    "type": "string"
                   },
                   "item_id": {
                     "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",

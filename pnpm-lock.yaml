@@ -21,6 +21,9 @@ catalogs:
     '@types/node':
       specifier: 20.19.43
       version: 20.19.43
+    '@types/picomatch':
+      specifier: 4.0.3
+      version: 4.0.3
     ajv:
       specifier: 8.20.0
       version: 8.20.0
@@ -36,6 +39,9 @@ catalogs:
     hono:
       specifier: 4.13.17
       version: 4.13.17
+    picomatch:
+      specifier: 4.0.7
+      version: 4.0.7
     postgres:
       specifier: 4.1.0
       version: 4.1.0
@@ -92,6 +98,9 @@ importers:
       '@selfhost/ledger':
         specifier: workspace:*
         version: link:../../packages/ledger
+      '@selfhost/policy':
+        specifier: workspace:*
+        version: link:../../packages/policy
       '@selfhost/schema':
         specifier: workspace:*
         version: link:../../packages/schema
@@ -132,6 +141,9 @@ importers:
       '@selfhost/ledger':
         specifier: workspace:*
         version: link:../../packages/ledger
+      '@selfhost/policy':
+        specifier: workspace:*
+        version: link:../../packages/policy
       '@selfhost/schema':
         specifier: workspace:*
         version: link:../../packages/schema
@@ -257,6 +269,37 @@ importers:
       tsx:
         specifier: 'catalog:'
         version: 4.23.15
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.12(@types/node@20.19.43)(vite@8.3.6(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
+
+  packages/policy:
+    dependencies:
+      '@selfhost/ledger':
+        specifier: workspace:*
+        version: link:../ledger
+      '@selfhost/schema':
+        specifier: workspace:*
+        version: link:../schema
+      picomatch:
+        specifier: 'catalog:'
+        version: 4.0.7
+    devDependencies:
+      '@selfhost/importers':
+        specifier: workspace:*
+        version: link:../importers
+      '@types/node':
+        specifier: 'catalog:'
+        version: 20.19.43
+      '@types/picomatch':
+        specifier: 'catalog:'
+        version: 4.0.3
+      tsup:
+        specifier: 'catalog:'
+        version: 8.5.1(postcss@8.5.32)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)
       typescript:
         specifier: 'catalog:'
         version: 5.9.3
@@ -1100,6 +1143,9 @@ packages:
 
   '@types/node@20.19.43':
     resolution: {integrity: sha512-6oYBAi5ikg4Pl+kGsoYtawUMBT2zZMCvPNF7pVLnHZfd1zf38DRiWn/gT01RYCdUqkv7Fhr+C9ot4/tb+2sVvA==}
+
+  '@types/picomatch@4.0.3':
+    resolution: {integrity: sha512-iG0T6+nYJ9FAPmx9SsUlnwcq1ZVRuCXcVEvWnntoPlrOpwtSTKNDC9uVAxTsC3PUvJ+99n4RpAcNgBbHX3JSnQ==}
 
   '@vitest/expect@4.1.12':
     resolution: {integrity: sha512-vFlTt+YEu9WBpNjdGayNmlMVzrWPi1+sv853/7t2FU7hpO5gAFBKHzQmkCq5Xjpr+evegF2994LQT3hF3mRlqQ==}
@@ -2046,6 +2092,8 @@ snapshots:
   '@types/node@20.19.43':
     dependencies:
       undici-types: 6.21.0
+
+  '@types/picomatch@4.0.3': {}
 
   '@vitest/expect@4.1.12':
     dependencies:

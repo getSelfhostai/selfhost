@@ -72,7 +72,8 @@ function findGitRoot(cwd: string): string | undefined {
   }
 }
 
-function repoDir(option: string | undefined, cwd: string): string | undefined {
+/** `--repo` as a folder, or the git repository around `cwd`. */
+export function repoDir(option: string | undefined, cwd: string): string | undefined {
   if (option === undefined) return findGitRoot(cwd);
   const dir = resolve(cwd, option);
   if (!existsSync(dir) || !statSync(dir).isDirectory()) {

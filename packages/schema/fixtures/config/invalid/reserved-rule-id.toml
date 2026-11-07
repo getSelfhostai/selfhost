@@ -1,0 +1,10 @@
+version = 1
+
+[mcp]
+allow = ["github"]
+
+[[rules]]
+id = "mcp.allow"
+match = { tool = "mcp__slack__post_message" }
+action = "ask"
+message = "Ask before posting to Slack."

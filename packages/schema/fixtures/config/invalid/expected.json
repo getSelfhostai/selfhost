@@ -9,5 +9,8 @@
   "override-unknown-rule.toml": { "field": "teams.platform.rules.does-not-exist", "line": 6 },
   "rule-missing-message.toml": { "field": "rules[1].message", "line": 9 },
   "not-toml.toml": { "field": "(toml)", "line": 2 },
-  "version-two.toml": { "field": "version", "line": 1 }
+  "version-two.toml": { "field": "version", "line": 1 },
+  "mcp-mode-unknown.toml": { "field": "mcp.mode", "line": 4 },
+  "models-allow-empty.toml": { "field": "models.allow[1]", "line": 4 },
+  "reserved-rule-id.toml": { "field": "rules[0].id", "line": 7 }
 }

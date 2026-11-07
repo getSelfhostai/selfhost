@@ -13,6 +13,8 @@ describe("parseConfig", () => {
         rules: [],
         review: { high_risk_paths: [], high_risk_threshold: 70, owners: {} },
         packages: { mode: "observe", allow: [], deny: [] },
+        mcp: { mode: "observe", allow: [] },
+        models: { mode: "observe", allow: [] },
         alerts: { spike_factor: 10 },
         teams: {},
       },
@@ -86,6 +88,41 @@ message = "m"
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.errors[0]).toMatchObject({ field: 'review.owners["infra/**"]', line: 4 });
+  });
+
+  it("accepts team overrides for the [mcp] and [models] checks", () => {
+    const result = parseConfig(`version = 1
+[mcp]
+allow = ["github"]
+[teams.platform.rules."mcp.allow"]
+mode = "enforce"
+[teams.platform.rules."models.allow"]
+mode = "off"
+`);
+    if (!result.ok) throw new Error(JSON.stringify(result.errors));
+    expect(result.config.mcp).toEqual({ mode: "observe", allow: ["github"] });
+    expect(result.config.teams.platform?.rules).toEqual({
+      "mcp.allow": { mode: "enforce" },
+      "models.allow": { mode: "off" },
+    });
+  });
+
+  it("reserves a built-in rule id only while its allow list is in use", () => {
+    const rule = `[[rules]]
+id = "models.allow"
+match = { tool = "Bash" }
+action = "ask"
+message = "m"
+`;
+    expect(parseConfig(`version = 1\n${rule}`).ok).toBe(true);
+    const result = parseConfig(`version = 1\n[models]\nallow = ["gpt-5*"]\n${rule}`);
+    expect(result.ok ? [] : result.errors).toEqual([
+      {
+        field: "rules[0].id",
+        message: 'Rule id "models.allow" is reserved for [models] allow',
+        line: 5,
+      },
+    ]);
   });
 
   it("formats errors as file:line: field: message", () => {

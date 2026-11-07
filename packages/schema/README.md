@@ -37,6 +37,11 @@ const result = validateEventBatch(body.events); // atomic: every error, with ind
 config or errors with `field` and, when it can be found, `line`. `formatConfigError` prints
 them as `selfhost.toml:7: rules[0].mode: Expected one of: observe, enforce, off`. Beyond the
 schema it checks rule id uniqueness, regex syntax and that team overrides name real rules.
+`[mcp]` and `[models]` hold allow lists (names or globs) with a mode; a call outside a
+non-empty list is a block verdict under the built-in rule ids `mcp.allow` and `models.allow`,
+which team overrides can name and which a rule may not reuse while that list is in use.
+Decisions from a policy file carry `policy_commit` and `policy_hash` so each one can be traced
+to the exact file.
 
 ```toml
 version = 1
@@ -47,6 +52,12 @@ match = { tool = "Bash", command = "git\\s+push\\s+.*--force" }
 action = "block"
 message = "Force pushes are blocked. Open a PR instead."
 # mode defaults to "observe", agents to ["all"], irreversible to false
+
+[mcp]
+allow = ["github", "acme-*"]   # MCP servers, from mcp__<server>__<tool>
+
+[models]
+allow = ["claude-opus-*", "gpt-5*"]
 
 [teams.platform.rules.no-force-push]
 mode = "enforce"

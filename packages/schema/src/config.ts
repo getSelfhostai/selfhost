@@ -21,6 +21,12 @@ export const AGENT_SELECTORS = ["all", ...AGENT_VENDORS] as const;
 export type RuleMode = (typeof RULE_MODES)[number];
 export type RuleAction = (typeof RULE_ACTIONS)[number];
 
+/** Rule id recorded when a tool call reaches an MCP server that is not in [mcp] allow. */
+export const MCP_ALLOW_RULE_ID = "mcp.allow";
+/** Rule id recorded when a tool call runs on a model that is not in [models] allow. */
+export const MODELS_ALLOW_RULE_ID = "models.allow";
+export const BUILT_IN_RULE_IDS = [MCP_ALLOW_RULE_ID, MODELS_ALLOW_RULE_ID] as const;
+
 const RULE_ID_PATTERN = "^[A-Za-z0-9][A-Za-z0-9_.-]*$";
 
 const RuleModeSchema = (description: string, withDefault: boolean) =>
@@ -92,6 +98,30 @@ export const RedactionSchema = Type.Object(
   { additionalProperties: false },
 );
 
+/** [mcp] and [models]: an allow list checked on every tool call, with its own rule id. */
+const AllowListSection = (ruleId: string, what: { one: string; many: string; against: string }) =>
+  Type.Object(
+    {
+      mode: Type.Optional(
+        RuleModeSchema(
+          `observe records calls that break the allow list, enforce blocks them, off turns the check off. Set it per team with [teams.<name>.rules."${ruleId}"].`,
+          true,
+        ),
+      ),
+      allow: Type.Optional(
+        Type.Array(NonEmpty(), {
+          default: [],
+          description: `Names or globs of the ${what.many} agents may use, matched against ${what.against}. Empty or absent allows every ${what.one}.`,
+        }),
+      ),
+    },
+    {
+      additionalProperties: false,
+      default: {},
+      description: `Allowed ${what.many}. A call outside the list gets a block verdict recorded under rule id "${ruleId}".`,
+    },
+  );
+
 export const RuleOverrideSchema = Type.Object(
   {
     mode: Type.Optional(RuleModeSchema("Mode for this team.", false)),
@@ -110,7 +140,7 @@ export const TeamSchema = Type.Object(
     rules: Type.Optional(
       Type.Record(Type.String(), RuleOverrideSchema, {
         default: {},
-        description: "Per-rule overrides for this team, keyed by rule id.",
+        description: `Per-rule overrides for this team, keyed by rule id. "${MCP_ALLOW_RULE_ID}" and "${MODELS_ALLOW_RULE_ID}" override the [mcp] and [models] checks.`,
       }),
     ),
   },
@@ -202,6 +232,20 @@ export const SelfhostConfigSchema = Type.Object(
         { additionalProperties: false, default: {} },
       ),
     ),
+    mcp: Type.Optional(
+      AllowListSection(MCP_ALLOW_RULE_ID, {
+        one: "MCP server",
+        many: "MCP servers",
+        against: "the server part of the tool name, mcp__<server>__<tool>",
+      }),
+    ),
+    models: Type.Optional(
+      AllowListSection(MODELS_ALLOW_RULE_ID, {
+        one: "model",
+        many: "models",
+        against: "the model id the agent reports",
+      }),
+    ),
     alerts: Type.Optional(
       Type.Object(
         {
@@ -244,7 +288,7 @@ export type ResolvedTeam = Required<Team>;
 /** A config after defaults are applied: every section is present. */
 export type ResolvedSelfhostConfig = Omit<
   SelfhostConfig,
-  "ledger" | "redaction" | "rules" | "review" | "packages" | "alerts" | "teams"
+  "ledger" | "redaction" | "rules" | "review" | "packages" | "mcp" | "models" | "alerts" | "teams"
 > & {
   ledger: Required<Present<SelfhostConfig["ledger"]>>;
   redaction: Present<SelfhostConfig["redaction"]>;
@@ -252,6 +296,8 @@ export type ResolvedSelfhostConfig = Omit<
   review: Required<Present<SelfhostConfig["review"]>>;
   packages: Present<SelfhostConfig["packages"]> &
     Required<Pick<Present<SelfhostConfig["packages"]>, "mode" | "allow" | "deny">>;
+  mcp: Required<Present<SelfhostConfig["mcp"]>>;
+  models: Required<Present<SelfhostConfig["models"]>>;
   alerts: Required<Present<SelfhostConfig["alerts"]>>;
   teams: Record<string, ResolvedTeam>;
 };
@@ -274,12 +320,24 @@ function regexError(pattern: string): string | undefined {
 function semanticErrors(config: ResolvedSelfhostConfig): SegmentError[] {
   const errors: SegmentError[] = [];
   const ruleIds = new Map<string, number>();
+  // A built-in id is taken only once its allow list is in use, so files written before
+  // [mcp] and [models] existed stay valid.
+  const builtIn = new Map([
+    [MCP_ALLOW_RULE_ID, config.mcp.allow.length > 0 ? "[mcp] allow" : undefined],
+    [MODELS_ALLOW_RULE_ID, config.models.allow.length > 0 ? "[models] allow" : undefined],
+  ]);
   config.rules.forEach((rule, index) => {
     const earlier = ruleIds.get(rule.id);
+    const reservedBy = builtIn.get(rule.id);
     if (earlier !== undefined) {
       errors.push({
         segments: ["rules", index, "id"],
         message: `Duplicate rule id "${rule.id}", also used by rules[${earlier}]`,
+      });
+    } else if (reservedBy) {
+      errors.push({
+        segments: ["rules", index, "id"],
+        message: `Rule id "${rule.id}" is reserved for ${reservedBy}`,
       });
     } else {
       ruleIds.set(rule.id, index);
@@ -295,7 +353,7 @@ function semanticErrors(config: ResolvedSelfhostConfig): SegmentError[] {
   });
   for (const [team, { rules }] of Object.entries(config.teams)) {
     for (const ruleId of Object.keys(rules)) {
-      if (!ruleIds.has(ruleId)) {
+      if (!ruleIds.has(ruleId) && !builtIn.has(ruleId)) {
         errors.push({
           segments: ["teams", team, "rules", ruleId],
           message: `Override for unknown rule "${ruleId}"`,

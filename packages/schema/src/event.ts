@@ -154,12 +154,29 @@ export const DecisionSchema = Type.Object(
     ),
     reason: Type.Optional(Type.String({ description: "Why. For a question, the answer text." })),
     rule_id: Type.Optional(
-      Type.String({ description: "Rule id from selfhost.toml when a rule decided." }),
+      Type.String({
+        description:
+          'Rule id from selfhost.toml when a rule decided, or "mcp.allow" and "models.allow" for the [mcp] and [models] allow lists.',
+      }),
     ),
     mode: Type.Optional(
       StringEnum(RULE_MODES_RECORDED, {
         description:
           "Rule mode at decision time. In observe, block and ask verdicts are recorded but not applied.",
+      }),
+    ),
+    policy_commit: Type.Optional(
+      Type.String({
+        pattern: "^[0-9a-f]{7,64}$",
+        description:
+          "Last git commit that changed the selfhost.toml the rule came from. Absent when the file is not committed.",
+      }),
+    ),
+    policy_hash: Type.Optional(
+      Type.String({
+        pattern: "^[0-9a-f]{64}$",
+        description:
+          "SHA-256 of the selfhost.toml bytes the rule came from, in hex. Differs from the file at policy_commit when it had uncommitted changes.",
       }),
     ),
     item_id: Type.Optional(Uuidv7({ description: "Review item this decision answers." })),

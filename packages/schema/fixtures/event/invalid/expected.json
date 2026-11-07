@@ -40,5 +40,8 @@
   },
   "bad-pr-url.json": {
     "field": "links.pr_url"
+  },
+  "policy-hash-not-sha256.json": {
+    "field": "decision.policy_hash"
   }
 }

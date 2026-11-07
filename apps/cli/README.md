@@ -6,6 +6,9 @@ The `selfhost` command line.
 pnpm --filter @selfhost/cli dev --version
 pnpm --filter @selfhost/cli dev doctor [--config path/to/selfhost.toml]
 pnpm --filter @selfhost/cli dev spend --since 7d --by request_type,model
+pnpm --filter @selfhost/cli dev policy check
+pnpm --filter @selfhost/cli dev policy test --tool Bash --command "git push --force"
+pnpm --filter @selfhost/cli dev policy observe --since 30d
 pnpm --filter @selfhost/cli dev scan --since 30d --report scan.html --share scan.svg
 pnpm --filter @selfhost/cli dev agents
 pnpm --filter @selfhost/cli dev agents configure --dry-run --otel-endpoint http://127.0.0.1:4318
@@ -48,6 +51,22 @@ answer was yes and `SELFHOST_TELEMETRY_URL` is set.
 `selfhost doctor` prints the runtime, finds `selfhost.toml` (the `--config` flag, then
 `SELFHOST_CONFIG`, then the nearest file from the current directory up to the repository root)
 and validates it. It exits 1 when the file is invalid.
+
+`selfhost policy` works on the rules in `selfhost.toml` (found like `doctor` does, or
+`--config`). See [`packages/policy`](../../packages/policy/README.md) for how rules match.
+
+- `selfhost policy check [--json]` validates the file and lists every rule and allow-list check
+  with its mode. An invalid file exits 1 with one `selfhost.toml:7: rules[0].mode: message` line
+  per error.
+- `selfhost policy test --tool <name> [--command] [--path] [--url] [--model] [--agent] [--team]`
+  evaluates one made-up tool call and prints the rules that fire, for trying a rule before it
+  ships. `--path` is relative to the repository root; an MCP server is read from an
+  `mcp__<server>__<tool>` name.
+- `selfhost policy observe [--since 30d] [--repo <dir>] [--team <name>]` evaluates the tool calls
+  already in the ledger (the one `selfhost import` writes, or `--database` / `--data-dir`) that
+  belong to the repository and records one `policy.evaluated` event per hit, with the git commit
+  and SHA-256 of the policy file. It prints, per rule, how many hits are new and how many an
+  earlier run already recorded. Nothing is stopped and nothing leaves the machine.
 
 `selfhost agents` lists Claude Code, Codex, OpenCode, Goose and Cursor CLI: installed, version,
 login and settings file, then the context files (CLAUDE.md, AGENTS.md, skills) in the
@@ -105,6 +124,7 @@ vendors directly; no model traffic goes through selfhost.
 Every command takes `--json` and prints one object with a `schema` tag: `selfhost.doctor/v1`,
 `selfhost.import/v1` (plus one `selfhost.import_batch/v1` line per batch with `--watch`),
 `selfhost.agents/v1`, `selfhost.agents_configure/v1`, `selfhost.scan/v1`,
+`selfhost.policy_check/v1`, `selfhost.policy_test/v1`, `selfhost.policy_observe/v1`,
 `selfhost.team_init/v1`, `selfhost.join/v1`, `selfhost.status/v1` and
 `selfhost.team_leave/v1`. Errors print `selfhost.error/v1` and exit 1. In solo mode no command
 needs a network connection.

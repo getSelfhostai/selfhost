@@ -16,3 +16,22 @@ export function tokens(value: number): string {
 
 /** "1 session", "2 sessions". */
 export const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+
+/** Prints rows as aligned columns; the last `rightAligned` columns are aligned right. */
+export function table(rows: string[][], write: (line: string) => void, rightAligned = 0): void {
+  const widths = rows[0]?.map((_, column) =>
+    Math.max(...rows.map((row) => row[column]?.length ?? 0)),
+  );
+  for (const row of rows) {
+    write(
+      row
+        .map((cell, column) =>
+          column < row.length - rightAligned
+            ? cell.padEnd(widths?.[column] ?? 0)
+            : cell.padStart(widths?.[column] ?? 0),
+        )
+        .join("  ")
+        .trimEnd(),
+    );
+  }
+}

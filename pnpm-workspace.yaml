@@ -10,11 +10,13 @@ catalog:
   "@hono/node-server": 2.1.6
   "@sinclair/typebox": 0.34.52
   "@types/node": 20.19.43
+  "@types/picomatch": 4.0.3
   ajv: 8.20.0
   ajv-formats: 3.0.1
   bun: 1.4.4
   commander: 14.0.3
   hono: 4.13.17
+  picomatch: 4.0.7
   postgres: 4.1.0
   smol-toml: 1.9.1
   tsup: 8.5.1

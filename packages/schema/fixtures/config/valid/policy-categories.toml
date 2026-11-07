@@ -1,0 +1,72 @@
+version = 1
+
+# Blocked commands: a regular expression tested against shell commands.
+[[rules]]
+id = "no-force-push"
+match = { command = "git\\s+push\\s+.*--force" }
+action = "block"
+message = "Force pushes are blocked. Open a PR instead."
+irreversible = true
+
+[[rules]]
+id = "ask-before-reset-hard"
+agents = ["claude_code"]
+match = { tool = "Bash", command = "git\\s+reset\\s+--hard" }
+action = "ask"
+message = "git reset --hard drops uncommitted work. Ask first."
+
+# Protected paths: a glob tested against file paths relative to the repository root.
+[[rules]]
+id = "protect-migrations"
+mode = "enforce"
+match = { path = "db/migrations/**" }
+action = "ask"
+message = "Migrations need a human review."
+
+[[rules]]
+id = "no-env-files"
+match = { path = "**/.env*" }
+action = "block"
+message = "Agents do not read or write .env files."
+
+# Egress: a glob tested against URLs the agent requests.
+[[rules]]
+id = "no-paste-sites"
+match = { url = "https://pastebin.com/**" }
+action = "block"
+message = "Do not send code to paste sites."
+
+[[rules]]
+id = "no-prod-urls"
+mode = "off"
+match = { url = "https://*.prod.acme.internal/**" }
+action = "block"
+message = "Agents do not call production services."
+
+# Allowed MCP servers: calls to any other server are recorded under rule id mcp.allow.
+[mcp]
+allow = ["github", "acme-*"]
+
+# Allowed models: calls on any other model are recorded under rule id models.allow.
+[models]
+mode = "observe"
+allow = ["claude-opus-*", "claude-sonnet-*", "gpt-5*"]
+
+[teams.platform]
+members = ["alice@example.com"]
+
+[teams.platform.rules.no-force-push]
+mode = "enforce"
+
+[teams.platform.rules."mcp.allow"]
+mode = "enforce"
+message = "Platform agents only use the github and acme MCP servers."
+
+[teams.growth]
+members = ["carol"]
+
+[teams.growth.rules.protect-migrations]
+mode = "off"
+
+[teams.growth.rules."models.allow"]
+mode = "off"

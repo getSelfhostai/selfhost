@@ -82,6 +82,23 @@ describe("every command works with --json and no network", () => {
     expect(attempts).toEqual([]);
   });
 
+  it("policy check, test and observe", async () => {
+    const repo = tempDir("offline-policy");
+    mkdirSync(repo.path(".git"));
+    repo.write("selfhost.toml", 'version = 1\n[models]\nallow = ["claude-opus-*"]\n');
+    const attempts = blockNetwork();
+    const deps = { cwd: repo.root };
+
+    const check = await run(["policy", "check", "--json"], deps);
+    expect(JSON.parse(check.out).schema).toBe("selfhost.policy_check/v1");
+    const test = await run(["policy", "test", "--json", "--tool", "Bash", "--model", "o3"], deps);
+    expect(JSON.parse(test.out).hits).toHaveLength(1);
+    const observe = await run(["policy", "observe", "--json", "--data-dir", "memory://"], deps);
+    expect(JSON.parse(observe.out).schema).toBe("selfhost.policy_observe/v1");
+
+    expect(attempts).toEqual([]);
+  });
+
   it("scan uploads nothing, even with a yes to the agent count", async () => {
     const work = tempDir("offline-scan");
     mkdirSync(work.path(".git"));

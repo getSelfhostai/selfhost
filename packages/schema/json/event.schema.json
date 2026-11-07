@@ -314,7 +314,7 @@
           "type": "string"
         },
         "rule_id": {
-          "description": "Rule id from selfhost.toml when a rule decided.",
+          "description": "Rule id from selfhost.toml when a rule decided, or \"mcp.allow\" and \"models.allow\" for the [mcp] and [models] allow lists.",
           "type": "string"
         },
         "mode": {
@@ -324,6 +324,16 @@
             "observe",
             "enforce"
           ]
+        },
+        "policy_commit": {
+          "pattern": "^[0-9a-f]{7,64}$",
+          "description": "Last git commit that changed the selfhost.toml the rule came from. Absent when the file is not committed.",
+          "type": "string"
+        },
+        "policy_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 of the selfhost.toml bytes the rule came from, in hex. Differs from the file at policy_commit when it had uncommitted changes.",
+          "type": "string"
         },
         "item_id": {
           "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",

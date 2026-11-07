@@ -12,7 +12,7 @@ import {
   type WasteFlag,
 } from "@selfhost/spend";
 import type { Command } from "commander";
-import { percent, tokens, usd } from "./format.js";
+import { percent, table, tokens, usd } from "./format.js";
 import { parseSince } from "./import.js";
 
 export interface SpendCommandOptions {
@@ -93,24 +93,6 @@ async function costEvents(ledger: Ledger, from: Date): Promise<LedgerEvent[]> {
   return events;
 }
 
-function table(rows: string[][], write: (line: string) => void): void {
-  const widths = rows[0]?.map((_, column) =>
-    Math.max(...rows.map((row) => row[column]?.length ?? 0)),
-  );
-  for (const row of rows) {
-    write(
-      row
-        .map((cell, column) =>
-          column < row.length - 4
-            ? cell.padEnd(widths?.[column] ?? 0)
-            : cell.padStart(widths?.[column] ?? 0),
-        )
-        .join("  ")
-        .trimEnd(),
-    );
-  }
-}
-
 function printReport(report: SpendReport, write: (line: string) => void): void {
   write(`Spend from ${report.from} to ${report.to} (UTC days), by ${report.by.join(", ")}`);
   if (report.total.requests === 0) {
@@ -137,6 +119,7 @@ function printReport(report: SpendReport, write: (line: string) => void): void {
       ],
     ],
     write,
+    4,
   );
   write("");
   const rule = `${percent(report.threshold)} of a day's spend`;
