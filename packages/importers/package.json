@@ -25,7 +25,9 @@
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --clean",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "gen:pricing": "node scripts/gen-pricing-snapshot.mjs"
   },
   "dependencies": {
     "@selfhost/schema": "workspace:*"
@@ -33,6 +35,7 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "tsup": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }
