@@ -31,5 +31,27 @@
         "organizeImports": "on"
       }
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["**", "!ee/**", "!apps/cli/src/ee.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@selfhost/ee-*", "**/ee/**"],
+                    "message": "Code outside ee/ is Apache-2.0 and must not import the commercial ee/ packages. The CLI loads them only through apps/cli/src/ee.ts."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
 }

@@ -1,0 +1,511 @@
+{
+  "synthetic": true,
+  "description": "Risk score cases for ee/risk, scored against selfhost.toml in this folder. Each case gives the inputs scoreRisk reads (changed files, new dependencies, sandbox test status, the agent run's tool calls and guardrail hits, and the agent and model's revert history) and the level, score and missing inputs it must give. `ordering` lists pairs where the first case must score above the second.",
+  "cases": [
+    {
+      "name": "irreversible-change-small-tested",
+      "criterion": 3,
+      "description": "A six-line change to a campaign email template, which a selfhost.toml rule marks irreversible. Small, tests passed, outside the protected paths, clean run, clean revert history: still high.",
+      "inputs": {
+        "files": [
+          {
+            "path": "emails/campaigns/welcome.html",
+            "additions": 4,
+            "deletions": 2
+          }
+        ],
+        "dependencies": [],
+        "tests": "passed",
+        "run": {
+          "sessions": [
+            "sess-a"
+          ],
+          "toolCalls": [
+            {
+              "agent": "claude_code",
+              "model": "claude-sonnet-4-5",
+              "tool": "Edit",
+              "path": "emails/campaigns/welcome.html"
+            }
+          ],
+          "guardrails": []
+        },
+        "reverts": {
+          "agent": {
+            "vendor": "claude_code",
+            "model": "claude-sonnet-4-5"
+          },
+          "commits": 40,
+          "reverted": 1,
+          "days": 90
+        },
+        "agent": {
+          "vendor": "claude_code",
+          "model": "claude-sonnet-4-5"
+        }
+      },
+      "expect": {
+        "level": "high",
+        "score": 90,
+        "missing": []
+      }
+    },
+    {
+      "name": "protected-path-only",
+      "criterion": 4,
+      "description": "A small, tested change under src/auth/ (a protected path) with nothing else against it.",
+      "inputs": {
+        "files": [
+          {
+            "path": "src/auth/session.ts",
+            "additions": 12,
+            "deletions": 3
+          }
+        ],
+        "dependencies": [],
+        "tests": "passed",
+        "run": {
+          "sessions": [
+            "sess-b"
+          ],
+          "toolCalls": [
+            {
+              "agent": "claude_code",
+              "model": "claude-sonnet-4-5",
+              "tool": "Edit",
+              "path": "src/auth/session.ts"
+            }
+          ],
+          "guardrails": []
+        },
+        "reverts": {
+          "agent": {
+            "vendor": "claude_code",
+            "model": "claude-sonnet-4-5"
+          },
+          "commits": 40,
+          "reverted": 1,
+          "days": 90
+        },
+        "agent": {
+          "vendor": "claude_code",
+          "model": "claude-sonnet-4-5"
+        }
+      },
+      "expect": {
+        "level": "high",
+        "score": 70,
+        "missing": []
+      }
+    },
+    {
+      "name": "outside-effect-only",
+      "criterion": 4,
+      "description": "A docs change whose run sent an email through Amazon SES. Nothing else against it.",
+      "inputs": {
+        "files": [
+          {
+            "path": "docs/runbook.md",
+            "additions": 6,
+            "deletions": 0
+          }
+        ],
+        "dependencies": [],
+        "tests": "passed",
+        "run": {
+          "sessions": [
+            "sess-c"
+          ],
+          "toolCalls": [
+            {
+              "agent": "claude_code",
+              "model": "claude-sonnet-4-5",
+              "tool": "Edit",
+              "path": "docs/runbook.md"
+            },
+            {
+              "agent": "claude_code",
+              "model": "claude-sonnet-4-5",
+              "tool": "Bash",
+              "command": "aws ses send-email --from ops@example.com --destination file://to.json --message file://msg.json"
+            }
+          ],
+          "guardrails": []
+        },
+        "reverts": {
+          "agent": {
+            "vendor": "claude_code",
+            "model": "claude-sonnet-4-5"
+          },
+          "commits": 40,
+          "reverted": 1,
+          "days": 90
+        },
+        "agent": {
+          "vendor": "claude_code",
+          "model": "claude-sonnet-4-5"
+        }
+      },
+      "expect": {
+        "level": "high",
+        "score": 90,
+        "missing": []
+      }
+    },
+    {
+      "name": "protected-path-worst-case",
+      "criterion": 4,
+      "description": "Everything but an irreversible effect: a 1540-line change under src/payments/, three new dependencies, failing tests, two guardrail blocks and a 30% revert rate. Still scores below a run with one outside effect.",
+      "inputs": {
+        "files": [
+          {
+            "path": "src/payments/refund.ts",
+            "additions": 900,
+            "deletions": 640
+          }
+        ],
+        "dependencies": [
+          {
+            "manifest": "package.json",
+            "name": "left-pad"
+          },
+          {
+            "manifest": "package.json",
+            "name": "is-even"
+          },
+          {
+            "manifest": "package.json",
+            "name": "node-fetch"
+          }
+        ],
+        "tests": "failed",
+        "run": {
+          "sessions": [
+            "sess-d"
+          ],
+          "toolCalls": [
+            {
+              "agent": "claude_code",
+              "model": "claude-sonnet-4-5",
+              "tool": "Edit",
+              "path": "src/payments/refund.ts"
+            },
+            {
+              "agent": "claude_code",
+              "model": "claude-sonnet-4-5",
+              "tool": "Bash",
+              "command": "git push origin fix-refunds --force"
+            }
+          ],
+          "guardrails": [
+            {
+              "rule_id": "no-force-push",
+              "verdict": "block",
+              "mode": "enforce",
+              "irreversible": false
+            },
+            {
+              "rule_id": "no-force-push",
+              "verdict": "block",
+              "mode": "observe",
+              "irreversible": false
+            }
+          ]
+        },
+        "reverts": {
+          "agent": {
+            "vendor": "claude_code",
+            "model": "claude-sonnet-4-5"
+          },
+          "commits": 20,
+          "reverted": 6,
+          "days": 90
+        },
+        "agent": {
+          "vendor": "claude_code",
+          "model": "claude-sonnet-4-5"
+        }
+      },
+      "expect": {
+        "level": "high",
+        "score": 89,
+        "missing": []
+      }
+    },
+    {
+      "name": "irreversible-run-rule",
+      "criterion": 4,
+      "description": "The run wrote to the production database: the prod-database rule (irreversible) fires and the remote psql call is an outside effect.",
+      "inputs": {
+        "files": [
+          {
+            "path": "src/billing/plans.ts",
+            "additions": 3,
+            "deletions": 1
+          }
+        ],
+        "dependencies": [],
+        "tests": "passed",
+        "run": {
+          "sessions": [
+            "sess-e"
+          ],
+          "toolCalls": [
+            {
+              "agent": "claude_code",
+              "model": "claude-sonnet-4-5",
+              "tool": "Bash",
+              "command": "psql -h db.prod.acme.example.com -c 'update plans set price = 0'"
+            }
+          ],
+          "guardrails": []
+        },
+        "reverts": {
+          "agent": {
+            "vendor": "claude_code",
+            "model": "claude-sonnet-4-5"
+          },
+          "commits": 40,
+          "reverted": 1,
+          "days": 90
+        },
+        "agent": {
+          "vendor": "claude_code",
+          "model": "claude-sonnet-4-5"
+        }
+      },
+      "expect": {
+        "level": "high",
+        "score": 100,
+        "missing": []
+      }
+    },
+    {
+      "name": "missing-inputs",
+      "criterion": 5,
+      "description": "No sandbox run, no ledger, and only two commits by this agent and model: the score uses the diff and dependencies, and names the rest as missing.",
+      "inputs": {
+        "files": [
+          {
+            "path": "src/util/format.ts",
+            "additions": 30,
+            "deletions": 10
+          }
+        ],
+        "dependencies": [],
+        "reverts": {
+          "agent": {
+            "vendor": "claude_code",
+            "model": "claude-sonnet-4-5"
+          },
+          "commits": 2,
+          "reverted": 0,
+          "days": 90
+        },
+        "agent": {
+          "vendor": "claude_code",
+          "model": "claude-sonnet-4-5"
+        },
+        "unavailable": {
+          "tests": "no sandbox run yet",
+          "outside_effects": "no ledger",
+          "guardrails": "no ledger"
+        }
+      },
+      "expect": {
+        "level": "low",
+        "score": 0,
+        "missing": [
+          "outside_effects",
+          "tests",
+          "guardrails",
+          "reverts"
+        ]
+      }
+    },
+    {
+      "name": "medium",
+      "criterion": 1,
+      "description": "A 600-line change with failing tests and nothing irreversible or protected.",
+      "inputs": {
+        "files": [
+          {
+            "path": "src/api/handlers.ts",
+            "additions": 450,
+            "deletions": 150
+          }
+        ],
+        "dependencies": [],
+        "tests": "failed",
+        "run": {
+          "sessions": [
+            "sess-f"
+          ],
+          "toolCalls": [
+            {
+              "agent": "claude_code",
+              "model": "claude-sonnet-4-5",
+              "tool": "Edit",
+              "path": "src/api/handlers.ts"
+            }
+          ],
+          "guardrails": []
+        },
+        "reverts": {
+          "agent": {
+            "vendor": "claude_code",
+            "model": "claude-sonnet-4-5"
+          },
+          "commits": 40,
+          "reverted": 1,
+          "days": 90
+        },
+        "agent": {
+          "vendor": "claude_code",
+          "model": "claude-sonnet-4-5"
+        }
+      },
+      "expect": {
+        "level": "medium",
+        "score": 45,
+        "missing": []
+      }
+    },
+    {
+      "name": "high-by-score",
+      "criterion": 1,
+      "description": "No protected path and nothing irreversible, but large, failing, with three new dependencies and a 30% revert rate.",
+      "inputs": {
+        "files": [
+          {
+            "path": "src/api/search.ts",
+            "additions": 800,
+            "deletions": 400
+          },
+          {
+            "path": "pnpm-lock.yaml",
+            "additions": 3000,
+            "deletions": 200
+          }
+        ],
+        "dependencies": [
+          {
+            "manifest": "package.json",
+            "name": "a-lib"
+          },
+          {
+            "manifest": "package.json",
+            "name": "b-lib"
+          },
+          {
+            "manifest": "package.json",
+            "name": "c-lib"
+          }
+        ],
+        "tests": "failed",
+        "run": {
+          "sessions": [
+            "sess-g"
+          ],
+          "toolCalls": [
+            {
+              "agent": "claude_code",
+              "model": "claude-sonnet-4-5",
+              "tool": "Edit",
+              "path": "src/api/search.ts"
+            }
+          ],
+          "guardrails": []
+        },
+        "reverts": {
+          "agent": {
+            "vendor": "claude_code",
+            "model": "claude-sonnet-4-5"
+          },
+          "commits": 20,
+          "reverted": 6,
+          "days": 90
+        },
+        "agent": {
+          "vendor": "claude_code",
+          "model": "claude-sonnet-4-5"
+        }
+      },
+      "expect": {
+        "level": "high",
+        "score": 89,
+        "missing": []
+      }
+    },
+    {
+      "name": "low",
+      "criterion": 1,
+      "description": "A small docs change, tested, clean run and history.",
+      "inputs": {
+        "files": [
+          {
+            "path": "README.md",
+            "additions": 8,
+            "deletions": 2
+          }
+        ],
+        "dependencies": [],
+        "tests": "passed",
+        "run": {
+          "sessions": [
+            "sess-h"
+          ],
+          "toolCalls": [
+            {
+              "agent": "claude_code",
+              "model": "claude-sonnet-4-5",
+              "tool": "Edit",
+              "path": "README.md"
+            }
+          ],
+          "guardrails": []
+        },
+        "reverts": {
+          "agent": {
+            "vendor": "claude_code",
+            "model": "claude-sonnet-4-5"
+          },
+          "commits": 40,
+          "reverted": 1,
+          "days": 90
+        },
+        "agent": {
+          "vendor": "claude_code",
+          "model": "claude-sonnet-4-5"
+        }
+      },
+      "expect": {
+        "level": "low",
+        "score": 0,
+        "missing": []
+      }
+    }
+  ],
+  "ordering": [
+    [
+      "outside-effect-only",
+      "protected-path-only"
+    ],
+    [
+      "outside-effect-only",
+      "protected-path-worst-case"
+    ],
+    [
+      "irreversible-change-small-tested",
+      "protected-path-worst-case"
+    ],
+    [
+      "protected-path-only",
+      "medium"
+    ],
+    [
+      "medium",
+      "low"
+    ]
+  ]
+}

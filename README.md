@@ -43,7 +43,7 @@ from the same code.
 | `apps/console`         | Web console (placeholder)                                                                   |
 | `adapters/`            | Per-agent and per-system integrations (none yet)                                            |
 | `deploy/docker`        | Docker Compose install: Postgres, the OpenTelemetry collector and the server, with backups  |
-| `ee/`                  | Commercial code under a separate license (empty)                                            |
+| `ee/risk`              | PR risk score and its label and check result (commercial license, see `ee/`)                |
 | `docs/build-plan`      | Milestones and acceptance criteria                                                          |
 
 ## Development

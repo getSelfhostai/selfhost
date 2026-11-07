@@ -1,0 +1,16 @@
+{
+  "name": "acme-api",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "bench": "tsx bench/limiter.ts"
+  },
+  "dependencies": {
+    "hono": "^4.13.0",
+    "ioredis": "^5.4.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "tsx": "^4.20.0"
+  }
+}

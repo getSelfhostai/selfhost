@@ -10,6 +10,7 @@ pnpm --filter @selfhost/cli dev ledger prune --days 30
 pnpm --filter @selfhost/cli dev policy check
 pnpm --filter @selfhost/cli dev policy test --tool Bash --command "git push --force"
 pnpm --filter @selfhost/cli dev policy observe --since 30d
+pnpm --filter @selfhost/cli dev review risk --base main
 pnpm --filter @selfhost/cli dev scan --since 30d --report scan.html --share scan.svg
 pnpm --filter @selfhost/cli dev agents
 pnpm --filter @selfhost/cli dev agents configure --dry-run --otel-endpoint http://127.0.0.1:4318
@@ -118,6 +119,19 @@ ledger (`--database` / `--data-dir` as for `spend`).
   who, the question and reason, files and links, and which later decisions replaced it.
   `--path` matches the file, files inside a folder, and folders that hold the file; `--topic`
   needs every word in the question or reason. `--limit` and `--cursor` page through.
+
+## Risk score
+
+`selfhost review risk <pr-number | --base <ref>> [--head <ref>] [--tests passed|failed|not-run]
+[--json]` scores an agent pull request low, medium or high and prints the PR label
+(`selfhost:risk-low`, `-medium` or `-high`) and the `selfhost/risk` check result: a title, a
+summary of what set the level and what was missing, and a table of every input with its points.
+A number reads the pull request through the developer's own `gh` login (read-only); `--base`
+scores the local commits since the merge base instead. The agent run, guardrail blocks and
+outside effects come from the ledger when there is one (`--database` / `--data-dir` as for
+`spend`), the revert rate from git, and `--tests` stands in for the sandbox result until sandbox
+runs exist. Nothing is posted to GitHub. The scoring is commercial code in
+[`ee/risk`](../../ee/risk/README.md), loaded only when this command runs.
 
 `selfhost agents` lists Claude Code, Codex, OpenCode, Goose and Cursor CLI: installed, version,
 login and settings file, then the context files (CLAUDE.md, AGENTS.md, skills) in the
@@ -230,7 +244,7 @@ Every command takes `--json` and prints one object with a `schema` tag: `selfhos
 `selfhost.ledger_prune/v1`, `selfhost.agents/v1`, `selfhost.agents_configure/v1`, `selfhost.scan/v1`,
 `selfhost.policy_check/v1`, `selfhost.policy_test/v1`, `selfhost.policy_observe/v1`,
 `selfhost.policy_promote/v1`, `selfhost.review_item/v1` (from `policy report`),
-`selfhost.decide/v1`, `selfhost.decisions/v1`,
+`selfhost.decide/v1`, `selfhost.review_risk/v1`, `selfhost.decisions/v1`,
 `selfhost.team_init/v1`, `selfhost.team_invite/v1`, `selfhost.team_revoke/v1`,
 `selfhost.join/v1`, `selfhost.status/v1` and `selfhost.team_leave/v1`. Errors print `selfhost.error/v1` and exit 1. In solo mode no command
 needs a network connection.

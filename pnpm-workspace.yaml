@@ -3,6 +3,7 @@ packages:
   - apps/*
   - adapters/*
   - deploy
+  - ee/*
 
 catalog:
   "@biomejs/biome": 2.6.6
