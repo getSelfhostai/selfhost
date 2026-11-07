@@ -7,6 +7,7 @@ import { join } from "node:path";
 import tls from "node:tls";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { run, tempDir } from "./run.js";
+import { attributionFor } from "./scan-logs.js";
 
 const fixtures = join(import.meta.dirname, "..", "..", "..", "fixtures");
 const attempts: string[] = [];
@@ -100,6 +101,31 @@ describe("every command works with --json and no network", () => {
     const report = JSON.parse(imported.out);
     expect(Object.keys(report)).toEqual(["schema", "files", "accepted", "duplicates", "ledger"]);
     expect(report.accepted).toBeGreaterThan(0);
+
+    expect(attempts).toEqual([]);
+  });
+
+  it("scan uploads nothing, even with a yes to the agent count", async () => {
+    const work = tempDir("offline-scan");
+    mkdirSync(work.path(".git"));
+    stubNetwork();
+    const deps = {
+      cwd: work.root,
+      env: {
+        CLAUDE_CONFIG_DIR: join(fixtures, "claude-code"),
+        CODEX_HOME: join(fixtures, "codex"),
+      },
+      configPath: work.path("home", "config.json"),
+      ask: async () => true,
+      collectAttribution: async () => attributionFor(["538b2156-9f52-495c-82d4-2bae253bfac6"]),
+    };
+    const args = ["scan", "--since", "2026-10-01", "--report", "r.html", "--share", "c.svg"];
+
+    const text = await run(args, deps);
+    expect(text.err).toBe("");
+    expect(text.out).toContain("Git: acme/api");
+    const json = await run([...args, "--json"], deps);
+    expect(JSON.parse(json.out).schema).toBe("selfhost.scan/v1");
 
     expect(attempts).toEqual([]);
   });

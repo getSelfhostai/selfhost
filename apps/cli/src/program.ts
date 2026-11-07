@@ -9,6 +9,9 @@ import {
 } from "./agents.js";
 import { doctor } from "./doctor.js";
 import { type ImportCommandOptions, runImport, runWatch } from "./import.js";
+import { type CollectAttribution, noAttribution } from "./scan/attribution.js";
+import { runScan, type ScanCommandOptions } from "./scan/index.js";
+import { type Ask, askOnTerminal, type SendPing } from "./scan/telemetry.js";
 import { registerSpend } from "./spend.js";
 
 export const VERSION = pkg.version;
@@ -23,6 +26,14 @@ export interface CliDeps {
   writeError: (line: string) => void;
   setExitCode: (code: number) => void;
   now?: Date;
+  /** Joins sessions with git and GitHub for `selfhost scan`. Default: no join yet. */
+  collectAttribution?: CollectAttribution;
+  /** Asks a yes or no question; undefined when stdin is not a terminal. */
+  ask?: Ask;
+  /** Where one-time answers are kept. Default: ~/.selfhost/config.json. */
+  configPath?: string;
+  /** Sends the opt-in anonymous agent count. Default: a JSON POST. */
+  sendTelemetry?: SendPing;
 }
 
 /** `--json` errors: printed on stdout so a script always gets JSON back. */
@@ -42,6 +53,8 @@ function defaultDeps(): CliDeps {
     setExitCode: (code) => {
       process.exitCode = code;
     },
+    collectAttribution: noAttribution,
+    ask: process.stdin.isTTY ? askOnTerminal : undefined,
   };
 }
 
@@ -156,6 +169,33 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
     .action((options: ConfigureOptions) => {
       try {
         deps.setExitCode(configureCommand(options, io()));
+      } catch (error) {
+        fail(error, options.json);
+      }
+    });
+
+  program
+    .command("scan")
+    .description(
+      "audit local agent logs: cost by agent and model, leaks, the costliest sessions and, in a git repo, who wrote what",
+    )
+    .option("--since <when>", "how far back to read, like 30d, 12h or a date", "30d")
+    .option("--repo <dir>", "git repository to join the sessions with (default: the one here)")
+    .option("--json", "print the report as JSON")
+    .option("--report <file>", "write one HTML page with the report")
+    .option("--share <file>", "write an SVG image card with the totals")
+    .action(async (options: ScanCommandOptions) => {
+      try {
+        await runScan(options, {
+          env: deps.env,
+          cwd: deps.cwd,
+          write: deps.write,
+          now: deps.now,
+          collectAttribution: deps.collectAttribution,
+          ask: deps.ask,
+          configPath: deps.configPath,
+          sendTelemetry: deps.sendTelemetry,
+        });
       } catch (error) {
         fail(error, options.json);
       }

@@ -12,6 +12,7 @@ import {
   type WasteFlag,
 } from "@selfhost/spend";
 import type { Command } from "commander";
+import { percent, tokens, usd } from "./format.js";
 import { parseSince } from "./import.js";
 
 export interface SpendCommandOptions {
@@ -90,20 +91,6 @@ async function costEvents(ledger: Ledger, from: Date): Promise<LedgerEvent[]> {
     cursor = page.nextCursor;
   } while (cursor);
   return events;
-}
-
-const percent = (share: number) => `${(share * 100).toFixed(1)}%`;
-
-function usd(value: number): string {
-  if (value > 0 && value < 0.01) return `$${value.toFixed(4)}`;
-  return `$${value.toFixed(2)}`;
-}
-
-function tokens(value: number): string {
-  if (value >= 1e9) return `${(value / 1e9).toFixed(1)}B`;
-  if (value >= 1e6) return `${(value / 1e6).toFixed(1)}M`;
-  if (value >= 1e3) return `${(value / 1e3).toFixed(1)}k`;
-  return String(value);
 }
 
 function table(rows: string[][], write: (line: string) => void): void {

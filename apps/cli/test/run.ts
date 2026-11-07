@@ -24,6 +24,8 @@ export async function run(args: string[], deps: Partial<CliDeps> = {}): Promise<
     setExitCode: (value) => {
       code = value;
     },
+    // Never wait on the terminal: tests that prompt pass their own answer.
+    ask: undefined,
     ...deps,
   });
   program.exitOverride();

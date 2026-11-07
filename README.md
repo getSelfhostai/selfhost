@@ -68,6 +68,16 @@ See where the spend goes and which overhead started growing (request types are l
 pnpm --filter @selfhost/cli dev spend --since 7d --by request_type,model --threshold 10
 ```
 
+Audit the last 30 days of local agent logs in one command, with no account and nothing uploaded:
+cost by agent and model, leaks (status loops, cache misses, retry loops, oversized context) and
+the most expensive sessions, plus, in a git repo, who wrote the commits and what merged with no
+review (see [`apps/cli`](./apps/cli/README.md)). Token parsing and prices come from
+[ccusage](https://github.com/ccusage/ccusage) by ryoppippi (MIT):
+
+```sh
+pnpm --filter @selfhost/cli dev scan --since 30d --report scan.html --share scan.svg
+```
+
 ## License
 
 Apache-2.0, see [LICENSE](./LICENSE). The `ee/` folder is under a separate commercial license,

@@ -1,0 +1,42 @@
+{
+  "synthetic": true,
+  "description": "One Claude Code session and one Codex rollout on 2026-10-12 with a marker string planted in every place that holds prompt text, model replies, reasoning, code or tool output. selfhost scan must print none of them in any output (text, --json, --report, --share); totals and file paths only.",
+  "markers": [
+    {
+      "value": "MARKER-PROMPT-q7v2",
+      "where": "user prompts (Claude Code user lines, Codex user message and user_message event)"
+    },
+    {
+      "value": "MARKER-REPLY-k3n8",
+      "where": "assistant text and Codex agent_message events"
+    },
+    {
+      "value": "MARKER-THINK-w5d1",
+      "where": "Claude Code thinking block"
+    },
+    {
+      "value": "MARKER-CODE-z9h4",
+      "where": "Write content, Edit old and new strings, apply_patch body, and the first line of a Bash and an exec_command command"
+    },
+    {
+      "value": "MARKER-OUTPUT-b6m3",
+      "where": "tool results and function_call_output"
+    },
+    {
+      "value": "MARKER-COMMIT-r2t7",
+      "where": "git commit messages and git's commit output"
+    }
+  ],
+  "files": [
+    {
+      "path": "claude-code/projects/-home-dev-acme-api/7d3e0c55-6a1f-4c2b-9e8d-1f2a3b4c5d6e.jsonl",
+      "sessionId": "7d3e0c55-6a1f-4c2b-9e8d-1f2a3b4c5d6e",
+      "cliVersion": "2.1.309"
+    },
+    {
+      "path": "codex/sessions/2026/10/12/rollout-2026-10-12T12-00-00-01a12a00-0000-7000-8000-00000000c0de.jsonl",
+      "sessionId": "01a12a00-0000-7000-8000-00000000c0de",
+      "cliVersion": "0.142.5"
+    }
+  ]
+}

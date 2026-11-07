@@ -10,6 +10,7 @@ Test inputs for the session importers, hook ingest, ledger source mappers and re
 | `hooks/codex/` | Codex `notify` payload and one payload per documented Codex hook event. |
 | `sources/` | Synthetic OpenTelemetry logs, LiteLLM gateway request logs and Anthropic Compliance API style activity, for the ledger source mappers, plus two weeks for the waste detector: a Claude Code OpenTelemetry week where the status line is 16.4% of spend, and a subscription-only week of local logs. `manifest.json` describes each file. |
 | `redaction/` | Planted fake secrets and an example.com email. `manifest.json` lists every planted value. |
+| `markers/` | One Claude Code session and one Codex rollout with marker strings planted in prompts, replies, reasoning, code, commands, tool output and commit messages. `selfhost scan` must print none of them. `manifest.json` lists every marker. |
 | `expected/` | ccusage daily totals for the session fixtures. |
 | `captured/` | Scrubbed real sessions, written by `scripts/capture-fixtures.mjs`. Absent until someone runs it. |
 
