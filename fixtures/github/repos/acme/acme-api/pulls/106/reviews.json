@@ -1,0 +1,22 @@
+[
+  {
+    "id": 9106,
+    "node_id": "PRR_9106",
+    "user": {
+      "login": "carol",
+      "id": 5100003,
+      "node_id": "U_5100003",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5100003?v=4",
+      "url": "https://api.github.com/users/carol",
+      "html_url": "https://github.com/carol",
+      "type": "User",
+      "site_admin": false
+    },
+    "body": "",
+    "state": "APPROVED",
+    "html_url": "https://github.com/acme/acme-api/pull/106#pullrequestreview-9106",
+    "submitted_at": "2026-10-11T07:00:00Z",
+    "commit_id": "4aab9d7fa3d35803c0af941e5f893bcb3669727d",
+    "author_association": "MEMBER"
+  }
+]

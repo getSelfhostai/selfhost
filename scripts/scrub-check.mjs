@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Scans fixture files and exits 1 if any contain secret-shaped strings, emails
-// outside example.com, home paths other than /home/dev, or macOS user paths.
+// outside example.com (agent and GitHub service addresses aside), home paths other
+// than /home/dev, or macOS user paths.
 // Also fails on JSON or JSONL files that do not parse.
 //
 // Usage: node scripts/scrub-check.mjs [dir]   (default: fixtures/, skipping fixtures/redaction/)
@@ -45,6 +46,23 @@ const PATH_RULES = [
 ];
 
 const EMAIL = /[A-Za-z0-9._%+-]+@((?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,})/g;
+
+// Service addresses that agents and GitHub write into commits (fixtures/github). They belong to
+// no person, so they may appear in fixtures.
+const SERVICE_EMAILS = new Set([
+  "noreply@anthropic.com",
+  "noreply@openai.com",
+  "noreply@github.com",
+  "cursoragent@cursor.com",
+  "amp@ampcode.com",
+  "aider@aider.chat",
+]);
+const AGENT_NOREPLY = /^\d+\+(?:copilot|claude|codex)@users\.noreply\.github\.com$/i;
+
+function isServiceEmail(email) {
+  const value = email.toLowerCase();
+  return SERVICE_EMAILS.has(value) || AGENT_NOREPLY.test(value);
+}
 
 function escapeRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -92,7 +110,7 @@ export function findInText(text, rules = getDefaultRules()) {
   }
   EMAIL.lastIndex = 0;
   for (const m of text.matchAll(EMAIL)) {
-    if (m[1].toLowerCase() !== ALLOWED_EMAIL_DOMAIN)
+    if (m[1].toLowerCase() !== ALLOWED_EMAIL_DOMAIN && !isServiceEmail(m[0]))
       hits.push({ rule: "email outside example.com", index: m.index, match: m[0] });
   }
   return hits;

@@ -1,0 +1,46 @@
+[
+  {
+    "sha": "88ee1cbce0f2a60ac5a3fc7bed75a8fcea7da2b4",
+    "node_id": "C_88ee1cbce0f2",
+    "commit": {
+      "author": {
+        "name": "Devin AI",
+        "email": "158243242+devin-ai-integration[bot]@users.noreply.github.com",
+        "date": "2026-10-12T10:05:00Z"
+      },
+      "committer": {
+        "name": "GitHub",
+        "email": "noreply@github.com",
+        "date": "2026-10-12T10:05:00Z"
+      },
+      "message": "Add audit log CSV export",
+      "tree": {
+        "sha": "2978101bf294c10444dafac86b1e6effd73a7dc0",
+        "url": "https://api.github.com/repos/acme/acme-api/git/trees/2978101bf294c10444dafac86b1e6effd73a7dc0"
+      },
+      "url": "https://api.github.com/repos/acme/acme-api/git/commits/88ee1cbce0f2a60ac5a3fc7bed75a8fcea7da2b4",
+      "comment_count": 0,
+      "verification": {
+        "verified": true,
+        "reason": "valid",
+        "signature": null,
+        "payload": null,
+        "verified_at": null
+      }
+    },
+    "url": "https://api.github.com/repos/acme/acme-api/commits/88ee1cbce0f2a60ac5a3fc7bed75a8fcea7da2b4",
+    "html_url": "https://github.com/acme/acme-api/commit/88ee1cbce0f2a60ac5a3fc7bed75a8fcea7da2b4",
+    "author": {
+      "login": "devin-ai-integration[bot]",
+      "id": 158243242,
+      "node_id": "U_158243242",
+      "avatar_url": "https://avatars.githubusercontent.com/u/158243242?v=4",
+      "url": "https://api.github.com/users/devin-ai-integration[bot]",
+      "html_url": "https://github.com/devin-ai-integration[bot]",
+      "type": "Bot",
+      "site_admin": false
+    },
+    "committer": null,
+    "parents": []
+  }
+]

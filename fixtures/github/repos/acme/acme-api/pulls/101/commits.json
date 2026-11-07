@@ -1,0 +1,108 @@
+[
+  {
+    "sha": "4aecb7e7824bd03b38804b1f8df5e841c7ab8ade",
+    "node_id": "C_4aecb7e7824b",
+    "commit": {
+      "author": {
+        "name": "Alice Example",
+        "email": "alice@example.com",
+        "date": "2026-10-05T09:10:00Z"
+      },
+      "committer": {
+        "name": "Alice Example",
+        "email": "alice@example.com",
+        "date": "2026-10-05T09:10:00Z"
+      },
+      "message": "Add token bucket limiter\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>",
+      "tree": {
+        "sha": "89b801bce10034ffb25b4bda519696255302cd44",
+        "url": "https://api.github.com/repos/acme/acme-api/git/trees/89b801bce10034ffb25b4bda519696255302cd44"
+      },
+      "url": "https://api.github.com/repos/acme/acme-api/git/commits/4aecb7e7824bd03b38804b1f8df5e841c7ab8ade",
+      "comment_count": 0,
+      "verification": {
+        "verified": false,
+        "reason": "unsigned",
+        "signature": null,
+        "payload": null,
+        "verified_at": null
+      }
+    },
+    "url": "https://api.github.com/repos/acme/acme-api/commits/4aecb7e7824bd03b38804b1f8df5e841c7ab8ade",
+    "html_url": "https://github.com/acme/acme-api/commit/4aecb7e7824bd03b38804b1f8df5e841c7ab8ade",
+    "author": {
+      "login": "alice",
+      "id": 5100001,
+      "node_id": "U_5100001",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5100001?v=4",
+      "url": "https://api.github.com/users/alice",
+      "html_url": "https://github.com/alice",
+      "type": "User",
+      "site_admin": false
+    },
+    "committer": {
+      "login": "alice",
+      "id": 5100001,
+      "node_id": "U_5100001",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5100001?v=4",
+      "url": "https://api.github.com/users/alice",
+      "html_url": "https://github.com/alice",
+      "type": "User",
+      "site_admin": false
+    },
+    "parents": []
+  },
+  {
+    "sha": "5786c5c9d81ca4218b7e44bf0007f5580f66c489",
+    "node_id": "C_5786c5c9d81c",
+    "commit": {
+      "author": {
+        "name": "Alice Example",
+        "email": "alice@example.com",
+        "date": "2026-10-05T09:40:00Z"
+      },
+      "committer": {
+        "name": "Alice Example",
+        "email": "alice@example.com",
+        "date": "2026-10-05T09:40:00Z"
+      },
+      "message": "Wire limiter into middleware\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>",
+      "tree": {
+        "sha": "1a7230b7e7ee11dcb96480ecddc89e355653110b",
+        "url": "https://api.github.com/repos/acme/acme-api/git/trees/1a7230b7e7ee11dcb96480ecddc89e355653110b"
+      },
+      "url": "https://api.github.com/repos/acme/acme-api/git/commits/5786c5c9d81ca4218b7e44bf0007f5580f66c489",
+      "comment_count": 0,
+      "verification": {
+        "verified": false,
+        "reason": "unsigned",
+        "signature": null,
+        "payload": null,
+        "verified_at": null
+      }
+    },
+    "url": "https://api.github.com/repos/acme/acme-api/commits/5786c5c9d81ca4218b7e44bf0007f5580f66c489",
+    "html_url": "https://github.com/acme/acme-api/commit/5786c5c9d81ca4218b7e44bf0007f5580f66c489",
+    "author": {
+      "login": "alice",
+      "id": 5100001,
+      "node_id": "U_5100001",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5100001?v=4",
+      "url": "https://api.github.com/users/alice",
+      "html_url": "https://github.com/alice",
+      "type": "User",
+      "site_admin": false
+    },
+    "committer": {
+      "login": "alice",
+      "id": 5100001,
+      "node_id": "U_5100001",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5100001?v=4",
+      "url": "https://api.github.com/users/alice",
+      "html_url": "https://github.com/alice",
+      "type": "User",
+      "site_admin": false
+    },
+    "parents": []
+  }
+]

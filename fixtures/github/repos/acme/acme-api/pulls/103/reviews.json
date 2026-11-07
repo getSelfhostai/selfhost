@@ -1,0 +1,42 @@
+[
+  {
+    "id": 9103,
+    "node_id": "PRR_9103",
+    "user": {
+      "login": "bob",
+      "id": 5100002,
+      "node_id": "U_5100002",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5100002?v=4",
+      "url": "https://api.github.com/users/bob",
+      "html_url": "https://github.com/bob",
+      "type": "User",
+      "site_admin": false
+    },
+    "body": "",
+    "state": "APPROVED",
+    "html_url": "https://github.com/acme/acme-api/pull/103#pullrequestreview-9103",
+    "submitted_at": "2026-10-07T12:00:00Z",
+    "commit_id": "630fd1bdaea3e303e5bd761c2ca9da76467bc366",
+    "author_association": "MEMBER"
+  },
+  {
+    "id": 9104,
+    "node_id": "PRR_9104",
+    "user": {
+      "login": "bob",
+      "id": 5100002,
+      "node_id": "U_5100002",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5100002?v=4",
+      "url": "https://api.github.com/users/bob",
+      "html_url": "https://github.com/bob",
+      "type": "User",
+      "site_admin": false
+    },
+    "body": "This drops env overrides.",
+    "state": "CHANGES_REQUESTED",
+    "html_url": "https://github.com/acme/acme-api/pull/103#pullrequestreview-9104",
+    "submitted_at": "2026-10-08T12:00:00Z",
+    "commit_id": "630fd1bdaea3e303e5bd761c2ca9da76467bc366",
+    "author_association": "MEMBER"
+  }
+]

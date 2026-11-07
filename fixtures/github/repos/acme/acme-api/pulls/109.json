@@ -1,0 +1,56 @@
+{
+  "url": "https://api.github.com/repos/acme/acme-api/pulls/109",
+  "id": 2700000109,
+  "node_id": "PR_109",
+  "html_url": "https://github.com/acme/acme-api/pull/109",
+  "number": 109,
+  "state": "closed",
+  "locked": false,
+  "title": "Typed errors",
+  "user": {
+    "login": "alice",
+    "id": 5100001,
+    "node_id": "U_5100001",
+    "avatar_url": "https://avatars.githubusercontent.com/u/5100001?v=4",
+    "url": "https://api.github.com/users/alice",
+    "html_url": "https://github.com/alice",
+    "type": "User",
+    "site_admin": false
+  },
+  "body": "Replaces string errors with typed ones.",
+  "created_at": "2026-09-20T09:00:00Z",
+  "updated_at": "2026-10-02T09:00:00Z",
+  "closed_at": "2026-10-02T09:00:00Z",
+  "merged_at": "2026-10-02T09:00:00Z",
+  "merge_commit_sha": "449cdf21cbecd3e2360cac2d39ee022f38fa5f4b",
+  "draft": false,
+  "head": {
+    "label": "acme:feature/typed-errors",
+    "ref": "feature/typed-errors",
+    "sha": "65f7a2e1f503bdbf5f225980387af700c7d908a8"
+  },
+  "base": {
+    "label": "acme:main",
+    "ref": "main",
+    "sha": "a6f3376123b4f8a580806d8c4f3b58228f5bcdc7"
+  },
+  "author_association": "MEMBER",
+  "merged": true,
+  "mergeable": null,
+  "comments": 0,
+  "review_comments": 1,
+  "commits": 1,
+  "additions": 350,
+  "deletions": 0,
+  "changed_files": 1,
+  "merged_by": {
+    "login": "bob",
+    "id": 5100002,
+    "node_id": "U_5100002",
+    "avatar_url": "https://avatars.githubusercontent.com/u/5100002?v=4",
+    "url": "https://api.github.com/users/bob",
+    "html_url": "https://github.com/bob",
+    "type": "User",
+    "site_admin": false
+  }
+}

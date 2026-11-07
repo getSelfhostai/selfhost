@@ -1,0 +1,47 @@
+{
+  "url": "https://api.github.com/repos/acme/acme-api/pulls/103",
+  "id": 2700000103,
+  "node_id": "PR_103",
+  "html_url": "https://github.com/acme/acme-api/pull/103",
+  "number": 103,
+  "state": "closed",
+  "locked": false,
+  "title": "Refactor config loading",
+  "user": {
+    "login": "alice",
+    "id": 5100001,
+    "node_id": "U_5100001",
+    "avatar_url": "https://avatars.githubusercontent.com/u/5100001?v=4",
+    "url": "https://api.github.com/users/alice",
+    "html_url": "https://github.com/alice",
+    "type": "User",
+    "site_admin": false
+  },
+  "body": "Moves config parsing into one module.\n\n[Codex Task](https://chatgpt.com/codex/cloud/tasks/task_e_68f1c2a9d4b84c0e9a7f3b2d1c0e5a64)",
+  "created_at": "2026-10-07T09:00:00Z",
+  "updated_at": "2026-10-09T09:00:00Z",
+  "closed_at": "2026-10-09T09:00:00Z",
+  "merged_at": null,
+  "merge_commit_sha": null,
+  "draft": false,
+  "head": {
+    "label": "acme:codex/refactor-config",
+    "ref": "codex/refactor-config",
+    "sha": "630fd1bdaea3e303e5bd761c2ca9da76467bc366"
+  },
+  "base": {
+    "label": "acme:main",
+    "ref": "main",
+    "sha": "337a5271bf2cf383cc35091ccb4d2dde90c1a15c"
+  },
+  "author_association": "MEMBER",
+  "merged": false,
+  "mergeable": null,
+  "comments": 0,
+  "review_comments": 1,
+  "commits": 1,
+  "additions": 140,
+  "deletions": 110,
+  "changed_files": 1,
+  "merged_by": null
+}

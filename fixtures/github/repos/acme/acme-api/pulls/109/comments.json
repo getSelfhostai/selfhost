@@ -1,0 +1,25 @@
+[
+  {
+    "id": 8109,
+    "node_id": "PRRC_8109",
+    "pull_request_review_id": null,
+    "user": {
+      "login": "bob",
+      "id": 5100002,
+      "node_id": "U_5100002",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5100002?v=4",
+      "url": "https://api.github.com/users/bob",
+      "html_url": "https://github.com/bob",
+      "type": "User",
+      "site_admin": false
+    },
+    "body": "Export the error codes too.",
+    "path": "src/errors.ts",
+    "line": 12,
+    "side": "RIGHT",
+    "created_at": "2026-09-30T09:00:00Z",
+    "updated_at": "2026-09-30T09:00:00Z",
+    "html_url": "https://github.com/acme/acme-api/pull/109#discussion_r8109",
+    "author_association": "MEMBER"
+  }
+]

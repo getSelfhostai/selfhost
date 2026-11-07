@@ -1,0 +1,47 @@
+{
+  "url": "https://api.github.com/repos/acme/acme-api/pulls/108",
+  "id": 2700000108,
+  "node_id": "PR_108",
+  "html_url": "https://github.com/acme/acme-api/pull/108",
+  "number": 108,
+  "state": "closed",
+  "locked": false,
+  "title": "Warm the cache on boot",
+  "user": {
+    "login": "carol",
+    "id": 5100003,
+    "node_id": "U_5100003",
+    "avatar_url": "https://avatars.githubusercontent.com/u/5100003?v=4",
+    "url": "https://api.github.com/users/carol",
+    "html_url": "https://github.com/carol",
+    "type": "User",
+    "site_admin": false
+  },
+  "body": "Prefetch hot keys at startup.",
+  "created_at": "2026-10-14T09:00:00Z",
+  "updated_at": "2026-10-15T09:00:00Z",
+  "closed_at": "2026-10-15T09:00:00Z",
+  "merged_at": null,
+  "merge_commit_sha": null,
+  "draft": false,
+  "head": {
+    "label": "acme:wip/cache-warmup",
+    "ref": "wip/cache-warmup",
+    "sha": "19c07f7bdedce372d371a4a63d535014041b1222"
+  },
+  "base": {
+    "label": "acme:main",
+    "ref": "main",
+    "sha": "bfe0c8ff9aa8222baf8275d9077e2c777d7d94e3"
+  },
+  "author_association": "MEMBER",
+  "merged": false,
+  "mergeable": null,
+  "comments": 0,
+  "review_comments": 0,
+  "commits": 1,
+  "additions": 35,
+  "deletions": 0,
+  "changed_files": 1,
+  "merged_by": null
+}

@@ -1,0 +1,71 @@
+[
+  {
+    "id": 8105,
+    "node_id": "PRRC_8105",
+    "pull_request_review_id": null,
+    "user": {
+      "login": "carol",
+      "id": 5100003,
+      "node_id": "U_5100003",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5100003?v=4",
+      "url": "https://api.github.com/users/carol",
+      "html_url": "https://github.com/carol",
+      "type": "User",
+      "site_admin": false
+    },
+    "body": "Validate return_to against our host.",
+    "path": "src/auth.ts",
+    "line": 12,
+    "side": "RIGHT",
+    "created_at": "2026-10-10T15:00:00Z",
+    "updated_at": "2026-10-10T15:00:00Z",
+    "html_url": "https://github.com/acme/acme-api/pull/106#discussion_r8105",
+    "author_association": "MEMBER"
+  },
+  {
+    "id": 8106,
+    "node_id": "PRRC_8106",
+    "pull_request_review_id": null,
+    "user": {
+      "login": "carol",
+      "id": 5100003,
+      "node_id": "U_5100003",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5100003?v=4",
+      "url": "https://api.github.com/users/carol",
+      "html_url": "https://github.com/carol",
+      "type": "User",
+      "site_admin": false
+    },
+    "body": "Add a test for an external URL.",
+    "path": "src/auth.ts",
+    "line": 12,
+    "side": "RIGHT",
+    "created_at": "2026-10-10T15:02:00Z",
+    "updated_at": "2026-10-10T15:02:00Z",
+    "html_url": "https://github.com/acme/acme-api/pull/106#discussion_r8106",
+    "author_association": "MEMBER"
+  },
+  {
+    "id": 8107,
+    "node_id": "PRRC_8107",
+    "pull_request_review_id": null,
+    "user": {
+      "login": "bob",
+      "id": 5100002,
+      "node_id": "U_5100002",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5100002?v=4",
+      "url": "https://api.github.com/users/bob",
+      "html_url": "https://github.com/bob",
+      "type": "User",
+      "site_admin": false
+    },
+    "body": "Done, both.",
+    "path": "src/auth.ts",
+    "line": 12,
+    "side": "RIGHT",
+    "created_at": "2026-10-10T16:00:00Z",
+    "updated_at": "2026-10-10T16:00:00Z",
+    "html_url": "https://github.com/acme/acme-api/pull/106#discussion_r8107",
+    "author_association": "MEMBER"
+  }
+]

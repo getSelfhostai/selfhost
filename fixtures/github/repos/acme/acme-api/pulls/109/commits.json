@@ -1,0 +1,55 @@
+[
+  {
+    "sha": "65f7a2e1f503bdbf5f225980387af700c7d908a8",
+    "node_id": "C_65f7a2e1f503",
+    "commit": {
+      "author": {
+        "name": "Alice Example",
+        "email": "alice@example.com",
+        "date": "2026-09-20T08:50:00Z"
+      },
+      "committer": {
+        "name": "Alice Example",
+        "email": "alice@example.com",
+        "date": "2026-09-20T08:50:00Z"
+      },
+      "message": "Introduce typed errors\n\nCo-authored-by: Codex <noreply@openai.com>",
+      "tree": {
+        "sha": "b384d6743e6cec180ff3db162cea78bf6bfb2296",
+        "url": "https://api.github.com/repos/acme/acme-api/git/trees/b384d6743e6cec180ff3db162cea78bf6bfb2296"
+      },
+      "url": "https://api.github.com/repos/acme/acme-api/git/commits/65f7a2e1f503bdbf5f225980387af700c7d908a8",
+      "comment_count": 0,
+      "verification": {
+        "verified": false,
+        "reason": "unsigned",
+        "signature": null,
+        "payload": null,
+        "verified_at": null
+      }
+    },
+    "url": "https://api.github.com/repos/acme/acme-api/commits/65f7a2e1f503bdbf5f225980387af700c7d908a8",
+    "html_url": "https://github.com/acme/acme-api/commit/65f7a2e1f503bdbf5f225980387af700c7d908a8",
+    "author": {
+      "login": "alice",
+      "id": 5100001,
+      "node_id": "U_5100001",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5100001?v=4",
+      "url": "https://api.github.com/users/alice",
+      "html_url": "https://github.com/alice",
+      "type": "User",
+      "site_admin": false
+    },
+    "committer": {
+      "login": "alice",
+      "id": 5100001,
+      "node_id": "U_5100001",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5100001?v=4",
+      "url": "https://api.github.com/users/alice",
+      "html_url": "https://github.com/alice",
+      "type": "User",
+      "site_admin": false
+    },
+    "parents": []
+  }
+]
