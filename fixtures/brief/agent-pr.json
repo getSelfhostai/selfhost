@@ -1,0 +1,1039 @@
+{
+  "description": "A pull request with every section filled: a protected path and a migration, a new dependency, a deleted test file, a deleted test and a skipped one, two sessions (claude_code and codex) recorded by hooks, OpenTelemetry and the local logs, a failed then passing test run, an enforced and an observed block, and a team server for trace links.",
+  "inputs": {
+    "target": {
+      "repo": "acme/acme-api",
+      "pr": {
+        "number": 142,
+        "url": "https://github.com/acme/acme-api/pull/142"
+      },
+      "base": "2b4d6f8a0c1e3a5b7d9f1a3c5e7b9d0f2a4c6e8b",
+      "head": "9c1e5a7b3d2f4e6a8b0c1d3e5f7a9b2c4d6e8f0a",
+      "commits": [
+        "4f2a9c1d7e3b5a8f0c6d2e9b1a7f3c5d8e0b2a4c",
+        "9c1e5a7b3d2f4e6a8b0c1d3e5f7a9b2c4d6e8f0a"
+      ]
+    },
+    "pull": {
+      "title": "Add per-key rate limiting to the public API",
+      "body": "Adds a token bucket per API key so one noisy client cannot starve the others.\n\n<!-- Describe how you tested this. -->\n\n## Plan\n\n- [x] Count requests per key in Redis\n- [x] Return 429 from the public API middleware when a key is over its limit\n- [ ] Tune the limit per plan tier\n\n## Notes\n\nLimits default to 100 requests a minute."
+    },
+    "subjects": [
+      "Add per-key rate limiting",
+      "Skip the refill test until the fake clock lands"
+    ],
+    "agent": {
+      "vendor": "claude_code",
+      "model": "claude-sonnet-4-5"
+    },
+    "files": [
+      {
+        "path": "src/auth/keys.ts",
+        "status": "modified",
+        "additions": 5,
+        "deletions": 1,
+        "patch": "@@ -18,5 +18,9 @@ export async function findKey(token: string) {\n   const key = await db.apiKeys.findByHash(hash(token));\n   if (!key) return undefined;\n-  return key;\n+  return {\n+    ...key,\n+    // The plan tier sets the default limit.\n+    rateLimit: key.rateLimit ?? DEFAULT_RATE_LIMIT,\n+  };\n }\n "
+      },
+      {
+        "path": "src/middleware/rate-limit.ts",
+        "status": "added",
+        "additions": 12,
+        "deletions": 0,
+        "patch": "@@ -0,0 +1,12 @@\n+import { Redis } from \"ioredis\";\n+import { findKey } from \"../auth/keys.js\";\n+\n+const redis = new Redis(process.env.REDIS_URL);\n+\n+export async function rateLimit(token: string): Promise<boolean> {\n+  const key = await findKey(token);\n+  if (!key) return false;\n+  const used = await redis.incr(`limit:${key.id}`);\n+  if (used === 1) await redis.expire(`limit:${key.id}`, 60);\n+  return used <= key.rateLimit;\n+}"
+      },
+      {
+        "path": "package.json",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 0,
+        "patch": "@@ -14,4 +14,5 @@\n   \"dependencies\": {\n     \"hono\": \"^4.13.0\",\n+    \"ioredis\": \"^5.4.1\",\n     \"zod\": \"^4.1.0\"\n   },"
+      },
+      {
+        "path": "src/middleware/rate-limit.test.ts",
+        "status": "added",
+        "additions": 12,
+        "deletions": 0,
+        "patch": "@@ -0,0 +1,12 @@\n+import { describe, expect, it } from \"vitest\";\n+import { rateLimit } from \"./rate-limit.js\";\n+\n+describe(\"rateLimit\", () => {\n+  it(\"lets a key through under its limit\", async () => {\n+    expect(await rateLimit(\"key-1\")).toBe(true);\n+  });\n+\n+  it.skip(\"refills the bucket after a minute\", async () => {\n+    // Needs a fake clock.\n+  });\n+});"
+      },
+      {
+        "path": "test/legacy-limits.test.ts",
+        "status": "removed",
+        "additions": 0,
+        "deletions": 9,
+        "patch": "@@ -1,9 +0,0 @@\n-import { expect, it } from \"vitest\";\n-import { legacyLimit } from \"../src/legacy.js\";\n-\n-it(\"allows 60 requests a minute\", () => {\n-  expect(legacyLimit()).toBe(60);\n-});\n-it(\"blocks the 61st request\", () => {\n-  expect(legacyLimit(61)).toBe(false);\n-});"
+      },
+      {
+        "path": "src/billing/invoice.test.ts",
+        "status": "modified",
+        "additions": 0,
+        "deletions": 4,
+        "patch": "@@ -40,8 +40,4 @@ describe(\"invoice\", () => {\n   it(\"totals line items\", () => {\n     expect(total([1, 2])).toBe(3);\n   });\n-\n-  it(\"applies the rate limit surcharge\", () => {\n-    expect(total([1], { surcharge: true })).toBe(2);\n-  });\n });"
+      },
+      {
+        "path": "db/migrations/0042_rate_limits.sql",
+        "status": "added",
+        "additions": 3,
+        "deletions": 0,
+        "patch": "@@ -0,0 +1,3 @@\n+ALTER TABLE api_keys ADD COLUMN rate_limit integer;\n+UPDATE api_keys SET rate_limit = 100;\n+ALTER TABLE api_keys ALTER COLUMN rate_limit SET NOT NULL;"
+      },
+      {
+        "path": "docs/rate-limits.md",
+        "status": "added",
+        "additions": 4,
+        "deletions": 0,
+        "patch": "@@ -0,0 +1,4 @@\n+# Rate limits\n+\n+Each API key gets 100 requests a minute by default.\n+Plans with a higher tier get more."
+      }
+    ],
+    "dependencies": [
+      {
+        "manifest": "package.json",
+        "name": "ioredis"
+      }
+    ],
+    "run": {
+      "sessions": [
+        "0199f2a4-6c1d-7e3b-9f20-5b8c7d6e4a31",
+        "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87"
+      ],
+      "events": [
+        {
+          "id": "01a12f57-1a80-728a-807c-7930aab7d8c4",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:00:00.000Z",
+          "source": "hook",
+          "kind": "session.started",
+          "actor": {
+            "kind": "person",
+            "id": "dev@example.com"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "data": {
+            "cwd": "/home/dev/acme-api",
+            "hook_event": "SessionStart"
+          }
+        },
+        {
+          "id": "01a12f57-2e08-7d80-a13a-f2830585ca03",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:00:05.000Z",
+          "source": "hook",
+          "kind": "prompt.submitted",
+          "actor": {
+            "kind": "person",
+            "id": "dev@example.com"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "data": {
+            "prompt": "Add per-key rate limiting to the public API. Keep the counters in Redis and default to 100 requests a minute per key.",
+            "prompt_chars": 113
+          }
+        },
+        {
+          "id": "01a12f58-04e0-7e23-b784-6875df6e1675",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:01:00.000Z",
+          "source": "hook",
+          "kind": "tool.called",
+          "actor": {
+            "kind": "agent",
+            "id": "claude_code:session:5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "tool": {
+            "name": "TodoWrite"
+          },
+          "data": {
+            "tool_use_id": "toolu_01"
+          }
+        },
+        {
+          "id": "01a12f58-ef40-751c-8e5c-089eceb1ff5a",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:02:00.000Z",
+          "source": "otel",
+          "kind": "cost.recorded",
+          "actor": {
+            "kind": "person",
+            "id": "dev@example.com"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "cost": {
+            "input_tokens": 12000,
+            "output_tokens": 3400,
+            "cache_read_tokens": 180000,
+            "cache_write_tokens": 0,
+            "usd": 0.4213,
+            "estimated": false
+          },
+          "data": {
+            "request_type": "main"
+          }
+        },
+        {
+          "id": "01a12f58-ef40-7abd-a964-dd63ee0952c4",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:02:00.000Z",
+          "source": "local_log",
+          "kind": "cost.recorded",
+          "actor": {
+            "kind": "person",
+            "id": "dev@example.com"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "cost": {
+            "input_tokens": 12000,
+            "output_tokens": 3400,
+            "cache_read_tokens": 180000,
+            "cache_write_tokens": 0,
+            "usd": 0.4,
+            "estimated": true
+          },
+          "data": {
+            "request_type": "main"
+          }
+        },
+        {
+          "id": "01a12f59-d9a0-785a-9acd-42ec06fabc10",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:03:00.000Z",
+          "source": "hook",
+          "kind": "tool.called",
+          "actor": {
+            "kind": "agent",
+            "id": "claude_code:session:5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "tool": {
+            "name": "Edit",
+            "input_summary": "src/auth/keys.ts"
+          },
+          "target": {
+            "type": "file",
+            "value": "src/auth/keys.ts"
+          },
+          "data": {
+            "tool_use_id": "toolu_02"
+          }
+        },
+        {
+          "id": "01a12f5b-ae60-75bb-a7fa-abc637694d7f",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:05:00.000Z",
+          "source": "hook",
+          "kind": "tool.called",
+          "actor": {
+            "kind": "agent",
+            "id": "claude_code:session:5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "tool": {
+            "name": "Write",
+            "input_summary": "src/middleware/rate-limit.ts"
+          },
+          "target": {
+            "type": "file",
+            "value": "src/middleware/rate-limit.ts"
+          },
+          "data": {
+            "tool_use_id": "toolu_03"
+          }
+        },
+        {
+          "id": "01a12f5c-98c0-7495-9167-bafdf61bb0df",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:06:00.000Z",
+          "source": "hook",
+          "kind": "tool.called",
+          "actor": {
+            "kind": "agent",
+            "id": "claude_code:session:5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "tool": {
+            "name": "Bash",
+            "input_summary": "pnpm add ioredis"
+          },
+          "target": {
+            "type": "command",
+            "value": "pnpm add ioredis"
+          },
+          "data": {
+            "tool_use_id": "toolu_04"
+          }
+        },
+        {
+          "id": "01a12f5c-98c0-78a9-908d-ed5c2aa86490",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:06:00.000Z",
+          "source": "local_log",
+          "kind": "tool.called",
+          "actor": {
+            "kind": "agent",
+            "id": "claude_code:session:5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "tool": {
+            "name": "Bash",
+            "input_summary": "pnpm add ioredis"
+          },
+          "target": {
+            "type": "command",
+            "value": "pnpm add ioredis"
+          }
+        },
+        {
+          "id": "01a12f5d-3500-7d95-a9c1-fd097c26f24a",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:06:40.000Z",
+          "source": "hook",
+          "kind": "tool.result",
+          "actor": {
+            "kind": "agent",
+            "id": "claude_code:session:5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "tool": {
+            "name": "Bash",
+            "input_summary": "pnpm add ioredis"
+          },
+          "target": {
+            "type": "command",
+            "value": "pnpm add ioredis"
+          },
+          "data": {
+            "tool_use_id": "toolu_04",
+            "duration_ms": 38000
+          }
+        },
+        {
+          "id": "01a12f5e-6d80-7c73-bfaf-210ff5688c46",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:08:00.000Z",
+          "source": "hook",
+          "kind": "tool.called",
+          "actor": {
+            "kind": "agent",
+            "id": "claude_code:session:5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "tool": {
+            "name": "Bash",
+            "input_summary": "pnpm vitest run src/middleware"
+          },
+          "target": {
+            "type": "command",
+            "value": "pnpm vitest run src/middleware"
+          },
+          "data": {
+            "tool_use_id": "toolu_05"
+          }
+        },
+        {
+          "id": "01a12f5e-bba0-7420-b853-0878fcf96627",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:08:20.000Z",
+          "source": "hook",
+          "kind": "tool.result",
+          "actor": {
+            "kind": "agent",
+            "id": "claude_code:session:5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "tool": {
+            "name": "Bash",
+            "input_summary": "pnpm vitest run src/middleware"
+          },
+          "target": {
+            "type": "command",
+            "value": "pnpm vitest run src/middleware"
+          },
+          "data": {
+            "tool_use_id": "toolu_05",
+            "duration_ms": 19000
+          }
+        },
+        {
+          "id": "01a12f5e-bba0-7d16-bcc2-3843ea55b413",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:08:20.000Z",
+          "source": "otel",
+          "kind": "tool.result",
+          "actor": {
+            "kind": "agent",
+            "id": "claude_code:session:5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "tool": {
+            "name": "Bash",
+            "input_summary": "pnpm vitest run src/middleware"
+          },
+          "target": {
+            "type": "command",
+            "value": "pnpm vitest run src/middleware"
+          },
+          "data": {
+            "success": false,
+            "duration_ms": 19000,
+            "error": "AssertionError: expected 429 to be 200"
+          }
+        },
+        {
+          "id": "01a12f5f-57e0-7887-a018-c73b8402b5ea",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:09:00.000Z",
+          "source": "local_log",
+          "kind": "cost.recorded",
+          "actor": {
+            "kind": "person",
+            "id": "dev@example.com"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "cost": {
+            "input_tokens": 9000,
+            "output_tokens": 2100,
+            "cache_read_tokens": 210000,
+            "cache_write_tokens": 0,
+            "usd": 0.3,
+            "estimated": true
+          },
+          "data": {
+            "request_type": "main"
+          }
+        },
+        {
+          "id": "01a12f5f-57e0-7f58-be6b-5e05aec7ea98",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:09:00.000Z",
+          "source": "otel",
+          "kind": "cost.recorded",
+          "actor": {
+            "kind": "person",
+            "id": "dev@example.com"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "cost": {
+            "input_tokens": 9000,
+            "output_tokens": 2100,
+            "cache_read_tokens": 210000,
+            "cache_write_tokens": 0,
+            "usd": 0.3087,
+            "estimated": false
+          },
+          "data": {
+            "request_type": "main"
+          }
+        },
+        {
+          "id": "01a12f60-4240-7e1c-ba55-51ea1d1ec9c4",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:10:00.000Z",
+          "source": "hook",
+          "kind": "tool.called",
+          "actor": {
+            "kind": "agent",
+            "id": "claude_code:session:5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "tool": {
+            "name": "Edit",
+            "input_summary": "src/middleware/rate-limit.ts"
+          },
+          "target": {
+            "type": "file",
+            "value": "src/middleware/rate-limit.ts"
+          },
+          "data": {
+            "tool_use_id": "toolu_06"
+          }
+        },
+        {
+          "id": "01a12f61-2ca0-77cf-8b86-a998259b8304",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:11:00.000Z",
+          "source": "hook",
+          "kind": "tool.called",
+          "actor": {
+            "kind": "agent",
+            "id": "claude_code:session:5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "tool": {
+            "name": "Bash",
+            "input_summary": "pnpm vitest run src/middleware"
+          },
+          "target": {
+            "type": "command",
+            "value": "pnpm vitest run src/middleware"
+          },
+          "data": {
+            "tool_use_id": "toolu_07"
+          }
+        },
+        {
+          "id": "01a12f61-6738-7cb7-b377-8c08d9f0f29f",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:11:15.000Z",
+          "source": "otel",
+          "kind": "tool.result",
+          "actor": {
+            "kind": "agent",
+            "id": "claude_code:session:5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "tool": {
+            "name": "Bash",
+            "input_summary": "pnpm vitest run src/middleware"
+          },
+          "target": {
+            "type": "command",
+            "value": "pnpm vitest run src/middleware"
+          },
+          "data": {
+            "success": true,
+            "duration_ms": 14000
+          }
+        },
+        {
+          "id": "01a12f62-1700-76d3-aec2-2f66a06f53a5",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:12:00.000Z",
+          "source": "hook",
+          "kind": "tool.called",
+          "actor": {
+            "kind": "agent",
+            "id": "claude_code:session:5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "tool": {
+            "name": "TodoWrite"
+          },
+          "data": {
+            "tool_use_id": "toolu_08"
+          }
+        },
+        {
+          "id": "01a12f63-0160-784e-a6ba-9e237168c77c",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:13:00.000Z",
+          "source": "cli",
+          "kind": "policy.evaluated",
+          "actor": {
+            "kind": "system",
+            "id": "selfhost-policy"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "tool": {
+            "name": "Bash",
+            "input_summary": "psql -h db.prod.acme.example.com -c \"select count(*) from api_keys\""
+          },
+          "target": {
+            "type": "command",
+            "value": "psql -h db.prod.acme.example.com -c \"select count(*) from api_keys\""
+          },
+          "decision": {
+            "verdict": "block",
+            "by": "selfhost-policy",
+            "reason": "No queries against the production database.",
+            "rule_id": "prod-database",
+            "mode": "observe"
+          },
+          "data": {
+            "tool_event_id": "01a12f63-0160-7df6-aa22-5cf2c404bef3",
+            "evaluated_at": "2026-10-12T12:00:00.000Z",
+            "irreversible": true
+          }
+        },
+        {
+          "id": "01a12f63-0160-7af2-b95c-eb49612cb292",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:13:00.000Z",
+          "source": "cli",
+          "kind": "policy.evaluated",
+          "actor": {
+            "kind": "system",
+            "id": "selfhost-policy"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "tool": {
+            "name": "Bash",
+            "input_summary": "psql -h db.prod.acme.example.com -c \"select count(*) from api_keys\""
+          },
+          "target": {
+            "type": "command",
+            "value": "psql -h db.prod.acme.example.com -c \"select count(*) from api_keys\""
+          },
+          "decision": {
+            "verdict": "block",
+            "by": "selfhost-policy",
+            "reason": "No queries against the production database.",
+            "rule_id": "prod-database",
+            "mode": "observe"
+          },
+          "data": {
+            "tool_event_id": "01a12f63-0160-7df6-aa22-5cf2c404bef3",
+            "evaluated_at": "2026-10-12T12:00:00.000Z",
+            "irreversible": true
+          }
+        },
+        {
+          "id": "01a12f63-0160-7df6-aa22-5cf2c404bef3",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:13:00.000Z",
+          "source": "hook",
+          "kind": "tool.called",
+          "actor": {
+            "kind": "agent",
+            "id": "claude_code:session:5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "tool": {
+            "name": "Bash",
+            "input_summary": "psql -h db.prod.acme.example.com -c \"select count(*) from api_keys\""
+          },
+          "target": {
+            "type": "command",
+            "value": "psql -h db.prod.acme.example.com -c \"select count(*) from api_keys\""
+          },
+          "data": {
+            "tool_use_id": "toolu_09"
+          }
+        },
+        {
+          "id": "01a12f63-ebc0-7663-9bd2-668a7e26a41f",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:14:00.000Z",
+          "source": "otel",
+          "kind": "cost.recorded",
+          "actor": {
+            "kind": "person",
+            "id": "dev@example.com"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-haiku-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "cost": {
+            "input_tokens": 4000,
+            "output_tokens": 300,
+            "cache_read_tokens": 0,
+            "cache_write_tokens": 0,
+            "usd": 0.0124,
+            "estimated": false
+          },
+          "data": {
+            "request_type": "main"
+          }
+        },
+        {
+          "id": "01a12f64-d620-74ad-8840-509f2f806457",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:15:00.000Z",
+          "source": "hook",
+          "kind": "tool.called",
+          "actor": {
+            "kind": "agent",
+            "id": "claude_code:session:5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "tool": {
+            "name": "Bash",
+            "input_summary": "git commit -m \"Add per-key rate limiting\""
+          },
+          "target": {
+            "type": "command",
+            "value": "git commit -m \"Add per-key rate limiting\""
+          },
+          "data": {
+            "tool_use_id": "toolu_10"
+          }
+        },
+        {
+          "id": "01a12f64-ddf0-7799-a2eb-6b2153535a2a",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:15:02.000Z",
+          "source": "hook",
+          "kind": "commit.created",
+          "actor": {
+            "kind": "agent",
+            "id": "claude_code:session:5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "tool": {
+            "name": "Bash",
+            "input_summary": "git commit -m \"Add per-key rate limiting\""
+          },
+          "links": {
+            "commit_sha": "4f2a9c1d7e3b5a8f0c6d2e9b1a7f3c5d8e0b2a4c"
+          }
+        },
+        {
+          "id": "01a12f65-c080-7419-94c2-c1d319537c4d",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:16:00.000Z",
+          "source": "hook",
+          "kind": "tool.called",
+          "actor": {
+            "kind": "agent",
+            "id": "claude_code:session:5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "tool": {
+            "name": "Bash",
+            "input_summary": "git push --force origin agent/rate-limit"
+          },
+          "target": {
+            "type": "command",
+            "value": "git push --force origin agent/rate-limit"
+          },
+          "data": {
+            "tool_use_id": "toolu_11"
+          }
+        },
+        {
+          "id": "01a12f65-c080-7d74-b8b9-e616b01cffdf",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:16:00.000Z",
+          "source": "cli",
+          "kind": "policy.evaluated",
+          "actor": {
+            "kind": "system",
+            "id": "selfhost-policy"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "tool": {
+            "name": "Bash",
+            "input_summary": "git push --force origin agent/rate-limit"
+          },
+          "target": {
+            "type": "command",
+            "value": "git push --force origin agent/rate-limit"
+          },
+          "decision": {
+            "verdict": "block",
+            "by": "selfhost-policy",
+            "reason": "Force pushes are blocked. Open a PR instead.",
+            "rule_id": "no-force-push",
+            "mode": "enforce"
+          },
+          "data": {
+            "tool_event_id": "01a12f65-c080-7419-94c2-c1d319537c4d",
+            "evaluated_at": "2026-10-12T12:00:00.000Z"
+          }
+        },
+        {
+          "id": "01a12f66-aae0-7088-8600-5260ec847406",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:17:00.000Z",
+          "source": "hook",
+          "kind": "tool.called",
+          "actor": {
+            "kind": "agent",
+            "id": "claude_code:session:5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "tool": {
+            "name": "Bash",
+            "input_summary": "git push origin agent/rate-limit"
+          },
+          "target": {
+            "type": "command",
+            "value": "git push origin agent/rate-limit"
+          },
+          "data": {
+            "tool_use_id": "toolu_12"
+          }
+        },
+        {
+          "id": "01a12f66-b698-7df6-acaa-f6acd4d3e931",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:17:03.000Z",
+          "source": "hook",
+          "kind": "tool.result",
+          "actor": {
+            "kind": "agent",
+            "id": "claude_code:session:5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "tool": {
+            "name": "Bash",
+            "input_summary": "git push origin agent/rate-limit"
+          },
+          "target": {
+            "type": "command",
+            "value": "git push origin agent/rate-limit"
+          },
+          "data": {
+            "tool_use_id": "toolu_12"
+          }
+        },
+        {
+          "id": "01a12f67-9540-7132-94da-596b69ea0ea5",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:18:00.000Z",
+          "source": "hook",
+          "kind": "session.ended",
+          "actor": {
+            "kind": "person",
+            "id": "dev@example.com"
+          },
+          "agent": {
+            "vendor": "claude_code"
+          },
+          "model": "claude-sonnet-4-5",
+          "session_id": "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+          "data": {
+            "reason": "exit",
+            "hook_event": "SessionEnd"
+          }
+        },
+        {
+          "id": "01a12f69-6a00-7bb4-b445-371cfab2105c",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:20:00.000Z",
+          "source": "hook",
+          "kind": "session.started",
+          "actor": {
+            "kind": "person",
+            "id": "dev@example.com"
+          },
+          "agent": {
+            "vendor": "codex"
+          },
+          "model": "gpt-5-codex",
+          "session_id": "0199f2a4-6c1d-7e3b-9f20-5b8c7d6e4a31",
+          "data": {
+            "cwd": "/home/dev/acme-api",
+            "hook_event": "SessionStart"
+          }
+        },
+        {
+          "id": "01a12f6a-5460-7d12-9fbd-51b4f13ffcf2",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:21:00.000Z",
+          "source": "hook",
+          "kind": "tool.called",
+          "actor": {
+            "kind": "agent",
+            "id": "codex:session:0199f2a4-6c1d-7e3b-9f20-5b8c7d6e4a31"
+          },
+          "agent": {
+            "vendor": "codex"
+          },
+          "model": "gpt-5-codex",
+          "session_id": "0199f2a4-6c1d-7e3b-9f20-5b8c7d6e4a31",
+          "tool": {
+            "name": "exec_command",
+            "input_summary": "pnpm test"
+          },
+          "target": {
+            "type": "command",
+            "value": "pnpm test"
+          },
+          "data": {
+            "tool_use_id": "call_1"
+          }
+        },
+        {
+          "id": "01a12f6b-3ec0-76dc-b7be-328ea417874f",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:22:00.000Z",
+          "source": "hook",
+          "kind": "cost.recorded",
+          "actor": {
+            "kind": "person",
+            "id": "dev@example.com"
+          },
+          "agent": {
+            "vendor": "codex"
+          },
+          "model": "gpt-5-codex",
+          "session_id": "0199f2a4-6c1d-7e3b-9f20-5b8c7d6e4a31",
+          "cost": {
+            "input_tokens": 30000,
+            "output_tokens": 4100,
+            "cache_read_tokens": 52000,
+            "cache_write_tokens": 0,
+            "usd": 0.1832,
+            "estimated": true
+          },
+          "data": {
+            "request_type": "main"
+          }
+        },
+        {
+          "id": "01a12f6c-2920-75ca-b700-1710a8f7a10b",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:23:00.000Z",
+          "source": "otel",
+          "kind": "tool.result",
+          "actor": {
+            "kind": "agent",
+            "id": "codex:session:0199f2a4-6c1d-7e3b-9f20-5b8c7d6e4a31"
+          },
+          "agent": {
+            "vendor": "codex"
+          },
+          "model": "gpt-5-codex",
+          "session_id": "0199f2a4-6c1d-7e3b-9f20-5b8c7d6e4a31",
+          "tool": {
+            "name": "exec_command",
+            "input_summary": "pnpm test"
+          },
+          "target": {
+            "type": "command",
+            "value": "pnpm test"
+          },
+          "data": {
+            "success": true
+          }
+        },
+        {
+          "id": "01a12f6d-1380-7817-8f63-bd60576c7892",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-12T09:24:00.000Z",
+          "source": "otel",
+          "kind": "tool.result",
+          "actor": {
+            "kind": "agent",
+            "id": "codex:session:0199f2a4-6c1d-7e3b-9f20-5b8c7d6e4a31"
+          },
+          "agent": {
+            "vendor": "codex"
+          },
+          "model": "gpt-5-codex",
+          "session_id": "0199f2a4-6c1d-7e3b-9f20-5b8c7d6e4a31",
+          "tool": {
+            "name": "exec_command",
+            "input_summary": "pnpm lint"
+          },
+          "target": {
+            "type": "command",
+            "value": "pnpm lint"
+          },
+          "data": {
+            "success": true
+          }
+        }
+      ]
+    },
+    "highRiskPaths": [
+      "src/auth/**",
+      "db/migrations/**",
+      "infra/**"
+    ],
+    "server": "https://selfhost.acme.example.com"
+  }
+}

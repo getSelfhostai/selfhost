@@ -1,6 +1,6 @@
 import { anyGlobMatches, effectiveRules, evaluate, globMatches } from "@selfhost/policy";
+import { compare, isLockfile } from "@selfhost/pr";
 import type { ResolvedSelfhostConfig } from "@selfhost/schema";
-import { compare, isLockfile } from "./dependencies.js";
 import { type OutsideEffect, outsideEffects } from "./effects.js";
 import {
   type ChangedFile,

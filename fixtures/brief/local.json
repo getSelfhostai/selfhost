@@ -1,0 +1,180 @@
+{
+  "description": "Local commits on a repository that is not on GitHub, with no team server: no pull request title, so the first commit subject is the task; the prompt was not stored; the run built but ran no tests and recorded no cost; links are plain file:line and the trace is the local command.",
+  "inputs": {
+    "target": {
+      "base": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
+      "head": "6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8f7e",
+      "commits": [
+        "5d4c3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c",
+        "6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8f7e"
+      ]
+    },
+    "subjects": [
+      "Add a session limiter",
+      "Wire the limiter into session refresh"
+    ],
+    "agent": {
+      "vendor": "codex",
+      "model": "gpt-5-codex"
+    },
+    "files": [
+      {
+        "path": "src/limiter.ts",
+        "status": "added",
+        "additions": 4,
+        "deletions": 0,
+        "patch": "@@ -0,0 +1,4 @@\n+export function limiter(max: number) {\n+  let used = 0;\n+  return () => ++used <= max;\n+}"
+      },
+      {
+        "path": "src/auth/session.ts",
+        "status": "modified",
+        "additions": 2,
+        "deletions": 1,
+        "patch": "@@ -30,2 +30,3 @@ export async function refreshSession(id: string) {\n   const session = await load(id);\n-  return refresh(session);\n+  if (!limit()) throw new TooManyRefreshes();\n+  return refresh(session);"
+      }
+    ],
+    "dependencies": [],
+    "run": {
+      "sessions": [
+        "a3d5f7b9-1c2e-4a6b-8d0f-2e4c6a8b0d1f"
+      ],
+      "events": [
+        {
+          "id": "01a13aed-6980-744e-a7e9-bca246a50348",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-14T15:00:00.000Z",
+          "source": "local_log",
+          "kind": "session.started",
+          "actor": {
+            "kind": "person",
+            "id": "dev@example.com"
+          },
+          "agent": {
+            "vendor": "codex"
+          },
+          "model": "gpt-5-codex",
+          "session_id": "a3d5f7b9-1c2e-4a6b-8d0f-2e4c6a8b0d1f",
+          "data": {
+            "cwd": "/home/dev/acme-api"
+          }
+        },
+        {
+          "id": "01a13aed-7150-7514-a304-6b98e6176f71",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-14T15:00:02.000Z",
+          "source": "local_log",
+          "kind": "prompt.submitted",
+          "actor": {
+            "kind": "person",
+            "id": "dev@example.com"
+          },
+          "agent": {
+            "vendor": "codex"
+          },
+          "model": "gpt-5-codex",
+          "session_id": "a3d5f7b9-1c2e-4a6b-8d0f-2e4c6a8b0d1f",
+          "data": {
+            "prompt_chars": 61
+          },
+          "redacted": [
+            "data.prompt"
+          ]
+        },
+        {
+          "id": "01a13aee-53e0-76b1-83de-ed4a8feb76a5",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-14T15:01:00.000Z",
+          "source": "local_log",
+          "kind": "tool.called",
+          "actor": {
+            "kind": "agent",
+            "id": "codex:session:a3d5f7b9-1c2e-4a6b-8d0f-2e4c6a8b0d1f"
+          },
+          "agent": {
+            "vendor": "codex"
+          },
+          "model": "gpt-5-codex",
+          "session_id": "a3d5f7b9-1c2e-4a6b-8d0f-2e4c6a8b0d1f",
+          "tool": {
+            "name": "apply_patch",
+            "input_summary": "src/limiter.ts"
+          },
+          "target": {
+            "type": "file",
+            "value": "src/limiter.ts"
+          }
+        },
+        {
+          "id": "01a13aef-3e40-7c92-b4ad-acd6003a21ba",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-14T15:02:00.000Z",
+          "source": "local_log",
+          "kind": "tool.called",
+          "actor": {
+            "kind": "agent",
+            "id": "codex:session:a3d5f7b9-1c2e-4a6b-8d0f-2e4c6a8b0d1f"
+          },
+          "agent": {
+            "vendor": "codex"
+          },
+          "model": "gpt-5-codex",
+          "session_id": "a3d5f7b9-1c2e-4a6b-8d0f-2e4c6a8b0d1f",
+          "tool": {
+            "name": "apply_patch",
+            "input_summary": "src/auth/session.ts"
+          },
+          "target": {
+            "type": "file",
+            "value": "src/auth/session.ts"
+          }
+        },
+        {
+          "id": "01a13af0-28a0-75c5-94e4-85d976a7c9a7",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-14T15:03:00.000Z",
+          "source": "local_log",
+          "kind": "tool.called",
+          "actor": {
+            "kind": "agent",
+            "id": "codex:session:a3d5f7b9-1c2e-4a6b-8d0f-2e4c6a8b0d1f"
+          },
+          "agent": {
+            "vendor": "codex"
+          },
+          "model": "gpt-5-codex",
+          "session_id": "a3d5f7b9-1c2e-4a6b-8d0f-2e4c6a8b0d1f",
+          "tool": {
+            "name": "exec_command",
+            "input_summary": "pnpm build"
+          },
+          "target": {
+            "type": "command",
+            "value": "pnpm build"
+          }
+        },
+        {
+          "id": "01a13af1-1300-7ba3-90d9-54e32550df95",
+          "schema": "selfhost.event/v1",
+          "ts": "2026-10-14T15:04:00.000Z",
+          "source": "local_log",
+          "kind": "tool.called",
+          "actor": {
+            "kind": "agent",
+            "id": "codex:session:a3d5f7b9-1c2e-4a6b-8d0f-2e4c6a8b0d1f"
+          },
+          "agent": {
+            "vendor": "codex"
+          },
+          "model": "gpt-5-codex",
+          "session_id": "a3d5f7b9-1c2e-4a6b-8d0f-2e4c6a8b0d1f",
+          "tool": {
+            "name": "update_plan"
+          }
+        }
+      ]
+    },
+    "highRiskPaths": [
+      "src/auth/**"
+    ]
+  }
+}

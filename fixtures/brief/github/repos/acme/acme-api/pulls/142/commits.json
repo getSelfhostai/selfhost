@@ -1,0 +1,32 @@
+[
+  {
+    "sha": "4f2a9c1d7e3b5a8f0c6d2e9b1a7f3c5d8e0b2a4c",
+    "commit": {
+      "message": "Add per-key rate limiting",
+      "author": {
+        "name": "Alice Example",
+        "email": "alice@example.com",
+        "date": "2026-10-12T09:15:02Z"
+      }
+    },
+    "author": {
+      "login": "alice",
+      "type": "User"
+    }
+  },
+  {
+    "sha": "9c1e5a7b3d2f4e6a8b0c1d3e5f7a9b2c4d6e8f0a",
+    "commit": {
+      "message": "Skip the refill test until the fake clock lands",
+      "author": {
+        "name": "Alice Example",
+        "email": "alice@example.com",
+        "date": "2026-10-12T09:25:00Z"
+      }
+    },
+    "author": {
+      "login": "alice",
+      "type": "User"
+    }
+  }
+]

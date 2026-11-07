@@ -1,12 +1,5 @@
 export { RISK_CHECK_NAME, RISK_LABELS, type RiskCheck, riskCheck, riskLabel } from "./check.js";
 export {
-  isLockfile,
-  isManifest,
-  LOCKFILES,
-  type ManifestChange,
-  newDependencies,
-} from "./dependencies.js";
-export {
   isLocalHost,
   OUTSIDE_EFFECT_KINDS,
   OUTSIDE_EFFECTS,
@@ -21,7 +14,6 @@ export {
   gatherRiskInputs,
   type RiskTarget,
 } from "./gather.js";
-export { parseNumstat, type Runner } from "./git.js";
 export {
   formatRiskReport,
   parseTestStatus,

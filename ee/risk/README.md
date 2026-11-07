@@ -16,7 +16,9 @@ riskCheck(risk, config); // { name: "selfhost/risk", title, summary, text }
 ```
 
 `scoreRisk` is pure: no I/O, and the same inputs and config give the same result in any input
-order. `gatherRiskInputs` reads the inputs locally and never writes to GitHub.
+order. `gatherRiskInputs` reads the inputs locally and never writes to GitHub: the change, its
+attribution and its run through the Apache package [`@selfhost/pr`](../../packages/pr/README.md),
+which the review brief shares, and the revert history from git.
 
 ## Inputs
 

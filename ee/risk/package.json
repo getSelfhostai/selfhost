@@ -32,6 +32,7 @@
     "@selfhost/attribution": "workspace:*",
     "@selfhost/ledger": "workspace:*",
     "@selfhost/policy": "workspace:*",
+    "@selfhost/pr": "workspace:*",
     "@selfhost/schema": "workspace:*"
   },
   "devDependencies": {

@@ -1,0 +1,8 @@
+{
+  "name": "acme-api",
+  "dependencies": {
+    "hono": "^4.13.0",
+    "ioredis": "^5.4.1",
+    "zod": "^4.1.0"
+  }
+}

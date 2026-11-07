@@ -95,6 +95,9 @@ importers:
       '@selfhost/attribution':
         specifier: workspace:*
         version: link:../../packages/attribution
+      '@selfhost/brief':
+        specifier: workspace:*
+        version: link:../../packages/brief
       '@selfhost/ee-risk':
         specifier: workspace:*
         version: link:../../ee/risk
@@ -107,6 +110,9 @@ importers:
       '@selfhost/policy':
         specifier: workspace:*
         version: link:../../packages/policy
+      '@selfhost/pr':
+        specifier: workspace:*
+        version: link:../../packages/pr
       '@selfhost/schema':
         specifier: workspace:*
         version: link:../../packages/schema
@@ -134,7 +140,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.12(@types/node@20.19.43)(vite@8.3.6(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
+        version: 4.1.12(@types/node@20.19.43)(vite@8.3.6(@types/node@20.19.43)(esbuild@0.27.7)(tsx@4.23.15)(yaml@2.9.1))
 
   apps/server:
     dependencies:
@@ -202,6 +208,9 @@ importers:
       '@selfhost/policy':
         specifier: workspace:*
         version: link:../../packages/policy
+      '@selfhost/pr':
+        specifier: workspace:*
+        version: link:../../packages/pr
       '@selfhost/schema':
         specifier: workspace:*
         version: link:../../packages/schema
@@ -217,7 +226,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.12(@types/node@20.19.43)(vite@8.3.6(@types/node@20.19.43)(esbuild@0.27.7)(tsx@4.23.15)(yaml@2.9.1))
+        version: 4.1.12(@types/node@20.19.43)(vite@8.3.6(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/agents:
     dependencies:
@@ -249,6 +258,40 @@ importers:
       '@selfhost/schema':
         specifier: workspace:*
         version: link:../schema
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 20.19.43
+      tsup:
+        specifier: 'catalog:'
+        version: 8.5.1(postcss@8.5.32)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.12(@types/node@20.19.43)(vite@8.3.6(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
+
+  packages/brief:
+    dependencies:
+      '@selfhost/attribution':
+        specifier: workspace:*
+        version: link:../attribution
+      '@selfhost/ledger':
+        specifier: workspace:*
+        version: link:../ledger
+      '@selfhost/policy':
+        specifier: workspace:*
+        version: link:../policy
+      '@selfhost/pr':
+        specifier: workspace:*
+        version: link:../pr
+      '@selfhost/schema':
+        specifier: workspace:*
+        version: link:../schema
+      '@selfhost/spend':
+        specifier: workspace:*
+        version: link:../spend
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -331,6 +374,34 @@ importers:
       '@types/picomatch':
         specifier: 'catalog:'
         version: 4.0.3
+      tsup:
+        specifier: 'catalog:'
+        version: 8.5.1(postcss@8.5.32)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.12(@types/node@20.19.43)(vite@8.3.6(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
+
+  packages/pr:
+    dependencies:
+      '@selfhost/attribution':
+        specifier: workspace:*
+        version: link:../attribution
+      '@selfhost/ledger':
+        specifier: workspace:*
+        version: link:../ledger
+      '@selfhost/policy':
+        specifier: workspace:*
+        version: link:../policy
+      '@selfhost/schema':
+        specifier: workspace:*
+        version: link:../schema
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 20.19.43
       tsup:
         specifier: 'catalog:'
         version: 8.5.1(postcss@8.5.32)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)

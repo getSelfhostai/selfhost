@@ -1,0 +1,45 @@
+{
+  "name": "@selfhost/brief",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Builds the review brief for an agent pull request: the task, plan, files, commands, tests, blocked actions, cost, trace and the lines to look at, as data and as a GitHub comment.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@selfhost/attribution": "workspace:*",
+    "@selfhost/ledger": "workspace:*",
+    "@selfhost/policy": "workspace:*",
+    "@selfhost/pr": "workspace:*",
+    "@selfhost/schema": "workspace:*",
+    "@selfhost/spend": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

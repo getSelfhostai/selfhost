@@ -1,5 +1,8 @@
 import type { AgentRef } from "@selfhost/attribution";
 import type { ToolCall } from "@selfhost/policy";
+import type { ChangedFile, GuardrailHit, NewDependency } from "@selfhost/pr";
+
+export type { ChangedFile, GuardrailHit, NewDependency };
 
 export type RiskLevel = "low" | "medium" | "high";
 
@@ -17,33 +20,8 @@ export const RISK_INPUTS = [
 
 export type RiskInput = (typeof RISK_INPUTS)[number];
 
-export interface ChangedFile {
-  /** Path relative to the repository root with `/` separators; the new path of a rename. */
-  path: string;
-  /** The old path of a rename. */
-  previousPath?: string;
-  additions: number;
-  deletions: number;
-}
-
-export interface NewDependency {
-  /** The manifest that added it, relative to the repository root. */
-  manifest: string;
-  name: string;
-}
-
 /** What the sandbox reported: tests passed, failed, or did not run. */
 export type TestStatus = "passed" | "failed" | "not_run";
-
-/** A `policy.evaluated` event recorded for one of the run's tool calls. */
-export interface GuardrailHit {
-  rule_id: string;
-  verdict: "block" | "ask";
-  /** observe: the rule would have blocked; enforce: hooks blocked it. */
-  mode: "observe" | "enforce";
-  /** An irreversible rule fired on a command, URL or tool (not on a file path). */
-  irreversible: boolean;
-}
 
 /** The agent sessions that produced the pull request, from the ledger. */
 export interface RunInput {

@@ -37,7 +37,7 @@ export interface ReviewRiskCommandOptions {
 }
 
 /** selfhost.toml as `doctor` finds it, or the defaults when there is none. */
-function loadConfig(
+export function loadConfig(
   dir: string,
   flag: string | undefined,
   io: ReviewIo,
@@ -59,8 +59,8 @@ function loadConfig(
 }
 
 /** The ledger when there is one to read: a Postgres url, or an embedded folder that exists. */
-async function existingLedger(
-  options: ReviewRiskCommandOptions,
+export async function existingLedger(
+  options: Pick<ReviewRiskCommandOptions, "database" | "dataDir">,
   io: ReviewIo,
 ): Promise<Ledger | undefined> {
   const url = options.database ?? io.env.DATABASE_URL;

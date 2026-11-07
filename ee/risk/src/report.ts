@@ -1,9 +1,9 @@
 import type { AgentRef } from "@selfhost/attribution";
 import type { Ledger } from "@selfhost/ledger";
+import { parseChangeTarget, type Runner } from "@selfhost/pr";
 import type { ResolvedSelfhostConfig } from "@selfhost/schema";
 import { type RiskCheck, riskCheck, riskLabel } from "./check.js";
-import { type GatheredTarget, gatherRiskInputs, type RiskTarget } from "./gather.js";
-import type { Runner } from "./git.js";
+import { type GatheredTarget, gatherRiskInputs } from "./gather.js";
 import { scoreRisk } from "./score.js";
 import type { RiskResult, TestStatus } from "./types.js";
 
@@ -52,23 +52,9 @@ export function parseTestStatus(value: string | undefined): TestStatus | undefin
   return status;
 }
 
-function parseTarget(options: ReviewRiskOptions): RiskTarget {
-  if ((options.pr === undefined) === (options.base === undefined)) {
-    throw new Error("Pass a pull request number or --base <ref>, not both and not neither");
-  }
-  if (options.pr !== undefined) {
-    if (!/^\d+$/.test(options.pr) || Number(options.pr) < 1) {
-      throw new Error(`Expected a pull request number, got "${options.pr}"`);
-    }
-    if (options.head !== undefined) throw new Error("--head goes with --base");
-    return { pr: Number(options.pr) };
-  }
-  return { base: options.base as string, ...(options.head ? { head: options.head } : {}) };
-}
-
 /** Gathers the inputs, scores them and builds the label and check result. Writes nothing anywhere. */
 export async function reviewRisk(options: ReviewRiskOptions): Promise<ReviewRiskReport> {
-  const target = parseTarget(options);
+  const target = parseChangeTarget(options);
   const tests = parseTestStatus(options.tests);
   const gathered = await gatherRiskInputs({
     repoDir: options.repoDir,

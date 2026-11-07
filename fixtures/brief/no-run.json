@@ -1,0 +1,41 @@
+{
+  "description": "A pull request with nothing to show beyond its diff: no description, no session in the ledger, no [review] high_risk_paths, and a manifest GitHub would not return. Every section must still be present and say why it is empty.",
+  "inputs": {
+    "target": {
+      "repo": "acme/acme-api",
+      "pr": {
+        "number": 143,
+        "url": "https://github.com/acme/acme-api/pull/143"
+      },
+      "base": "2b4d6f8a0c1e3a5b7d9f1a3c5e7b9d0f2a4c6e8b",
+      "head": "7e9a1c3e5b7d9f2a4c6e8b0d1f3a5c7e9b2d4f6a",
+      "commits": [
+        "7e9a1c3e5b7d9f2a4c6e8b0d1f3a5c7e9b2d4f6a"
+      ]
+    },
+    "pull": {
+      "title": "Bump the docs site theme"
+    },
+    "subjects": [
+      "Bump the docs site theme"
+    ],
+    "files": [
+      {
+        "path": "README.md",
+        "status": "modified",
+        "additions": 2,
+        "deletions": 1,
+        "patch": "@@ -3,2 +3,3 @@\n ## Docs\n-Built with theme 1.\n+Built with theme 2.\n+See docs/theme.md."
+      },
+      {
+        "path": "package.json",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 1
+      }
+    ],
+    "dependenciesMissing": "could not read package.json from GitHub",
+    "runMissing": "no session in the ledger made or edited these commits",
+    "highRiskPaths": []
+  }
+}

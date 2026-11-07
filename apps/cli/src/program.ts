@@ -8,6 +8,7 @@ import {
   configureCommand,
 } from "./agents.js";
 import { registerAlerts } from "./alerts/commands.js";
+import { registerBrief } from "./brief.js";
 import { defaultConfigPath } from "./config-file.js";
 import { registerDecisions } from "./decisions.js";
 import { doctor } from "./doctor.js";
@@ -317,6 +318,18 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
   registerReview(
     program,
     () => ({ env: deps.env, cwd: deps.cwd, write: deps.write, now: deps.now }),
+    fail,
+  );
+
+  registerBrief(
+    program,
+    () => ({
+      env: deps.env,
+      cwd: deps.cwd,
+      write: deps.write,
+      now: deps.now,
+      configPath: deps.configPath ?? defaultConfigPath(),
+    }),
     fail,
   );
 
