@@ -75,3 +75,160 @@ jobs:
           name: selfhost-cli
           path: apps/cli/dist/selfhost-*
           if-no-files-found: error
+
+  # The Docker Compose install end to end: build, health checks, writes through the API and the
+  # collector, an upgrade, then a backup restored into a fresh volume.
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: deploy/docker
+    steps:
+      - uses: actions/checkout@v5
+      - name: Write .env as the install guide does
+        run: |
+          cp .env.example .env
+          for key in POSTGRES_PASSWORD SELFHOST_TOKEN SELFHOST_OTLP_TOKEN; do
+            sed -i "s/^$key=$/$key=$(openssl rand -hex 32)/" .env
+          done
+          # A local image name, so nothing is pulled for the server.
+          sed -i "s/^SELFHOST_VERSION=.*/SELFHOST_VERSION=ci-1/" .env
+          echo "SELFHOST_IMAGE=selfhost-ci" >> .env
+          cat > "$RUNNER_TEMP/compose-ci.sh" <<'SH'
+          # Read, not exported: compose must keep taking its settings from .env.
+          SELFHOST_TOKEN=$(sed -n 's/^SELFHOST_TOKEN=//p' .env)
+          SELFHOST_OTLP_TOKEN=$(sed -n 's/^SELFHOST_OTLP_TOKEN=//p' .env)
+          api() {
+            path=$1
+            shift
+            curl -fsS -H "Authorization: Bearer $SELFHOST_TOKEN" "$@" "http://127.0.0.1:4400$path"
+          }
+          event_count() {
+            total=0 cursor=""
+            while :; do
+              page=$(api "/v1/events?limit=1000${cursor:+&cursor=$(jq -rn --arg c "$cursor" '$c|@uri')}")
+              total=$((total + $(echo "$page" | jq '.events | length')))
+              cursor=$(echo "$page" | jq -r '.next_cursor // empty')
+              [ -n "$cursor" ] || break
+            done
+            echo "$total"
+          }
+          wait_healthy() {
+            for _ in $(seq 1 90); do
+              waiting=""
+              for svc in postgres selfhost otel-collector; do
+                id=$(docker compose ps -q "$svc")
+                status=$([ -n "$id" ] && docker inspect -f '{{.State.Health.Status}}' "$id" || echo missing)
+                [ "$status" = healthy ] || waiting="$waiting $svc=$status"
+              done
+              if [ -z "$waiting" ]; then docker compose ps; return 0; fi
+              sleep 2
+            done
+            echo "::error::Not healthy:$waiting"
+            docker compose ps -a
+            docker compose logs --no-color
+            return 1
+          }
+          wait_for_count() {
+            for _ in $(seq 1 30); do
+              [ "$(event_count)" = "$1" ] && return 0
+              sleep 2
+            done
+            echo "::error::Expected $1 events, found $(event_count)"
+            docker compose logs --no-color otel-collector selfhost
+            return 1
+          }
+          SH
+
+      - name: Fail on images that use latest or have no tag
+        run: |
+          fail=0
+          for image in $(docker compose config --images); do
+            ref=${image##*/}
+            case "$ref" in
+              *@sha256:*) continue ;;
+              *:*) tag=${ref#*:} ;;
+              *) echo "::error::$image has no tag"; fail=1; continue ;;
+            esac
+            case "$tag" in *latest*) echo "::error::$image uses latest"; fail=1 ;; esac
+          done
+          exit "$fail"
+
+      - name: Build the server image and start the stack
+        run: |
+          . "$RUNNER_TEMP/compose-ci.sh"
+          docker compose build selfhost
+          docker compose up -d
+          wait_healthy
+
+      - name: Write fixture events through the API and an OTLP payload through the collector
+        run: |
+          . "$RUNNER_TEMP/compose-ci.sh"
+          jq -s '{events: .}' ../../packages/schema/fixtures/event/valid/*.json > "$RUNNER_TEMP/events.json"
+          api /v1/events -X POST -H 'Content-Type: application/json' \
+            --data-binary @"$RUNNER_TEMP/events.json" | tee "$RUNNER_TEMP/ingest.json"
+          jq -e '.accepted == 8 and .duplicates == 0' "$RUNNER_TEMP/ingest.json"
+
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:4318/v1/logs \
+            -H 'Content-Type: application/json' --data-binary @../../fixtures/sources/otel/claude-code-logs.json)
+          [ "$code" = 401 ] || { echo "::error::Collector accepted logs without a token ($code)"; exit 1; }
+          curl -fsS -X POST http://127.0.0.1:4318/v1/logs \
+            -H "Authorization: Bearer $SELFHOST_OTLP_TOKEN" -H 'Content-Type: application/json' \
+            --data-binary @../../fixtures/sources/otel/claude-code-logs.json
+          curl -fsS -X POST http://127.0.0.1:4318/v1/metrics \
+            -H "Authorization: Bearer $SELFHOST_OTLP_TOKEN" -H 'Content-Type: application/json' \
+            -d '{"resourceMetrics":[{"scopeMetrics":[{"metrics":[{"name":"claude_code.session.count","sum":{"dataPoints":[{"asInt":"1","timeUnixNano":"1791295335204000000"}],"aggregationTemporality":1,"isMonotonic":true}}]}]}]}'
+
+          # 8 fixture events, plus the 6 events the OTel mapper makes of the logs payload.
+          wait_for_count 14
+          api "/v1/events?session=a20d0d4b-8ee2-4416-b55d-ae9364eb8461&limit=100" \
+            | jq -e '[.events[] | select(.source == "otel")] | length == 6'
+          if docker compose logs --no-color otel-collector | grep -i 'exporting failed'; then
+            echo "::error::The collector failed to export to the server"; exit 1
+          fi
+
+      - name: Upgrade with one command and keep the events
+        run: |
+          . "$RUNNER_TEMP/compose-ci.sh"
+          before=$(event_count)
+          sed -i "s/^SELFHOST_VERSION=.*/SELFHOST_VERSION=ci-2/" .env
+          # Stands in for publishing the next release.
+          docker compose build selfhost
+          docker compose pull --ignore-buildable && docker compose up -d
+          wait_healthy
+          docker compose ps selfhost --format '{{.Image}}' | grep -qx 'selfhost-ci:ci-2'
+          after=$(event_count)
+          echo "events before upgrade: $before, after: $after"
+          [ "$before" = 14 ] && [ "$after" = "$before" ]
+
+      - name: Back up, restore into a fresh volume, and compare event counts
+        run: |
+          . "$RUNNER_TEMP/compose-ci.sh"
+          before=$(event_count)
+          ./backup.sh "$RUNNER_TEMP/selfhost.dump"
+
+          docker compose down --volumes
+          docker compose up -d
+          wait_healthy
+          [ "$(event_count)" = 0 ]
+
+          ./restore.sh "$RUNNER_TEMP/selfhost.dump"
+          wait_healthy
+          after=$(event_count)
+          echo "events backed up: $before, restored: $after"
+          [ "$after" = "$before" ]
+
+          if ./restore.sh "$RUNNER_TEMP/selfhost.dump"; then
+            echo "::error::restore.sh replaced a database with events without --force"; exit 1
+          fi
+          wait_healthy
+          [ "$(event_count)" = "$before" ]
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose down --volumes

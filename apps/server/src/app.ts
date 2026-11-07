@@ -3,6 +3,7 @@ import type { ApiError, HealthResponse } from "@selfhost/schema";
 import { Hono } from "hono";
 import { requireBearerToken } from "./auth.js";
 import { eventRoutes } from "./events.js";
+import { otlpRoutes } from "./otlp.js";
 
 export interface AppOptions {
   version: string;
@@ -19,6 +20,7 @@ export function createApp({ version, ledger, token }: AppOptions): Hono {
   app.get("/v1/health", (c) => c.json({ ok: true, version } satisfies HealthResponse));
 
   eventRoutes(app, ledger);
+  otlpRoutes(app, ledger);
 
   app.notFound((c) =>
     c.json(

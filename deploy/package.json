@@ -1,0 +1,21 @@
+{
+  "name": "@selfhost/deploy",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Static checks for the Docker Compose install in docker/.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:",
+    "yaml": "catalog:"
+  }
+}

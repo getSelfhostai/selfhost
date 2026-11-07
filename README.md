@@ -19,7 +19,8 @@ own config. The review list and team config come next.
   and move to enforce.
 
 It runs as a laptop install (embedded Postgres via PGlite, no Docker), a self-hosted server
-(Postgres 16 via Docker Compose) or hosted, from the same code.
+(Postgres 16 via Docker Compose, see [`deploy/docker`](./deploy/docker/README.md)) or hosted,
+from the same code.
 
 ## Repository layout
 
@@ -36,6 +37,7 @@ It runs as a laptop install (embedded Postgres via PGlite, no Docker), a self-ho
 | `apps/cli`             | `selfhost` command line                                                                     |
 | `apps/console`         | Web console (placeholder)                                                                   |
 | `adapters/`            | Per-agent and per-system integrations (none yet)                                            |
+| `deploy/docker`        | Docker Compose install: Postgres, the OpenTelemetry collector and the server, with backups  |
 | `ee/`                  | Commercial code under a separate license (empty)                                            |
 | `docs/build-plan`      | Milestones and acceptance criteria                                                          |
 

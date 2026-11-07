@@ -1,0 +1,65 @@
+# OpenTelemetry collector for selfhost. Agents send OTLP (gRPC on 4317, HTTP on 4318) with
+# `Authorization: Bearer <SELFHOST_OTLP_TOKEN>`. The collector batches, retries and forwards logs
+# and metrics to the selfhost API as OTLP/HTTP JSON. The API stores log records as ledger events.
+
+extensions:
+  health_check:
+    endpoint: 127.0.0.1:13133
+  bearertokenauth/agents:
+    scheme: Bearer
+    token: ${env:SELFHOST_OTLP_TOKEN}
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+        auth:
+          authenticator: bearertokenauth/agents
+      http:
+        endpoint: 0.0.0.0:4318
+        auth:
+          authenticator: bearertokenauth/agents
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 20
+
+exporters:
+  otlp_http/selfhost:
+    # The exporter appends /v1/logs and /v1/metrics.
+    endpoint: http://selfhost:4400/v1/otlp
+    encoding: json
+    compression: gzip
+    headers:
+      Authorization: Bearer ${env:SELFHOST_TOKEN}
+    retry_on_failure:
+      enabled: true
+      max_elapsed_time: 10m
+    sending_queue:
+      enabled: true
+      batch:
+        flush_timeout: 1s
+        min_size: 1000
+        max_size: 1000
+  # Traces are not stored yet. They are accepted and dropped so agents with traces on do not log
+  # export errors.
+  nop:
+
+service:
+  extensions: [health_check, bearertokenauth/agents]
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter]
+      exporters: [otlp_http/selfhost]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter]
+      exporters: [otlp_http/selfhost]
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter]
+      exporters: [nop]

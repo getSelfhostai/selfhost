@@ -1,0 +1,99 @@
+# selfhost on one server: Postgres, the OpenTelemetry collector and the selfhost API.
+# Copy .env.example to .env and fill it in, then run `docker compose up -d`. See README.md.
+# Third-party images are pinned to exact versions; a test fails on `latest` or a missing tag.
+name: selfhost
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "5"
+
+services:
+  postgres:
+    image: postgres:16.15
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-selfhost}
+      POSTGRES_USER: ${POSTGRES_USER:-selfhost}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    logging: *logging
+
+  selfhost:
+    # Pulls the release named by SELFHOST_VERSION, or builds it from this checkout when the
+    # image is not published or with `docker compose up -d --build`.
+    image: ${SELFHOST_IMAGE:-ghcr.io/getselfhostai/selfhost}:${SELFHOST_VERSION:?Set SELFHOST_VERSION in .env}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Migrations run on start, under a lock, before the server listens.
+      DATABASE_URL: postgres://${POSTGRES_USER:-selfhost}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-selfhost}
+      SELFHOST_TOKEN: ${SELFHOST_TOKEN:?Set SELFHOST_TOKEN in .env}
+    ports:
+      - "${SELFHOST_BIND:-0.0.0.0}:${SELFHOST_PORT:-4400}:4400"
+    # Health check: HEALTHCHECK in the image, GET /v1/health.
+    logging: *logging
+
+  # The collector image has no shell or HTTP client, so its health check runs a static busybox
+  # that this one-shot service copies into a shared volume. The rename keeps a copy made during a
+  # running health check from failing on a busy file.
+  collector-probe:
+    image: busybox:1.37.0-musl
+    command:
+      - sh
+      - -c
+      - cp /bin/busybox /probe/busybox.new && mv -f /probe/busybox.new /probe/busybox
+    volumes:
+      - collector-probe:/probe
+    logging: *logging
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.164.0
+    restart: unless-stopped
+    depends_on:
+      collector-probe:
+        condition: service_completed_successfully
+      selfhost:
+        condition: service_healthy
+    environment:
+      SELFHOST_TOKEN: ${SELFHOST_TOKEN:?Set SELFHOST_TOKEN in .env}
+      SELFHOST_OTLP_TOKEN: ${SELFHOST_OTLP_TOKEN:?Set SELFHOST_OTLP_TOKEN in .env}
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - collector-probe:/probe:ro
+    ports:
+      - "${OTLP_BIND:-0.0.0.0}:${OTLP_GRPC_PORT:-4317}:4317"
+      - "${OTLP_BIND:-0.0.0.0}:${OTLP_HTTP_PORT:-4318}:4318"
+    healthcheck:
+      test:
+        - CMD
+        - /probe/busybox
+        - wget
+        - -q
+        - -T
+        - "4"
+        - -O
+        - /dev/null
+        - http://127.0.0.1:13133/
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging: *logging
+
+volumes:
+  postgres-data:
+  collector-probe:

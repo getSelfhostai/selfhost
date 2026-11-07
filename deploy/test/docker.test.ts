@@ -1,0 +1,268 @@
+import { readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
+
+const DIR = join(import.meta.dirname, "..", "docker");
+const read = (file: string) => readFileSync(join(DIR, file), "utf8");
+
+interface Service {
+  image?: string;
+  build?: unknown;
+  restart?: string;
+  depends_on?: Record<string, { condition: string }>;
+  environment?: Record<string, string>;
+  ports?: string[];
+  volumes?: string[];
+  healthcheck?: { test: string[] };
+}
+
+const composeText = read("compose.yml");
+const compose = parse(composeText) as {
+  services: Record<string, Service>;
+  volumes: Record<string, unknown>;
+};
+const services = compose.services;
+const service = (name: string): Service => {
+  const found = services[name];
+  if (!found) throw new Error(`No service ${name} in compose.yml`);
+  return found;
+};
+
+/** .env.example: values of the lines that are set, and every name it documents. */
+function readEnvExample() {
+  const values: Record<string, string> = {};
+  const documented = new Set<string>();
+  for (const line of read(".env.example").split("\n")) {
+    const match = /^(#\s*)?([A-Z][A-Z0-9_]*)=(.*)$/.exec(line.trim());
+    if (!match?.[2]) continue;
+    documented.add(match[2]);
+    if (!match[1]) values[match[2]] = match[3] ?? "";
+  }
+  return { values, documented };
+}
+const envExample = readEnvExample();
+
+/** Compose variable interpolation: $$, ${VAR}, ${VAR:-default}, ${VAR-default}, ${VAR:?error}. */
+function interpolate(text: string, env: Record<string, string>): string {
+  return text.replace(
+    /\$\$|\$\{([A-Za-z_][A-Za-z0-9_]*)(?:(:?[-?])([^}]*))?\}/g,
+    (match, name: string, op: string | undefined, arg: string | undefined) => {
+      if (match === "$$") return "$";
+      const value = env[name];
+      const missing = value === undefined || (op?.startsWith(":") === true && value === "");
+      if (op?.endsWith("-")) return missing ? (arg ?? "") : (value ?? "");
+      if (op?.endsWith("?") && missing) throw new Error(`${name} is required: ${arg}`);
+      return value ?? "";
+    },
+  );
+}
+
+const EXACT_VERSION = /^v?\d+\.\d+(\.\d+)*([-_.][0-9A-Za-z.-]+)?$/;
+
+/** Why an image reference is not pinned to an exact version, or undefined when it is. */
+function unpinned(image: string): string | undefined {
+  if (/@sha256:[0-9a-f]{64}$/.test(image)) return undefined;
+  const name = image.slice(image.lastIndexOf("/") + 1);
+  const at = name.indexOf(":");
+  if (at < 0 || at === name.length - 1) return "has no tag";
+  const tag = name.slice(at + 1);
+  if (/latest/i.test(tag)) return "uses latest";
+  if (!EXACT_VERSION.test(tag)) return `tag ${tag} is not an exact version`;
+  return undefined;
+}
+
+describe("image pinning", () => {
+  it.each([
+    ["postgres", "has no tag"],
+    ["postgres:", "has no tag"],
+    ["postgres:latest", "uses latest"],
+    ["otel/opentelemetry-collector-contrib:latest-arm64", "uses latest"],
+    ["postgres:16", "tag 16 is not an exact version"],
+    ["busybox:musl", "tag musl is not an exact version"],
+    ["localhost:5000/postgres", "has no tag"],
+  ])("flags %s", (image, reason) => {
+    expect(unpinned(image)).toBe(reason);
+  });
+
+  it.each([
+    "postgres:16.15",
+    "busybox:1.37.0-musl",
+    "localhost:5000/postgres:16.15",
+    `postgres@sha256:${"a".repeat(64)}`,
+  ])("accepts %s", (image) => {
+    expect(unpinned(image)).toBeUndefined();
+  });
+
+  it("pins every image in compose.yml, resolved with .env.example", () => {
+    const problems = Object.entries(services).flatMap(([name, svc]) => {
+      if (!svc.image) return [`${name} has no image`];
+      const why = unpinned(interpolate(svc.image, envExample.values));
+      return why ? [`${name}: ${svc.image} ${why}`] : [];
+    });
+    expect(problems).toEqual([]);
+  });
+
+  it("writes third-party image versions in the file, where no setting can turn them into latest", () => {
+    for (const [name, svc] of Object.entries(services)) {
+      if (name !== "selfhost") expect(svc.image, name).not.toContain("$");
+    }
+  });
+
+  it("refuses to start selfhost without SELFHOST_VERSION rather than fall back to a default", () => {
+    expect(() => interpolate(service("selfhost").image ?? "", {})).toThrow(
+      /^SELFHOST_VERSION is required/,
+    );
+  });
+
+  it("pins the Dockerfile base images", () => {
+    const dockerfile = read("Dockerfile");
+    const args = Object.fromEntries(
+      [...dockerfile.matchAll(/^ARG (\w+)=(\S+)$/gm)].map((m) => [m[1] ?? "", m[2] ?? ""]),
+    );
+    const froms = [...dockerfile.matchAll(/^FROM (\S+)/gm)].map((m) => m[1] ?? "");
+    expect(froms.length).toBeGreaterThan(1);
+    for (const from of froms) expect(unpinned(interpolate(from, args)), from).toBeUndefined();
+  });
+});
+
+describe("compose.yml", () => {
+  it("runs Postgres, the collector and the server", () => {
+    expect(Object.keys(services).sort()).toEqual([
+      "collector-probe",
+      "otel-collector",
+      "postgres",
+      "selfhost",
+    ]);
+  });
+
+  it("gives every long-running service a health check and a restart policy", () => {
+    expect(service("postgres").healthcheck?.test).toContain("CMD-SHELL");
+    expect(service("otel-collector").healthcheck?.test.join(" ")).toMatch(
+      /^CMD \/probe\/busybox wget .*http:\/\/127\.0\.0\.1:13133\/$/,
+    );
+    // The server's check is the HEALTHCHECK in its image.
+    expect(read("Dockerfile")).toMatch(/^HEALTHCHECK [^\n]*\\\n\s+CMD [^\n]*\/v1\/health/m);
+    for (const name of ["postgres", "selfhost", "otel-collector"]) {
+      expect(service(name).restart, name).toBe("unless-stopped");
+    }
+  });
+
+  it("starts each service once what it needs is healthy", () => {
+    expect(service("selfhost").depends_on).toEqual({
+      postgres: { condition: "service_healthy" },
+    });
+    expect(service("otel-collector").depends_on).toEqual({
+      "collector-probe": { condition: "service_completed_successfully" },
+      selfhost: { condition: "service_healthy" },
+    });
+  });
+
+  it("keeps Postgres data in a named volume, so upgrades and restarts keep events", () => {
+    expect(service("postgres").volumes).toEqual(["postgres-data:/var/lib/postgresql/data"]);
+    expect(Object.keys(compose.volumes)).toContain("postgres-data");
+    expect(service("postgres").ports).toBeUndefined();
+  });
+
+  it("builds the server from this repository's Dockerfile", () => {
+    expect(service("selfhost").build).toEqual({
+      context: "../..",
+      dockerfile: "deploy/docker/Dockerfile",
+    });
+  });
+});
+
+describe(".env.example", () => {
+  const referenced = [...composeText.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)(:?[-?])?/g)];
+
+  it("documents every variable compose.yml reads", () => {
+    const names = [...new Set(referenced.map((m) => m[1] ?? ""))];
+    expect(names.filter((name) => !envExample.documented.has(name))).toEqual([]);
+  });
+
+  it("lists every required variable as a line to fill in", () => {
+    const required = new Set(referenced.filter((m) => m[2]?.endsWith("?")).map((m) => m[1]));
+    expect([...required].sort()).toEqual([
+      "POSTGRES_PASSWORD",
+      "SELFHOST_OTLP_TOKEN",
+      "SELFHOST_TOKEN",
+      "SELFHOST_VERSION",
+    ]);
+    for (const name of required) expect(envExample.values, name).toHaveProperty(name as string);
+  });
+
+  it("commits no secrets", () => {
+    const secrets = Object.entries(envExample.values).filter(([name]) =>
+      /PASSWORD|TOKEN|SECRET|KEY/.test(name),
+    );
+    expect(secrets.length).toBe(3);
+    for (const [name, value] of secrets) expect(value, name).toBe("");
+  });
+});
+
+describe("otel-collector.yaml", () => {
+  const config = parse(read("otel-collector.yaml")) as {
+    extensions: Record<string, { endpoint?: string }>;
+    receivers: {
+      otlp: {
+        protocols: Record<string, { endpoint: string; auth?: { authenticator: string } }>;
+      };
+    };
+    exporters: Record<
+      string,
+      { endpoint?: string; encoding?: string; headers?: Record<string, string> }
+    >;
+    service: { extensions: string[]; pipelines: Record<string, { exporters: string[] }> };
+  };
+  const exporter = config.exporters["otlp_http/selfhost"];
+
+  it("receives OTLP on the ports compose publishes, behind the agents' token", () => {
+    const { grpc, http } = config.receivers.otlp.protocols;
+    expect(grpc?.endpoint).toBe("0.0.0.0:4317");
+    expect(http?.endpoint).toBe("0.0.0.0:4318");
+    for (const protocol of [grpc, http]) {
+      expect(protocol?.auth?.authenticator).toBe("bearertokenauth/agents");
+    }
+    const published = (service("otel-collector").ports ?? []).map((p) => p.split(":").at(-1));
+    expect(published).toEqual(["4317", "4318"]);
+  });
+
+  it("sends logs and metrics to the server's OTLP route as JSON with the API token", () => {
+    const port = /^\s+PORT=(\d+)/m.exec(read("Dockerfile"))?.[1];
+    expect(exporter?.endpoint).toBe(`http://selfhost:${port}/v1/otlp`);
+    expect(exporter?.encoding).toBe("json");
+    expect(exporter?.headers).toEqual({ Authorization: `Bearer \${env:SELFHOST_TOKEN}` });
+    expect(config.service.pipelines.logs?.exporters).toEqual(["otlp_http/selfhost"]);
+    expect(config.service.pipelines.metrics?.exporters).toEqual(["otlp_http/selfhost"]);
+  });
+
+  it("gets every environment variable it reads from compose.yml", () => {
+    const used = [...read("otel-collector.yaml").matchAll(/\$\{env:(\w+)\}/g)].map((m) => m[1]);
+    const given = Object.keys(service("otel-collector").environment ?? {});
+    expect([...new Set(used)].sort()).toEqual(given.sort());
+  });
+
+  it("serves its health check where the compose health check looks", () => {
+    expect(config.extensions.health_check?.endpoint).toBe("127.0.0.1:13133");
+    expect(config.service.extensions).toContain("health_check");
+  });
+});
+
+describe("Dockerfile", () => {
+  const dockerfile = read("Dockerfile");
+
+  it("runs as a non-root user and listens on every interface", () => {
+    const users = [...dockerfile.matchAll(/^USER (\S+)/gm)].map((m) => m[1]);
+    expect(users.at(-1)).toBe("node");
+    expect(dockerfile).toMatch(/^\s+HOST=0\.0\.0\.0 \\$/m);
+  });
+});
+
+describe("backup and restore scripts", () => {
+  it.skipIf(process.platform === "win32").each(["backup.sh", "restore.sh"])(
+    "%s is executable",
+    (file) => {
+      expect(statSync(join(DIR, file)).mode & 0o111).toBe(0o111);
+    },
+  );
+});
