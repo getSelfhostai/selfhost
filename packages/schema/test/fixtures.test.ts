@@ -33,3 +33,12 @@ describe.each(Object.entries(CONTRACTS))("%s fixtures", (name, contract) => {
     if (want.line !== undefined) expect(error?.line).toBe(want.line);
   });
 });
+
+// CI writes every valid event fixture to a real server in one batch, which rejects repeated ids.
+describe("event fixtures", () => {
+  it("use a different id each", () => {
+    const dir = join(FIXTURES, "event", "valid");
+    const ids = listFiles(dir, ".json").map((file) => JSON.parse(read(dir, file)).id as string);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});
