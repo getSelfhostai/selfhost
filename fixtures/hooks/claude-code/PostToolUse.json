@@ -1,0 +1,50 @@
+{
+  "session_id": "665bce74-4bdc-4164-8bb1-cc4246de2400",
+  "prompt_id": "bcb88634-48d1-4de2-892b-360e49853c6b",
+  "transcript_path": "/home/dev/.claude/projects/-home-dev-acme-api/665bce74-4bdc-4164-8bb1-cc4246de2400.jsonl",
+  "cwd": "/home/dev/acme-api",
+  "scratchpad_dir": "/tmp/claude-1000/-home-dev-acme-api/665bce74-4bdc-4164-8bb1-cc4246de2400/scratchpad",
+  "permission_mode": "bypassPermissions",
+  "effort": {
+    "level": "xhigh"
+  },
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Edit",
+  "tool_input": {
+    "replace_all": false,
+    "file_path": "/home/dev/acme-api/src/app.ts",
+    "old_string": "app.use(express.json());\napp.use(\"/users\", usersRouter);",
+    "new_string": "app.use(express.json());\n\napp.get(\"/health\", (_req, res) => {\n  res.json({ status: \"ok\", version: process.env.npm_package_version ?? \"dev\" });\n});\n\napp.use(\"/users\", usersRouter);"
+  },
+  "tool_response": {
+    "filePath": "/home/dev/acme-api/src/app.ts",
+    "oldString": "app.use(express.json());\napp.use(\"/users\", usersRouter);",
+    "newString": "app.use(express.json());\n\napp.get(\"/health\", (_req, res) => {\n  res.json({ status: \"ok\", version: process.env.npm_package_version ?? \"dev\" });\n});\n\napp.use(\"/users\", usersRouter);",
+    "originalFile": null,
+    "structuredPatch": [
+      {
+        "oldStart": 4,
+        "oldLines": 6,
+        "newStart": 4,
+        "newLines": 11,
+        "lines": [
+          " export const app = express();",
+          " ",
+          " app.use(express.json());",
+          "+",
+          "+app.get(\"/health\", (_req, res) => {",
+          "+  res.json({ status: \"ok\", version: process.env.npm_package_version ?? \"dev\" });",
+          "+});",
+          "+",
+          " app.use(\"/users\", usersRouter);",
+          " ",
+          " export default app;"
+        ]
+      }
+    ],
+    "userModified": false,
+    "replaceAll": false
+  },
+  "tool_use_id": "toolu_01rVtkbbWrIxarl7wcpUCp94",
+  "duration_ms": 9
+}

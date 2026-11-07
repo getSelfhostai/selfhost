@@ -1,0 +1,80 @@
+{
+  "vendor": "Codex",
+  "cli": "codex",
+  "synthetic": true,
+  "hasHooks": true,
+  "source": "Field names from the Codex hooks page (developers.openai.com/codex/hooks) and the notify section of developers.openai.com/codex/config-advanced, read 2026-11-07. Values match session X in codex/sessions.",
+  "observedVersions": [
+    "0.137.0-alpha.4",
+    "0.142.5"
+  ],
+  "observedMonth": "2026-11",
+  "delivery": "Hooks get one JSON object on stdin. notify gets one JSON argument on the command line and only fires for agent-turn-complete.",
+  "files": [
+    {
+      "path": "notify-agent-turn-complete.json",
+      "description": "notify payload with kebab-case keys: type, thread-id, turn-id, cwd, input-messages, last-assistant-message."
+    },
+    {
+      "path": "SessionStart.json",
+      "description": "Session start (source startup) with permission_mode."
+    },
+    {
+      "path": "UserPromptSubmit.json",
+      "description": "Prompt about to be sent, with turn_id."
+    },
+    {
+      "path": "PreToolUse.json",
+      "description": "exec_command git commit, reported as tool_name Bash with tool_input.command."
+    },
+    {
+      "path": "PermissionRequest.json",
+      "description": "Approval request for a Bash command with a description."
+    },
+    {
+      "path": "PostToolUse.json",
+      "description": "apply_patch after it ran; tool_input.command holds the patch and tool_response the model-facing output."
+    },
+    {
+      "path": "PreModelRequest.json",
+      "description": "Before a model request attempt."
+    },
+    {
+      "path": "PostModelRequest.json",
+      "description": "After a model request attempt with status, error and token_usage."
+    },
+    {
+      "path": "PreCompact.json",
+      "description": "Automatic compaction about to run."
+    },
+    {
+      "path": "PostCompact.json",
+      "description": "Automatic compaction finished."
+    },
+    {
+      "path": "SubagentStart.json",
+      "description": "Explorer subagent starting."
+    },
+    {
+      "path": "SubagentStop.json",
+      "description": "Explorer subagent stopping with last_assistant_message."
+    },
+    {
+      "path": "Stop.json",
+      "description": "End of turn with last_assistant_message."
+    },
+    {
+      "path": "Interrupt.json",
+      "description": "User interrupted the active turn."
+    },
+    {
+      "path": "SessionEnd.json",
+      "description": "Session ended; reason is always other today."
+    }
+  ],
+  "notes": [
+    "session_id is the thread id; subagent hooks use the parent session id.",
+    "The docs do not give the token_usage shape for PostModelRequest; this fixture assumes the token_count usage shape from session logs.",
+    "The documented SessionEnd example has no model field, so this fixture omits it."
+  ]
+}

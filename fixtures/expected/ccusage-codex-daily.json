@@ -1,0 +1,85 @@
+{
+  "daily": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 73344,
+      "costUSD": 0.137432,
+      "date": "2026-10-05",
+      "inputTokens": 7732,
+      "models": {
+        "gpt-5.5": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 73344,
+          "inputTokens": 7732,
+          "isFallback": false,
+          "outputTokens": 2070,
+          "reasoningOutputTokens": 888,
+          "totalTokens": 83146
+        }
+      },
+      "outputTokens": 2070,
+      "reasoningOutputTokens": 888,
+      "totalTokens": 83146
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 69632,
+      "costUSD": 0.0719664,
+      "date": "2026-10-07",
+      "inputTokens": 15510,
+      "models": {
+        "gpt-5.4": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 55040,
+          "inputTokens": 15082,
+          "isFallback": false,
+          "outputTokens": 1261,
+          "reasoningOutputTokens": 680,
+          "totalTokens": 71383
+        },
+        "gpt-5.4-mini": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 14592,
+          "inputTokens": 428,
+          "isFallback": false,
+          "outputTokens": 38,
+          "reasoningOutputTokens": 0,
+          "totalTokens": 15058
+        }
+      },
+      "outputTokens": 1299,
+      "reasoningOutputTokens": 680,
+      "totalTokens": 86441
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 11904,
+      "costUSD": 0.138942,
+      "date": "2026-10-09",
+      "inputTokens": 13146,
+      "models": {
+        "gpt-5.5": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 11904,
+          "inputTokens": 13146,
+          "isFallback": false,
+          "outputTokens": 2242,
+          "reasoningOutputTokens": 1722,
+          "totalTokens": 27292
+        }
+      },
+      "outputTokens": 2242,
+      "reasoningOutputTokens": 1722,
+      "totalTokens": 27292
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 0,
+    "cacheReadTokens": 154880,
+    "costUSD": 0.3483404,
+    "inputTokens": 36388,
+    "outputTokens": 5611,
+    "reasoningOutputTokens": 3290,
+    "totalTokens": 196879
+  }
+}

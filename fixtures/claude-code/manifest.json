@@ -1,0 +1,64 @@
+{
+  "vendor": "Claude Code",
+  "cli": "claude",
+  "synthetic": true,
+  "observedVersions": [
+    "2.1.205",
+    "2.1.209",
+    "2.1.219",
+    "2.1.222",
+    "2.1.237",
+    "2.1.247",
+    "2.1.260",
+    "2.1.274",
+    "2.1.275",
+    "2.1.281",
+    "2.1.288",
+    "2.1.308",
+    "2.1.309"
+  ],
+  "structureMirrors": "2.1.309 (2.1.308 has the same keys)",
+  "observedMonth": "2026-11",
+  "observedEntrypoints": [
+    "claude-desktop"
+  ],
+  "fixtureMonth": "2026-10",
+  "layout": "projects/<project-dir>/<session-uuid>.jsonl, the same layout as ~/.claude/projects",
+  "content": "Invented project acme-api at /home/dev/acme-api, user dev, emails at example.com. No text comes from real logs.",
+  "files": [
+    {
+      "path": "projects/-home-dev-acme-api/665bce74-4bdc-4164-8bb1-cc4246de2400.jsonl",
+      "cliVersion": "2.1.308",
+      "sessionId": "665bce74-4bdc-4164-8bb1-cc4246de2400",
+      "description": "Session on 2026-10-05, CLI 2.1.308, claude-opus-5-5: SessionStart hook attachment, one prompt, Read, Edit of src/app.ts, Write of a new test, Bash npm test, Bash git commit, Stop hook summary. The first API message spans three lines (thinking, text, tool_use) that share one message id and usage."
+    },
+    {
+      "path": "projects/-home-dev-acme-api/a20d0d4b-8ee2-4416-b55d-ae9364eb8461.jsonl",
+      "cliVersion": "2.1.309",
+      "sessionId": "a20d0d4b-8ee2-4416-b55d-ae9364eb8461",
+      "description": "Session on 2026-10-06, CLI 2.1.309, claude-opus-5-5, with slug: two prompts, Read, Edit, a failing Bash npm test (is_error true, string toolUseResult), Read with offset and limit, Edit of the test, passing test, two git commits; the second prompt's file-history-snapshot tracks the edited files."
+    },
+    {
+      "path": "projects/-home-dev-acme-api/538b2156-9f52-495c-82d4-2bae253bfac6.jsonl",
+      "cliVersion": "2.1.309",
+      "sessionId": "538b2156-9f52-495c-82d4-2bae253bfac6",
+      "description": "Session from 2026-10-08 23:41 to 2026-10-09 00:00 UTC, CLI 2.1.309, mixes claude-fable-5-1 and claude-opus-5-5: Read, Write of CONTRIBUTING.md, Bash npm version with bashEditDiff, Bash git commit. Crosses midnight UTC so it lands on two days."
+    }
+  ],
+  "expected": {
+    "file": "../expected/ccusage-claude-daily.json",
+    "tool": "ccusage",
+    "version": "20.0.48",
+    "command": "HOME=<empty dir> CLAUDE_CONFIG_DIR=fixtures/claude-code npx -y ccusage@20.0.48 claude daily --json --offline -z UTC",
+    "timezone": "UTC",
+    "readFixtures": true,
+    "combinedFile": "../expected/ccusage-all-daily.json",
+    "combinedCommand": "HOME=<empty dir> CLAUDE_CONFIG_DIR=fixtures/claude-code CODEX_HOME=fixtures/codex npx -y ccusage@20.0.48 daily --json --offline -z UTC",
+    "notes": "ccusage 20 folds every agent into `ccusage daily` (saved as the combined file); `ccusage claude daily` gives the Claude-only view. HOME points at an empty directory so no other local agent data or ccusage config is picked up. Lines that share a message id and request id are counted once."
+  },
+  "notes": [
+    "Line types kept from real logs: queue-operation, file-history-snapshot, user (prompt and tool_result), assistant (one content block per line), attachment (hook_success), system (stop_hook_summary), last-prompt, custom-title.",
+    "Real logs also carry many attachment subtypes and api-request lines; those are omitted because importers skip them.",
+    "Lines that switch to claude-fable-5-1 set requestedModel and advisorModel to the line's model; real 2.1.309 logs only showed claude-opus-5-5 in those fields."
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "session_id": "01a10ca6-8deb-75c0-92f6-bb789b300b1a",
+  "transcript_path": "/home/dev/.codex/sessions/2026/10/05/rollout-2026-10-05T17-20-04-01a10ca6-8deb-75c0-92f6-bb789b300b1a.jsonl",
+  "cwd": "/home/dev/acme-api",
+  "hook_event_name": "SubagentStop",
+  "model": "gpt-5.5",
+  "permission_mode": "bypassPermissions",
+  "turn_id": "01a10ca6-8eb3-7b39-9f83-61b1004cb6f0",
+  "agent_id": "01a10ca7-2f3e-7b10-9c4d-5e6f7a8b9c0d",
+  "agent_type": "explorer",
+  "agent_transcript_path": null,
+  "stop_hook_active": false,
+  "last_assistant_message": "Middleware is registered in src/app.ts after express.json()."
+}

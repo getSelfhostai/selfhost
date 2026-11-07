@@ -1,0 +1,57 @@
+{
+  "purpose": "Planted fake secrets and PII for redaction tests. Every value is fake and contains FAKE, but each matches the usual detector shape for its type. scripts/scrub-check.mjs skips this folder.",
+  "planted": [
+    {
+      "kind": "anthropic_api_key",
+      "value": "sk-ant-api03-FAKE-test-key-not-real-FAKE-test-key-not-real-FAKE-test-key-not-real-FAKE-test-key-not-real-FAA",
+      "files": [
+        "event-with-secrets.json",
+        "events-with-secrets.jsonl"
+      ]
+    },
+    {
+      "kind": "openai_api_key",
+      "value": "sk-proj-FAKE_openai_key_FAKE_openai_key_FAKE_openai_key_FAKE_openai_key_T3BlbkFJnot_a_real_secret_FAKE_not_a_real_secret_FAKE_not_a_real_secret_",
+      "files": [
+        "event-with-secrets.json",
+        "events-with-secrets.jsonl"
+      ]
+    },
+    {
+      "kind": "github_token",
+      "value": "ghp_FAKE0000000000000000000000000000TEST",
+      "files": [
+        "event-with-secrets.json",
+        "events-with-secrets.jsonl"
+      ]
+    },
+    {
+      "kind": "aws_access_key_id",
+      "value": "AKIAFAKEEXAMPLE23456",
+      "files": [
+        "event-with-secrets.json",
+        "events-with-secrets.jsonl"
+      ]
+    },
+    {
+      "kind": "aws_secret_access_key",
+      "value": "FAKEsecretKEY/notReal+EXAMPLEonly0000000",
+      "files": [
+        "event-with-secrets.json",
+        "events-with-secrets.jsonl"
+      ]
+    },
+    {
+      "kind": "email",
+      "value": "jane.doe@example.com",
+      "files": [
+        "event-with-secrets.json",
+        "events-with-secrets.jsonl"
+      ]
+    }
+  ],
+  "files": {
+    "event-with-secrets.json": "Claude Code PostToolUse hook payload for a Bash call that printed an .env file and a git author line.",
+    "events-with-secrets.jsonl": "Three Claude Code transcript lines (prompt, Bash tool_use, tool_result) and one Codex exec_command function_call, each carrying planted values."
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "vendor": "Codex",
+  "cli": "codex",
+  "synthetic": true,
+  "observedVersions": [
+    "0.117.0-alpha.12",
+    "0.124.0-alpha.2",
+    "0.125.0-alpha.3",
+    "0.137.0-alpha.4",
+    "0.142.5"
+  ],
+  "structureMirrors": "0.142.5 (Codex Desktop) and 0.137.0-alpha.4 (codex_exec)",
+  "observedMonth": "2026-11",
+  "observedOriginators": [
+    "Codex Desktop",
+    "codex_exec"
+  ],
+  "fixtureMonth": "2026-10",
+  "layout": "sessions/YYYY/MM/DD/rollout-<local time>-<uuidv7>.jsonl, the same layout as ~/.codex/sessions. Folder dates and file names use local time; line timestamps are UTC.",
+  "content": "Invented project acme-api at /home/dev/acme-api, user dev, emails at example.com. No text comes from real logs.",
+  "files": [
+    {
+      "path": "sessions/2026/10/05/rollout-2026-10-05T17-20-04-01a10ca6-8deb-75c0-92f6-bb789b300b1a.jsonl",
+      "cliVersion": "0.142.5",
+      "sessionId": "01a10ca6-8deb-75c0-92f6-bb789b300b1a",
+      "description": "Codex Desktop 0.142.5 session on 2026-10-05, gpt-5.5: two exec_command reads, apply_patch adding src/middleware/logger.ts and updating src/app.ts (patch_apply_end), npm test, git commit. Includes one repeated token_count event with unchanged totals."
+    },
+    {
+      "path": "sessions/2026/10/08/rollout-2026-10-08T00-30-12-01a1187d-1448-7dbe-aad4-30570632d708.jsonl",
+      "cliVersion": "0.142.5",
+      "sessionId": "01a1187d-1448-7dbe-aad4-30570632d708",
+      "description": "Codex Desktop 0.142.5 session on 2026-10-07 22:30 UTC, stored under the local date 2026/10/08 (Europe/Berlin): turn 1 on gpt-5.4 reads a test, patches it, runs the suite, commits; turn 2 switches to gpt-5.4-mini with no tool calls."
+    },
+    {
+      "path": "sessions/2026/10/09/rollout-2026-10-09T09-05-30-01a11f7b-344a-7dcf-a38c-f382a684ecd2.jsonl",
+      "cliVersion": "0.137.0-alpha.4",
+      "sessionId": "01a11f7b-344a-7dcf-a38c-f382a684ecd2",
+      "description": "codex exec 0.137.0-alpha.4 session on 2026-10-09, gpt-5.5, read-only sandbox: git show and git diff via exec_command, no edits. Older line shapes: no item ids, no internal_chat_message_metadata_passthrough, no session_id in session_meta."
+    }
+  ],
+  "expected": {
+    "file": "../expected/ccusage-codex-daily.json",
+    "tool": "ccusage",
+    "version": "20.0.48",
+    "command": "HOME=<empty dir> CODEX_HOME=fixtures/codex npx -y ccusage@20.0.48 codex daily --json --offline -z UTC",
+    "timezone": "UTC",
+    "readFixtures": true,
+    "combinedFile": "../expected/ccusage-all-daily.json",
+    "notes": "@ccusage/codex is deprecated in favour of `ccusage codex` in ccusage 20. inputTokens in the output exclude cached input; cacheReadTokens are the cached part. Repeated token_count events with unchanged totals are counted once."
+  },
+  "notes": [
+    "Token totals come from event_msg token_count lines: info.last_token_usage per model response, info.total_token_usage cumulative.",
+    "Real logs also carry web_search_call, tool_search_call, mcp_tool_call_end and collab events; they are omitted here."
+  ]
+}

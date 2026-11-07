@@ -1,0 +1,53 @@
+{
+  "vendor": "Claude Code",
+  "cli": "claude",
+  "synthetic": true,
+  "source": "Field names from the Claude Code hooks reference (code.claude.com/docs/en/hooks), read 2026-11-07. Values match session A in claude-code/projects/-home-dev-acme-api.",
+  "observedVersions": [
+    "2.1.308",
+    "2.1.309"
+  ],
+  "observedMonth": "2026-11",
+  "delivery": "JSON on stdin for command hooks, POST body for HTTP hooks.",
+  "files": [
+    {
+      "path": "SessionStart.json",
+      "description": "New session (source startup) with the active model."
+    },
+    {
+      "path": "UserPromptSubmit.json",
+      "description": "Prompt submitted, with prompt_id and permission_mode."
+    },
+    {
+      "path": "PreToolUse.json",
+      "description": "Bash git commit before it runs, with effort and tool_use_id."
+    },
+    {
+      "path": "PostToolUse.json",
+      "description": "Edit of src/app.ts after it ran, with the structured patch in tool_response and duration_ms."
+    },
+    {
+      "path": "Notification.json",
+      "description": "permission_prompt notification."
+    },
+    {
+      "path": "Stop.json",
+      "description": "End of turn with last_assistant_message and empty background_tasks and session_crons."
+    },
+    {
+      "path": "SubagentStop.json",
+      "description": "Explore subagent finishing, with agent_id, agent_type and agent_transcript_path."
+    },
+    {
+      "path": "PreCompact.json",
+      "description": "Automatic compaction about to run; custom_instructions is null."
+    },
+    {
+      "path": "SessionEnd.json",
+      "description": "Session ended with reason prompt_input_exit."
+    }
+  ],
+  "notes": [
+    "prompt_id is absent before the first prompt, so SessionStart omits it. effort appears only on tool-use and stop events, as documented."
+  ]
+}

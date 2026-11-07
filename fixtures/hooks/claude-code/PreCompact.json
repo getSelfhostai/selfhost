@@ -1,0 +1,10 @@
+{
+  "session_id": "665bce74-4bdc-4164-8bb1-cc4246de2400",
+  "prompt_id": "bcb88634-48d1-4de2-892b-360e49853c6b",
+  "transcript_path": "/home/dev/.claude/projects/-home-dev-acme-api/665bce74-4bdc-4164-8bb1-cc4246de2400.jsonl",
+  "cwd": "/home/dev/acme-api",
+  "scratchpad_dir": "/tmp/claude-1000/-home-dev-acme-api/665bce74-4bdc-4164-8bb1-cc4246de2400/scratchpad",
+  "hook_event_name": "PreCompact",
+  "trigger": "auto",
+  "custom_instructions": null
+}
