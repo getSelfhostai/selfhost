@@ -28,6 +28,7 @@
     "commander": "catalog:"
   },
   "devDependencies": {
+    "@selfhost/server": "workspace:*",
     "@types/node": "catalog:",
     "tsup": "catalog:",
     "tsx": "catalog:",

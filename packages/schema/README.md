@@ -90,8 +90,10 @@ Open questions on Codex, to settle with real fixtures (M0.3):
 
 `openapi.yaml` (OpenAPI 3.1, bearer auth) covers `GET /v1/health`, `POST /v1/events` (atomic
 batches of up to 1000), `GET /v1/events`, `GET /v1/review-items`,
-`POST /v1/review-items/{id}/decision` and `GET /v1/policy`. It references the JSON Schema files
-for events, review items and the config. `mcp-tools.json` lists `get_policy`, `get_budget`,
+`POST /v1/review-items/{id}/decision`, `GET` and `PUT /v1/policy`, and the team endpoints
+`POST /v1/teams`, `POST /v1/join` (no bearer token: the invite code is the credential) and
+`GET /v1/me`, whose bodies are in `src/team.ts`. It references the JSON Schema files for events,
+review items and the config. `mcp-tools.json` lists `get_policy`, `get_budget`,
 `list_review_items`, `search_events`, `search_decisions` and `record_decision` with
 self-contained input and output schemas.
 

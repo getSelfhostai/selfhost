@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Ledger, mapOtelLogs, openLedger } from "@selfhost/ledger";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -53,7 +54,12 @@ describe("selfhost spend", () => {
         since: "2026-10-01",
         person: "dev@example.com",
       },
-      { env: {}, write: () => {} },
+      // A config path that does not exist: solo mode, never the real ~/.selfhost.
+      {
+        env: {},
+        write: () => {},
+        configPath: join(tmpdir(), "selfhost-spend-none", "config.json"),
+      },
       ledger,
     );
     await ledger.append(mapOtelLogs(otelWeek()));

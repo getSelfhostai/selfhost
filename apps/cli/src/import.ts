@@ -1,7 +1,18 @@
 import { execFileSync } from "node:child_process";
 import { userInfo } from "node:os";
-import { type ImportOptions, importAll, type Vendor, watchLogs } from "@selfhost/importers";
+import {
+  type ImportOptions,
+  importAll,
+  type LedgerWriter,
+  type Vendor,
+  watchLogs,
+} from "@selfhost/importers";
 import { isPostgresUrl, type Ledger, openLedger, resolveDataDir } from "@selfhost/ledger";
+import { defaultConfigPath } from "./config-file.js";
+import type { Fetch } from "./team/client.js";
+import { type Membership, readMembership, readSyncState } from "./team/config.js";
+import type { RemoteWriterOptions } from "./team/remote-writer.js";
+import { markSynced, type SyncReport, syncingWriter, syncLedger, teamSync } from "./team/sync.js";
 
 export interface ImportCommandOptions {
   since?: string;
@@ -25,6 +36,8 @@ export interface ImportReport {
   duplicates: number;
   /** Where the events went: "Postgres (DATABASE_URL)" or the embedded ledger folder. */
   ledger: string;
+  /** Team mode only: what went to the team server. */
+  sync?: SyncReport;
 }
 
 /** One line per batch from `selfhost import --watch --json`. */
@@ -33,10 +46,16 @@ export interface ImportBatchReport {
   accepted: number;
 }
 
-interface Io {
+export interface ImportIo {
   env: NodeJS.ProcessEnv;
   write: (line: string) => void;
   now?: Date;
+  /** Where the team membership is kept. Default: ~/.selfhost/config.json. */
+  configPath?: string;
+  /** Used only in team mode, and only for the joined server. Default: the global fetch. */
+  fetch?: Fetch;
+  /** Retry timing for sends to the team server. */
+  retry?: Omit<RemoteWriterOptions, "person">;
 }
 
 const VENDORS: Record<string, Vendor> = {
@@ -83,30 +102,47 @@ export function defaultPerson(env: NodeJS.ProcessEnv): string {
   return userInfo().username;
 }
 
-function importOptions(options: ImportCommandOptions, io: Io): ImportOptions {
+function importOptions(
+  options: ImportCommandOptions,
+  io: ImportIo,
+  membership: Membership | undefined,
+): ImportOptions {
   return {
     since: parseSince(options.since, io.now),
     vendor: parseVendor(options.vendor),
     logPrompts: options.prompts ?? false,
-    actorId: options.person ?? defaultPerson(io.env),
+    actorId: options.person ?? membership?.person ?? defaultPerson(io.env),
     claudeDir: options.claudeDir,
     codexDir: options.codexDir,
   };
 }
 
-function describeTarget(options: ImportCommandOptions, io: Io): string {
+function describeTarget(options: ImportCommandOptions, io: ImportIo): string {
   const url = options.database ?? io.env.DATABASE_URL;
   if (url && isPostgresUrl(url)) return "Postgres (DATABASE_URL)";
   return resolveDataDir(options.dataDir, io.env);
 }
 
-/** Imports local session logs into the ledger once. Pass a ledger to reuse an open one. */
+const globalFetch: Fetch = (url, init) => fetch(url, init);
+
+function teamSyncFor(membership: Membership, io: ImportIo) {
+  return teamSync(membership, configPathOf(io), io.fetch ?? globalFetch, io.retry);
+}
+
+const configPathOf = (io: ImportIo) => io.configPath ?? defaultConfigPath();
+
+/**
+ * Imports local session logs into the ledger once. In team mode it then syncs: the events go
+ * to the team server too, and the team policy comes back. Solo mode makes no network request.
+ * Pass a ledger to reuse an open one.
+ */
 export async function runImport(
   options: ImportCommandOptions,
-  io: Io,
+  io: ImportIo,
   ledger?: Ledger,
 ): Promise<ImportReport> {
-  const opts = importOptions(options, io);
+  const membership = readMembership(configPathOf(io));
+  const opts = importOptions(options, io, membership);
   const url = options.database ?? io.env.DATABASE_URL;
   const target = ledger ?? (await openLedger({ url, dataDir: options.dataDir }));
   try {
@@ -116,6 +152,9 @@ export async function runImport(
       ...result,
       ledger: describeTarget(options, io),
     };
+    if (membership) {
+      report.sync = await syncLedger(target, teamSyncFor(membership, io), opts.since);
+    }
     if (options.json) {
       io.write(options.watch ? JSON.stringify(report) : JSON.stringify(report, null, 2));
     } else {
@@ -124,6 +163,7 @@ export async function runImport(
           `(${result.duplicates} already in the ledger).`,
       );
       io.write(`Ledger: ${report.ledger}`);
+      if (report.sync) for (const line of describeSync(report.sync)) io.write(line);
     }
     return report;
   } finally {
@@ -131,13 +171,44 @@ export async function runImport(
   }
 }
 
+function describeSync(sync: SyncReport): string[] {
+  const where = `team ${sync.team} on ${sync.server}`;
+  if (sync.error) {
+    return [
+      `Sync to ${where} failed: ${sync.error}`,
+      "The events are in the local ledger and go up on the next sync.",
+    ];
+  }
+  const what = sync.history ? "Shared the local history with" : "Synced";
+  const policy = sync.policy_hash ? `, team policy ${sync.policy_hash.slice(0, 12)}` : "";
+  const counts = `${sync.sent} events (${sync.accepted} new, ${sync.duplicates} already there)`;
+  return [`${what} ${where}: ${counts}${policy}.`];
+}
+
 /** Imports once, then keeps tailing the logs until interrupted. */
-export async function runWatch(options: ImportCommandOptions, io: Io): Promise<void> {
+export async function runWatch(options: ImportCommandOptions, io: ImportIo): Promise<void> {
   const url = options.database ?? io.env.DATABASE_URL;
   const ledger = await openLedger({ url, dataDir: options.dataDir });
-  await runImport(options, io, ledger);
+  const first = await runImport(options, io, ledger);
   if (!options.json) io.write("Watching for new log lines. Press Ctrl+C to stop.");
-  const watcher = watchLogs(ledger, importOptions(options, io), (n) => {
+  const membership = readMembership(configPathOf(io));
+  const opts = importOptions(options, io, membership);
+  let writer: LedgerWriter = ledger;
+  let synced = () => {};
+  if (membership) {
+    const sync = teamSyncFor(membership, io);
+    // A failed first sync is retried with the next batch instead of only on the next run.
+    const catchUp = first.sync?.error
+      ? async () => {
+          const retried = await syncLedger(ledger, sync, opts.since);
+          if (retried.error) throw new Error(retried.error);
+        }
+      : undefined;
+    writer = syncingWriter(ledger, sync.remote, catchUp);
+    synced = () => markSynced(sync.configPath, readSyncState(sync.configPath, membership));
+  }
+  const watcher = watchLogs(writer, opts, (n) => {
+    synced();
     if (n === 0) return;
     const batch: ImportBatchReport = { schema: "selfhost.import_batch/v1", accepted: n };
     io.write(options.json ? JSON.stringify(batch) : `+${n} events`);

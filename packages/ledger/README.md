@@ -19,7 +19,8 @@ await ledger.close();
   embedded PGlite database lives in `dataDir`, else `SELFHOST_DATA_DIR`, else `~/.selfhost/data`.
   `dataDir: "memory://"` keeps everything in memory, for tests. Any other `url` is an error.
 - One `events` table: the full event as `jsonb` in `body`, plus indexed copies of `ts`, `source`,
-  `kind`, `actor_id`, `agent` (vendor), `model` and `session_id`.
+  `kind`, `actor_id`, `agent` (vendor), `model` and `session_id`. Team mode adds `teams`,
+  `people` and `tokens` (see Teams below).
 - Migrations are the SQL files in `migrations/`, applied in order on open under an advisory lock and
   recorded in `schema_migrations`. `src/migrations.generated.ts` embeds them so bundles and
   compiled binaries need no files on disk; after changing a migration run
@@ -47,6 +48,15 @@ The API has no update or delete. A trigger on `events` (`ENABLE ALWAYS`, so it a
 `session_replication_role = replica`) rejects UPDATE, DELETE and TRUNCATE unless the session has
 set `selfhost.retention = 'on'`. Only the retention job does that, with `SET LOCAL` inside its own
 transaction. Corrections are new events that point at the old one.
+
+## Teams
+
+`ledger.teams` stores team mode's rows for the server (see
+[`apps/server`](../../apps/server/README.md#teams)) in the same database, from migration
+`0002_teams.sql`: `teams` (with the team's `selfhost.toml` text), `people` (id such as a git
+email, role `owner`, `admin` or `member`) and `tokens` (only the sha256 of each invite, person
+or admin token, with `revoked_at`). Unlike `events`, these rows change: a policy is replaced and
+a token is revoked. Tokens are generated here and returned once.
 
 ## Sources
 

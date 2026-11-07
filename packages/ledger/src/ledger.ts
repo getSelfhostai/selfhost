@@ -8,6 +8,7 @@ import {
 } from "@selfhost/schema";
 import { type ConnectOptions, connect, type Database, migrate } from "./db.js";
 import { type LedgerFieldError, LedgerQueryError, LedgerValidationError } from "./errors.js";
+import { createTeamStore, type TeamStore } from "./teams.js";
 
 export interface EventFilter {
   /** actor.id */
@@ -50,6 +51,8 @@ export interface Ledger {
    */
   append(events: unknown[]): Promise<AppendResult>;
   query(filter: EventFilter): Promise<EventPage>;
+  /** Teams, people and tokens for team mode, kept in the same database. */
+  teams: TeamStore;
   close(): Promise<void>;
 }
 
@@ -123,6 +126,8 @@ export function createLedger(db: Database): Ledger {
       }
       return { events };
     },
+
+    teams: createTeamStore(db),
 
     close: () => db.close(),
   };

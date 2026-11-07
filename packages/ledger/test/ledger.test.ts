@@ -122,7 +122,9 @@ describe.each(BACKENDS)("ledger on $name", (backend) => {
     });
 
     it("has no update or delete", () => {
-      expect(Object.keys(ledger).sort()).toEqual(["append", "close", "query"]);
+      // teams holds team mode rows (people, tokens, policy), never events.
+      expect(Object.keys(ledger).sort()).toEqual(["append", "close", "query", "teams"]);
+      expect(Object.keys(ledger.teams).filter((key) => /event/i.test(key))).toEqual([]);
     });
   });
 

@@ -1,0 +1,117 @@
+import type {
+  CreateTeamResponse,
+  IngestEventsResponse,
+  JoinResponse,
+  LedgerEvent,
+  PolicyResponse,
+} from "@selfhost/schema";
+
+export type Fetch = (url: string, init: RequestInit) => Promise<Response>;
+
+const REQUEST_TIMEOUT_MS = 30_000;
+
+/** An error answer from the team server, or a failed request (status 0). */
+export class TeamApiError extends Error {
+  override name = "TeamApiError";
+
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+    /** Seconds from a Retry-After header. */
+    readonly retryAfter?: number,
+  ) {
+    super(message);
+  }
+}
+
+/** The server url as given, checked and without a trailing slash. */
+export function serverUrl(value: string): string {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`Expected a server url like https://selfhost.example.com, got "${value}"`);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`Expected an http or https server url, got "${value}"`);
+  }
+  if (url.username || url.password || url.search || url.hash) {
+    throw new Error(`Expected a server url with no credentials, query or fragment, got "${value}"`);
+  }
+  return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
+}
+
+/**
+ * Calls the selfhost team server, and only it: every request goes to `server` plus an API path.
+ * Model traffic never goes through here; agents keep talking to their vendors directly.
+ */
+export class TeamClient {
+  constructor(
+    readonly server: string,
+    private readonly token: string | undefined,
+    private readonly fetch: Fetch,
+  ) {}
+
+  createTeam(name: string): Promise<CreateTeamResponse> {
+    return this.call("POST", "/v1/teams", { name });
+  }
+
+  join(invite: string, person: string, name?: string): Promise<JoinResponse> {
+    return this.call("POST", "/v1/join", { invite, person, ...(name ? { name } : {}) });
+  }
+
+  /** The team's policy, or undefined when the team has none yet. */
+  async policy(): Promise<PolicyResponse | undefined> {
+    try {
+      return await this.call<PolicyResponse>("GET", "/v1/policy");
+    } catch (error) {
+      if (error instanceof TeamApiError && error.code === "no_policy") return undefined;
+      throw error;
+    }
+  }
+
+  /** One POST /v1/events, at most 1000 events. RemoteWriter adds batching and retries. */
+  pushEvents(events: LedgerEvent[]): Promise<IngestEventsResponse> {
+    return this.call("POST", "/v1/events", { events });
+  }
+
+  private async call<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const headers: Record<string, string> = { accept: "application/json" };
+    if (this.token) headers.authorization = `Bearer ${this.token}`;
+    if (body !== undefined) headers["content-type"] = "application/json";
+    let response: Response;
+    try {
+      response = await this.fetch(`${this.server}${path}`, {
+        method,
+        headers,
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new TeamApiError(0, "unreachable", `Could not reach ${this.server}: ${reason}`);
+    }
+    const text = await response.text();
+    let json: unknown;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      json = undefined;
+    }
+    if (!response.ok) {
+      const error = (json as { error?: { code?: string; message?: string } } | undefined)?.error;
+      const retryAfter = Number(response.headers.get("retry-after"));
+      throw new TeamApiError(
+        response.status,
+        error?.code ?? "http_error",
+        `${this.server} answered ${response.status}: ${error?.message ?? (text.slice(0, 200) || "no message")}`,
+        Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined,
+      );
+    }
+    if (json === undefined) {
+      throw new TeamApiError(response.status, "bad_response", `${this.server} did not answer JSON`);
+    }
+    return json as T;
+  }
+}

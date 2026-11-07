@@ -9,3 +9,4 @@ export {
   openLedger,
 } from "./ledger.js";
 export * from "./sources/index.js";
+export { hashToken, type JoinResult, type TeamPolicy, type TeamStore } from "./teams.js";

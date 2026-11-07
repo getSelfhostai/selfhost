@@ -42,18 +42,24 @@ describe("openapi.yaml", () => {
       [
         "GET /v1/events",
         "GET /v1/health",
+        "GET /v1/me",
         "GET /v1/policy",
         "GET /v1/review-items",
         "POST /v1/events",
+        "POST /v1/join",
         "POST /v1/review-items/{id}/decision",
+        "POST /v1/teams",
+        "PUT /v1/policy",
       ].sort(),
     );
   });
 
-  it("leaves only the health check unauthenticated", () => {
+  it("leaves only the health check and joining unauthenticated", () => {
+    const open = ["/v1/health", "/v1/join"];
     expect(doc.paths["/v1/health"].get.security).toEqual([]);
+    expect(doc.paths["/v1/join"].post.security).toEqual([]);
     for (const [path, item] of Object.entries<Record<string, { security?: unknown }>>(doc.paths)) {
-      if (path === "/v1/health") continue;
+      if (open.includes(path)) continue;
       for (const operation of Object.values(item)) expect(operation.security).toBeUndefined();
     }
   });
