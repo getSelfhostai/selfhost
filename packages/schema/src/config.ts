@@ -90,9 +90,13 @@ export const RuleSchema = Type.Object(
 
 export const RedactionSchema = Type.Object(
   {
-    name: NonEmpty({ description: "Name recorded in the event's redacted list." }),
+    name: NonEmpty({
+      description:
+        "Name of the pattern. Each match is stored as [redacted:<name>] and the field's path goes in the event's redacted list.",
+    }),
     pattern: NonEmpty({
-      description: "Regular expression whose matches are masked before storage.",
+      description:
+        "Regular expression whose matches are masked before storage, on top of the built-in secret and email patterns.",
     }),
   },
   { additionalProperties: false },

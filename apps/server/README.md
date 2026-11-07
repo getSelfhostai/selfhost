@@ -79,6 +79,24 @@ database: agents keep calling their vendors directly under each developer's own 
 selfhost never asks for or stores those logins or provider keys. `test/teams.test.ts` checks that vendor API paths are not served and that
 serving team requests opens no connection.
 
+## Privacy and retention
+
+Every event is redacted in the ledger's write path before it is stored, whichever route it came
+in on (see [`packages/ledger`](../../packages/ledger/README.md#redaction)): prompt and response
+text is dropped unless prompt logging is on, and secrets, emails and `[[redaction]]` patterns
+are masked. A team's stored `selfhost.toml` sets this for events with that team, which includes
+every event a person token writes. Other events, such as OTLP from the collector, use the
+server's defaults: the `selfhost.toml` at `SELFHOST_CONFIG`, else prompts off and the built-in
+patterns. The server never logs request or event bodies.
+
+On start and then once a day the server deletes events older than their retention: the team's
+`ledger.retention_days`, else the one in `SELFHOST_CONFIG`, else 90 days.
+`SELFHOST_RETENTION_SWEEP=off` turns that off.
+
+With default settings the server opens no outbound connection and sends no telemetry;
+`test/privacy.test.ts` ingests fixture events, OTLP and team writes with every outbound path
+stubbed to fail, then reads every table to check that no planted secret was stored.
+
 ```sh
 pnpm --filter @selfhost/server dev     # watch mode on http://127.0.0.1:4400
 pnpm --filter @selfhost/server build   # bundles to dist/main.js
@@ -87,10 +105,12 @@ pnpm --filter @selfhost/server start   # runs the build
 
 Environment:
 
-| Variable            | Default            | Meaning                                              |
-| ------------------- | ------------------ | ---------------------------------------------------- |
-| `PORT`              | `4400`             | Port to listen on.                                   |
-| `HOST`              | `127.0.0.1`        | Address to bind.                                     |
-| `DATABASE_URL`      | unset              | `postgres://` URL. Unset uses the embedded database. |
-| `SELFHOST_DATA_DIR` | `~/.selfhost/data` | Embedded database and token file.                    |
-| `SELFHOST_TOKEN`    | unset              | API token. Unset uses or creates `<data dir>/token`. |
+| Variable                   | Default            | Meaning                                                                                           |
+| -------------------------- | ------------------ | ------------------------------------------------------------------------------------------------- |
+| `PORT`                     | `4400`             | Port to listen on.                                                                                |
+| `HOST`                     | `127.0.0.1`        | Address to bind.                                                                                  |
+| `DATABASE_URL`             | unset              | `postgres://` URL. Unset uses the embedded database.                                              |
+| `SELFHOST_DATA_DIR`        | `~/.selfhost/data` | Embedded database and token file.                                                                 |
+| `SELFHOST_TOKEN`           | unset              | API token. Unset uses or creates `<data dir>/token`.                                              |
+| `SELFHOST_CONFIG`          | unset              | `selfhost.toml` with the defaults for events with no team policy: `[ledger]` and `[[redaction]]`. |
+| `SELFHOST_RETENTION_SWEEP` | `daily`            | `off` keeps every event instead of deleting expired ones daily.                                   |

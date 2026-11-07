@@ -121,12 +121,12 @@
                   "properties": {
                     "name": {
                       "minLength": 1,
-                      "description": "Name recorded in the event's redacted list.",
+                      "description": "Name of the pattern. Each match is stored as [redacted:<name>] and the field's path goes in the event's redacted list.",
                       "type": "string"
                     },
                     "pattern": {
                       "minLength": 1,
-                      "description": "Regular expression whose matches are masked before storage.",
+                      "description": "Regular expression whose matches are masked before storage, on top of the built-in secret and email patterns.",
                       "type": "string"
                     }
                   }

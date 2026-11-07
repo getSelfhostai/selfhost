@@ -63,6 +63,17 @@ allow = ["claude-opus-*", "gpt-5*"]
 mode = "enforce"
 ```
 
+## Redaction
+
+`redactEvent(event, settings)` (`src/redact.ts`) returns the event as it may be stored: prompt
+and response text under `data` dropped unless `settings.logPrompts`, and `maskSecrets` run on
+`tool.input_summary`, `target.value`, `decision.reason` and every string under `data`, with each
+path it touched added to `redacted`. `maskSecrets(text, patterns)` masks provider keys, tokens,
+private keys, credential assignments, auth headers, credentials in URLs and emails as
+`[redacted]`, then each `[[redaction]]` match as `[redacted:<name>]`. `redactionSettings(config)`
+reads `[ledger] log_prompts` and `[[redaction]]` from a resolved `selfhost.toml`; the ledger
+applies it on every write.
+
 ## Review item
 
 One entry in the review list: `kind`, `state`, `blocking`, `risk` (score 0 to 100 with reasons),

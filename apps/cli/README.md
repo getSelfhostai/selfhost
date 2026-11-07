@@ -6,6 +6,7 @@ The `selfhost` command line.
 pnpm --filter @selfhost/cli dev --version
 pnpm --filter @selfhost/cli dev doctor [--config path/to/selfhost.toml]
 pnpm --filter @selfhost/cli dev spend --since 7d --by request_type,model
+pnpm --filter @selfhost/cli dev ledger prune --days 30
 pnpm --filter @selfhost/cli dev policy check
 pnpm --filter @selfhost/cli dev policy test --tool Bash --command "git push --force"
 pnpm --filter @selfhost/cli dev policy observe --since 30d
@@ -20,6 +21,12 @@ reads `cost.recorded` events from the ledger (the same one `selfhost import` wri
 share, then every request type that crossed `--threshold` percent of a day's spend, with the day
 it crossed and the days before. `--by` takes `request_type`, `agent`, `model` and `person`; flags
 are always by request type. See [`packages/spend`](../../packages/spend/README.md).
+
+`selfhost ledger prune [--days <n>] [--config <path>] [--json]` deletes events older than the
+retention from the ledger (the one `selfhost import` writes, or `--database` / `--data-dir`):
+`--days`, else `ledger.retention_days` in `selfhost.toml` (found like `doctor` does), else 90.
+`selfhost import` keeps prompt text only with `--prompts`, and masks secrets and emails either
+way; the ledger drops prompt text from any import without it.
 
 `selfhost scan [--since 30d] [--repo <dir>] [--json] [--report <file>] [--share <file>]` is a
 one-command audit of the local Claude Code and Codex logs. It needs no account, no ledger and no
@@ -220,7 +227,7 @@ vendors directly; no model traffic goes through selfhost.
 
 Every command takes `--json` and prints one object with a `schema` tag: `selfhost.doctor/v1`,
 `selfhost.init/v1`, `selfhost.init_undo/v1`, `selfhost.import/v1` (plus one `selfhost.import_batch/v1` line per batch with `--watch`),
-`selfhost.agents/v1`, `selfhost.agents_configure/v1`, `selfhost.scan/v1`,
+`selfhost.ledger_prune/v1`, `selfhost.agents/v1`, `selfhost.agents_configure/v1`, `selfhost.scan/v1`,
 `selfhost.policy_check/v1`, `selfhost.policy_test/v1`, `selfhost.policy_observe/v1`,
 `selfhost.policy_promote/v1`, `selfhost.review_item/v1` (from `policy report`),
 `selfhost.decide/v1`, `selfhost.decisions/v1`,

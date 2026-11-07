@@ -10,7 +10,7 @@ Test inputs for the session importers, hook ingest, ledger source mappers and re
 | `hooks/codex/` | Codex `notify` payload and one payload per documented Codex hook event. |
 | `sources/` | Synthetic OpenTelemetry logs, LiteLLM gateway request logs and Anthropic Compliance API style activity, for the ledger source mappers, plus two weeks for the waste detector: a Claude Code OpenTelemetry week where the status line is 16.4% of spend, and a subscription-only week of local logs. `manifest.json` describes each file. |
 | `github/` | Synthetic `gh api` responses for repository `acme/acme-api` (pull requests, reviews, review comments, commits), laid out by API path, for `packages/attribution`: merged, closed, open, unreviewed, large-diff and conflicting pull requests, plus `webhooks/` with review and comment deliveries for the decision mapper. `manifest.json` describes each one. |
-| `redaction/` | Planted fake secrets and an example.com email. `manifest.json` lists every planted value. |
+| `redaction/` | Planted fake secrets and an example.com email. The files hold `{{kind}}` placeholders and `manifest.json` keeps each value in parts; `planted.ts` joins them at test time, so the repository carries no key-shaped string. |
 | `markers/` | One Claude Code session and one Codex rollout with marker strings planted in prompts, replies, reasoning, code, commands, tool output and commit messages. `selfhost scan` must print none of them. `manifest.json` lists every marker. |
 | `expected/` | ccusage daily totals for the session fixtures. |
 | `captured/` | Scrubbed real sessions, written by `scripts/capture-fixtures.mjs`. Absent until someone runs it. |
@@ -47,4 +47,6 @@ node scripts/capture-fixtures.mjs --count 3
 
 It copies the newest sessions, keeps structure, ids, timestamps, token counts, model ids and CLI versions, masks all text, rewrites paths to `/home/dev/project-N`, and runs the scrub check on the result. Read the output before committing it.
 
-GitHub push protection may flag `redaction/`. The values there are fake; allow them for this path only.
+Never commit a key-shaped value, even a fake one: GitHub push protection blocks it once the
+repository is public. Add a placeholder and the value's parts to `redaction/manifest.json`, or
+join the parts in the test.

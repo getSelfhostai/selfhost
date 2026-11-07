@@ -34,7 +34,8 @@ such as the ledger store. Nothing here opens a network connection; a test fails 
 | `prompt.submitted` | Only with `logPrompts: true`. The text goes in `data.prompt`, masked and capped at 2000 characters.                                                      |
 
 Summaries keep the first line of a command or a file path relative to the session's cwd, masked
-for secret-shaped values and email addresses, and cut at 120 characters. File contents, patch
+for secret-shaped values and email addresses (`maskSecrets` from `@selfhost/schema`, the same
+masker the ledger runs on every write), and cut at 120 characters. File contents, patch
 bodies, tool output and, unless `logPrompts` is on, prompt text are never stored. Any field that
 was masked is listed in `redacted`.
 

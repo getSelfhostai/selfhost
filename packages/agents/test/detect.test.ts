@@ -5,7 +5,8 @@ import { describe, expect, it, vi } from "vitest";
 import { type AgentStatus, detectAgents, parseVersion, pathLookup } from "../src/index.js";
 import { EXECUTABLE, fixtureHome } from "./helpers.js";
 
-const SECRET = "sk-test-SECRET-MARKER-000";
+// Joined at run time so the repository holds no key-shaped string.
+const SECRET = ["sk", "test", "SECRET-MARKER-000"].join("-");
 const none = () => undefined;
 
 function byId(agents: AgentStatus[], id: AgentStatus["id"]): AgentStatus {

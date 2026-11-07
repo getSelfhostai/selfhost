@@ -13,6 +13,7 @@ import { doctor } from "./doctor.js";
 import { readStdin, runHook } from "./hooks/receive.js";
 import { type ImportCommandOptions, type ImportIo, runImport, runWatch } from "./import.js";
 import { registerInit } from "./init/commands.js";
+import { registerLedger } from "./ledger.js";
 import { registerPolicy } from "./policy/commands.js";
 import { registerPolicyEditing } from "./policy/editing.js";
 import type { CollectAttribution } from "./scan/attribution.js";
@@ -250,6 +251,12 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
   );
 
   registerSpend(program);
+
+  registerLedger(
+    program,
+    () => ({ env: deps.env, cwd: deps.cwd, write: deps.write, now: deps.now }),
+    fail,
+  );
 
   registerPolicy(
     program,

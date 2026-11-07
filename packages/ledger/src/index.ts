@@ -22,9 +22,11 @@ export {
   type EventFilter,
   type EventPage,
   type Ledger,
+  type LedgerOptions,
   type OpenLedgerOptions,
   openLedger,
 } from "./ledger.js";
+export { type RetentionResult, retentionSweep } from "./retention.js";
 export * from "./sources/index.js";
 export {
   hashToken,

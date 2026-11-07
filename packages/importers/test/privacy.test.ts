@@ -1,18 +1,11 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { validateEvent } from "@selfhost/schema";
 import { describe, expect, it } from "vitest";
+import { plantedValues, readPlanted } from "../../../fixtures/redaction/planted.js";
 import { importAll } from "../src/index.js";
-import { maskSecrets, summarize } from "../src/summary.js";
-import {
-  ALL_TIME,
-  CLAUDE_DIR,
-  CODEX_DIR,
-  FIXTURES,
-  MemoryWriter,
-  readJson,
-  tempDir,
-} from "./helpers.js";
+import { summarize } from "../src/summary.js";
+import { ALL_TIME, CLAUDE_DIR, CODEX_DIR, MemoryWriter, tempDir } from "./helpers.js";
 
 const PROMPTS = [
   "Add a GET /health endpoint to the Express app",
@@ -57,8 +50,7 @@ describe("what the importer stores", () => {
   });
 
   it("masks planted secrets in summaries and prompts", async () => {
-    const manifest = readJson<{ planted: { value: string }[] }>("redaction", "manifest.json");
-    const lines = readFileSync(join(FIXTURES, "redaction", "events-with-secrets.jsonl"), "utf8")
+    const lines = readPlanted("events-with-secrets.jsonl")
       .split("\n")
       .filter((line) => line.trim() !== "");
     const dir = tempDir("secrets");
@@ -89,7 +81,7 @@ describe("what the importer stores", () => {
         expect.arrayContaining(["prompt.submitted", "tool.called"]),
       );
       const json = JSON.stringify(events);
-      for (const { value } of manifest.planted) expect(json).not.toContain(value);
+      for (const { value } of plantedValues()) expect(json).not.toContain(value);
       for (const event of events.filter(
         (e) => e.kind === "tool.called" || e.kind === "prompt.submitted",
       )) {
@@ -111,24 +103,5 @@ describe("summaries", () => {
     expect(summarize("cat <<'EOF' > notes.txt\nsecret body\nEOF")?.text).toBe(
       "cat <<'EOF' > notes.txt ...",
     );
-  });
-
-  it("masks key assignments, tokens, URL credentials and emails", () => {
-    expect(maskSecrets("export API_KEY=abc123 && run").text).toBe(
-      "export API_KEY=[redacted] && run",
-    );
-    expect(maskSecrets("curl -H 'Authorization: Bearer abcdefghijkl'").text).toContain(
-      "Bearer [redacted]",
-    );
-    expect(maskSecrets("git clone https://bob:hunter22@example.com/r.git").text).toBe(
-      "git clone https://[redacted]@example.com/r.git",
-    );
-    expect(maskSecrets("git config user.email bob@example.com").text).toBe(
-      "git config user.email [redacted]",
-    );
-    expect(maskSecrets("git clone git@github.com:acme/api.git")).toEqual({
-      text: "git clone git@github.com:acme/api.git",
-      masked: false,
-    });
   });
 });

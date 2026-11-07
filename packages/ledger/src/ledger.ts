@@ -1,15 +1,18 @@
 import {
   createValidator,
+  DEFAULT_REDACTION,
   EventQuerySchema,
   type LedgerEvent,
   MAX_EVENT_BATCH,
   PAGE_LIMIT_DEFAULT,
+  type RedactionSettings,
   validateEvent,
 } from "@selfhost/schema";
 import { decodeCursor, encodeCursor, TS_KEY } from "./cursor.js";
 import { type ConnectOptions, connect, type Database, migrate } from "./db.js";
 import { createDecisionStore, type DecisionStore } from "./decisions/store.js";
 import { type LedgerFieldError, LedgerQueryError, LedgerValidationError } from "./errors.js";
+import { redactBatch, teamRedaction } from "./redaction.js";
 import { createTeamStore, type TeamStore } from "./teams.js";
 
 export interface EventFilter {
@@ -60,6 +63,7 @@ export interface Ledger {
    * Validates every event, then writes them in one transaction. If any event is invalid, nothing
    * is written and LedgerValidationError lists every error. Ids are idempotency keys: an id that
    * is already stored is reported under duplicates and the stored event is left as it was.
+   * Every event is redacted before it is written (see LedgerOptions.redaction).
    */
   append(events: unknown[], options?: AppendOptions): Promise<AppendResult>;
   query(filter: EventFilter): Promise<EventPage>;
@@ -70,7 +74,16 @@ export interface Ledger {
   close(): Promise<void>;
 }
 
-export type OpenLedgerOptions = ConnectOptions;
+export interface LedgerOptions {
+  /**
+   * Prompt logging and redaction for events with no team, or whose team has no stored
+   * selfhost.toml; a team's stored policy applies to its own events. Default: no prompt or
+   * response text, built-in secret and email patterns only.
+   */
+  redaction?: RedactionSettings;
+}
+
+export type OpenLedgerOptions = ConnectOptions & LedgerOptions;
 
 /**
  * Opens the ledger and applies pending migrations. A postgres:// or postgresql:// url uses that
@@ -85,7 +98,7 @@ export async function openLedger(options: OpenLedgerOptions = {}): Promise<Ledge
     await db.close();
     throw error;
   }
-  return createLedger(db);
+  return createLedger(db, options);
 }
 
 const INSERT_SQL = `
@@ -99,18 +112,32 @@ ORDER BY n
 ON CONFLICT (id) DO NOTHING
 RETURNING id::text AS id`;
 
-export function createLedger(db: Database): Ledger {
-  return {
-    async append(events, options = {}) {
+const databases = new WeakMap<Ledger, Database>();
+
+/** The database behind a ledger from openLedger or createLedger, for the retention job. */
+export function databaseOf(ledger: Ledger): Database {
+  const db = databases.get(ledger);
+  if (!db) throw new Error("Expected a ledger from openLedger");
+  return db;
+}
+
+export function createLedger(db: Database, options: LedgerOptions = {}): Ledger {
+  const teams = createTeamStore(db);
+  const settingsFor = teamRedaction(teams, options.redaction ?? DEFAULT_REDACTION);
+  const ledger: Ledger = {
+    async append(events, appendOptions = {}) {
       const valid = validateForAppend(events);
       if (valid.length === 0) return { accepted: [], duplicates: [] };
+      // The one place every ingest path passes through, so nothing unredacted is ever written.
+      // A person token's team decides the settings; otherwise the team named on the event.
+      const stored = await redactBatch(valid, (team) => settingsFor(appendOptions.team ?? team));
       const inserted = new Set<string>();
       await db.transaction(async (tx) => {
-        for (let start = 0; start < valid.length; start += MAX_EVENT_BATCH) {
-          const chunk = valid.slice(start, start + MAX_EVENT_BATCH);
+        for (let start = 0; start < stored.length; start += MAX_EVENT_BATCH) {
+          const chunk = stored.slice(start, start + MAX_EVENT_BATCH);
           const rows = await tx.query<{ id: string }>(INSERT_SQL, [
             JSON.stringify(chunk),
-            options.team ?? null,
+            appendOptions.team ?? null,
           ]);
           for (const row of rows) inserted.add(row.id);
         }
@@ -144,12 +171,14 @@ export function createLedger(db: Database): Ledger {
       return { events };
     },
 
-    teams: createTeamStore(db),
+    teams,
 
     decisions: createDecisionStore(db),
 
     close: () => db.close(),
   };
+  databases.set(ledger, db);
+  return ledger;
 }
 
 function validateForAppend(events: unknown): LedgerEvent[] {
