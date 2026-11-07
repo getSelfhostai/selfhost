@@ -71,15 +71,18 @@ policy that is not.
   and SHA-256 of the policy file. It prints, per rule, how many hits are new and how many an
   earlier run already recorded. Nothing is stopped and nothing leaves the machine.
 
-`selfhost policy promote <rule> [--team <name>] [--to observe|off] [--config <path>]` sets a
-rule's mode in `selfhost.toml` (default `enforce`) and prints the file's `git diff`. Only the
-`mode` line changes, or one line is added after the rule's `id`, so comments and formatting stay
-as they are. With `--team` the mode goes into `[teams.<name>.rules.<rule>]`, added at the end of
-the file when missing. Nothing is staged or committed: the change is reviewed in a pull request
-like any other. A rule already in that mode is left alone (exit 0), and an edit that would not
-parse is never written. When the file found is the pulled team policy, promote refuses: that
-copy is replaced on the next sync, so the team policy is changed in the team's repository or on
-the server. `selfhost policy report` reads the pulled team policy like the other commands.
+`selfhost policy promote <rule> [--team <name>] [--to observe|off] [--reason <text>] [--config <path>]`
+sets a rule's mode in `selfhost.toml` (default `enforce`) and prints the file's `git diff`. Only
+the `mode` line changes, or one line is added after the rule's `id`, so comments and formatting
+stay as they are. With `--team` the mode goes into `[teams.<name>.rules.<rule>]`, added at the
+end of the file when missing. Nothing is staged or committed: the change is reviewed in a pull
+request like any other. A rule already in that mode is left alone (exit 0), and an edit that
+would not parse is never written. Each change is also recorded in the decision log (below) as
+one decision by the repository's git email: `approve` when the rule moves to enforce,
+`override` otherwise, with `--reason` as the reason. When the file found is the pulled team
+policy, promote refuses: that copy is replaced on the next sync, so the team policy is changed in
+the team's repository or on the server. `selfhost policy report` reads the pulled team policy like
+the other commands.
 
 `selfhost policy report [--since 7d] [--config <path>] [--json]` reads the observe-mode
 `policy.evaluated` events from the ledger (`--database` / `--data-dir` as for `spend`) and lists,
@@ -89,6 +92,25 @@ a read-only tool, and a command rule matching only inside quotes, a comment or t
 echo, grep or rg. The window is whole UTC days through today. `--json` prints the
 `selfhost.review_item/v1` item of kind `policy_report`; its id depends only on the window, so
 the same week gives the same item.
+
+## Decision log
+
+Every human answer on agent work goes into the ledger as one `decision.recorded` event, through
+the same call the server's `POST /v1/decisions` uses (see
+[`@selfhost/ledger`](../../packages/ledger/README.md#decisions)). Both commands use the local
+ledger (`--database` / `--data-dir` as for `spend`).
+
+- `selfhost decide <item-or-run> approve|deny|answer|override [--reason <text>]` records your
+  answer on a review item (a UUIDv7) or a run (anything else): the CLI inbox's write. `--question`,
+  `--path` (repeatable, relative to where you are), `--rule` and `--pr` say what it was about.
+  Decisions are never edited: `--replaces <decision-id>` records a correction or overturn as a
+  new decision linked to the old one, carrying over what it was about. You are `--person`, else
+  the person this laptop joined a team as, else `SELFHOST_PERSON`, else the git email.
+- `selfhost decisions [--path <file-or-folder>] [--topic <words>] [--rule <id>] [--person <id>]`
+  prints past decisions and rule verdicts, newest first, as plain text: each one's id, verdict,
+  who, the question and reason, files and links, and which later decisions replaced it.
+  `--path` matches the file, files inside a folder, and folders that hold the file; `--topic`
+  needs every word in the question or reason. `--limit` and `--cursor` page through.
 
 `selfhost agents` lists Claude Code, Codex, OpenCode, Goose and Cursor CLI: installed, version,
 login and settings file, then the context files (CLAUDE.md, AGENTS.md, skills) in the
@@ -201,6 +223,7 @@ Every command takes `--json` and prints one object with a `schema` tag: `selfhos
 `selfhost.agents/v1`, `selfhost.agents_configure/v1`, `selfhost.scan/v1`,
 `selfhost.policy_check/v1`, `selfhost.policy_test/v1`, `selfhost.policy_observe/v1`,
 `selfhost.policy_promote/v1`, `selfhost.review_item/v1` (from `policy report`),
+`selfhost.decide/v1`, `selfhost.decisions/v1`,
 `selfhost.team_init/v1`, `selfhost.team_invite/v1`, `selfhost.team_revoke/v1`,
 `selfhost.join/v1`, `selfhost.status/v1` and `selfhost.team_leave/v1`. Errors print `selfhost.error/v1` and exit 1. In solo mode no command
 needs a network connection.

@@ -18,6 +18,9 @@ function edit(text: string, old: string, replacement: string): string {
   return text.replace(old, replacement);
 }
 
+/** The embedded ledger in memory, so promotions never write to ~/.selfhost/data. */
+const MEMORY = ["--data-dir", "memory://"];
+
 const commented = `# Team policy. Every rule starts in observe.
 version = 1
 
@@ -224,7 +227,9 @@ describe("selfhost policy promote", () => {
 
   it("writes the mode and prints the git diff, leaving the change unstaged", async () => {
     const repo = repoWithConfig(full);
-    const result = await run(["policy", "promote", "no-force-push"], { cwd: repo.root });
+    const result = await run(["policy", "promote", "no-force-push", ...MEMORY], {
+      cwd: repo.root,
+    });
     expect(result.err).toBe("");
     expect(result.code).toBe(0);
     expect(result.out).toContain(
@@ -244,9 +249,10 @@ describe("selfhost policy promote", () => {
 
   it("prints JSON for a team override", async () => {
     const repo = repoWithConfig(full);
-    const result = await run(["policy", "promote", "no-force-push", "--team", "growth", "--json"], {
-      cwd: repo.root,
-    });
+    const result = await run(
+      ["policy", "promote", "no-force-push", "--team", "growth", "--json", ...MEMORY],
+      { cwd: repo.root },
+    );
     expect(result.code).toBe(0);
     const report = JSON.parse(result.out);
     expect(report).toMatchObject({
@@ -257,6 +263,7 @@ describe("selfhost policy promote", () => {
       from: "observe",
       to: "enforce",
       changed: true,
+      decision_event_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
     });
     expect(changedLines(report.diff)).toEqual([
       "+",
@@ -292,16 +299,17 @@ describe("selfhost policy promote", () => {
   it("says the file changed when it is not in a git repository", async () => {
     const dir = tempDir("promote-nogit");
     const file = dir.write("policy/selfhost.toml", full);
-    const result = await run(["policy", "promote", "no-prod-urls", "--config", file], {
+    const result = await run(["policy", "promote", "no-prod-urls", "--config", file, ...MEMORY], {
       cwd: dir.root,
     });
     expect(result.code).toBe(0);
-    expect(result.out).toBe(
-      [
-        `Rule no-prod-urls: off to enforce in ${join("policy", "selfhost.toml")}, line 38.`,
-        "Not in a git repository, so there is no diff to show.",
-      ].join("\n"),
-    );
+    const lines = result.out.split("\n");
+    expect(lines.slice(0, 2)).toEqual([
+      `Rule no-prod-urls: off to enforce in ${join("policy", "selfhost.toml")}, line 38.`,
+      "Not in a git repository, so there is no diff to show.",
+    ]);
+    expect(lines[2]).toMatch(/^Recorded decision [0-9a-f-]{36} in the ledger\.$/);
+    expect(lines).toHaveLength(3);
     expect(readFileSync(file, "utf8")).toBe(promoteRule(full, "no-prod-urls").text);
   });
 
@@ -321,8 +329,11 @@ describe("policy command group", () => {
     expect(sub("promote")?.options.map((option) => option.long)).toEqual([
       "--team",
       "--to",
+      "--reason",
       "--config",
       "--json",
+      "--database",
+      "--data-dir",
     ]);
     expect(sub("report")?.options.map((option) => option.long)).toEqual([
       "--since",

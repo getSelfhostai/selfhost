@@ -123,8 +123,16 @@ describe.each(BACKENDS)("ledger on $name", (backend) => {
 
     it("has no update or delete", () => {
       // teams holds team mode rows (people, tokens, policy), never events.
-      expect(Object.keys(ledger).sort()).toEqual(["append", "close", "query", "teams"]);
+      expect(Object.keys(ledger).sort()).toEqual([
+        "append",
+        "close",
+        "decisions",
+        "query",
+        "teams",
+      ]);
       expect(Object.keys(ledger.teams).filter((key) => /event/i.test(key))).toEqual([]);
+      // decisions only reads: a decision is recorded with append and corrected by a new one.
+      expect(Object.keys(ledger.decisions).sort()).toEqual(["get", "search"]);
     });
   });
 

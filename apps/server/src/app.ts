@@ -2,6 +2,7 @@ import type { Ledger } from "@selfhost/ledger";
 import type { ApiError, HealthResponse } from "@selfhost/schema";
 import { Hono } from "hono";
 import { requireBearerToken } from "./auth.js";
+import { decisionRoutes } from "./decisions.js";
 import { eventRoutes } from "./events.js";
 import { otlpRoutes } from "./otlp.js";
 import { teamRoutes } from "./teams.js";
@@ -22,6 +23,7 @@ export function createApp({ version, ledger, token }: AppOptions): Hono {
   app.get("/v1/health", (c) => c.json({ ok: true, version } satisfies HealthResponse));
 
   eventRoutes(app, ledger);
+  decisionRoutes(app, ledger);
   otlpRoutes(app, ledger);
 
   app.notFound((c) =>

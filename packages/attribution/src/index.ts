@@ -1,3 +1,10 @@
+export {
+  type GitHubDecisionOptions,
+  githubDecision,
+  type IssueCommentWebhook,
+  type PullRequestReviewWebhook,
+  webhookPullAgent,
+} from "./decisions.js";
 export { toLedgerEvents } from "./events.js";
 export { FILE_TIME_SLACK_MS, readCommits } from "./git.js";
 export { defaultCacheDir, ghCliSource } from "./github.js";

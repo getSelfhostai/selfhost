@@ -6,7 +6,9 @@ import {
   PAGE_LIMIT_DEFAULT,
   validateEvent,
 } from "@selfhost/schema";
+import { decodeCursor, encodeCursor, TS_KEY } from "./cursor.js";
 import { type ConnectOptions, connect, type Database, migrate } from "./db.js";
+import { createDecisionStore, type DecisionStore } from "./decisions/store.js";
 import { type LedgerFieldError, LedgerQueryError, LedgerValidationError } from "./errors.js";
 import { createTeamStore, type TeamStore } from "./teams.js";
 
@@ -63,6 +65,8 @@ export interface Ledger {
   query(filter: EventFilter): Promise<EventPage>;
   /** Teams, people and tokens for team mode, kept in the same database. */
   teams: TeamStore;
+  /** Decision events by id, and search by path, topic, rule and person. */
+  decisions: DecisionStore;
   close(): Promise<void>;
 }
 
@@ -94,8 +98,6 @@ FROM jsonb_array_elements($1::text::jsonb) WITH ORDINALITY AS batch(e, n)
 ORDER BY n
 ON CONFLICT (id) DO NOTHING
 RETURNING id::text AS id`;
-
-const TS_KEY = `to_char(ts AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
 
 export function createLedger(db: Database): Ledger {
   return {
@@ -143,6 +145,8 @@ export function createLedger(db: Database): Ledger {
     },
 
     teams: createTeamStore(db),
+
+    decisions: createDecisionStore(db),
 
     close: () => db.close(),
   };
@@ -245,19 +249,4 @@ function buildQuery(filter: EventFilter) {
     conditions.push(`(ts, id) < ($${params.length - 1}::timestamptz, $${params.length}::uuid)`);
   }
   return { limit: filter.limit ?? PAGE_LIMIT_DEFAULT, conditions, params };
-}
-
-const CURSOR_TS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;
-const CURSOR_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-
-function encodeCursor(ts: string, id: string): string {
-  return Buffer.from(`${ts}|${id}`, "utf8").toString("base64url");
-}
-
-function decodeCursor(cursor: string): { ts: string; id: string } {
-  const [ts = "", id = "", ...rest] = Buffer.from(cursor, "base64url").toString("utf8").split("|");
-  if (rest.length > 0 || !CURSOR_TS.test(ts) || !CURSOR_ID.test(id)) {
-    throw new LedgerQueryError("cursor", "Expected a cursor returned by a previous page");
-  }
-  return { ts, id };
 }

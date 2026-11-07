@@ -1,5 +1,5 @@
 import { type Static, Type } from "@sinclair/typebox";
-import { DateTime, NonEmpty, StringEnum } from "./common.js";
+import { DateTime, NonEmpty, RepoSlug, StringEnum, Url, Uuidv7 } from "./common.js";
 import { RuleSchema, SelfhostConfigSchema } from "./config.js";
 import {
   AGENT_VENDORS,
@@ -212,6 +212,18 @@ export const BudgetResponseSchema = Type.Object(
 
 export const DecisionQuerySchema = Type.Object(
   {
+    path: Type.Optional(
+      NonEmpty({
+        description:
+          "File or folder path relative to the repository root. Matches decisions on that file, on files under that folder, and on folders that hold it.",
+      }),
+    ),
+    topic: Type.Optional(
+      NonEmpty({
+        description:
+          "Words to match in the decision's question and reason. Every word must appear; case is ignored.",
+      }),
+    ),
     text: Type.Optional(Type.String({ description: "Words to match in the decision reason." })),
     rule_id: Type.Optional(Type.String()),
     verdict: Type.Optional(StringEnum(VERDICTS)),
@@ -237,6 +249,84 @@ export const DecisionsPageSchema = Type.Object(
     next_cursor: NextCursor,
   },
   { additionalProperties: false, title: "DecisionsPage" },
+);
+
+/** Where a person made a decision. Every surface records it through POST /v1/decisions. */
+export const DECISION_SURFACES = [
+  "cli",
+  "rule_promotion",
+  "exception_approval",
+  "github_review",
+  "github_comment",
+  "slack",
+  "telegram",
+  "mcp",
+  "api",
+] as const;
+
+export type DecisionSurface = (typeof DECISION_SURFACES)[number];
+
+export const CreateDecisionRequestSchema = Type.Object(
+  {
+    verdict: StringEnum(PERSON_VERDICTS),
+    by: NonEmpty({ description: "Person who decided, such as a git email or GitHub login." }),
+    name: Type.Optional(Type.String({ description: "Display name of the person." })),
+    reason: Type.Optional(
+      Type.String({ description: "Why, in the person's own words. For a question, the answer." }),
+    ),
+    question: Type.Optional(
+      Type.String({
+        description:
+          "What was decided, in one line: the review item title, the pull request title or the rule change. Topic search matches it along with the reason.",
+      }),
+    ),
+    item_id: Type.Optional(Uuidv7({ description: "Review item this decision answers." })),
+    run_id: Type.Optional(NonEmpty({ description: "Run this decision answers." })),
+    rule_id: Type.Optional(NonEmpty({ description: "Rule from selfhost.toml it is about." })),
+    repo: Type.Optional(RepoSlug({ description: "Repository as owner/name." })),
+    paths: Type.Optional(
+      Type.Array(NonEmpty(), {
+        maxItems: 1000,
+        description:
+          "Files or folders the decision is about, relative to the repository root. Path search matches them.",
+      }),
+    ),
+    pr_url: Type.Optional(Url({ description: "Pull request URL." })),
+    run_url: Type.Optional(Url({ description: "CI run or agent run URL." })),
+    commit_sha: Type.Optional(
+      Type.String({ pattern: "^[0-9a-f]{7,64}$", description: "Git commit SHA." }),
+    ),
+    replaces_event_id: Type.Optional(
+      Uuidv7({
+        description:
+          "Decision this one corrects or overturns. The earlier event stays as it was; item, run, rule, question, paths and links not given here are carried over from it.",
+      }),
+    ),
+    surface: Type.Optional(
+      StringEnum(DECISION_SURFACES, { default: "api", description: "Where the person decided." }),
+    ),
+    key: Type.Optional(
+      NonEmpty({
+        maxLength: 256,
+        description:
+          "Idempotency key: the surface's own id for this action, such as a GitHub review id or a Slack action id. Sent again with the same ts, it writes nothing new.",
+      }),
+    ),
+    ts: Type.Optional(
+      DateTime({ description: "When the person decided. Default: now. Required with key." }),
+    ),
+  },
+  { additionalProperties: false, title: "CreateDecisionRequest" },
+);
+
+export const CreateDecisionResponseSchema = Type.Object(
+  {
+    decision_event: LedgerEventSchema,
+    duplicate: Type.Boolean({
+      description: "true when this action was already recorded, so nothing new was written.",
+    }),
+  },
+  { additionalProperties: false, title: "CreateDecisionResponse" },
 );
 
 export const RecordDecisionInputSchema = Type.Object(
@@ -266,3 +356,5 @@ export type BudgetResponse = Static<typeof BudgetResponseSchema>;
 export type DecisionQuery = Static<typeof DecisionQuerySchema>;
 export type DecisionsPage = Static<typeof DecisionsPageSchema>;
 export type RecordDecisionInput = Static<typeof RecordDecisionInputSchema>;
+export type CreateDecisionRequest = Static<typeof CreateDecisionRequestSchema>;
+export type CreateDecisionResponse = Static<typeof CreateDecisionResponseSchema>;

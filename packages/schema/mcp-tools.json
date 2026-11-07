@@ -1486,11 +1486,21 @@
     },
     {
       "name": "search_decisions",
-      "description": "Search past rule verdicts and human decisions, for example to check whether a person already decided a similar case.",
+      "description": "Search past rule verdicts and human decisions by file path, topic, rule or person, for example to check whether a person already decided a similar case before asking again.",
       "inputSchema": {
         "additionalProperties": false,
         "type": "object",
         "properties": {
+          "path": {
+            "minLength": 1,
+            "description": "File or folder path relative to the repository root. Matches decisions on that file, on files under that folder, and on folders that hold it.",
+            "type": "string"
+          },
+          "topic": {
+            "minLength": 1,
+            "description": "Words to match in the decision's question and reason. Every word must appear; case is ignored.",
+            "type": "string"
+          },
           "text": {
             "description": "Words to match in the decision reason.",
             "type": "string"

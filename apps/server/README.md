@@ -9,6 +9,16 @@ The selfhost HTTP API, specified in
   batch is safe; already stored ids count as `duplicates`.
 - `GET /v1/events`: search by `person`, `agent`, `model`, `session`, `kind`, `from` and `to`,
   newest first, with `limit` (default 100, max 1000) and `cursor` from `next_cursor`.
+- `POST /v1/decisions`: record one human decision (`CreateDecisionRequest`: `verdict`, `by`,
+  `reason`, `question`, what it answers as `item_id`, `run_id`, `rule_id` or `pr_url`, plus
+  `paths`, links, `surface`, and `key` with `ts` for retries). Returns 201 with the stored
+  event, or 200 with `duplicate: true` when the same `key` and `ts` were already recorded. Every
+  surface records decisions through this call or the `recordDecision` function behind it.
+- `GET /v1/decisions`: `decision.recorded` and `policy.evaluated` events, newest first, by
+  `path` (a file, the files under a folder, the folders that hold it), `topic` (every word in
+  the question or reason), `text`, `rule_id`, `verdict`, `repo`, `target`, `person`,
+  `item_id`, `from` and `to`. `format=text` returns the plain text the CLI and the MCP tool
+  print: each decision's id, who, verdict, reason and links.
 
 Every route except `/v1/health` and `/v1/join` needs `Authorization: Bearer <token>`. The admin
 token is `SELFHOST_TOKEN` when set; otherwise the server generates one on first start, saves it
@@ -49,8 +59,8 @@ bootstrap admin; everything else is a token the server issues and keeps only as 
   like `selfhost doctor`. Admin token with `?team=`, or a person token whose role is owner or
   admin.
 
-A person token can call `POST` and `GET /v1/events`, `GET /v1/me`, `DELETE /v1/me/token` and
-`/v1/policy`, and gets 403 everywhere else. Before its events are written, an event with no
+A person token can call `POST` and `GET /v1/events` (its own team only), `GET /v1/me`,
+`DELETE /v1/me/token` and `/v1/policy`, and gets 403 everywhere else, including decisions. Before its events are written, an event with no
 actor gets the person, a person actor must be that person, system actors are refused, and
 `team` is set to the person's team; the batch then goes through the ordinary events route, so
 validation, atomicity and idempotent ids are the same. Each new event is also stored with the
