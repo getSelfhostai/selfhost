@@ -54,7 +54,13 @@ describe("selfhost policy", () => {
 
   it("is registered on the program", () => {
     const policy = createProgram().commands.find((command) => command.name() === "policy");
-    expect(policy?.commands.map((command) => command.name())).toEqual(["check", "test", "observe"]);
+    expect(policy?.commands.map((command) => command.name())).toEqual([
+      "check",
+      "test",
+      "observe",
+      "promote",
+      "report",
+    ]);
   });
 });
 
