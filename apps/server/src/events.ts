@@ -22,7 +22,26 @@ type BatchError = IngestEventsError["errors"][number];
 
 const ROOT_FIELD = "(root)";
 
-const QUERY_KEYS = ["person", "agent", "model", "session", "kind", "from", "to", "limit", "cursor"];
+const QUERY_KEYS = [
+  "person",
+  "agent",
+  "model",
+  "session",
+  "kind",
+  "team",
+  "from",
+  "to",
+  "limit",
+  "cursor",
+];
+
+export interface EventRouteOptions {
+  /**
+   * The team a request is limited to, for requests made with a person token: its writes are
+   * stored with this team and its reads see only this team's events.
+   */
+  team?: (c: Context) => string | undefined;
+}
 
 function apiError(code: string, message: string): ApiError {
   return { error: { code, message } };
@@ -45,7 +64,7 @@ const toBatchError = (e: LedgerFieldError): BatchError => ({
   message: e.message,
 });
 
-export function eventRoutes(app: Hono, ledger: Ledger): void {
+export function eventRoutes(app: Hono, ledger: Ledger, options: EventRouteOptions = {}): void {
   app.post(
     "/v1/events",
     bodyLimit({
@@ -87,7 +106,7 @@ export function eventRoutes(app: Hono, ledger: Ledger): void {
         return invalidEvents(c, [{ index: -1, field: "events", message }]);
       }
       try {
-        const result = await ledger.append(events);
+        const result = await ledger.append(events, { team: options.team?.(c) });
         return c.json({
           accepted: result.accepted.length,
           duplicates: result.duplicates.length,
@@ -114,6 +133,16 @@ export function eventRoutes(app: Hono, ledger: Ledger): void {
       } else {
         filter[key] = value;
       }
+    }
+    const team = options.team?.(c);
+    if (team !== undefined) {
+      if (filter.team !== undefined && filter.team !== team) {
+        return c.json(
+          apiError("forbidden", "A person token reads only its own team's events"),
+          403,
+        );
+      }
+      filter.team = team;
     }
     try {
       const page = await ledger.query(filter as EventFilter);

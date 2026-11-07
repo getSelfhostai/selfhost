@@ -23,7 +23,12 @@ import {
   type RuleMode,
 } from "@selfhost/schema";
 import type { Command } from "commander";
-import { type ConfigLocation, findConfig } from "../find-config.js";
+import {
+  type ConfigLocation,
+  describeConfigSource,
+  findConfig,
+  type TeamPolicyFile,
+} from "../find-config.js";
 import { plural, table } from "../format.js";
 import { describeTarget, parseSince } from "../import.js";
 import { repoDir } from "../scan/index.js";
@@ -34,6 +39,8 @@ export interface PolicyIo {
   write: (line: string) => void;
   setExitCode: (code: number) => void;
   now?: Date;
+  /** ~/.selfhost/config.json; in a team, its pulled policy is used when the repo has none. */
+  configPath?: string;
 }
 
 interface JsonOption {
@@ -56,7 +63,10 @@ export interface PolicyCheckLine {
 export interface PolicyCheckReport {
   schema: "selfhost.policy_check/v1";
   path: string;
+  /** team: no selfhost.toml was found, so the policy pulled from the team server is checked. */
   from: ConfigLocation["from"];
+  /** The pulled team policy on this machine, also when another file is checked instead. */
+  team_policy: TeamPolicyFile | null;
   valid: boolean;
   errors: { field: string; line: number | null; message: string }[];
   /** Every rule and allow-list check in evaluation order; empty when the file is invalid. */
@@ -114,9 +124,9 @@ const shown = (cwd: string, path: string) => relative(cwd, path) || path;
 function readPolicy(
   cwd: string,
   flag: string | undefined,
-  env: NodeJS.ProcessEnv,
+  io: Pick<PolicyIo, "env" | "configPath">,
 ): { location: ConfigLocation; result: ConfigResult } {
-  const location = findConfig(cwd, flag, env);
+  const location = findConfig(cwd, flag, io.env, io.configPath);
   if (!location) {
     throw new Error(
       "No selfhost.toml found (searched from this directory up to the repository root). Pass --config.",
@@ -132,7 +142,7 @@ function loadPolicy(
   flag: string | undefined,
   io: PolicyIo,
 ): { location: ConfigLocation; config: ResolvedSelfhostConfig } {
-  const { location, result } = readPolicy(cwd, flag, io.env);
+  const { location, result } = readPolicy(cwd, flag, io);
   if (!result.ok) {
     const file = shown(io.cwd, location.path);
     const lines = result.errors.map((error) => `  ${formatConfigError(error, file)}`);
@@ -159,11 +169,12 @@ const checkLines = (config: ResolvedSelfhostConfig): PolicyCheckLine[] =>
 
 /** Validates selfhost.toml and returns the exit code: 1 when it is invalid. */
 export function policyCheck(options: ConfigOption & JsonOption, io: PolicyIo): number {
-  const { location, result } = readPolicy(io.cwd, options.config, io.env);
+  const { location, result } = readPolicy(io.cwd, options.config, io);
   const report: PolicyCheckReport = {
     schema: "selfhost.policy_check/v1",
     path: location.path,
     from: location.from,
+    team_policy: location.teamPolicy ?? null,
     valid: result.ok,
     errors: result.ok
       ? []
@@ -179,6 +190,8 @@ export function policyCheck(options: ConfigOption & JsonOption, io: PolicyIo): n
     return report.valid ? 0 : 1;
   }
   const file = shown(io.cwd, location.path);
+  const source = describeConfigSource(location, file);
+  if (source) io.write(source);
   if (!result.ok) {
     io.write(`${file}: invalid, ${plural(result.errors.length, "error")}`);
     for (const error of result.errors) io.write(formatConfigError(error, file));

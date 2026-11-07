@@ -5,6 +5,8 @@ import {
   ClaudeCodeHookInputSchema,
   CodexHookInputSchema,
   CodexNotifySchema,
+  CreateInviteRequestSchema,
+  CreateInviteResponseSchema,
   CreateTeamRequestSchema,
   CreateTeamResponseSchema,
   DecisionRequestSchema,
@@ -16,6 +18,7 @@ import {
   IngestEventsRequestSchema,
   IngestEventsResponseSchema,
   InvalidPolicyErrorSchema,
+  InviteSchema,
   JoinRequestSchema,
   JoinResponseSchema,
   LedgerEventSchema,
@@ -27,6 +30,7 @@ import {
   ReviewItemQuerySchema,
   ReviewItemSchema,
   ReviewItemsPageSchema,
+  RevokeTokensResponseSchema,
   SelfhostConfigSchema,
   SetPolicyRequestSchema,
 } from "../src/index.js";
@@ -112,6 +116,10 @@ const COMPONENT_SCHEMAS: ReadonlyArray<readonly [name: string, schema: TSchema]>
   ["InvalidPolicyError", InvalidPolicyErrorSchema],
   ["CreateTeamRequest", CreateTeamRequestSchema],
   ["CreateTeamResponse", CreateTeamResponseSchema],
+  ["CreateInviteRequest", CreateInviteRequestSchema],
+  ["CreateInviteResponse", CreateInviteResponseSchema],
+  ["Invite", InviteSchema],
+  ["RevokeTokensResponse", RevokeTokensResponseSchema],
   ["JoinRequest", JoinRequestSchema],
   ["JoinResponse", JoinResponseSchema],
   ["MeResponse", MeResponseSchema],
@@ -142,6 +150,14 @@ function queryParameters(schema: TObject): Json[] {
     };
   });
 }
+
+const pathParameter = (name: string, description: string) => ({
+  name,
+  in: "path",
+  required: true,
+  description,
+  schema: { type: "string" },
+});
 
 const teamParameter = {
   name: "team",
@@ -199,11 +215,14 @@ function openApiDocument(): Json {
         get: {
           operationId: "listEvents",
           summary: "Search ledger events.",
+          description:
+            "With a person token, only events written with that team's person tokens: the team filter is the token's team.",
           parameters: queryParameters(EventQuerySchema),
           responses: {
             "200": { description: "One page of events.", content: jsonContent("EventsPage") },
             "400": errorResponse("Invalid filter."),
             ...authErrors,
+            "403": errorResponse("A person token asked for another team's events."),
           },
         },
       },
@@ -225,15 +244,7 @@ function openApiDocument(): Json {
           summary: "Answer a review item.",
           description:
             "Writes a decision.recorded event, attributed to the person the token belongs to, and closes the item.",
-          parameters: [
-            {
-              name: "id",
-              in: "path",
-              required: true,
-              description: "Review item id.",
-              schema: { type: "string" },
-            },
-          ],
+          parameters: [pathParameter("id", "Review item id.")],
           requestBody: { required: true, content: jsonContent("DecisionRequest") },
           responses: {
             "200": { description: "Decision recorded.", content: jsonContent("DecisionResponse") },
@@ -284,9 +295,56 @@ function openApiDocument(): Json {
           requestBody: { required: true, content: jsonContent("CreateTeamRequest") },
           responses: {
             "201": { description: "Team created.", content: jsonContent("CreateTeamResponse") },
-            "400": errorResponse("Invalid name."),
+            "400": errorResponse("Invalid name or invite lifetime."),
             ...authErrors,
             "409": errorResponse("A team with this id already exists."),
+          },
+        },
+      },
+      "/v1/teams/{team}/invites": {
+        post: {
+          operationId: "createInvite",
+          summary: "Create another invite code for a team.",
+          description:
+            "Admin token only. The invite expires after ttl_seconds (default 7 days). With an email, only that person can join with it, and their person id is the email.",
+          parameters: [pathParameter("team", "Team id.")],
+          requestBody: { required: true, content: jsonContent("CreateInviteRequest") },
+          responses: {
+            "201": { description: "Invite created.", content: jsonContent("CreateInviteResponse") },
+            "400": errorResponse("Invalid lifetime or email."),
+            ...authErrors,
+            "404": errorResponse("No such team."),
+          },
+        },
+      },
+      "/v1/invites/{id}": {
+        delete: {
+          operationId: "revokeInvite",
+          summary: "Revoke an invite code.",
+          description:
+            "Admin token only. Joining with a revoked invite answers 401. People who already joined keep their tokens. Revoking twice is not an error.",
+          parameters: [pathParameter("id", "sha256 of the invite code, in hex.")],
+          responses: {
+            "200": { description: "Invite revoked.", content: jsonContent("Invite") },
+            ...authErrors,
+            "404": errorResponse("No such invite."),
+          },
+        },
+      },
+      "/v1/teams/{team}/people/{person}/tokens": {
+        delete: {
+          operationId: "revokePersonTokens",
+          summary: "Revoke every token a person holds.",
+          description:
+            "Admin token only. The person's events stay in the ledger; their tokens answer 401 from now on. They can join again only with a new invite.",
+          parameters: [pathParameter("team", "Team id."), pathParameter("person", "Person id.")],
+          responses: {
+            "200": {
+              description: "Tokens revoked.",
+              content: jsonContent("RevokeTokensResponse"),
+            },
+            ...authErrors,
+            "404": errorResponse("No such team or person."),
           },
         },
       },
@@ -295,13 +353,15 @@ function openApiDocument(): Json {
           operationId: "joinTeam",
           summary: "Exchange an invite code for a person token.",
           description:
-            "The invite code is the credential, so no bearer token is needed. Joining again with the same person id returns a new token for the same person.",
+            "The invite code is the credential, so no bearer token is needed. A team-wide invite only adds new people: a person id already in the team (compared ignoring case) is refused, so the holder cannot take over the owner's or anyone else's identity. An invite for an email joins only that person, also when they are already in the team, which adds another token for them.",
           security: [],
           requestBody: { required: true, content: jsonContent("JoinRequest") },
           responses: {
             "200": { description: "Joined.", content: jsonContent("JoinResponse") },
             "400": errorResponse("Invalid body."),
-            "403": errorResponse("Unknown or revoked invite code."),
+            "401": errorResponse(
+              "Unknown, expired or revoked invite code, or an invite for another person.",
+            ),
           },
         },
       },
@@ -312,6 +372,24 @@ function openApiDocument(): Json {
           responses: {
             "200": { description: "The token's owner.", content: jsonContent("MeResponse") },
             ...authErrors,
+          },
+        },
+      },
+      "/v1/me/token": {
+        delete: {
+          operationId: "revokeOwnToken",
+          summary: "Revoke the person token that makes this request.",
+          description:
+            "What selfhost team leave calls. Only that token is revoked; the person's other tokens and their events stay.",
+          responses: {
+            "200": {
+              description: "Token revoked.",
+              content: jsonContent("RevokeTokensResponse"),
+            },
+            ...authErrors,
+            "403": errorResponse(
+              "The admin token is set on the server and cannot be revoked here.",
+            ),
           },
         },
       },

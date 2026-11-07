@@ -58,6 +58,13 @@ email, role `owner`, `admin` or `member`) and `tokens` (only the sha256 of each 
 or admin token, with `revoked_at`). Unlike `events`, these rows change: a policy is replaced and
 a token is revoked. Tokens are generated here and returned once.
 
+`0003_team_access.sql` gives every invite an `expires_at` (7 days by default, set per invite) and
+an optional `email`: an invite for an email joins only that person, under that email. It also
+adds `events.team`, indexed with `(ts, id)`: `append(events, { team })` sets it for a batch
+written with a person token, from the token's team and never from the event body, and
+`query({ team })` reads one team's events. The column is added without touching stored rows, so
+events written before it have no team.
+
 ## Sources
 
 Every event records its `source`, so a session one source misses still shows up from another,

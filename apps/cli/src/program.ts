@@ -111,6 +111,7 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
           version: VERSION,
           write: deps.write,
           json: options.json,
+          configPath: deps.configPath ?? defaultConfigPath(),
         }),
       );
     });
@@ -227,13 +228,20 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       write: deps.write,
       setExitCode: deps.setExitCode,
       now: deps.now,
+      configPath: deps.configPath ?? defaultConfigPath(),
     }),
     fail,
   );
 
   registerPolicyEditing(
     program,
-    () => ({ env: deps.env, cwd: deps.cwd, write: deps.write, now: deps.now }),
+    () => ({
+      env: deps.env,
+      cwd: deps.cwd,
+      write: deps.write,
+      now: deps.now,
+      configPath: deps.configPath ?? defaultConfigPath(),
+    }),
     fail,
   );
 

@@ -5,17 +5,23 @@ import net from "node:net";
 import tls from "node:tls";
 import {
   type ApiError,
+  type CreateInviteResponse,
+  CreateInviteResponseSchema,
   CreateTeamResponseSchema,
   createValidator,
   type EventsPage,
+  INVITE_TTL_DEFAULT_SECONDS,
   type InvalidPolicyError,
   InvalidPolicyErrorSchema,
+  type Invite,
+  InviteSchema,
   type JoinResponse,
   JoinResponseSchema,
   type LedgerEvent,
   MeResponseSchema,
   type PolicyResponse,
   PolicyResponseSchema,
+  RevokeTokensResponseSchema,
 } from "@selfhost/schema";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { stampEvents, teamId } from "../src/teams.js";
@@ -47,12 +53,30 @@ const as = (token: string, init: RequestInit = {}) => ({
   headers: { ...(init.headers as Record<string, string>), authorization: `Bearer ${token}` },
 });
 
-async function createTeam(name: string) {
-  const res = await server.request("/v1/teams", json("POST", { name }));
+async function createTeam(name: string, options: { invite_ttl_seconds?: number } = {}) {
+  const res = await server.request("/v1/teams", json("POST", { name, ...options }));
   expect(res.status).toBe(201);
   const body = await res.json();
   matches(CreateTeamResponseSchema, body);
-  return body as { team: { id: string }; invite: string };
+  return body as { team: { id: string }; invite: string; invite_expires_at: string };
+}
+
+async function createInvite(team: string, body: { ttl_seconds?: number; email?: string } = {}) {
+  const res = await server.request(`/v1/teams/${team}/invites`, json("POST", body));
+  expect(res.status).toBe(201);
+  const invite = await res.json();
+  matches(CreateInviteResponseSchema, invite);
+  return invite as CreateInviteResponse;
+}
+
+const joinAs = (invite: string, person: string) =>
+  server.app.request("/v1/join", json("POST", { invite, person }));
+
+async function refused(res: Response) {
+  expect(res.status).toBe(401);
+  const body = (await res.json()) as ApiError;
+  expect(body.error.code).toBe("invalid_invite");
+  return body.error.message;
 }
 
 async function join(invite: string, person: string): Promise<JoinResponse> {
@@ -120,12 +144,9 @@ describe("POST /v1/teams and /v1/join", () => {
   });
 
   it("refuses an unknown invite and a bad body", async () => {
-    const bad = await server.app.request(
-      "/v1/join",
-      json("POST", { invite: "selfhost_inv_nope", person: "x@example.com" }),
-    );
-    expect(bad.status).toBe(403);
-    expect(((await bad.json()) as ApiError).error.code).toBe("invalid_invite");
+    const bad = await joinAs("selfhost_inv_nope", "x@example.com");
+    expect(bad.headers.get("www-authenticate")).toBe('Bearer realm="selfhost"');
+    expect(await refused(bad)).toBe("Unknown invite code");
     const noPerson = await server.app.request("/v1/join", json("POST", { invite: "x" }));
     expect(noPerson.status).toBe(400);
     const blank = await server.app.request("/v1/join", json("POST", { invite: "x", person: " " }));
@@ -220,9 +241,269 @@ describe("events written with a person token", () => {
     expect(notJson.status).toBe(400);
   });
 
-  it("cannot read the ledger", async () => {
-    const res = await server.app.request("/v1/events", as(token));
-    expect(res.status).toBe(403);
+  it("cannot reach the admin routes", async () => {
+    for (const [method, path] of [
+      ["POST", "/v1/teams/events-team/invites"],
+      ["DELETE", `/v1/invites/${"0".repeat(64)}`],
+      ["DELETE", "/v1/teams/events-team/people/ada@example.com/tokens"],
+    ] as const) {
+      const res = await server.app.request(path, as(token, json(method, {})));
+      expect(res.status, path).toBe(403);
+    }
+  });
+});
+
+describe("invites", () => {
+  it("expire after 7 days by default, or after the lifetime asked for", async () => {
+    const before = Date.now();
+    const plain = await createTeam("Week Team");
+    const week = (Date.parse(plain.invite_expires_at) - before) / 1000;
+    expect(week).toBeGreaterThan(INVITE_TTL_DEFAULT_SECONDS - 60);
+    expect(week).toBeLessThanOrEqual(INVITE_TTL_DEFAULT_SECONDS + 60);
+
+    const short = await createTeam("Hour Team", { invite_ttl_seconds: 3600 });
+    expect((Date.parse(short.invite_expires_at) - before) / 1000).toBeLessThanOrEqual(3660);
+    const another = await createInvite("hour-team", { ttl_seconds: 600 });
+    expect(another).toMatchObject({ team: "hour-team" });
+    expect(another.id).toMatch(/^[0-9a-f]{64}$/);
+    expect((Date.parse(another.expires_at) - before) / 1000).toBeLessThanOrEqual(660);
+
+    for (const ttl of [0, 59, 366 * 86_400, 1.5]) {
+      const bad = await server.request(
+        "/v1/teams/hour-team/invites",
+        json("POST", { ttl_seconds: ttl }),
+      );
+      expect(bad.status, String(ttl)).toBe(400);
+    }
+    const badTeam = await server.request(
+      "/v1/teams",
+      json("POST", { name: "x", invite_ttl_seconds: 1 }),
+    );
+    expect(badTeam.status).toBe(400);
+    const missing = await server.request("/v1/teams/nope/invites", json("POST", {}));
+    expect(missing.status).toBe(404);
+    const anonymous = await server.app.request("/v1/teams/hour-team/invites", json("POST", {}));
+    expect(anonymous.status).toBe(401);
+  });
+
+  it("answer 401 once expired", async () => {
+    const { invite } = await createTeam("Expired Team");
+    // The ledger tests move real expiry times; here the store reports the invite as expired.
+    vi.spyOn(server.ledger.teams, "join").mockResolvedValueOnce({ refused: "expired" });
+    expect(await refused(await joinAs(invite, "late@example.com"))).toMatch(/expired/);
+    vi.restoreAllMocks();
+    expect((await joinAs(invite, "late@example.com")).status).toBe(200);
+  });
+
+  it("answer 401 once revoked, and only the admin token revokes them", async () => {
+    const { invite } = await createTeam("Revoke Team");
+    const extra = await createInvite("revoke-team");
+    const { token } = await join(extra.invite, "ada@example.com");
+
+    const asOwner = await server.app.request(
+      `/v1/invites/${extra.id}`,
+      as(token, { method: "DELETE" }),
+    );
+    expect(asOwner.status).toBe(403);
+    const res = await server.request(`/v1/invites/${extra.id}`, { method: "DELETE" });
+    expect(res.status).toBe(200);
+    const revoked = (await res.json()) as Invite;
+    matches(InviteSchema, revoked);
+    expect(revoked).toMatchObject({ id: extra.id, team: "revoke-team" });
+    expect(await refused(await joinAs(extra.invite, "bob@example.com"))).toMatch(/revoked/);
+    // People who joined keep their tokens, and other invites keep working.
+    expect((await server.app.request("/v1/me", as(token))).status).toBe(200);
+    expect((await joinAs(invite, "bob@example.com")).status).toBe(200);
+
+    const again = await server.request(`/v1/invites/${extra.id}`, { method: "DELETE" });
+    expect(((await again.json()) as { revoked_at: string }).revoked_at).toBe(revoked.revoked_at);
+    const unknown = await server.request(`/v1/invites/${"0".repeat(64)}`, { method: "DELETE" });
+    expect(unknown.status).toBe(404);
+  });
+
+  it("team-wide add only new people; the owner and others who joined need their own invite", async () => {
+    const { invite } = await createTeam("Claim Team");
+    const owner = await join(invite, "ada@example.com");
+    expect(owner.person.role).toBe("owner");
+    const bob = await join(invite, "bob@example.com");
+    expect(bob.person.role).toBe("member");
+
+    for (const person of ["ada@example.com", "bob@example.com", "ADA@example.com"]) {
+      expect(await refused(await joinAs(invite, person)), person).toMatch(
+        /already in the team.*invite for this person.*revoke them and invite them again/,
+      );
+    }
+    expect((await joinAs(invite, "carol@example.com")).status).toBe(200);
+
+    // An invite for the owner adds another token for the owner, with the owner's role.
+    const forOwner = await createInvite("claim-team", { email: "ada@example.com" });
+    const again = await join(forOwner.invite, "ada@example.com");
+    expect(again.person).toEqual(owner.person);
+    expect(again.token).not.toBe(owner.token);
+  });
+
+  it("with an email join only that person, under that email", async () => {
+    await createTeam("Email Team");
+    const invite = await createInvite("email-team", { email: "carol@example.com" });
+    expect(invite.email).toBe("carol@example.com");
+
+    expect(await refused(await joinAs(invite.invite, "mallory@example.com"))).toMatch(
+      /for someone else/,
+    );
+    const joined = await join(invite.invite, "Carol@Example.com");
+    expect(joined.person).toMatchObject({ id: "carol@example.com", team: "email-team" });
+
+    const notEmail = await server.request(
+      "/v1/teams/email-team/invites",
+      json("POST", { email: "carol" }),
+    );
+    expect(notEmail.status).toBe(400);
+  });
+});
+
+describe("revoking person tokens", () => {
+  it("lets a person revoke the token they use, and only that one", async () => {
+    const { invite } = await createTeam("Leave Team");
+    const laptop = await join(invite, "ada@example.com");
+    const forAda = await createInvite("leave-team", { email: "ada@example.com" });
+    const desktop = await join(forAda.invite, "ada@example.com");
+
+    const res = await server.app.request("/v1/me/token", as(laptop.token, { method: "DELETE" }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    matches(RevokeTokensResponseSchema, body);
+    expect(body).toEqual({ team: "leave-team", person: "ada@example.com", revoked: 1 });
+    expect((await server.app.request("/v1/me", as(laptop.token))).status).toBe(401);
+    const again = await server.app.request("/v1/me/token", as(laptop.token, { method: "DELETE" }));
+    expect(again.status).toBe(401);
+    expect((await server.app.request("/v1/me", as(desktop.token))).status).toBe(200);
+
+    const admin = await server.request("/v1/me/token", { method: "DELETE" });
+    expect(admin.status).toBe(403);
+  });
+
+  it("lets the admin token revoke every token a person holds", async () => {
+    const { invite } = await createTeam("Offboard Team");
+    const owner = await join(invite, "ada@example.com");
+    const first = await join(invite, "bob@example.com");
+    const forBob = await createInvite("offboard-team", { email: "bob@example.com" });
+    const second = await join(forBob.invite, "bob@example.com");
+    const path = "/v1/teams/offboard-team/people/bob%40example.com/tokens";
+
+    expect((await server.app.request(path, as(owner.token, { method: "DELETE" }))).status).toBe(
+      403,
+    );
+    const res = await server.request(path, { method: "DELETE" });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    matches(RevokeTokensResponseSchema, body);
+    // Both tokens, and the open invite for bob's email.
+    expect(body).toEqual({ team: "offboard-team", person: "bob@example.com", revoked: 3 });
+    expect(await refused(await joinAs(forBob.invite, "bob@example.com"))).toMatch(/revoked/);
+    for (const { token } of [first, second]) {
+      const write = await server.app.request(
+        "/v1/events",
+        as(
+          token,
+          json("POST", {
+            events: [makeEvent({ actor: { kind: "person", id: "bob@example.com" } })],
+          }),
+        ),
+      );
+      expect(write.status).toBe(401);
+    }
+    expect((await server.app.request("/v1/me", as(owner.token))).status).toBe(200);
+
+    const unknown = await server.request(
+      "/v1/teams/offboard-team/people/eve%40example.com/tokens",
+      {
+        method: "DELETE",
+      },
+    );
+    expect(unknown.status).toBe(404);
+  });
+});
+
+describe("reading events with a person token", () => {
+  let red: { ada: string; bob: string };
+  let blue: string;
+  const written: Record<string, string[]> = { red: [], blue: [] };
+
+  beforeAll(async () => {
+    const redTeam = await createTeam("Red Readers");
+    const blueTeam = await createTeam("Blue Readers");
+    red = {
+      ada: (await join(redTeam.invite, "ada@example.com")).token,
+      bob: (await join(redTeam.invite, "bob@example.com")).token,
+    };
+    blue = (await join(blueTeam.invite, "eve@example.com")).token;
+
+    const write = async (token: string, team: string, events: LedgerEvent[]) => {
+      const res = await server.app.request("/v1/events", as(token, json("POST", { events })));
+      expect(res.status).toBe(200);
+      written[team]?.push(...events.map((e) => e.id));
+    };
+    const ts = (n: number) => `2026-11-0${n}T10:00:00.000Z`;
+    await write(red.ada, "red", [
+      makeEvent({ ts: ts(1), actor: { kind: "person", id: "ada@example.com" } }),
+      makeEvent({ ts: ts(2), actor: { kind: "agent", id: "codex:session:red" } }),
+    ]);
+    await write(red.bob, "red", [
+      makeEvent({ ts: ts(3), actor: { kind: "person", id: "bob@example.com" } }),
+    ]);
+    await write(blue, "blue", [
+      makeEvent({ ts: ts(4), actor: { kind: "person", id: "eve@example.com" } }),
+    ]);
+    // The admin token can write any team into the body; that does not make it the team's.
+    const admin = await server.request(
+      "/v1/events",
+      json("POST", { events: [makeEvent({ ts: ts(5), team: "red-readers" })] }),
+    );
+    expect(admin.status).toBe(200);
+  });
+
+  const read = async (token: string, query = "") => {
+    const res = await server.app.request(`/v1/events${query}`, as(token));
+    expect(res.status).toBe(200);
+    return (await res.json()) as EventsPage;
+  };
+
+  it("sees every event its team wrote and nothing else", async () => {
+    const page = await read(red.bob);
+    expect(page.events.map((e) => e.id).sort()).toEqual([...(written.red ?? [])].sort());
+    expect(page.events.every((e) => e.team === "red-readers")).toBe(true);
+    expect((await read(blue)).events.map((e) => e.id)).toEqual(written.blue);
+  });
+
+  it("filters and pages inside the team", async () => {
+    expect((await read(red.ada, "?person=eve%40example.com")).events).toEqual([]);
+    expect((await read(red.ada, "?team=red-readers&person=bob%40example.com")).events).toHaveLength(
+      1,
+    );
+    const ids: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const page: EventsPage = await read(
+        red.ada,
+        `?limit=1${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+      );
+      ids.push(...page.events.map((e) => e.id));
+      cursor = page.next_cursor;
+    } while (cursor);
+    expect(ids.sort()).toEqual([...(written.red ?? [])].sort());
+  });
+
+  it("refuses another team and bad queries", async () => {
+    const other = await server.app.request("/v1/events?team=blue-readers", as(red.ada));
+    expect(other.status).toBe(403);
+    expect(((await other.json()) as ApiError).error.code).toBe("forbidden");
+    expect((await server.app.request("/v1/events?nope=1", as(red.ada))).status).toBe(400);
+  });
+
+  it("lets the admin token read one team", async () => {
+    const res = await server.request("/v1/events?team=red-readers");
+    const ids = ((await res.json()) as EventsPage).events.map((e) => e.id);
+    expect(ids.sort()).toEqual([...(written.red ?? [])].sort());
   });
 });
 

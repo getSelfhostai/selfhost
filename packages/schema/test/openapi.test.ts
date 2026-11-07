@@ -40,6 +40,9 @@ describe("openapi.yaml", () => {
     );
     expect(operations.sort()).toEqual(
       [
+        "DELETE /v1/invites/{id}",
+        "DELETE /v1/me/token",
+        "DELETE /v1/teams/{team}/people/{person}/tokens",
         "GET /v1/events",
         "GET /v1/health",
         "GET /v1/me",
@@ -49,6 +52,7 @@ describe("openapi.yaml", () => {
         "POST /v1/join",
         "POST /v1/review-items/{id}/decision",
         "POST /v1/teams",
+        "POST /v1/teams/{team}/invites",
         "PUT /v1/policy",
       ].sort(),
     );

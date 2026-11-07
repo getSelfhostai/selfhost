@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { LedgerEvent } from "@selfhost/schema";
 import { connect, type Database, migrate } from "../src/db.js";
 import { createLedger, type Ledger } from "../src/ledger.js";
+import { MIGRATIONS, type Migration } from "../src/migrations.generated.js";
 
 export const REPO_ROOT = join(import.meta.dirname, "..", "..", "..");
 export const FIXTURES = join(REPO_ROOT, "fixtures");
@@ -56,7 +57,8 @@ export interface Store {
 export interface Backend {
   name: string;
   skip: boolean;
-  open(): Promise<Store>;
+  /** A fresh database with these migrations applied, by default all of them. */
+  open(migrations?: readonly Migration[]): Promise<Store>;
 }
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -66,16 +68,16 @@ export const BACKENDS: Backend[] = [
   {
     name: "pglite",
     skip: false,
-    async open() {
+    async open(migrations = MIGRATIONS) {
       const db = await connect({ dataDir: "memory://" });
-      await migrate(db);
+      await migrate(db, migrations);
       return { db, ledger: createLedger(db), close: () => db.close() };
     },
   },
   {
     name: "postgres",
     skip: !DATABASE_URL,
-    async open() {
+    async open(migrations = MIGRATIONS) {
       const url = DATABASE_URL ?? "";
       const schema = `selfhost_test_${randomBytes(6).toString("hex")}`;
       const admin = await connect({ url });
@@ -83,7 +85,7 @@ export const BACKENDS: Backend[] = [
       const scoped = new URL(url);
       scoped.searchParams.set("search_path", schema);
       const db = await connect({ url: scoped.toString() });
-      await migrate(db);
+      await migrate(db, migrations);
       return {
         db,
         ledger: createLedger(db),

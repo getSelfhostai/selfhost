@@ -96,6 +96,7 @@ describe("selfhost policy check", () => {
       schema: "selfhost.policy_check/v1",
       path: dir.path("conf", "team.toml"),
       from: "flag",
+      team_policy: null,
       valid: false,
       errors: [{ field: "mcp.mode", line: 3, message: "Expected one of: observe, enforce, off" }],
       checks: [],

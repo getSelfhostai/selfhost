@@ -57,6 +57,7 @@ paths:
     get:
       operationId: listEvents
       summary: Search ledger events.
+      description: "With a person token, only events written with that team's person tokens: the team filter is the token's team."
       parameters:
         - name: person
           in: query
@@ -109,6 +110,12 @@ paths:
               - pr.closed
               - policy.evaluated
               - alert.raised
+        - name: team
+          in: query
+          required: false
+          description: "Team id on a team server: events written with that team's person tokens. A person token reads only its own team."
+          schema:
+            type: string
         - name: from
           in: query
           required: false
@@ -153,6 +160,12 @@ paths:
                 $ref: "#/components/schemas/ApiError"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: A person token asked for another team's events.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /v1/review-items:
     get:
       operationId: listReviewItems
@@ -371,7 +384,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/CreateTeamResponse"
         "400":
-          description: Invalid name.
+          description: Invalid name or invite lifetime.
           content:
             application/json:
               schema:
@@ -384,11 +397,110 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /v1/teams/{team}/invites:
+    post:
+      operationId: createInvite
+      summary: Create another invite code for a team.
+      description: Admin token only. The invite expires after ttl_seconds (default 7 days). With an email, only that person can join with it, and their person id is the email.
+      parameters:
+        - name: team
+          in: path
+          required: true
+          description: Team id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInviteRequest"
+      responses:
+        "201":
+          description: Invite created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateInviteResponse"
+        "400":
+          description: Invalid lifetime or email.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No such team.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/invites/{id}:
+    delete:
+      operationId: revokeInvite
+      summary: Revoke an invite code.
+      description: Admin token only. Joining with a revoked invite answers 401. People who already joined keep their tokens. Revoking twice is not an error.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: sha256 of the invite code, in hex.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Invite revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invite"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No such invite.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/teams/{team}/people/{person}/tokens:
+    delete:
+      operationId: revokePersonTokens
+      summary: Revoke every token a person holds.
+      description: Admin token only. The person's events stay in the ledger; their tokens answer 401 from now on. They can join again only with a new invite.
+      parameters:
+        - name: team
+          in: path
+          required: true
+          description: Team id.
+          schema:
+            type: string
+        - name: person
+          in: path
+          required: true
+          description: Person id.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Tokens revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevokeTokensResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No such team or person.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /v1/join:
     post:
       operationId: joinTeam
       summary: Exchange an invite code for a person token.
-      description: The invite code is the credential, so no bearer token is needed. Joining again with the same person id returns a new token for the same person.
+      description: "The invite code is the credential, so no bearer token is needed. A team-wide invite only adds new people: a person id already in the team (compared ignoring case) is refused, so the holder cannot take over the owner's or anyone else's identity. An invite for an email joins only that person, also when they are already in the team, which adds another token for them."
       security: []
       requestBody:
         required: true
@@ -409,8 +521,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
-        "403":
-          description: Unknown or revoked invite code.
+        "401":
+          description: Unknown, expired or revoked invite code, or an invite for another person.
           content:
             application/json:
               schema:
@@ -428,6 +540,26 @@ paths:
                 $ref: "#/components/schemas/MeResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /v1/me/token:
+    delete:
+      operationId: revokeOwnToken
+      summary: Revoke the person token that makes this request.
+      description: What selfhost team leave calls. Only that token is revoked; the person's other tokens and their events stay.
+      responses:
+        "200":
+          description: Token revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevokeTokensResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The admin token is set on the server and cannot be revoked here.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
 components:
   securitySchemes:
     bearerAuth:
@@ -783,6 +915,12 @@ components:
           maxLength: 100
           description: Team name. Its id is the name in kebab case.
           type: string
+        invite_ttl_seconds:
+          minimum: 60
+          maximum: 31536000
+          default: 604800
+          description: How long the team's first invite works, in seconds. Default 7 days.
+          type: integer
     CreateTeamResponse:
       additionalProperties: false
       title: CreateTeamResponse
@@ -790,6 +928,7 @@ components:
       required:
         - team
         - invite
+        - invite_expires_at
       properties:
         team:
           additionalProperties: false
@@ -815,6 +954,109 @@ components:
           minLength: 1
           description: Invite code to share with the team. Anyone holding it can join, so share it like a password.
           type: string
+        invite_expires_at:
+          format: date-time
+          description: When the invite stops working.
+          type: string
+    CreateInviteRequest:
+      additionalProperties: false
+      title: CreateInviteRequest
+      type: object
+      properties:
+        ttl_seconds:
+          minimum: 60
+          maximum: 31536000
+          default: 604800
+          description: How long the invite works, in seconds. Default 7 days.
+          type: integer
+        email:
+          pattern: ^[^@\s]+@[^@\s]+$
+          maxLength: 256
+          description: The one person the invite is for. Joining with it is refused for any other person id.
+          type: string
+    CreateInviteResponse:
+      additionalProperties: false
+      title: CreateInviteResponse
+      type: object
+      required:
+        - invite
+        - id
+        - team
+        - expires_at
+      properties:
+        invite:
+          minLength: 1
+          description: Invite code. Without an email anyone holding it can join until it expires, so share it like a password.
+          type: string
+        id:
+          pattern: ^[0-9a-f]{64}$
+          description: sha256 of the invite code, in hex. Names the invite in DELETE /v1/invites/{id} without carrying the code.
+          type: string
+        team:
+          pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+          description: Team the invite joins.
+          type: string
+        email:
+          description: The person the invite is for.
+          type: string
+        expires_at:
+          format: date-time
+          description: When the invite stops working.
+          type: string
+    Invite:
+      additionalProperties: false
+      title: Invite
+      type: object
+      required:
+        - id
+        - team
+        - created_at
+        - expires_at
+      properties:
+        id:
+          pattern: ^[0-9a-f]{64}$
+          description: sha256 of the invite code, in hex. Names the invite in DELETE /v1/invites/{id} without carrying the code.
+          type: string
+        team:
+          pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+          description: Team the invite joins.
+          type: string
+        email:
+          description: The person the invite is for. Joining with it makes this email the person id.
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        expires_at:
+          format: date-time
+          description: When the invite stops working.
+          type: string
+        revoked_at:
+          format: date-time
+          description: When the invite was revoked.
+          type: string
+    RevokeTokensResponse:
+      additionalProperties: false
+      title: RevokeTokensResponse
+      type: object
+      required:
+        - team
+        - person
+        - revoked
+      properties:
+        team:
+          pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+          description: Team of the person.
+          type: string
+        person:
+          minLength: 1
+          maxLength: 256
+          description: Person whose tokens were revoked.
+          type: string
+        revoked:
+          minimum: 0
+          description: Tokens revoked by this call; 0 when they were all revoked already.
+          type: integer
     JoinRequest:
       additionalProperties: false
       title: JoinRequest
@@ -825,12 +1067,12 @@ components:
       properties:
         invite:
           minLength: 1
-          description: Invite code from POST /v1/teams.
+          description: Invite code from POST /v1/teams or POST /v1/teams/{team}/invites.
           type: string
         person:
           minLength: 1
           maxLength: 256
-          description: Who is joining, such as their git email.
+          description: Who is joining, such as their git email. A team-wide invite takes only an id not yet in the team; an invite for an email takes only that email.
           type: string
         name:
           maxLength: 200
@@ -847,7 +1089,7 @@ components:
       properties:
         token:
           minLength: 1
-          description: Person token. It writes events as this person and reads the team policy. Shown once; the server keeps only its sha256.
+          description: Person token. It writes events as this person and reads the team's events and policy. Shown once; the server keeps only its sha256.
           type: string
         person:
           additionalProperties: false

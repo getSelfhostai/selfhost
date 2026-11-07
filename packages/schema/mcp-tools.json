@@ -997,6 +997,10 @@
               "alert.raised"
             ]
           },
+          "team": {
+            "description": "Team id on a team server: events written with that team's person tokens. A person token reads only its own team.",
+            "type": "string"
+          },
           "from": {
             "format": "date-time",
             "description": "Events at or after this time.",

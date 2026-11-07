@@ -1,7 +1,13 @@
-import type { PersonRole, TeamInfo } from "@selfhost/schema";
+import {
+  INVITE_TTL_MAX_SECONDS,
+  INVITE_TTL_MIN_SECONDS,
+  type PersonRole,
+  type TeamInfo,
+} from "@selfhost/schema";
 import type { Command } from "commander";
+import { plural } from "../format.js";
 import { defaultPerson } from "../import.js";
-import { type Fetch, serverUrl, TeamClient } from "./client.js";
+import { type Fetch, serverUrl, TeamApiError, TeamClient } from "./client.js";
 import {
   clearMembership,
   readMembership,
@@ -23,7 +29,35 @@ export interface TeamInitReport {
   server: string;
   team: TeamInfo;
   invite: string;
+  invite_expires_at: string;
   join_command: string;
+}
+
+/** `selfhost team invite --json`. */
+export interface TeamInviteReport {
+  schema: "selfhost.team_invite/v1";
+  server: string;
+  team: string;
+  invite: string;
+  /** sha256 of the invite code, the id the server knows it by. */
+  id: string;
+  /** The one person who can join with it, or null when anyone holding it can. */
+  email: string | null;
+  expires_at: string;
+  join_command: string;
+}
+
+/** `selfhost team revoke --json`. One of invite and person is set. */
+export interface TeamRevokeReport {
+  schema: "selfhost.team_revoke/v1";
+  server: string;
+  team: string;
+  /** Id of the revoked invite (the sha256 of its code). */
+  invite: string | null;
+  /** The person whose tokens were revoked. */
+  person: string | null;
+  /** Tokens and open invites of the person revoked by this call; null for an invite. */
+  revoked: number | null;
 }
 
 /** `selfhost join --json`. The token is saved, never printed. */
@@ -54,10 +88,20 @@ export interface LeaveReport {
   schema: "selfhost.team_leave/v1";
   mode: "solo";
   left: { server: string; team: string; person: string } | null;
+  /** Whether the server revoked this machine's person token; null when not in a team. */
+  token_revoked: boolean | null;
+  /** Why the token could not be revoked. Membership was still removed from this machine. */
+  error?: string;
 }
 
 interface JsonOption {
   json?: boolean;
+}
+
+interface AdminOptions extends JsonOption {
+  server?: string;
+  team?: string;
+  token?: string;
 }
 
 const print = (io: TeamIo, json: boolean | undefined, report: object, lines: string[]) => {
@@ -65,30 +109,166 @@ const print = (io: TeamIo, json: boolean | undefined, report: object, lines: str
   else for (const line of lines) io.write(line);
 };
 
+const DURATION_UNITS: Record<string, number> = { m: 60, h: 3600, d: 86_400 };
+
+/** Seconds in a duration like 30m, 12h or 7d, within what the server accepts for an invite. */
+export function parseTtl(value: string | undefined, flag: string): number | undefined {
+  if (value === undefined) return undefined;
+  const match = /^(\d+)([mhd])$/.exec(value.trim());
+  const seconds = match ? Number(match[1]) * (DURATION_UNITS[match[2] ?? ""] ?? 0) : Number.NaN;
+  if (!(seconds >= INVITE_TTL_MIN_SECONDS && seconds <= INVITE_TTL_MAX_SECONDS)) {
+    throw new Error(
+      `${flag}: expected a duration from 1m to 365d, like 7d, 12h or 30m, got "${value}"`,
+    );
+  }
+  return seconds;
+}
+
+const SHELL_SAFE = /^[\w@%+=:,./-]+$/;
+const shellWord = (word: string) =>
+  SHELL_SAFE.test(word) ? word : `'${word.replaceAll("'", `'\\''`)}'`;
+
+function joinCommand(server: string, invite: string, email?: string): string {
+  const person = email === undefined ? "" : ` --person ${shellWord(email)}`;
+  return `selfhost join ${server} ${invite}${person}`;
+}
+
+const shortTime = (iso: string) => iso.replace("T", " ").replace(/:\d{2}\.\d{3}Z$/, " UTC");
+
+function adminToken(options: AdminOptions, io: TeamIo, command: string): string {
+  const token = options.token ?? io.env.SELFHOST_TOKEN?.trim();
+  if (!token) {
+    throw new Error(
+      `${command} needs the server's admin token: pass --token or set SELFHOST_TOKEN`,
+    );
+  }
+  return token;
+}
+
+/** The server and team an admin command acts on: the flags, else this machine's membership. */
+function adminTarget(options: AdminOptions, io: TeamIo, command: string) {
+  const membership = readMembership(io.configPath);
+  const url = options.server ?? membership?.server;
+  if (!url) {
+    throw new Error(`${command} needs the team server: pass --server <url>`);
+  }
+  const server = serverUrl(url);
+  const client = new TeamClient(server, adminToken(options, io, command), io.fetch);
+  const team = options.team ?? (membership?.server === server ? membership.team : undefined);
+  return { server, client, team };
+}
+
 /** Creates a team on the server with the admin token and prints the command to share. */
 export async function teamInit(
-  options: JsonOption & { server: string; name?: string; token?: string },
+  options: JsonOption & { server: string; name?: string; token?: string; inviteTtl?: string },
   io: TeamIo,
 ): Promise<TeamInitReport> {
   const server = serverUrl(options.server);
-  const token = options.token ?? io.env.SELFHOST_TOKEN?.trim();
-  if (!token)
-    throw new Error("team init needs the server's admin token: pass --token or set SELFHOST_TOKEN");
-  const { team, invite } = await new TeamClient(server, token, io.fetch).createTeam(
+  const token = adminToken(options, io, "team init");
+  const ttl = parseTtl(options.inviteTtl, "--invite-ttl");
+  const created = await new TeamClient(server, token, io.fetch).createTeam(
     options.name ?? "default",
+    ttl,
   );
-  const join = `selfhost join ${server} ${invite}`;
+  const { team, invite } = created;
+  const join = joinCommand(server, invite);
   const report: TeamInitReport = {
     schema: "selfhost.team_init/v1",
     server,
     team,
     invite,
+    invite_expires_at: created.invite_expires_at,
     join_command: join,
   };
   print(io, options.json, report, [
     `Created team ${team.name} (${team.id}) on ${server}.`,
-    "Share this with each teammate. Anyone holding the invite can join, so share it like a password:",
+    `Share this with each teammate until ${shortTime(created.invite_expires_at)}, when the invite expires.`,
+    "Anyone holding the invite can join until then, so share it like a password:",
     `  ${join}`,
+  ]);
+  return report;
+}
+
+/** Creates another invite for a team, optionally for one person's email. Admin token only. */
+export async function teamInvite(
+  options: AdminOptions & { email?: string; ttl?: string },
+  io: TeamIo,
+): Promise<TeamInviteReport> {
+  const ttl = parseTtl(options.ttl, "--ttl");
+  const { server, client, team } = adminTarget(options, io, "team invite");
+  if (!team) throw new Error("team invite needs the team: pass --team <id>");
+  const email = options.email?.trim();
+  const created = await client.createInvite(team, {
+    ...(ttl === undefined ? {} : { ttl_seconds: ttl }),
+    ...(email ? { email } : {}),
+  });
+  const join = joinCommand(server, created.invite, created.email);
+  const report: TeamInviteReport = {
+    schema: "selfhost.team_invite/v1",
+    server,
+    team: created.team,
+    invite: created.invite,
+    id: created.id,
+    email: created.email ?? null,
+    expires_at: created.expires_at,
+    join_command: join,
+  };
+  const until = shortTime(created.expires_at);
+  print(io, options.json, report, [
+    created.email
+      ? `Created an invite to team ${created.team} on ${server} for ${created.email}, until ${until}.`
+      : `Created an invite to team ${created.team} on ${server}, until ${until}.`,
+    created.email
+      ? `Only ${created.email} can join with it. Send them:`
+      : "Anyone holding it can join until then, so share it like a password:",
+    `  ${join}`,
+    `Revoke it early with: selfhost team revoke ${created.invite}`,
+  ]);
+  return report;
+}
+
+const INVITE_PREFIX = "selfhost_inv_";
+
+/**
+ * Revokes an invite (given as its code) or every token a person holds (given as their id).
+ * Admin token only. The person's events stay in the ledger.
+ */
+export async function teamRevoke(
+  target: string,
+  options: AdminOptions,
+  io: TeamIo,
+): Promise<TeamRevokeReport> {
+  const { server, client, team } = adminTarget(options, io, "team revoke");
+  if (target.startsWith(INVITE_PREFIX)) {
+    const invite = await client.revokeInvite(target);
+    const report: TeamRevokeReport = {
+      schema: "selfhost.team_revoke/v1",
+      server,
+      team: invite.team,
+      invite: invite.id,
+      person: null,
+      revoked: null,
+    };
+    print(io, options.json, report, [
+      `Revoked the invite to team ${invite.team} on ${server}. Joining with it now fails; people who already joined keep their tokens.`,
+    ]);
+    return report;
+  }
+  if (!team) throw new Error("team revoke needs the team of the person: pass --team <id>");
+  const person = target.trim();
+  const { revoked } = await client.revokePerson(team, person);
+  const report: TeamRevokeReport = {
+    schema: "selfhost.team_revoke/v1",
+    server,
+    team,
+    invite: null,
+    person,
+    revoked,
+  };
+  print(io, options.json, report, [
+    revoked > 0
+      ? `Revoked ${person}'s access to team ${team} on ${server} (${plural(revoked, "token")}, counting open invites for their email). Their events stay in the ledger.`
+      : `${person} has nothing left to revoke in team ${team} on ${server}.`,
   ]);
   return report;
 }
@@ -165,19 +345,46 @@ export function status(options: JsonOption, io: TeamIo): StatusReport {
   return report;
 }
 
-/** Back to solo mode. The local ledger is not touched. */
-export function leaveTeam(options: JsonOption, io: TeamIo): LeaveReport {
+/**
+ * Back to solo mode: revokes this machine's person token on the server, then removes the
+ * membership. When the server cannot revoke it, the membership is removed anyway and the
+ * report says the token still works there. The local ledger is not touched.
+ */
+export async function leaveTeam(options: JsonOption, io: TeamIo): Promise<LeaveReport> {
+  const membership = readMembership(io.configPath);
+  let revoked: boolean | null = null;
+  let error: string | undefined;
+  if (membership) {
+    try {
+      await new TeamClient(membership.server, membership.token, io.fetch).revokeOwnToken();
+      revoked = true;
+    } catch (failure) {
+      // 401: the server no longer accepts the token, so there is nothing left to revoke.
+      revoked = failure instanceof TeamApiError && failure.status === 401;
+      if (!revoked) error = failure instanceof Error ? failure.message : String(failure);
+    }
+  }
   const left = clearMembership(io.configPath);
   const report: LeaveReport = {
     schema: "selfhost.team_leave/v1",
     mode: "solo",
     left: left ? { server: left.server, team: left.team, person: left.person } : null,
+    token_revoked: revoked,
+    ...(error === undefined ? {} : { error }),
   };
-  print(io, options.json, report, [
-    left
-      ? `Left team ${left.team} on ${left.server}. Back in solo mode; the local ledger is unchanged.`
-      : "Not in a team: already in solo mode.",
-  ]);
+  const lines = !left
+    ? ["Not in a team: already in solo mode."]
+    : revoked
+      ? [
+          `Left team ${left.team} on ${left.server} and revoked this machine's token there.`,
+          "Back in solo mode; the local ledger is unchanged.",
+        ]
+      : [
+          `Left team ${left.team} on this machine only: the server did not revoke its token (${error}).`,
+          `The token keeps working on ${left.server} until a team admin runs: selfhost team revoke ${shellWord(left.person)}`,
+          "Back in solo mode; the local ledger is unchanged.",
+        ];
+  print(io, options.json, report, lines);
   return report;
 }
 
@@ -196,22 +403,54 @@ export function registerTeam(
 
   const team = program
     .command("team")
-    .description("create a team on a selfhost server or leave one");
+    .description("create a team on a selfhost server, invite to it, revoke access or leave it");
 
   team
     .command("init")
     .description("create a team on a selfhost server and print the invite to share")
     .requiredOption("--server <url>", "the selfhost server, like https://selfhost.example.com")
     .option("--name <team>", "team name", "default")
+    .option(
+      "--invite-ttl <duration>",
+      "how long the invite works, like 7d, 12h or 30m (default: 7d)",
+    )
     .option("--token <token>", "the server's admin token (default: SELFHOST_TOKEN)")
     .option("--json", "print JSON")
     .action((options: Parameters<typeof teamInit>[0]) =>
       guard(options.json, () => teamInit(options, io())),
     );
 
+  const adminOptions = (command: Command) =>
+    command
+      .option("--server <url>", "the selfhost server (default: the one this machine joined)")
+      .option("--team <id>", "team id (default: the one this machine joined)")
+      .option("--token <token>", "the server's admin token (default: SELFHOST_TOKEN)")
+      .option("--json", "print JSON");
+
+  adminOptions(
+    team
+      .command("invite")
+      .description("create another invite to a team, optionally for one person")
+      .option("--email <email>", "only this person can join with it, and joins as this email")
+      .option("--ttl <duration>", "how long the invite works, like 7d, 12h or 30m (default: 7d)"),
+  ).action((options: Parameters<typeof teamInvite>[0]) =>
+    guard(options.json, () => teamInvite(options, io())),
+  );
+
+  adminOptions(
+    team
+      .command("revoke")
+      .description("revoke an invite, or every token a person holds; their events stay")
+      .argument("<invite-or-person>", "an invite code, or a person id such as their git email"),
+  ).action((target: string, options: AdminOptions) =>
+    guard(options.json, () => teamRevoke(target, options, io())),
+  );
+
   team
     .command("leave")
-    .description("go back to solo mode; the local ledger stays as it is")
+    .description(
+      "revoke this machine's team token and go back to solo mode; the local ledger stays",
+    )
     .option("--json", "print JSON")
     .action((options: JsonOption) => guard(options.json, () => leaveTeam(options, io())));
 

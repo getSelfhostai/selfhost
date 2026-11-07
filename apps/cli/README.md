@@ -49,8 +49,11 @@ It is never asked with `--json` or when stdin is not a terminal, and nothing is 
 answer was yes and `SELFHOST_TELEMETRY_URL` is set.
 
 `selfhost doctor` prints the runtime, finds `selfhost.toml` (the `--config` flag, then
-`SELFHOST_CONFIG`, then the nearest file from the current directory up to the repository root)
-and validates it. It exits 1 when the file is invalid.
+`SELFHOST_CONFIG`, then the nearest file from the current directory up to the repository root,
+then, on a machine in a team, the team policy pulled into `~/.selfhost/team-policy.toml`) and
+validates it. It exits 1 when the file is invalid. When both a repository file and a pulled
+team policy exist, the repository file is used and `doctor` and `policy check` name the team
+policy that is not.
 
 `selfhost policy` works on the rules in `selfhost.toml` (found like `doctor` does, or
 `--config`). See [`packages/policy`](../../packages/policy/README.md) for how rules match.
@@ -74,7 +77,9 @@ rule's mode in `selfhost.toml` (default `enforce`) and prints the file's `git di
 as they are. With `--team` the mode goes into `[teams.<name>.rules.<rule>]`, added at the end of
 the file when missing. Nothing is staged or committed: the change is reviewed in a pull request
 like any other. A rule already in that mode is left alone (exit 0), and an edit that would not
-parse is never written.
+parse is never written. When the file found is the pulled team policy, promote refuses: that
+copy is replaced on the next sync, so the team policy is changed in the team's repository or on
+the server. `selfhost policy report` reads the pulled team policy like the other commands.
 
 `selfhost policy report [--since 7d] [--config <path>] [--json]` reads the observe-mode
 `policy.evaluated` events from the ledger (`--database` / `--data-dir` as for `spend`) and lists,
@@ -109,11 +114,22 @@ a selfhost server. Team mode connects the same install to a shared server
 selfhost team init --server https://selfhost.example.com --name Platform   # admin token: --token or SELFHOST_TOKEN
 selfhost join https://selfhost.example.com selfhost_inv_...                 # on each laptop
 selfhost status
+selfhost team invite --email bob@example.com --ttl 2d                      # admin token
+selfhost team revoke bob@example.com                                       # admin token
 selfhost team leave
 ```
 
-- `selfhost team init` creates a team with the server's admin token and prints the
-  `selfhost join` command to share. It does not join the machine it runs on.
+- `selfhost team init [--invite-ttl 7d]` creates a team with the server's admin token and
+  prints the `selfhost join` command to share. The invite expires after `--invite-ttl` (30m,
+  12h, 7d and so on, up to 365d; default 7d). It does not join the machine it runs on.
+- `selfhost team invite [--email <email>] [--ttl 7d]` creates another invite. With `--email`
+  only that person can join with it, and they join under that email whatever `--person` says
+  otherwise. A team-wide invite only adds new people: joining with it as someone already in the
+  team, the owner included, is refused, so a second machine for the same person needs
+  `selfhost team invite --email <person>`. `selfhost team revoke <invite>` revokes an invite code; `selfhost team revoke
+  <person>` revokes every token the person holds (all their machines) and the open invites for
+  their email. Their events stay. Both take the admin token like `team init` does, and
+  `--server` and `--team`, which default to the team this machine joined.
 - `selfhost join <url> <invite> [--person <id>] [--name <name>]` exchanges the invite for a
   person token and adds `server`, `token`, `person` and `team` to `~/.selfhost/config.json`
   (mode 0600), and nothing else: no vendor login or API key is asked for or stored. `--person`
@@ -132,8 +148,11 @@ selfhost team leave
   and a batch that fails is kept and sent again on the next poll.
 - `selfhost status` shows solo or team, the server, the person, the last sync and the team
   policy hash, from local files only. Sync progress is in `~/.selfhost/sync.json`.
-- `selfhost team leave` removes the membership and goes back to solo mode. The local ledger is
-  not touched.
+- `selfhost team leave` revokes this machine's person token on the server, then removes the
+  membership and the pulled team policy and goes back to solo mode. When the server cannot be
+  reached, the membership is still removed and the output says the token keeps working there
+  until an admin runs `selfhost team revoke <person>` (`token_revoked: false` with `--json`).
+  The local ledger is not touched.
 
 The CLI calls only the configured server, and only its `/v1` API. Agents keep calling their
 vendors directly; no model traffic goes through selfhost.
@@ -143,8 +162,8 @@ Every command takes `--json` and prints one object with a `schema` tag: `selfhos
 `selfhost.agents/v1`, `selfhost.agents_configure/v1`, `selfhost.scan/v1`,
 `selfhost.policy_check/v1`, `selfhost.policy_test/v1`, `selfhost.policy_observe/v1`,
 `selfhost.policy_promote/v1`, `selfhost.review_item/v1` (from `policy report`),
-`selfhost.team_init/v1`, `selfhost.join/v1`, `selfhost.status/v1` and
-`selfhost.team_leave/v1`. Errors print `selfhost.error/v1` and exit 1. In solo mode no command
+`selfhost.team_init/v1`, `selfhost.team_invite/v1`, `selfhost.team_revoke/v1`,
+`selfhost.join/v1`, `selfhost.status/v1` and `selfhost.team_leave/v1`. Errors print `selfhost.error/v1` and exit 1. In solo mode no command
 needs a network connection.
 
 ## Binaries

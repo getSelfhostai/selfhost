@@ -1,18 +1,22 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import type { Ledger } from "@selfhost/ledger";
+import type { JoinRefusal, Ledger } from "@selfhost/ledger";
 import {
   type ApiError,
+  CreateInviteRequestSchema,
+  type CreateInviteResponse,
   CreateTeamRequestSchema,
   type CreateTeamResponse,
   createValidator,
   type IngestEventsError,
   type InvalidPolicyError,
+  type Invite,
   JoinRequestSchema,
   type JoinResponse,
   type MeResponse,
   type Person,
   PolicyQuerySchema,
   parseConfig,
+  type RevokeTokensResponse,
   SetPolicyRequestSchema,
   type ValidationResult,
 } from "@selfhost/schema";
@@ -29,6 +33,7 @@ export interface TeamRouteOptions {
 }
 
 type PersonEnv = { Bindings: { person: Person } };
+type EventsEnv = { team: string };
 type BatchError = IngestEventsError["errors"][number];
 
 /** Routes that need no bearer token: /v1/join takes the invite code in the body instead. */
@@ -39,11 +44,21 @@ const POLICY_BODY_BYTES = 8 * 1024 * 1024;
 const OWNER_ROLES = new Set(["owner", "admin"]);
 
 const createTeamBody = createValidator(CreateTeamRequestSchema);
+const createInviteBody = createValidator(CreateInviteRequestSchema);
 const joinBody = createValidator(JoinRequestSchema);
 const setPolicyBody = createValidator(SetPolicyRequestSchema);
 const policyQuery = createValidator(PolicyQuerySchema);
 
 const apiError = (code: string, message: string): ApiError => ({ error: { code, message } });
+
+const REFUSED_INVITE: Record<JoinRefusal, string> = {
+  unknown: "Unknown invite code",
+  expired: "This invite code has expired. Ask a team admin for a new one.",
+  revoked: "This invite code was revoked. Ask a team admin for a new one.",
+  wrong_person: "This invite is for someone else. Join with the email it was sent to.",
+  existing_person:
+    "This person is already in the team, and a team-wide invite only adds new people. Ask a team admin for an invite for this person (selfhost team invite --email <person>), or to revoke them and invite them again.",
+};
 
 const limit = (maxSize: number) =>
   bodyLimit({
@@ -78,9 +93,10 @@ export function teamRoutes(app: Hono, { ledger, token }: TeamRouteOptions): void
   const isAdminToken = sameAs(token);
   const adminOnly = requireBearerToken(token);
 
-  // The ordinary events route, reached by person tokens only after their events are stamped.
+  // The ordinary events routes, limited to the person's team. Writes reach them only after
+  // their events are stamped.
   const events = new Hono();
-  eventRoutes(events, ledger);
+  eventRoutes(events, ledger, { team: (c) => (c.env as EventsEnv).team });
   events.onError(rethrow);
 
   const person = new Hono<PersonEnv>();
@@ -89,7 +105,7 @@ export function teamRoutes(app: Hono, { ledger, token }: TeamRouteOptions): void
     c.json(
       apiError(
         "forbidden",
-        "A person token can write events, read /v1/me and read its team's policy. This route needs the admin token.",
+        "A person token can write and read its team's events, read /v1/me and its team's policy, and revoke itself. This route needs the admin token.",
       ),
       403,
     ),
@@ -107,11 +123,22 @@ export function teamRoutes(app: Hono, { ledger, token }: TeamRouteOptions): void
       };
       return c.json(body, 400);
     }
-    return events.request("/v1/events", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: stamped.body,
-    });
+    return events.request(
+      "/v1/events",
+      { method: "POST", headers: { "content-type": "application/json" }, body: stamped.body },
+      { team: c.env.person.team } satisfies EventsEnv,
+    );
+  });
+
+  person.get("/v1/events", (c) =>
+    events.fetch(c.req.raw, { team: c.env.person.team } satisfies EventsEnv),
+  );
+
+  // selfhost team leave: the token making the request stops working.
+  person.delete("/v1/me/token", async (c) => {
+    const revoked = await teams.revokeToken(bearerToken(c.req.header("authorization")) ?? "");
+    if (!revoked) return unauthorized(c, "Missing or invalid bearer token");
+    return c.json(revoked satisfies RevokeTokensResponse);
   });
 
   person.get("/v1/me", async (c) => {
@@ -160,7 +187,9 @@ export function teamRoutes(app: Hono, { ledger, token }: TeamRouteOptions): void
     const id = body.person.trim();
     if (id === "") return c.json(apiError("invalid_request", "person: Expected an id"), 400);
     const joined = await teams.join(body.invite, { id, name: body.name?.trim() || undefined });
-    if (!joined) return c.json(apiError("invalid_invite", "Unknown or revoked invite code"), 403);
+    if ("refused" in joined) {
+      return unauthorized(c, REFUSED_INVITE[joined.refused], "invalid_invite");
+    }
     return c.json(joined satisfies JoinResponse);
   });
 
@@ -175,14 +204,51 @@ export function teamRoutes(app: Hono, { ledger, token }: TeamRouteOptions): void
         400,
       );
     }
-    const created = await teams.createTeam({ id, name });
+    const created = await teams.createTeam({ id, name }, { ttlSeconds: body.invite_ttl_seconds });
     if (!created) {
       return c.json(apiError("team_exists", `A team with id ${id} already exists`), 409);
     }
     return c.json(created satisfies CreateTeamResponse, 201);
   });
 
+  app.post("/v1/teams/:team/invites", adminOnly, limit(SMALL_BODY_BYTES), async (c) => {
+    const body = await readBody(c, createInviteBody);
+    if (body instanceof Response) return body;
+    const team = c.req.param("team");
+    const invite = await teams.createInvite(team, {
+      ttlSeconds: body.ttl_seconds,
+      email: body.email?.trim(),
+    });
+    if (!invite) return c.json(apiError("not_found", `No team ${team}`), 404);
+    return c.json(invite satisfies CreateInviteResponse, 201);
+  });
+
+  app.delete("/v1/invites/:id", adminOnly, async (c) => {
+    const id = c.req.param("id");
+    const revoked = await teams.revokeInvite(id);
+    if (!revoked) return c.json(apiError("not_found", `No invite ${id}`), 404);
+    return c.json(revoked satisfies Invite);
+  });
+
+  app.delete("/v1/teams/:team/people/:person/tokens", adminOnly, async (c) => {
+    const team = c.req.param("team");
+    const who = c.req.param("person");
+    const revoked = await teams.revokePerson(team, who);
+    if (!revoked) return c.json(apiError("not_found", `No person ${who} in team ${team}`), 404);
+    return c.json(revoked satisfies RevokeTokensResponse);
+  });
+
   app.get("/v1/me", adminOnly, (c) => c.json({ kind: "admin" } satisfies MeResponse));
+
+  app.delete("/v1/me/token", adminOnly, (c) =>
+    c.json(
+      apiError(
+        "forbidden",
+        "The admin token is set on the server (SELFHOST_TOKEN or the token file in its data dir) and cannot be revoked here",
+      ),
+      403,
+    ),
+  );
 
   app.get("/v1/policy", adminOnly, async (c) => {
     const query = policyQuery.validate(c.req.query());
@@ -278,6 +344,12 @@ export function stampEvents(
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** 401 in the shape the admin token check answers with. */
+function unauthorized(c: Context, message: string, code = "unauthorized") {
+  c.header("WWW-Authenticate", 'Bearer realm="selfhost"');
+  return c.json(apiError(code, message), 401);
 }
 
 function bearerToken(header: string | undefined): string | undefined {

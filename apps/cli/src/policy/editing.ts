@@ -13,7 +13,7 @@ import {
   type RuleMode,
 } from "@selfhost/schema";
 import type { Command } from "commander";
-import { findConfig } from "../find-config.js";
+import { type ConfigLocation, findConfig } from "../find-config.js";
 import { parseSince } from "../import.js";
 import { promoteRule } from "./promote.js";
 import { buildPolicyReport, reportWindow } from "./report.js";
@@ -26,6 +26,8 @@ export interface PolicyIo {
   cwd: string;
   write: (line: string) => void;
   now?: Date;
+  /** ~/.selfhost/config.json; in a team, its pulled policy is used when the repo has none. */
+  configPath?: string;
 }
 
 export interface PromoteCommandOptions {
@@ -64,15 +66,26 @@ export function parseMode(value: string | undefined): RuleMode {
   return mode as RuleMode;
 }
 
-function locateConfig(io: PolicyIo, flag: string | undefined): string {
-  const location = findConfig(io.cwd, flag, io.env);
+function locateConfig(io: PolicyIo, flag: string | undefined): ConfigLocation {
+  const location = findConfig(io.cwd, flag, io.env, io.configPath);
   if (!location) {
     throw new Error(
       "No selfhost.toml found from this directory up to the repository root. Pass --config <path>.",
     );
   }
   if (!existsSync(location.path)) throw new Error(`${location.path} does not exist`);
-  return location.path;
+  return location;
+}
+
+/** The pulled team policy is a copy: the next sync replaces it, so it is never edited here. */
+function refuseTeamPolicy(location: ConfigLocation): void {
+  const team = location.teamPolicy;
+  if (location.from !== "team" || !team) return;
+  throw new Error(
+    `${location.path} is the policy of team ${team.team}, pulled from ${team.server}, and the next sync replaces it. ` +
+      "Change the team policy where it is kept: in the team's repository, or on the server (PUT /v1/policy, by a team owner or admin). " +
+      "To change rules for this repository only, add a selfhost.toml here.",
+  );
 }
 
 /** The working-copy diff of one file, or undefined outside a git repository. */
@@ -99,7 +112,9 @@ export async function runPromote(
   io: PolicyIo,
 ): Promise<PromoteReport> {
   const to = parseMode(options.to);
-  const path = locateConfig(io, options.config);
+  const location = locateConfig(io, options.config);
+  refuseTeamPolicy(location);
+  const { path } = location;
   const result = promoteRule(readFileSync(path, "utf8"), ruleId, { team: options.team, to });
   const file = relative(io.cwd, path) || path;
   const who = options.team ? `Rule ${ruleId} for team ${options.team}` : `Rule ${ruleId}`;
@@ -141,13 +156,14 @@ export async function runPromote(
 
 /** The rules in selfhost.toml, when one is found. An invalid file is an error. */
 function readRules(io: PolicyIo, flag: string | undefined): { rules: Rule[]; path: string } | null {
-  const location = findConfig(io.cwd, flag, io.env);
+  const location = findConfig(io.cwd, flag, io.env, io.configPath);
   if (!location) return null;
   if (!existsSync(location.path)) {
     if (location.from === "search") return null;
     throw new Error(`${location.path} does not exist`);
   }
-  const file = relative(io.cwd, location.path) || location.path;
+  const file =
+    location.from === "team" ? location.path : relative(io.cwd, location.path) || location.path;
   const result = parseConfig(readFileSync(location.path, "utf8"));
   if (!result.ok) {
     const errors = result.errors.map((error) => `  ${formatConfigError(error, file)}`);

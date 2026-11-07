@@ -118,6 +118,7 @@ describe("solo mode", () => {
       schema: "selfhost.team_leave/v1",
       mode: "solo",
       left: null,
+      token_revoked: null,
     });
 
     expect(fetch).not.toHaveBeenCalled();
@@ -202,7 +203,7 @@ describe("team init and join", () => {
       deps,
     );
     expect(refused.code).toBe(1);
-    expect(parse(refused.out).error).toMatch(/403.*Unknown or revoked invite code/);
+    expect(parse(refused.out).error).toMatch(/401.*Unknown invite code/);
     expect(existsSync(home.path(".selfhost"))).toBe(false);
 
     const noToken = await run(["team", "init", "--server", SERVER, "--json"], deps);
@@ -284,7 +285,13 @@ describe("moving from solo to team", () => {
     } finally {
       await local.close();
     }
-    expect(parse((await run(["doctor", "--json"], deps)).out).config.valid).toBe(true);
+    // The repository's selfhost.toml wins over the pulled team policy, and doctor says so.
+    expect(parse((await run(["doctor", "--json"], deps)).out).config).toMatchObject({
+      path: repo.path("selfhost.toml"),
+      from: "search",
+      valid: true,
+      team_policy: { path: home.path(".selfhost", "team-policy.toml"), team: "default" },
+    });
 
     const status = parse((await run(["status", "--json"], deps)).out);
     expect(status).toMatchObject({
@@ -300,12 +307,22 @@ describe("moving from solo to team", () => {
     // The CLI only ever called the configured server, and only its API.
     expect(server.calls.length).toBeGreaterThan(0);
     for (const call of server.calls)
-      expect(call).toMatch(/^(GET|POST|PUT) http:\/\/team\.test\/v1\//);
+      expect(call).toMatch(/^(GET|POST|PUT|DELETE) http:\/\/team\.test\/v1\//);
     expect(attempts).toEqual([]);
 
-    // Leaving goes back to solo without touching the ledger, and solo calls nobody.
+    // Leaving revokes the token on the server and goes back to solo without touching the
+    // ledger, and solo calls nobody.
+    const { token } = JSON.parse(readFileSync(configPath, "utf8"));
     const left = parse((await run(["team", "leave", "--json"], deps)).out);
-    expect(left.left).toEqual({ server: SERVER, team: "default", person: PERSON });
+    expect(left).toMatchObject({
+      left: { server: SERVER, team: "default", person: PERSON },
+      token_revoked: true,
+    });
+    expect(server.calls.at(-1)).toBe(`DELETE ${SERVER}/v1/me/token`);
+    const me = await server.fetch(`${SERVER}/v1/me`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(me.status).toBe(401);
     expect(existsSync(home.path(".selfhost", "team-policy.toml"))).toBe(false);
     const calls = server.calls.length;
     const after = parse((await run(importArgs(dataDir), deps)).out);
@@ -340,6 +357,469 @@ describe("moving from solo to team", () => {
     const retried = parse((await run(importArgs(dataDir), deps)).out);
     expect(retried.sync).toMatchObject({ history: true, accepted: report.accepted });
     expect(await server.events()).toHaveLength(report.accepted);
+  });
+});
+
+describe("admin commands", () => {
+  async function adminSetup() {
+    const server = await teamServer();
+    const admin = laptop();
+    const deps = {
+      configPath: admin.configPath,
+      fetch: server.fetch,
+      env: { SELFHOST_TOKEN: ADMIN },
+    };
+    const init = parse(
+      (
+        await run(
+          [
+            "team",
+            "init",
+            "--server",
+            SERVER,
+            "--name",
+            "Platform",
+            "--invite-ttl",
+            "2h",
+            "--json",
+          ],
+          deps,
+        )
+      ).out,
+    );
+    return { server, deps, init };
+  }
+
+  it("team init sets how long the first invite works", async () => {
+    const before = Date.now();
+    const { init, deps, server } = await adminSetup();
+    const ms = Date.parse(init.invite_expires_at) - before;
+    expect(ms).toBeGreaterThan(2 * 3_600_000 - 60_000);
+    expect(ms).toBeLessThanOrEqual(2 * 3_600_000 + 60_000);
+
+    const calls = server.calls.length;
+    for (const ttl of ["0d", "30s", "400d", "soon"]) {
+      const bad = await run(
+        ["team", "init", "--server", SERVER, "--invite-ttl", ttl, "--json"],
+        deps,
+      );
+      expect(bad.code, ttl).toBe(1);
+      expect(parse(bad.out).error).toMatch(/--invite-ttl: expected a duration/);
+    }
+    expect(server.calls).toHaveLength(calls);
+    const text = await run(["team", "init", "--server", SERVER, "--name", "Text"], deps);
+    expect(text.out).toMatch(/until \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC, when the invite expires/);
+  });
+
+  it("team invite --email makes an invite only that person can use", async () => {
+    const { server, deps } = await adminSetup();
+    const invited = await run(
+      [
+        "team",
+        "invite",
+        "--server",
+        SERVER,
+        "--team",
+        "platform",
+        "--email",
+        "bob@example.com",
+        "--ttl",
+        "1d",
+        "--json",
+      ],
+      deps,
+    );
+    expect(invited.code).toBe(0);
+    const report = parse(invited.out);
+    expect(report).toMatchObject({
+      schema: "selfhost.team_invite/v1",
+      server: SERVER,
+      team: "platform",
+      email: "bob@example.com",
+    });
+    expect(report.id).toMatch(/^[0-9a-f]{64}$/);
+    expect(report.join_command).toBe(
+      `selfhost join ${SERVER} ${report.invite} --person bob@example.com`,
+    );
+    const hours = (Date.parse(report.expires_at) - Date.now()) / 3_600_000;
+    expect(hours).toBeGreaterThan(23.9);
+    expect(hours).toBeLessThanOrEqual(24);
+
+    const mallory = laptop();
+    const refused = await run(
+      ["join", SERVER, report.invite, "--person", "mallory@example.com", "--json"],
+      { configPath: mallory.configPath, fetch: server.fetch },
+    );
+    expect(refused.code).toBe(1);
+    expect(parse(refused.out).error).toMatch(/401.*for someone else/);
+    expect(existsSync(mallory.configPath)).toBe(false);
+
+    const bob = laptop();
+    const joined = await run(
+      ["join", SERVER, report.invite, "--person", "Bob@Example.com", "--json"],
+      {
+        configPath: bob.configPath,
+        fetch: server.fetch,
+      },
+    );
+    expect(parse(joined.out)).toMatchObject({
+      person: "bob@example.com",
+      team: { id: "platform" },
+    });
+  });
+
+  it("a team-wide invite adds new people only; an invite for the person adds a machine", async () => {
+    const { server, deps, init } = await adminSetup();
+    const join = (invite: string, person: string) =>
+      run(["join", SERVER, invite, "--person", person, "--json"], {
+        configPath: laptop().configPath,
+        fetch: server.fetch,
+      });
+    const owner = parse((await join(init.invite, "owner@example.com")).out);
+    expect(owner.role).toBe("owner");
+    expect(parse((await join(init.invite, PERSON)).out).role).toBe("member");
+
+    for (const person of ["owner@example.com", PERSON]) {
+      const taken = await join(init.invite, person);
+      expect(taken.code, person).toBe(1);
+      expect(parse(taken.out).error).toMatch(
+        /401.*already in the team.*selfhost team invite --email/,
+      );
+    }
+
+    const forOwner = parse(
+      (
+        await run(
+          [
+            "team",
+            "invite",
+            "--server",
+            SERVER,
+            "--team",
+            "platform",
+            "--email",
+            "owner@example.com",
+            "--json",
+          ],
+          deps,
+        )
+      ).out,
+    );
+    const second = parse((await join(forOwner.invite, "owner@example.com")).out);
+    expect(second).toMatchObject({ person: "owner@example.com", role: "owner" });
+  });
+
+  it("team invite and revoke default to this machine's team and need the admin token", async () => {
+    const { server, deps, init } = await adminSetup();
+    const noTeam = await run(["team", "invite", "--server", SERVER, "--json"], deps);
+    expect(parse(noTeam.out).error).toMatch(/--team/);
+    const noServer = await run(["team", "invite", "--team", "platform", "--json"], deps);
+    expect(parse(noServer.out).error).toMatch(/--server/);
+
+    // A machine that joined the team, with the admin token in its environment.
+    const member = laptop();
+    const memberDeps = { configPath: member.configPath, fetch: server.fetch, env: {} };
+    await run(["join", SERVER, init.invite, "--person", PERSON], memberDeps);
+    const noToken = await run(["team", "invite", "--json"], memberDeps);
+    expect(parse(noToken.out).error).toMatch(/admin token/);
+    const invited = await run(["team", "invite", "--json"], {
+      ...memberDeps,
+      env: { SELFHOST_TOKEN: ADMIN },
+    });
+    expect(parse(invited.out)).toMatchObject({ server: SERVER, team: "platform", email: null });
+    // A person token is not the admin token.
+    const { token } = JSON.parse(readFileSync(member.configPath, "utf8"));
+    const asPerson = await run(["team", "invite", "--token", token, "--json"], memberDeps);
+    expect(parse(asPerson.out).error).toMatch(/403/);
+  });
+
+  it("team revoke stops an invite from working", async () => {
+    const { server, deps, init } = await adminSetup();
+    const text = await run(["team", "revoke", init.invite, "--server", SERVER], deps);
+    expect(text.code).toBe(0);
+    expect(text.out).toMatch(/Revoked the invite to team platform/);
+    expect(text.out).not.toContain(init.invite);
+    // The invite code goes to the server as its sha256, never in the URL.
+    for (const call of server.calls) expect(call).not.toContain(init.invite);
+
+    const again = parse(
+      (await run(["team", "revoke", init.invite, "--server", SERVER, "--json"], deps)).out,
+    );
+    expect(again).toMatchObject({
+      schema: "selfhost.team_revoke/v1",
+      team: "platform",
+      person: null,
+    });
+    expect(again.invite).toMatch(/^[0-9a-f]{64}$/);
+
+    const late = laptop();
+    const refused = await run(["join", SERVER, init.invite, "--person", PERSON, "--json"], {
+      configPath: late.configPath,
+      fetch: server.fetch,
+    });
+    expect(parse(refused.out).error).toMatch(/401.*revoked/);
+  });
+
+  it("team revoke <person> cuts off every machine of that person", async () => {
+    const { server, deps, init } = await adminSetup();
+    const machines = [laptop(), laptop()];
+    // The second machine joins with an invite for the person, as a team-wide one is refused.
+    const forPerson = parse(
+      (
+        await run(
+          ["team", "invite", "--server", SERVER, "--team", "platform", "--email", PERSON, "--json"],
+          deps,
+        )
+      ).out,
+    );
+    for (const [machine, invite] of [
+      [machines[0], init.invite],
+      [machines[1], forPerson.invite],
+    ] as const) {
+      const joined = await run(["join", SERVER, invite, "--person", PERSON], {
+        configPath: machine?.configPath,
+        fetch: server.fetch,
+      });
+      expect(joined.code).toBe(0);
+    }
+    const revoked = await run(
+      ["team", "revoke", PERSON, "--server", SERVER, "--team", "platform", "--json"],
+      deps,
+    );
+    expect(parse(revoked.out)).toEqual({
+      schema: "selfhost.team_revoke/v1",
+      server: SERVER,
+      team: "platform",
+      invite: null,
+      person: PERSON,
+      revoked: 3,
+    });
+    for (const machine of machines) {
+      const sync = parse(
+        (
+          await run(importArgs(machine.dataDir), {
+            configPath: machine.configPath,
+            fetch: server.fetch,
+          })
+        ).out,
+      );
+      expect(sync.sync.error).toMatch(/401/);
+    }
+    const unknown = await run(
+      ["team", "revoke", "nobody@example.com", "--server", SERVER, "--team", "platform", "--json"],
+      deps,
+    );
+    expect(parse(unknown.out).error).toMatch(/404/);
+  });
+});
+
+describe("team leave", () => {
+  it("leaves this machine when the server is unreachable, and says the token still works", async () => {
+    const server = await teamServer();
+    const { configPath, home } = laptop();
+    const admin = {
+      configPath: laptop().configPath,
+      fetch: server.fetch,
+      env: { SELFHOST_TOKEN: ADMIN },
+    };
+    const { invite } = parse(
+      (await run(["team", "init", "--server", SERVER, "--json"], admin)).out,
+    );
+    await run(["join", SERVER, invite, "--person", PERSON], { configPath, fetch: server.fetch });
+    const { token } = JSON.parse(readFileSync(configPath, "utf8"));
+    home.write(".selfhost/team-policy.toml", "version = 1\n");
+
+    const offline = async () => {
+      throw new TypeError("fetch failed");
+    };
+    const json = parse(
+      (await run(["team", "leave", "--json"], { configPath, fetch: offline })).out,
+    );
+    expect(json).toMatchObject({
+      mode: "solo",
+      left: { server: SERVER, team: "default", person: PERSON },
+      token_revoked: false,
+      error: expect.stringMatching(/Could not reach http:\/\/team\.test: fetch failed/),
+    });
+    expect(JSON.parse(readFileSync(configPath, "utf8"))).toEqual({});
+    expect(existsSync(home.path(".selfhost", "team-policy.toml"))).toBe(false);
+    const me = await server.fetch(`${SERVER}/v1/me`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(me.status).toBe(200);
+
+    // The same in text, for a second machine.
+    const other = laptop();
+    const forPerson = parse(
+      (
+        await run(
+          ["team", "invite", "--server", SERVER, "--team", "default", "--email", PERSON, "--json"],
+          admin,
+        )
+      ).out,
+    );
+    await run(["join", SERVER, forPerson.invite, "--person", PERSON], {
+      configPath: other.configPath,
+      fetch: server.fetch,
+    });
+    const text = await run(["team", "leave"], { configPath: other.configPath, fetch: offline });
+    expect(text.code).toBe(0);
+    expect(text.out).toMatch(/Left team default on this machine only/);
+    expect(text.out).toMatch(/selfhost team revoke dev@example.com/);
+  });
+
+  it("counts a token the server already revoked as revoked", async () => {
+    const server = await teamServer();
+    const { configPath } = laptop();
+    const admin = {
+      configPath: laptop().configPath,
+      fetch: server.fetch,
+      env: { SELFHOST_TOKEN: ADMIN },
+    };
+    const { invite } = parse(
+      (await run(["team", "init", "--server", SERVER, "--json"], admin)).out,
+    );
+    await run(["join", SERVER, invite, "--person", PERSON], { configPath, fetch: server.fetch });
+    await run(["team", "revoke", PERSON, "--server", SERVER, "--team", "default"], admin);
+    const left = parse(
+      (await run(["team", "leave", "--json"], { configPath, fetch: server.fetch })).out,
+    );
+    expect(left).toMatchObject({ token_revoked: true });
+    expect(left).not.toHaveProperty("error");
+  });
+});
+
+describe("team policy in rule evaluation", () => {
+  const TEAM_POLICY = `version = 1
+
+[[rules]]
+id = "team-no-force-push"
+match = { tool = "Bash", command = "git\\\\s+push\\\\s+.*--force" }
+action = "block"
+mode = "enforce"
+message = "Force pushes are blocked by the team."
+`;
+  const REPO_POLICY = `version = 1
+
+[[rules]]
+id = "repo-no-rm"
+match = { tool = "Bash", command = "rm\\\\s+-rf" }
+action = "block"
+message = "No rm -rf in this repository."
+`;
+
+  /** A machine that joined a team and pulled its policy, in a repository with no selfhost.toml. */
+  function joinedMachine() {
+    const { home, configPath } = laptop();
+    home.write(
+      ".selfhost/config.json",
+      JSON.stringify({ server: SERVER, token: "selfhost_pt_x", person: PERSON, team: "platform" }),
+    );
+    home.write(".selfhost/team-policy.toml", TEAM_POLICY);
+    const repo = tempDir("team-policy-repo");
+    mkdirSync(repo.path(".git"));
+    return { home, configPath, repo, deps: { configPath, cwd: repo.root } };
+  }
+
+  const forcePush = [
+    "policy",
+    "test",
+    "--tool",
+    "Bash",
+    "--command",
+    "git push origin main --force",
+    "--json",
+  ];
+
+  it("is used when the repository has no selfhost.toml", async () => {
+    const { home, deps } = joinedMachine();
+    const teamFile = home.path(".selfhost", "team-policy.toml");
+    const teamPolicy = { path: teamFile, team: "platform", server: SERVER };
+
+    const doctor = await run(["doctor", "--json"], deps);
+    expect(doctor.code).toBe(0);
+    expect(parse(doctor.out).config).toMatchObject({
+      path: teamFile,
+      from: "team",
+      valid: true,
+      rules: 1,
+      team_policy: teamPolicy,
+    });
+    expect((await run(["doctor"], deps)).out).toMatch(
+      /team platform from http:\/\/team\.test, no selfhost\.toml here/,
+    );
+
+    const check = await run(["policy", "check", "--json"], deps);
+    expect(parse(check.out)).toMatchObject({
+      path: teamFile,
+      from: "team",
+      team_policy: teamPolicy,
+      valid: true,
+    });
+    expect((await run(["policy", "check"], deps)).out).toMatch(
+      /^Using the policy of team platform pulled from http:\/\/team\.test: there is no selfhost\.toml in this repository\./,
+    );
+
+    const hits = parse((await run(forcePush, deps)).out);
+    expect(hits).toMatchObject({
+      config: teamFile,
+      hits: [{ rule_id: "team-no-force-push", mode: "enforce", verdict: "block" }],
+    });
+  });
+
+  it("is read by policy report, and policy promote refuses to edit it", async () => {
+    const { home, deps } = joinedMachine();
+    const teamFile = home.path(".selfhost", "team-policy.toml");
+
+    const report = await run(["policy", "report", "--json", "--data-dir", "memory://"], deps);
+    expect(report.code).toBe(0);
+    expect(parse(report.out).brief).toContain(
+      `Likely false positives are checked against the rules in \`${teamFile}\`.`,
+    );
+
+    const promote = await run(
+      ["policy", "promote", "team-no-force-push", "--to", "off", "--json"],
+      deps,
+    );
+    expect(promote.code).toBe(1);
+    expect(parse(promote.out).error).toMatch(
+      /is the policy of team platform, pulled from http:\/\/team\.test, and the next sync replaces it\. Change the team policy where it is kept: in the team's repository, or on the server/,
+    );
+    expect(readFileSync(teamFile, "utf8")).toBe(TEAM_POLICY);
+  });
+
+  it("gives way to the repository's selfhost.toml, and doctor and policy check say so", async () => {
+    const { home, repo, deps } = joinedMachine();
+    repo.write("selfhost.toml", REPO_POLICY);
+    const repoFile = repo.path("selfhost.toml");
+    const teamFile = home.path(".selfhost", "team-policy.toml");
+
+    const doctor = await run(["doctor", "--json"], deps);
+    expect(parse(doctor.out).config).toMatchObject({
+      path: repoFile,
+      from: "search",
+      team_policy: { path: teamFile },
+    });
+    expect((await run(["doctor"], deps)).out).toMatch(
+      /team\s+\S+team-policy\.toml from http:\/\/team\.test is not used while this file exists/,
+    );
+
+    const check = await run(["policy", "check"], deps);
+    expect(check.out).toMatch(
+      /^Using selfhost\.toml; the policy of team platform pulled from http:\/\/team\.test \(\S+team-policy\.toml\) is not used while it exists\./,
+    );
+    expect(parse((await run(forcePush, deps)).out)).toMatchObject({ config: repoFile, hits: [] });
+    const promote = await run(["policy", "promote", "repo-no-rm", "--json"], deps);
+    expect(parse(promote.out)).toMatchObject({ config: repoFile, changed: true, to: "enforce" });
+    expect(readFileSync(teamFile, "utf8")).toBe(TEAM_POLICY);
+  });
+
+  it("is not used outside a team", async () => {
+    const { home, deps } = joinedMachine();
+    home.write(".selfhost/config.json", "{}");
+    const doctor = parse((await run(["doctor", "--json"], deps)).out);
+    expect(doctor.config).toBeNull();
+    expect(parse((await run(forcePush, deps)).out).error).toMatch(/No selfhost.toml found/);
   });
 });
 

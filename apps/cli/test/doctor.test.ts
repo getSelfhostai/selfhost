@@ -91,6 +91,7 @@ describe("selfhost doctor", () => {
     expect(report.config).toEqual({
       path: join(dir, "selfhost.toml"),
       from: "search",
+      team_policy: null,
       rules: 0,
       enforced: 0,
       errors: [{ field: "ledger.retention_days", line: 3, message: "Expected integer" }],

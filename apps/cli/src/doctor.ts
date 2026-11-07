@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { relative } from "node:path";
 import { formatConfigError, parseConfig } from "@selfhost/schema";
-import { findConfig } from "./find-config.js";
+import { type ConfigLocation, findConfig, type TeamPolicyFile } from "./find-config.js";
 
 export interface DoctorOptions {
   cwd: string;
@@ -10,6 +10,8 @@ export interface DoctorOptions {
   version: string;
   write: (line: string) => void;
   json?: boolean;
+  /** ~/.selfhost/config.json; in a team, its pulled policy is used when the repo has none. */
+  configPath?: string;
 }
 
 /** `selfhost doctor --json`. */
@@ -20,7 +22,10 @@ export interface DoctorReport {
   /** null when no selfhost.toml was found. */
   config: {
     path: string;
-    from: "flag" | "env" | "search";
+    /** team: no selfhost.toml was found, so the policy pulled from the team server is used. */
+    from: ConfigLocation["from"];
+    /** The pulled team policy on this machine, also when another file is used instead. */
+    team_policy: TeamPolicyFile | null;
     exists: boolean;
     /** null when the file does not exist. */
     valid: boolean | null;
@@ -30,7 +35,13 @@ export interface DoctorReport {
   } | null;
 }
 
-export function doctorReport({ cwd, config, env, version }: DoctorOptions): DoctorReport {
+export function doctorReport({
+  cwd,
+  config,
+  env,
+  version,
+  configPath,
+}: DoctorOptions): DoctorReport {
   const report: DoctorReport = {
     schema: "selfhost.doctor/v1",
     version,
@@ -42,9 +53,13 @@ export function doctorReport({ cwd, config, env, version }: DoctorOptions): Doct
     },
     config: null,
   };
-  const location = findConfig(cwd, config, env);
+  const location = findConfig(cwd, config, env, configPath);
   if (!location) return report;
-  const base = { path: location.path, from: location.from };
+  const base = {
+    path: location.path,
+    from: location.from,
+    team_policy: location.teamPolicy ?? null,
+  };
   if (!existsSync(location.path)) {
     report.config = { ...base, exists: false, valid: null, rules: 0, enforced: 0, errors: [] };
     return report;
@@ -95,7 +110,13 @@ export function doctor(options: DoctorOptions): number {
     row("config", `${config.path} (from ${source}) does not exist`);
     return 1;
   }
-  row("config", config.path);
+  const team = config.team_policy;
+  if (team && config.from === "team") {
+    row("config", `${config.path} (team ${team.team} from ${team.server}, no selfhost.toml here)`);
+  } else {
+    row("config", config.path);
+    if (team) row("team", `${team.path} from ${team.server} is not used while this file exists`);
+  }
   if (config.valid) {
     row("status", `valid, ${config.rules} rules (${config.enforced} enforced)`);
     return 0;

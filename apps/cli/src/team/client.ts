@@ -1,9 +1,14 @@
+import { hashToken } from "@selfhost/ledger";
 import type {
+  CreateInviteRequest,
+  CreateInviteResponse,
   CreateTeamResponse,
   IngestEventsResponse,
+  Invite,
   JoinResponse,
   LedgerEvent,
   PolicyResponse,
+  RevokeTokensResponse,
 } from "@selfhost/schema";
 
 export type Fetch = (url: string, init: RequestInit) => Promise<Response>;
@@ -53,8 +58,28 @@ export class TeamClient {
     private readonly fetch: Fetch,
   ) {}
 
-  createTeam(name: string): Promise<CreateTeamResponse> {
-    return this.call("POST", "/v1/teams", { name });
+  createTeam(name: string, inviteTtlSeconds?: number): Promise<CreateTeamResponse> {
+    const ttl = inviteTtlSeconds === undefined ? {} : { invite_ttl_seconds: inviteTtlSeconds };
+    return this.call("POST", "/v1/teams", { name, ...ttl });
+  }
+
+  createInvite(team: string, request: CreateInviteRequest): Promise<CreateInviteResponse> {
+    return this.call("POST", `/v1/teams/${encodeURIComponent(team)}/invites`, request);
+  }
+
+  /** The invite goes by the sha256 of its code, so the code never appears in a URL. */
+  revokeInvite(invite: string): Promise<Invite> {
+    return this.call("DELETE", `/v1/invites/${hashToken(invite)}`);
+  }
+
+  revokePerson(team: string, person: string): Promise<RevokeTokensResponse> {
+    const path = `/v1/teams/${encodeURIComponent(team)}/people/${encodeURIComponent(person)}/tokens`;
+    return this.call("DELETE", path);
+  }
+
+  /** Revokes the person token this client holds. */
+  revokeOwnToken(): Promise<RevokeTokensResponse> {
+    return this.call("DELETE", "/v1/me/token");
   }
 
   join(invite: string, person: string, name?: string): Promise<JoinResponse> {

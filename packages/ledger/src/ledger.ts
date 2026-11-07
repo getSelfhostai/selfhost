@@ -19,6 +19,8 @@ export interface EventFilter {
   /** session_id */
   session?: string;
   kind?: string;
+  /** Team of the person token that wrote the event, on a team server. */
+  team?: string;
   /** Events at or after this time. */
   from?: string;
   /** Events before this time. */
@@ -36,6 +38,14 @@ export interface AppendResult {
   duplicates: string[];
 }
 
+export interface AppendOptions {
+  /**
+   * Team of the person token writing the batch. Stored with each new event so the team's
+   * people can read it; the event body's own team field is not used for this.
+   */
+  team?: string;
+}
+
 export interface EventPage {
   /** Newest first, ordered by (ts, id). */
   events: LedgerEvent[];
@@ -49,7 +59,7 @@ export interface Ledger {
    * is written and LedgerValidationError lists every error. Ids are idempotency keys: an id that
    * is already stored is reported under duplicates and the stored event is left as it was.
    */
-  append(events: unknown[]): Promise<AppendResult>;
+  append(events: unknown[], options?: AppendOptions): Promise<AppendResult>;
   query(filter: EventFilter): Promise<EventPage>;
   /** Teams, people and tokens for team mode, kept in the same database. */
   teams: TeamStore;
@@ -75,9 +85,11 @@ export async function openLedger(options: OpenLedgerOptions = {}): Promise<Ledge
 }
 
 const INSERT_SQL = `
-INSERT INTO events (id, ts, source, kind, actor_kind, actor_id, agent, model, session_id, body)
+INSERT INTO events
+  (id, ts, source, kind, actor_kind, actor_id, agent, model, session_id, body, team)
 SELECT (e->>'id')::uuid, (e->>'ts')::timestamptz, e->>'source', e->>'kind',
-  e#>>'{actor,kind}', e#>>'{actor,id}', e#>>'{agent,vendor}', e->>'model', e->>'session_id', e
+  e#>>'{actor,kind}', e#>>'{actor,id}', e#>>'{agent,vendor}', e->>'model', e->>'session_id', e,
+  $2::text
 FROM jsonb_array_elements($1::text::jsonb) WITH ORDINALITY AS batch(e, n)
 ORDER BY n
 ON CONFLICT (id) DO NOTHING
@@ -87,14 +99,17 @@ const TS_KEY = `to_char(ts AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`
 
 export function createLedger(db: Database): Ledger {
   return {
-    async append(events) {
+    async append(events, options = {}) {
       const valid = validateForAppend(events);
       if (valid.length === 0) return { accepted: [], duplicates: [] };
       const inserted = new Set<string>();
       await db.transaction(async (tx) => {
         for (let start = 0; start < valid.length; start += MAX_EVENT_BATCH) {
           const chunk = valid.slice(start, start + MAX_EVENT_BATCH);
-          const rows = await tx.query<{ id: string }>(INSERT_SQL, [JSON.stringify(chunk)]);
+          const rows = await tx.query<{ id: string }>(INSERT_SQL, [
+            JSON.stringify(chunk),
+            options.team ?? null,
+          ]);
           for (const row of rows) inserted.add(row.id);
         }
       });
@@ -221,6 +236,7 @@ function buildQuery(filter: EventFilter) {
   if (filter.model !== undefined) where("model", "=", filter.model);
   if (filter.session !== undefined) where("session_id", "=", filter.session);
   if (filter.kind !== undefined) where("kind", "=", filter.kind);
+  if (filter.team !== undefined) where("team", "=", filter.team);
   if (filter.from !== undefined) where("ts", ">=", filter.from, "::timestamptz");
   if (filter.to !== undefined) where("ts", "<", filter.to, "::timestamptz");
   if (filter.cursor !== undefined) {

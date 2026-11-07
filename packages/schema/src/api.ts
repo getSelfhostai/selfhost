@@ -95,6 +95,12 @@ export const EventQuerySchema = Type.Object(
     model: Type.Optional(Type.String()),
     session: Type.Optional(Type.String({ description: "session_id." })),
     kind: Type.Optional(StringEnum(EVENT_KINDS)),
+    team: Type.Optional(
+      Type.String({
+        description:
+          "Team id on a team server: events written with that team's person tokens. A person token reads only its own team.",
+      }),
+    ),
     from: Type.Optional(DateTime({ description: "Events at or after this time." })),
     to: Type.Optional(DateTime({ description: "Events before this time." })),
     limit: Type.Optional(Limit),
