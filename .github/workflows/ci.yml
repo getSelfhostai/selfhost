@@ -121,6 +121,8 @@ jobs:
           # A local image name, so nothing is pulled for the server.
           sed -i "s/^SELFHOST_VERSION=.*/SELFHOST_VERSION=ci-1/" .env
           echo "SELFHOST_IMAGE=selfhost-ci" >> .env
+          # The fixture events are dated, so the retention sweep would delete them as they age.
+          echo "SELFHOST_RETENTION_SWEEP=off" >> .env
           cat > "$RUNNER_TEMP/compose-ci.sh" <<'SH'
           # Read, not exported: compose must keep taking its settings from .env.
           SELFHOST_TOKEN=$(sed -n 's/^SELFHOST_TOKEN=//p' .env)

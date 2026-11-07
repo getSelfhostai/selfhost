@@ -117,6 +117,15 @@ function importOptions(
   };
 }
 
+/** The local ledger keeps prompt text only with --prompts; secrets and emails are always masked. */
+function openTarget(options: ImportCommandOptions, io: Pick<ImportIo, "env">): Promise<Ledger> {
+  return openLedger({
+    url: options.database ?? io.env.DATABASE_URL,
+    dataDir: options.dataDir,
+    redaction: { logPrompts: options.prompts === true, patterns: [] },
+  });
+}
+
 /** Where events go: "Postgres (DATABASE_URL)" or the embedded ledger folder. */
 export function describeTarget(
   options: Pick<ImportCommandOptions, "database" | "dataDir">,
@@ -147,8 +156,7 @@ export async function runImport(
 ): Promise<ImportReport> {
   const membership = readMembership(configPathOf(io));
   const opts = importOptions(options, io, membership);
-  const url = options.database ?? io.env.DATABASE_URL;
-  const target = ledger ?? (await openLedger({ url, dataDir: options.dataDir }));
+  const target = ledger ?? (await openTarget(options, io));
   try {
     const result = await importAll(target, opts);
     const report: ImportReport = {
@@ -191,8 +199,7 @@ function describeSync(sync: SyncReport): string[] {
 
 /** Imports once, then keeps tailing the logs until interrupted. */
 export async function runWatch(options: ImportCommandOptions, io: ImportIo): Promise<void> {
-  const url = options.database ?? io.env.DATABASE_URL;
-  const ledger = await openLedger({ url, dataDir: options.dataDir });
+  const ledger = await openTarget(options, io);
   const first = await runImport(options, io, ledger);
   if (!options.json) io.write("Watching for new log lines. Press Ctrl+C to stop.");
   const membership = readMembership(configPathOf(io));

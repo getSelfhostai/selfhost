@@ -30,10 +30,38 @@ await ledger.close();
 
 `append(events)` validates every event with `validateEvent` from `@selfhost/schema` before writing
 anything. If any event is invalid, nothing is written and it throws `LedgerValidationError` with
-`errors: { index, path, message }[]`, one per bad field. Valid events are written in one
-transaction. Ids are idempotency keys: an id that is already stored (compared case-insensitively)
+`errors: { index, path, message }[]`, one per bad field. Valid events are redacted (below) and
+written in one transaction. Ids are idempotency keys: an id that is already stored (compared case-insensitively)
 is reported under `duplicates` and the stored event is not changed. Batches of any size are
 accepted; the HTTP API caps requests at 1000.
+
+## Redaction
+
+`append` is the one write path every source goes through (the HTTP API, OTLP, hook mappers, the
+local log importer), so it is where redaction happens: nothing reaches the database before
+`redactEvent` from `@selfhost/schema` has run on it.
+
+- Prompt and response text (`data.prompt`, `data.messages`, `data.response`,
+  `data.completion`) is dropped unless prompt logging is on, whatever the writer sent.
+- Secret-shaped values (provider API keys, GitHub, GitLab, Slack, npm, Stripe, AWS and Google
+  keys, selfhost tokens, JWTs, private keys, `NAME=value` credentials, auth headers, credentials
+  in URLs), email addresses and every `[[redaction]]` pattern are masked in
+  `tool.input_summary`, `target.value`, `decision.reason` and every string under `data`. Built-in
+  matches become `[redacted]`, a `[[redaction]]` match `[redacted:<name>]`. `actor` and
+  `decision.by` are kept: they say who did it.
+- Each dropped or masked field path is added to `redacted`.
+
+Settings come from the event's `team`: a team with a stored `selfhost.toml` (`ledger.teams`) gets
+its own `[ledger] log_prompts` and `[[redaction]]`. Every other event gets the `redaction` option
+of `openLedger` (`{ logPrompts, patterns }`), which defaults to no prompt text and the built-in
+patterns only.
+
+## Retention
+
+`retentionSweep(ledger, days, now?)` deletes events whose `ts` is more than `days` days before
+`now`. Events of a team with a stored `selfhost.toml` use its `ledger.retention_days` instead. It
+returns `{ deleted, before, teams }`. The server runs it daily; `selfhost ledger prune` runs it on
+a local ledger.
 
 ## Query
 
@@ -46,8 +74,9 @@ field.
 
 The API has no update or delete. A trigger on `events` (`ENABLE ALWAYS`, so it also fires under
 `session_replication_role = replica`) rejects UPDATE, DELETE and TRUNCATE unless the session has
-set `selfhost.retention = 'on'`. Only the retention job does that, with `SET LOCAL` inside its own
-transaction. Corrections are new events that point at the old one.
+set `selfhost.retention = 'on'`. Only `retentionSweep` does that, with `SET LOCAL` inside its own
+transaction, so the guard ends with that transaction. Corrections are new events that point at
+the old one.
 
 ## Teams
 
@@ -80,7 +109,8 @@ none.
 
 Hook payloads carry no time and no user: pass `ts` and `person` in the context. Prompt text is
 dropped unless `logPrompts` is on (`ledger.log_prompts` in `selfhost.toml`); its length is kept and
-`redacted` lists `data.prompt`. Token counts without a reported cost use `ctx.price`, else `usd`
+`redacted` lists `data.prompt`. `append` drops it again unless the ledger's own settings keep
+prompts. Token counts without a reported cost use `ctx.price`, else `usd`
 is 0 and `data.unpriced` is true.
 
 ## Tests
