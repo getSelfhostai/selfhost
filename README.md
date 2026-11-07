@@ -37,6 +37,7 @@ from the same code.
 | `packages/policy`      | Evaluates `selfhost.toml` rules against tool calls and records would-block events           |
 | `packages/agents`      | Agent and login detection, context file listing, and config writing for five agent CLIs     |
 | `packages/attribution` | Links commits and pull requests to the agent and model that produced them, with merge stats |
+| `packages/github`      | Labels, review check run, review requests and brief comment on agent PRs, via a GitHub App  |
 | `packages/sdk`         | API client (placeholder)                                                                    |
 | `apps/server`          | HTTP API server (Hono)                                                                      |
 | `apps/cli`             | `selfhost` command line                                                                     |

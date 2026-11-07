@@ -144,6 +144,15 @@ written with a person token, from the token's team and never from the event body
 `query({ team })` reads one team's events. The column is added without touching stored rows, so
 events written before it have no team.
 
+## GitHub deliveries
+
+`ledger.deliveries` keeps the `X-GitHub-Delivery` ids of GitHub App webhooks the server has
+handled, from migration `0005_github_deliveries.sql`: the id, the event name and when it
+arrived, never the payload. `claim(id, { event })` records an id and returns false when it was
+already there, so a delivery that arrives twice is handled once (two racing claims get one
+true); `release(id)` forgets it after a failed sync so GitHub's redelivery runs again. Each claim
+deletes ids older than `DELIVERY_RETENTION_DAYS` (7); GitHub redelivers only the last 3 days.
+
 ## Sources
 
 Every event records its `source`, so a session one source misses still shows up from another,

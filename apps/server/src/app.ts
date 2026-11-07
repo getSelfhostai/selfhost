@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { requireBearerToken } from "./auth.js";
 import { decisionRoutes } from "./decisions.js";
 import { eventRoutes } from "./events.js";
+import { type GitHubRouteOptions, githubRoutes } from "./github.js";
 import { otlpRoutes } from "./otlp.js";
 import { teamRoutes } from "./teams.js";
 
@@ -12,11 +13,15 @@ export interface AppOptions {
   ledger: Ledger;
   /** Bearer token every route except /v1/health requires. */
   token: string;
+  /** The GitHub App delivery. Without an App, POST /v1/github/webhooks answers 404. */
+  github?: GitHubRouteOptions;
 }
 
-export function createApp({ version, ledger, token }: AppOptions): Hono {
+export function createApp({ version, ledger, token, github = {} }: AppOptions): Hono {
   const app = new Hono();
 
+  // Signed by GitHub instead of a bearer token, so it goes before both token checks.
+  githubRoutes(app, ledger, github);
   teamRoutes(app, { ledger, token });
   app.use("*", requireBearerToken(token));
 

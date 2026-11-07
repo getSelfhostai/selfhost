@@ -43,6 +43,11 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-selfhost}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-selfhost}
       SELFHOST_TOKEN: ${SELFHOST_TOKEN:?Set SELFHOST_TOKEN in .env}
       SELFHOST_RETENTION_SWEEP: ${SELFHOST_RETENTION_SWEEP:-daily}
+      # GitHub App, optional: POST /v1/github/webhooks answers 404 until the first three are set.
+      SELFHOST_GITHUB_APP_ID: ${SELFHOST_GITHUB_APP_ID:-}
+      SELFHOST_GITHUB_PRIVATE_KEY: ${SELFHOST_GITHUB_PRIVATE_KEY:-}
+      SELFHOST_GITHUB_WEBHOOK_SECRET: ${SELFHOST_GITHUB_WEBHOOK_SECRET:-}
+      SELFHOST_GITHUB_TEAM: ${SELFHOST_GITHUB_TEAM:-}
     ports:
       - "${SELFHOST_BIND:-0.0.0.0}:${SELFHOST_PORT:-4400}:4400"
     # Health check: HEALTHCHECK in the image, GET /v1/health.

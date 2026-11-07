@@ -28,6 +28,9 @@ export const MODELS_ALLOW_RULE_ID = "models.allow";
 export const BUILT_IN_RULE_IDS = [MCP_ALLOW_RULE_ID, MODELS_ALLOW_RULE_ID] as const;
 
 const RULE_ID_PATTERN = "^[A-Za-z0-9][A-Za-z0-9_.-]*$";
+/** GitHub logins: letters, digits and single hyphens, at most 39 characters. */
+const GITHUB_LOGIN_PATTERN = "^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$";
+const GITHUB_TEAM_PATTERN = "^[A-Za-z0-9][A-Za-z0-9_.-]*$";
 
 const RuleModeSchema = (description: string, withDefault: boolean) =>
   StringEnum(RULE_MODES, withDefault ? { description, default: "observe" } : { description });
@@ -228,6 +231,34 @@ export const SelfhostConfigSchema = Type.Object(
               description: "Path glob to the people who review changes under it.",
             }),
           ),
+          github_logins: Type.Optional(
+            Type.Record(
+              Type.String(),
+              Type.String({
+                pattern: GITHUB_LOGIN_PATTERN,
+                description: "GitHub login, without the @.",
+              }),
+              {
+                default: {},
+                description:
+                  "Person id (as in owners) to GitHub login. The GitHub App requests a review from the owner the review list picked under this login.",
+              },
+            ),
+          ),
+          github_team: Type.Optional(
+            Type.String({
+              pattern: GITHUB_TEAM_PATTERN,
+              description:
+                "Slug of the GitHub team asked to review when the owner has no login in github_logins, as in github.com/orgs/<org>/teams/<slug>.",
+            }),
+          ),
+          block_merge_on_high: Type.Optional(
+            Type.Boolean({
+              default: false,
+              description:
+                "Fail the selfhost/review check on high risk pull requests. It blocks a merge only once branch protection or a ruleset makes the check required.",
+            }),
+          ),
         },
         { additionalProperties: false, default: {} },
       ),
@@ -382,7 +413,8 @@ export type ResolvedSelfhostConfig = Omit<
   ledger: Required<Present<SelfhostConfig["ledger"]>>;
   redaction: Present<SelfhostConfig["redaction"]>;
   rules: ResolvedRule[];
-  review: Required<Present<SelfhostConfig["review"]>>;
+  review: Present<SelfhostConfig["review"]> &
+    Required<Omit<Present<SelfhostConfig["review"]>, "github_team">>;
   packages: Present<SelfhostConfig["packages"]> &
     Required<Pick<Present<SelfhostConfig["packages"]>, "mode" | "allow" | "deny">>;
   mcp: Required<Present<SelfhostConfig["mcp"]>>;

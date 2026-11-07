@@ -11,6 +11,7 @@ import {
 import { decodeCursor, encodeCursor, TS_KEY } from "./cursor.js";
 import { type ConnectOptions, connect, type Database, migrate } from "./db.js";
 import { createDecisionStore, type DecisionStore } from "./decisions/store.js";
+import { createDeliveryStore, type DeliveryStore } from "./deliveries.js";
 import { type LedgerFieldError, LedgerQueryError, LedgerValidationError } from "./errors.js";
 import { redactBatch, teamRedaction } from "./redaction.js";
 import { createTeamStore, type TeamStore } from "./teams.js";
@@ -71,6 +72,8 @@ export interface Ledger {
   teams: TeamStore;
   /** Decision events by id, and search by path, topic, rule and person. */
   decisions: DecisionStore;
+  /** GitHub webhook delivery ids already handled, so a redelivery changes nothing. */
+  deliveries: DeliveryStore;
   close(): Promise<void>;
 }
 
@@ -174,6 +177,8 @@ export function createLedger(db: Database, options: LedgerOptions = {}): Ledger 
     teams,
 
     decisions: createDecisionStore(db),
+
+    deliveries: createDeliveryStore(db),
 
     close: () => db.close(),
   };

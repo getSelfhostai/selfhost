@@ -1,0 +1,13 @@
+version = 1
+
+[review]
+high_risk_paths = ["db/migrations/**"]
+block_merge_on_high = true
+github_team = "platform-reviewers"
+
+[review.owners]
+"db/**" = ["bob@example.com"]
+
+[review.github_logins]
+"bob@example.com" = "bob"
+"alice@example.com" = "alice-example"
