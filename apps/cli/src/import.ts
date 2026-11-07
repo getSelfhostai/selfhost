@@ -8,6 +8,7 @@ import {
   watchLogs,
 } from "@selfhost/importers";
 import { isPostgresUrl, type Ledger, openLedger, resolveDataDir } from "@selfhost/ledger";
+import { startMonitor } from "./alerts/monitor.js";
 import { defaultConfigPath } from "./config-file.js";
 import { drainSpool, type SpoolReport, watchSpool } from "./hooks/drain.js";
 import { spoolDir } from "./hooks/receive.js";
@@ -240,8 +241,18 @@ export async function runWatch(options: ImportCommandOptions, io: ImportIo): Pro
     writer = syncingWriter(ledger, sync.remote, catchUp);
     synced = () => markSynced(sync.configPath, readSyncState(sync.configPath, membership));
   }
+  // Limit forecasts, spend alarms and the statusline cache, checked as batches land.
+  const monitor = await startMonitor(ledger, {
+    person: opts.actorId ?? defaultPerson(io.env),
+    json: options.json,
+    write: io.write,
+    env: io.env,
+    configPath: configPathOf(io),
+  });
+  writer = monitor.tap(writer);
   const onBatch = (n: number) => {
     synced();
+    monitor.check();
     if (n === 0) return;
     const batch: ImportBatchReport = { schema: "selfhost.import_batch/v1", accepted: n };
     io.write(options.json ? JSON.stringify(batch) : `+${n} events`);
@@ -260,5 +271,6 @@ export async function runWatch(options: ImportCommandOptions, io: ImportIo): Pro
   });
   await watcher.close();
   await hookWatcher.close();
+  await monitor.close();
   await ledger.close();
 }

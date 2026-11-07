@@ -315,6 +315,112 @@
           "default": 10,
           "description": "Raise a spend spike when spend exceeds this multiple of the usual rate.",
           "type": "number"
+        },
+        "spike_floor_usd": {
+          "minimum": 0,
+          "default": 5,
+          "description": "Spend under this many USD in 15 minutes never raises a spike alarm.",
+          "type": "number"
+        },
+        "spike_baseline_days": {
+          "minimum": 3,
+          "maximum": 60,
+          "default": 14,
+          "description": "Trailing days the spike baseline uses for each 15-minute slot of the day.",
+          "type": "integer"
+        },
+        "forecast_warn_hours": {
+          "exclusiveMinimum": 0,
+          "default": 24,
+          "description": "Warn when a plan limit is forecast to run out within this many hours.",
+          "type": "number"
+        },
+        "runbook_url": {
+          "format": "uri",
+          "description": "Key rotation runbook linked from spend spike alarms.",
+          "type": "string"
+        }
+      }
+    },
+    "plans": {
+      "additionalProperties": false,
+      "description": "Subscription plan limits for the limit forecast. Vendors do not publish them as numbers, so these override a dated built-in table. Each person sets their own tier.",
+      "type": "object",
+      "properties": {
+        "as_of": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "description": "Day the limits below were last checked, YYYY-MM-DD.",
+          "type": "string"
+        },
+        "claude": {
+          "additionalProperties": false,
+          "description": "Claude plan tiers by name, for example max_5x. Each one overrides the same tier in the built-in table.",
+          "type": "object",
+          "patternProperties": {
+            "^[a-z0-9_]+$": {
+              "additionalProperties": false,
+              "minProperties": 1,
+              "description": "Approximate limits of one plan tier, in API-equivalent USD (the estimated cost the ledger records for the same tokens).",
+              "type": "object",
+              "properties": {
+                "session_usd": {
+                  "exclusiveMinimum": 0,
+                  "description": "Usage that fills the 5-hour session window.",
+                  "type": "number"
+                },
+                "weekly_usd": {
+                  "exclusiveMinimum": 0,
+                  "description": "Usage that fills the weekly window.",
+                  "type": "number"
+                }
+              }
+            }
+          }
+        },
+        "codex": {
+          "additionalProperties": false,
+          "description": "Codex plan tiers by name, for example max_5x. Each one overrides the same tier in the built-in table.",
+          "type": "object",
+          "patternProperties": {
+            "^[a-z0-9_]+$": {
+              "additionalProperties": false,
+              "minProperties": 1,
+              "description": "Approximate limits of one plan tier, in API-equivalent USD (the estimated cost the ledger records for the same tokens).",
+              "type": "object",
+              "properties": {
+                "session_usd": {
+                  "exclusiveMinimum": 0,
+                  "description": "Usage that fills the 5-hour session window.",
+                  "type": "number"
+                },
+                "weekly_usd": {
+                  "exclusiveMinimum": 0,
+                  "description": "Usage that fills the weekly window.",
+                  "type": "number"
+                }
+              }
+            }
+          }
+        },
+        "overflow": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "key",
+            "monthly_cap_usd"
+          ],
+          "properties": {
+            "key": {
+              "minLength": 1,
+              "description": "Team API key to overflow to, by its gateway alias, suggested when a plan limit is about to run out.",
+              "type": "string"
+            },
+            "monthly_cap_usd": {
+              "exclusiveMinimum": 0,
+              "description": "Spend cap on that key per calendar month (UTC).",
+              "type": "number"
+            }
+          }
         }
       }
     },

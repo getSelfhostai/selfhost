@@ -1,6 +1,7 @@
 import { basename } from "node:path";
 import { type Actor, claudeCodeRequestType } from "@selfhost/schema";
 import { agentActor, buildEvent, isoTimestamp, SESSION_IDLE_MS } from "./events.js";
+import { claudeLimitHit, USAGE_LIMIT_ALERT } from "./limits.js";
 import {
   commitsFromOutput,
   displayPath,
@@ -282,6 +283,21 @@ export class ClaudeCodeMapper implements LineMapper {
       }
     }
     if (line.isApiErrorMessage === true) this.failedThreads.add(thread);
+    const hit = claudeLimitHit(line);
+    if (hit) {
+      out.push(
+        this.event({
+          kind: "alert.raised",
+          scope: "",
+          identity: `${USAGE_LIMIT_ALERT}:${str(line.uuid) ?? ts}`,
+          ts,
+          sessionId,
+          actor: this.person,
+          version,
+          fields: { data: { alert: USAGE_LIMIT_ALERT, ...hit } },
+        }),
+      );
+    }
     if (!Array.isArray(message.content)) return;
     const cwd = str(line.cwd) ?? this.sessions.get(sessionId)?.cwd;
     for (const block of message.content) {

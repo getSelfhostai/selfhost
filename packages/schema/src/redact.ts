@@ -28,6 +28,12 @@ export function redactionSettings(
   return { logPrompts: config.ledger.log_prompts, patterns: config.redaction };
 }
 
+/**
+ * Keys under `data` that hold person ids (an email or login, like `actor.id`). They route alerts
+ * and review items to people, so they are kept like `actor`, not masked as free text.
+ */
+export const IDENTITY_DATA_KEYS = ["owner", "owners", "budget_owner", "person", "people"] as const;
+
 /** Keys under `data` that hold prompt or response text, dropped unless prompts are logged. */
 export const PROMPT_DATA_KEYS = ["prompt", "messages", "response", "completion"] as const;
 
@@ -104,7 +110,8 @@ function childPath(path: string, key: string): string {
  * The event as it may be stored. Prompt and response text under `data` is dropped unless
  * `logPrompts` is on, and secrets and emails are masked in the free-text fields:
  * `tool.input_summary`, `target.value`, `decision.reason` and every string under `data`. Who did
- * it (`actor`, `decision.by`) and the ids, links and counts are kept. Each field path that was
+ * it (`actor`, `decision.by`, person ids under `data` such as `owner`) and the ids, links and
+ * counts are kept. Each field path that was
  * dropped or masked is added to `redacted`.
  */
 export function redactEvent(
@@ -147,6 +154,8 @@ export function redactEvent(
       const path = childPath("data", key);
       if (!settings.logPrompts && (PROMPT_DATA_KEYS as readonly string[]).includes(key)) {
         paths.push(path);
+      } else if ((IDENTITY_DATA_KEYS as readonly string[]).includes(key)) {
+        data[key] = value;
       } else {
         data[key] = maskValue(value, path);
       }

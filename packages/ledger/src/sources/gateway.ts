@@ -58,6 +58,8 @@ export function mapGatewayLog(line: unknown, ctx: SourceContext = {}): LedgerEve
   };
   const data = {
     gateway: "litellm",
+    // The virtual key's alias, never the key or its hash: what a spend alarm offers to disable.
+    key_alias: str(metadata.user_api_key_alias),
     request_id: requestId,
     provider: str(log.custom_llm_provider),
     call_type: str(log.call_type),

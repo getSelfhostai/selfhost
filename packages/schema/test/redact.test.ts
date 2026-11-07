@@ -111,6 +111,14 @@ function toolEvent(overrides: Partial<LedgerEvent> = {}): LedgerEvent {
 }
 
 describe("redactEvent", () => {
+  it("keeps person ids under data so alerts still reach their owner", () => {
+    const event = redactEvent(
+      toolEvent({ data: { owner: "alice@example.com", note: "ping alice@example.com" } }),
+    );
+    expect(event.data).toEqual({ owner: "alice@example.com", note: "ping [redacted]" });
+    expect(event.redacted).not.toContain("data.owner");
+  });
+
   it("drops prompt and response text and masks free-text fields, listing every path", () => {
     const event = redactEvent(toolEvent());
     expect(event.tool?.input_summary).toBe("curl -d [redacted] https://example.com");

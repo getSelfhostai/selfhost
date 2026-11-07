@@ -32,12 +32,30 @@ such as the ledger store. Nothing here opens a network connection; a test fails 
 | `tool.called`      | Each tool call: the tool name and a short `input_summary`, plus a `target` for commands, files and URLs.                                                 |
 | `commit.created`   | A `git commit` call whose output shows `[branch sha]`, with `links.commit_sha`.                                                                          |
 | `prompt.submitted` | Only with `logPrompts: true`. The text goes in `data.prompt`, masked and capped at 2000 characters.                                                      |
+| `alert.raised`     | A plan usage limit hit, with `data.alert: "usage_limit"` and, when the log says, `window` (`session` or `weekly`) and `resets_at`. See below.            |
 
 Summaries keep the first line of a command or a file path relative to the session's cwd, masked
 for secret-shaped values and email addresses (`maskSecrets` from `@selfhost/schema`, the same
 masker the ledger runs on every write), and cut at 120 characters. File contents, patch
 bodies, tool output and, unless `logPrompts` is on, prompt text are never stored. Any field that
 was masked is listed in `redacted`.
+
+## Usage limit hits
+
+The limit forecast in [`packages/spend`](../spend/README.md#limit-forecast) calibrates each
+person's limits from the usage that led up to a hit. Only the hit is read: no plan, account or
+login details.
+
+- Claude Code: the synthetic response line it writes when a request is refused
+  (`isApiErrorMessage`, model `<synthetic>`), when its text names a usage limit ("5-hour limit
+  reached", "Weekly limit reached", "You've hit your limit", or the older "... usage limit
+  reached|<reset epoch>"). An API key's 429 says none of these and is not counted. The text
+  formats come from what Claude Code shows on screen and still need checking against a captured
+  log.
+- Codex: the `rate_limits` snapshot on `token_count` lines, when `rate_limit_reached_type` is set
+  or the primary (5-hour) or secondary (weekly) window reaches 100%. The window and its
+  `resets_at` come from the snapshot; `plan_type` is not kept. One event per window reset, however
+  many lines repeat it.
 
 ## Request types
 

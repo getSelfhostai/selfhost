@@ -2,6 +2,7 @@ import { basename } from "node:path";
 import type { Actor, RequestType } from "@selfhost/schema";
 import { agentActor, buildEvent, isoTimestamp, SESSION_IDLE_MS } from "./events.js";
 import { shortHash } from "./ids.js";
+import { codexLimitHit, USAGE_LIMIT_ALERT } from "./limits.js";
 import {
   commitsFromOutput,
   displayPath,
@@ -327,6 +328,21 @@ export class CodexMapper implements LineMapper {
   }
 
   private eventMsg(payload: Json, ts: string, out: ParsedEvent[]) {
+    const hit = codexLimitHit(payload);
+    if (hit) {
+      out.push(
+        this.event({
+          kind: "alert.raised",
+          // Later lines and forked rollouts repeat the snapshot: one event per window reset.
+          scope: "",
+          identity: `${USAGE_LIMIT_ALERT}:${hit.window ?? "unknown"}:${hit.resets_at ?? ts}`,
+          ts,
+          actor: this.person,
+          model: this.usage.currentModel,
+          fields: { data: { alert: USAGE_LIMIT_ALERT, ...hit } },
+        }),
+      );
+    }
     if (payload.type === "exec_command_end") {
       const callId = str(payload.call_id);
       if (callId) {

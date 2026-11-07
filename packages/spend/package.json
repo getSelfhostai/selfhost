@@ -2,7 +2,7 @@
   "name": "@selfhost/spend",
   "version": "0.0.0",
   "private": true,
-  "description": "Spend grouped by request type, agent, model and person, and a detector for overhead that grows past a share of daily spend.",
+  "description": "Spend grouped by request type, agent, model and person, a detector for overhead that grows past a share of daily spend, plan limit forecasts and spend spike alarms.",
   "license": "Apache-2.0",
   "type": "module",
   "exports": {
