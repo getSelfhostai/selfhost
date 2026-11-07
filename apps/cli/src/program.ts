@@ -9,7 +9,9 @@ import {
 } from "./agents.js";
 import { defaultConfigPath } from "./config-file.js";
 import { doctor } from "./doctor.js";
+import { readStdin, runHook } from "./hooks/receive.js";
 import { type ImportCommandOptions, type ImportIo, runImport, runWatch } from "./import.js";
+import { registerInit } from "./init/commands.js";
 import { registerPolicy } from "./policy/commands.js";
 import { registerPolicyEditing } from "./policy/editing.js";
 import type { CollectAttribution } from "./scan/attribution.js";
@@ -217,6 +219,34 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
         fail(error, options.json);
       }
     });
+
+  program
+    .command("hook")
+    .description(
+      "receive one agent hook event and add it to ~/.selfhost/spool (agents run this, not people)",
+    )
+    .argument("<agent>", "claude, codex or codex-notify")
+    .argument("[payload]", "the event JSON, for codex-notify; others read it from stdin")
+    .action(async (agent: string, payload: string | undefined) => {
+      await runHook(payload === undefined ? [agent] : [agent, payload], {
+        env: deps.env,
+        readStdin,
+        writeError: deps.writeError,
+        now: deps.now,
+      });
+    });
+
+  registerInit(
+    program,
+    () => ({
+      ...io(),
+      setExitCode: deps.setExitCode,
+      configPath: deps.configPath,
+      fetch: deps.fetch,
+      retry: deps.retry,
+    }),
+    fail,
+  );
 
   registerSpend(program);
 

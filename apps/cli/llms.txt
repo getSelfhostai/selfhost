@@ -1,0 +1,31 @@
+# selfhost
+
+> One ledger, one review list and one team config for every coding agent on a laptop. `selfhost init` sets it up in one command with no prompts: hooks in Claude Code and Codex, a starter selfhost.toml in observe mode, and the last 30 days of local agent logs imported. Solo mode sends nothing anywhere.
+
+## Install, for a coding agent
+
+- Published package (not on npm yet): `npx selfhostai init`
+- From source: `pnpm install && pnpm --filter @selfhost/cli build && node apps/cli/dist/main.js init`
+- Preview first: `init --dry-run` prints every change and writes nothing. `--json` prints one `selfhost.init/v1` object.
+- Join a team while installing: `init --team "selfhost join <server> <invite>"`. A refused invite exits 1 and changes no files.
+
+## What it changes
+
+- A hook running `selfhost hook <agent>` in ~/.claude/settings.json and ~/.codex/config.toml (or ~/.codex/hooks.json), each file backed up first as `<file>.selfhost-backup-<UTC time>`.
+- ~/.selfhost/: the ledger (data/), hook events waiting for import (spool/), the files init changed (init.json), the team membership (config.json, team mode only).
+- selfhost.toml at the git repository root when there is none: 4 rules, all in observe mode, nothing blocked.
+- No shell profile, API key or sign-in.
+
+## Undo
+
+- `selfhost init --undo` restores each agent config file byte for byte from its backup, unless it was edited since. The ledger and selfhost.toml stay.
+
+## Privacy
+
+- Solo mode: nothing leaves the laptop and no network request is made. The ledger keeps no prompt text; raw hook payloads wait in ~/.selfhost/spool (mode 0600) until the next import.
+- Team mode: each `selfhost import` sends the ledger to the team's server.
+
+## Docs
+
+- [AGENTS.md](AGENTS.md): install steps for coding agents
+- [README.md](README.md): every command, including `selfhost hook` and the spool

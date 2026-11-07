@@ -104,6 +104,45 @@ masked, `--remove` takes selfhost's settings out again, and `--home <dir>` point
 a fixture home (it also turns off the keychain and version probes). See
 [`@selfhost/agents`](../../packages/agents/README.md) for what is written where.
 
+## Install on a laptop: `selfhost init`
+
+`selfhost init [--since 30d] [--team <invite>] [--server <url> | --hosted] [--agent claude codex]
+[--dry-run] [--json]` goes from nothing to real data on the first screen, with no questions
+asked (`--yes` is accepted and changes nothing). [`AGENTS.md`](AGENTS.md) and
+[`llms.txt`](llms.txt) say the same for a coding agent doing the install.
+
+1. With `--team`, it joins first. The invite is `--team <invite>` with `--server <url>` or
+   `--hosted` (`SELFHOST_HOSTED_URL`, else `https://app.selfhost.ai`), or the whole line `selfhost
+   team init` prints, pasted as is. A refused invite or an unreachable server exits 1 before any
+   file is written.
+2. It lists the agents it finds and where each keeps its config, then adds a hook running
+   `selfhost hook <agent>` to Claude Code and Codex through `agents configure`, which backs up
+   every file first. When `selfhost` is not on PATH the hook calls the running node and script
+   by absolute path instead. An agent where `agents configure` already set other settings is
+   left alone, so they are not taken out.
+3. It writes a starter `selfhost.toml` at the git repository root when none is found: four
+   rules (`.env` files, force pushes, `rm -rf` on `/` or home, `curl | sh`), all in observe
+   mode. An existing file is kept.
+4. It imports the window, runs `policy observe` when there is a `selfhost.toml`, and prints the
+   import counts, spend by agent and request type, and the hits per rule. `--json` prints one
+   `selfhost.init/v1` object instead.
+
+`--dry-run` prints the same plan, with the number of log files and hook events it would import,
+and writes nothing. `selfhost init --undo` puts every agent config file init changed back byte
+for byte from its backup (recorded in `~/.selfhost/init.json`), unless it was edited since;
+`agents configure --remove` takes the same settings out but writes the file in its own layout.
+The ledger, `selfhost.toml` and a team membership are kept.
+
+`selfhost hook <agent>` (`claude`, `codex` or `codex-notify`) is what the agents run on each hook
+event. It reads the payload from stdin (the last argument for `codex-notify`), appends one line
+`{agent, received_at, payload}` to `~/.selfhost/spool/hooks-<UTC day>.jsonl` with a single
+append, and exits 0 even when that fails, printing nothing on stdout. Tool output
+(`tool_response`) is dropped. It never opens the ledger, since the embedded database takes one
+process at a time and agents run hooks concurrently. `selfhost import` (and `--watch`, every
+poll) maps the spool into the ledger with the hook mappers: ids come from the receive time and
+the payload, so a line read twice is a duplicate, a malformed line is skipped and counted, and a
+finished day's file is deleted once imported.
+
 ## Solo and team modes
 
 selfhost starts in solo mode: everything stays on the laptop and no command sends a request to
@@ -158,7 +197,7 @@ The CLI calls only the configured server, and only its `/v1` API. Agents keep ca
 vendors directly; no model traffic goes through selfhost.
 
 Every command takes `--json` and prints one object with a `schema` tag: `selfhost.doctor/v1`,
-`selfhost.import/v1` (plus one `selfhost.import_batch/v1` line per batch with `--watch`),
+`selfhost.init/v1`, `selfhost.init_undo/v1`, `selfhost.import/v1` (plus one `selfhost.import_batch/v1` line per batch with `--watch`),
 `selfhost.agents/v1`, `selfhost.agents_configure/v1`, `selfhost.scan/v1`,
 `selfhost.policy_check/v1`, `selfhost.policy_test/v1`, `selfhost.policy_observe/v1`,
 `selfhost.policy_promote/v1`, `selfhost.review_item/v1` (from `policy report`),
