@@ -3,6 +3,7 @@ import type { ApiError, HealthResponse } from "@selfhost/schema";
 import { Hono } from "hono";
 import { requireBearerToken } from "./auth.js";
 import { eventRoutes } from "./events.js";
+import { teamRoutes } from "./teams.js";
 
 export interface AppOptions {
   version: string;
@@ -14,6 +15,7 @@ export interface AppOptions {
 export function createApp({ version, ledger, token }: AppOptions): Hono {
   const app = new Hono();
 
+  teamRoutes(app, { ledger, token });
   app.use("*", requireBearerToken(token));
 
   app.get("/v1/health", (c) => c.json({ ok: true, version } satisfies HealthResponse));

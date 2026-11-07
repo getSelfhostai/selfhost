@@ -26,7 +26,7 @@ paths:
     post:
       operationId: ingestEvents
       summary: Append a batch of ledger events.
-      description: "Atomic: if any event is invalid, nothing is written and the response lists every error by index and field. Event ids are idempotency keys, so retrying a batch is safe."
+      description: "Atomic: if any event is invalid, nothing is written and the response lists every error by index and field. Event ids are idempotency keys, so retrying a batch is safe. With a person token, events whose actor is a person must carry that person's id (an event with no actor gets it), system actors are refused, and team is set to the person's team."
       requestBody:
         required: true
         content:
@@ -275,6 +275,12 @@ paths:
               - cursor
               - copilot
               - other
+        - name: team
+          in: query
+          required: false
+          description: Team id on a team server. Needed with the admin token; a person token reads its own team.
+          schema:
+            type: string
       responses:
         "200":
           description: Policy in use.
@@ -282,6 +288,144 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PolicyResponse"
+        "400":
+          description: Invalid query, or no team given with the admin token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: A person token asked for another team's policy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such team, or the team has no policy yet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    put:
+      operationId: setPolicy
+      summary: Replace a team's selfhost.toml.
+      description: Admin token, or a person token whose role is owner or admin. The text is validated first; an invalid file changes nothing.
+      parameters:
+        - name: team
+          in: query
+          required: false
+          description: Team id. Needed with the admin token; a person token writes its own team.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetPolicyRequest"
+      responses:
+        "200":
+          description: Policy stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PolicyResponse"
+        "400":
+          description: The selfhost.toml is invalid. Nothing was stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvalidPolicyError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The person token's role is not owner or admin.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such team.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/teams:
+    post:
+      operationId: createTeam
+      summary: Create a team and its invite code.
+      description: Admin token only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTeamRequest"
+      responses:
+        "201":
+          description: Team created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateTeamResponse"
+        "400":
+          description: Invalid name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: A team with this id already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/join:
+    post:
+      operationId: joinTeam
+      summary: Exchange an invite code for a person token.
+      description: The invite code is the credential, so no bearer token is needed. Joining again with the same person id returns a new token for the same person.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JoinRequest"
+      responses:
+        "200":
+          description: Joined.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JoinResponse"
+        "400":
+          description: Invalid body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Unknown or revoked invite code.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/me:
+    get:
+      operationId: getMe
+      summary: Who the bearer token belongs to.
+      responses:
+        "200":
+          description: The token's owner.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
 components:
@@ -483,6 +627,12 @@ components:
         hash:
           description: sha256 of the selfhost.toml text in use.
           type: string
+        team:
+          description: Team id, when the policy is a team's.
+          type: string
+        text:
+          description: The selfhost.toml text in use.
+          type: string
         commit_sha:
           description: Git commit of selfhost.toml, when it is read from a repo.
           type: string
@@ -571,3 +721,248 @@ components:
                 default: false
                 description: true when the matched action cannot be undone, which raises review risk.
                 type: boolean
+    SetPolicyRequest:
+      additionalProperties: false
+      title: SetPolicyRequest
+      type: object
+      required:
+        - text
+      properties:
+        text:
+          maxLength: 1000000
+          description: The team's selfhost.toml. Validated like selfhost doctor does.
+          type: string
+    InvalidPolicyError:
+      additionalProperties: false
+      title: InvalidPolicyError
+      type: object
+      required:
+        - error
+        - errors
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              const: invalid_policy
+              type: string
+            message:
+              type: string
+        errors:
+          type: array
+          items:
+            additionalProperties: false
+            type: object
+            required:
+              - field
+              - message
+            properties:
+              field:
+                description: Field path, for example rules[0].mode.
+                type: string
+              message:
+                type: string
+              line:
+                minimum: 1
+                type: integer
+              column:
+                minimum: 1
+                type: integer
+    CreateTeamRequest:
+      additionalProperties: false
+      title: CreateTeamRequest
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          minLength: 1
+          maxLength: 100
+          description: Team name. Its id is the name in kebab case.
+          type: string
+    CreateTeamResponse:
+      additionalProperties: false
+      title: CreateTeamResponse
+      type: object
+      required:
+        - team
+        - invite
+      properties:
+        team:
+          additionalProperties: false
+          title: TeamInfo
+          type: object
+          required:
+            - id
+            - name
+            - created_at
+          properties:
+            id:
+              pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+              description: Team id, derived from the name. Set as team on every event its people write.
+              type: string
+            name:
+              minLength: 1
+              description: Team name as given.
+              type: string
+            created_at:
+              format: date-time
+              type: string
+        invite:
+          minLength: 1
+          description: Invite code to share with the team. Anyone holding it can join, so share it like a password.
+          type: string
+    JoinRequest:
+      additionalProperties: false
+      title: JoinRequest
+      type: object
+      required:
+        - invite
+        - person
+      properties:
+        invite:
+          minLength: 1
+          description: Invite code from POST /v1/teams.
+          type: string
+        person:
+          minLength: 1
+          maxLength: 256
+          description: Who is joining, such as their git email.
+          type: string
+        name:
+          maxLength: 200
+          description: Display name.
+          type: string
+    JoinResponse:
+      additionalProperties: false
+      title: JoinResponse
+      type: object
+      required:
+        - token
+        - person
+        - team
+      properties:
+        token:
+          minLength: 1
+          description: Person token. It writes events as this person and reads the team policy. Shown once; the server keeps only its sha256.
+          type: string
+        person:
+          additionalProperties: false
+          title: Person
+          type: object
+          required:
+            - id
+            - team
+            - role
+            - created_at
+          properties:
+            id:
+              minLength: 1
+              maxLength: 256
+              description: Who the person is, such as a git email. Their events carry it as actor.id.
+              type: string
+            name:
+              description: Display name.
+              type: string
+            team:
+              pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+              description: Team the person belongs to.
+              type: string
+            role:
+              description: owner for the first person to join, member for everyone after.
+              type: string
+              enum:
+                - owner
+                - admin
+                - member
+            created_at:
+              format: date-time
+              type: string
+        team:
+          additionalProperties: false
+          title: TeamInfo
+          type: object
+          required:
+            - id
+            - name
+            - created_at
+          properties:
+            id:
+              pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+              description: Team id, derived from the name. Set as team on every event its people write.
+              type: string
+            name:
+              minLength: 1
+              description: Team name as given.
+              type: string
+            created_at:
+              format: date-time
+              type: string
+    MeResponse:
+      additionalProperties: false
+      title: MeResponse
+      type: object
+      required:
+        - kind
+      properties:
+        kind:
+          description: admin for the server's admin token, person for a person token.
+          type: string
+          enum:
+            - admin
+            - person
+        person:
+          additionalProperties: false
+          title: Person
+          type: object
+          required:
+            - id
+            - team
+            - role
+            - created_at
+          properties:
+            id:
+              minLength: 1
+              maxLength: 256
+              description: Who the person is, such as a git email. Their events carry it as actor.id.
+              type: string
+            name:
+              description: Display name.
+              type: string
+            team:
+              pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+              description: Team the person belongs to.
+              type: string
+            role:
+              description: owner for the first person to join, member for everyone after.
+              type: string
+              enum:
+                - owner
+                - admin
+                - member
+            created_at:
+              format: date-time
+              type: string
+        team:
+          additionalProperties: false
+          title: TeamInfo
+          type: object
+          required:
+            - id
+            - name
+            - created_at
+          properties:
+            id:
+              pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+              description: Team id, derived from the name. Set as team on every event its people write.
+              type: string
+            name:
+              minLength: 1
+              description: Team name as given.
+              type: string
+            created_at:
+              format: date-time
+              type: string

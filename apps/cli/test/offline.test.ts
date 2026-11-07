@@ -1,35 +1,12 @@
-import dns from "node:dns";
 import { mkdirSync } from "node:fs";
-import http from "node:http";
-import https from "node:https";
 import net from "node:net";
 import { join } from "node:path";
-import tls from "node:tls";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { blockNetwork } from "./network.js";
 import { run, tempDir } from "./run.js";
 import { attributionFor } from "./scan-logs.js";
 
 const fixtures = join(import.meta.dirname, "..", "..", "..", "fixtures");
-const attempts: string[] = [];
-
-function block(name: string) {
-  return (..._args: unknown[]): never => {
-    attempts.push(name);
-    throw new Error(`network access attempted: ${name}`);
-  };
-}
-
-function stubNetwork() {
-  attempts.length = 0;
-  vi.spyOn(net, "connect").mockImplementation(block("net.connect"));
-  vi.spyOn(net, "createConnection").mockImplementation(block("net.createConnection"));
-  vi.spyOn(net.Socket.prototype, "connect").mockImplementation(block("net.Socket.connect"));
-  vi.spyOn(tls, "connect").mockImplementation(block("tls.connect"));
-  vi.spyOn(http, "request").mockImplementation(block("http.request"));
-  vi.spyOn(https, "request").mockImplementation(block("https.request"));
-  vi.spyOn(dns, "lookup").mockImplementation(block("dns.lookup"));
-  vi.stubGlobal("fetch", vi.fn(block("fetch")));
-}
 
 describe("every command works with --json and no network", () => {
   afterEach(() => {
@@ -39,7 +16,7 @@ describe("every command works with --json and no network", () => {
   });
 
   it("the stubs catch an outbound connection", async () => {
-    stubNetwork();
+    const attempts = blockNetwork();
     expect(() => net.connect(443, "example.com")).toThrow(/network access/);
     await expect(async () => fetch("https://example.com")).rejects.toThrow(/network access/);
     expect(attempts).toEqual(["net.connect", "fetch"]);
@@ -54,7 +31,7 @@ describe("every command works with --json and no network", () => {
     // The importers read these from the process environment.
     vi.stubEnv("CLAUDE_CONFIG_DIR", join(fixtures, "claude-code"));
     vi.stubEnv("CODEX_HOME", join(fixtures, "codex"));
-    stubNetwork();
+    const attempts = blockNetwork();
     const deps = { cwd: repo.root };
 
     const doctor = await run(["doctor", "--json"], deps);
@@ -108,7 +85,7 @@ describe("every command works with --json and no network", () => {
   it("scan uploads nothing, even with a yes to the agent count", async () => {
     const work = tempDir("offline-scan");
     mkdirSync(work.path(".git"));
-    stubNetwork();
+    const attempts = blockNetwork();
     const deps = {
       cwd: work.root,
       env: {

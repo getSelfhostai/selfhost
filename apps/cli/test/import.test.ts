@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { openLedger } from "@selfhost/ledger";
 import { describe, expect, it } from "vitest";
 import { parseSince, parseVendor, runImport } from "../src/import.js";
+import { tempDir } from "./run.js";
 
 const fixtures = join(import.meta.dirname, "..", "..", "..", "fixtures");
 const sources = {
@@ -38,7 +39,11 @@ describe("selfhost import", () => {
   it("imports the fixture logs once and finds only duplicates the second time", async () => {
     const ledger = await openLedger({ dataDir: "memory://" });
     const lines: string[] = [];
-    const io = { env: {}, write: (line: string) => lines.push(line) };
+    const io = {
+      env: {},
+      write: (line: string) => lines.push(line),
+      configPath: tempDir("import").path("config.json"),
+    };
     try {
       const first = await runImport(sources, io, ledger);
       expect(first.files).toBeGreaterThanOrEqual(6);
@@ -62,7 +67,11 @@ describe("selfhost import", () => {
     try {
       await runImport(
         { ...sources, json: true },
-        { env: {}, write: (line) => lines.push(line) },
+        {
+          env: {},
+          write: (line) => lines.push(line),
+          configPath: tempDir("import").path("config.json"),
+        },
         ledger,
       );
       expect(lines).toHaveLength(1);

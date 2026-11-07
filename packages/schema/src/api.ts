@@ -151,6 +151,12 @@ export const PolicyQuerySchema = Type.Object(
   {
     person: Type.Optional(Type.String({ description: "Resolve team overrides for this person." })),
     agent: Type.Optional(StringEnum(AGENT_VENDORS, { description: "Only rules for this agent." })),
+    team: Type.Optional(
+      Type.String({
+        description:
+          "Team id on a team server. Needed with the admin token; a person token reads its own team.",
+      }),
+    ),
   },
   { additionalProperties: false, title: "PolicyQuery" },
 );
@@ -158,6 +164,8 @@ export const PolicyQuerySchema = Type.Object(
 export const PolicyResponseSchema = Type.Object(
   {
     hash: Type.String({ description: "sha256 of the selfhost.toml text in use." }),
+    team: Type.Optional(Type.String({ description: "Team id, when the policy is a team's." })),
+    text: Type.Optional(Type.String({ description: "The selfhost.toml text in use." })),
     commit_sha: Type.Optional(
       Type.String({ description: "Git commit of selfhost.toml, when it is read from a repo." }),
     ),

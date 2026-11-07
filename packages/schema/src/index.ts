@@ -7,6 +7,7 @@ export * from "./hooks/codex.js";
 export * from "./mcp.js";
 export * from "./request-type.js";
 export * from "./review-item.js";
+export * from "./team.js";
 export {
   createValidator,
   type FieldError,

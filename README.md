@@ -8,7 +8,9 @@ Early. Not ready for use. The repository has the toolchain, the v1 contracts, th
 an API server that ingests and searches events, importers for local Claude Code and Codex
 session logs, commit and pull request attribution to agents and models, and `selfhost agents`,
 which finds installed agents and their logins and writes selfhost's settings into each agent's
-own config. The review list and team config come next.
+own config, and solo and team modes: `selfhost team init` and `selfhost join` connect laptops to
+a shared server that holds their usage and one team policy. The review list and team config
+come next.
 
 ## What it is
 

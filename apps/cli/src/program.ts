@@ -7,13 +7,16 @@ import {
   type ConfigureOptions,
   configureCommand,
 } from "./agents.js";
+import { defaultConfigPath } from "./config-file.js";
 import { doctor } from "./doctor.js";
-import { type ImportCommandOptions, runImport, runWatch } from "./import.js";
+import { type ImportCommandOptions, type ImportIo, runImport, runWatch } from "./import.js";
 import type { CollectAttribution } from "./scan/attribution.js";
 import { gitAttribution } from "./scan/git-attribution.js";
 import { runScan, type ScanCommandOptions } from "./scan/index.js";
 import { type Ask, askOnTerminal, type SendPing } from "./scan/telemetry.js";
 import { registerSpend } from "./spend.js";
+import type { Fetch } from "./team/client.js";
+import { registerTeam } from "./team/commands.js";
 
 export const VERSION = pkg.version;
 
@@ -31,8 +34,12 @@ export interface CliDeps {
   collectAttribution?: CollectAttribution;
   /** Asks a yes or no question; undefined when stdin is not a terminal. */
   ask?: Ask;
-  /** Where one-time answers are kept. Default: ~/.selfhost/config.json. */
+  /** Where one-time answers and the team membership are kept. Default: ~/.selfhost/config.json. */
   configPath?: string;
+  /** HTTP for the team server, used only in team mode. Default: the global fetch. */
+  fetch?: Fetch;
+  /** Retry timing for sends to the team server. */
+  retry?: ImportIo["retry"];
   /** Sends the opt-in anonymous agent count. Default: a JSON POST. */
   sendTelemetry?: SendPing;
 }
@@ -118,10 +125,16 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
     .option("--data-dir <path>", "embedded ledger folder (default: ~/.selfhost/data)")
     .option("--json", "print JSON (one line per batch with --watch)")
     .action(async (options: ImportCommandOptions) => {
-      const importIo = { env: deps.env, write: deps.write };
+      const importIo: ImportIo = {
+        env: deps.env,
+        write: deps.write,
+        configPath: deps.configPath,
+        fetch: deps.fetch,
+        retry: deps.retry,
+      };
       try {
         if (options.watch) await runWatch(options, importIo);
-        else await runImport(options, importIo);
+        else if ((await runImport(options, importIo)).sync?.error) deps.setExitCode(1);
       } catch (error) {
         fail(error, options.json);
       }
@@ -203,6 +216,17 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
     });
 
   registerSpend(program);
+
+  registerTeam(
+    program,
+    () => ({
+      env: deps.env,
+      write: deps.write,
+      configPath: deps.configPath ?? defaultConfigPath(),
+      fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
+    }),
+    fail,
+  );
 
   return program;
 }

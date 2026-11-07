@@ -25,6 +25,10 @@
               "copilot",
               "other"
             ]
+          },
+          "team": {
+            "description": "Team id on a team server. Needed with the admin token; a person token reads its own team.",
+            "type": "string"
           }
         }
       },
@@ -40,6 +44,14 @@
         "properties": {
           "hash": {
             "description": "sha256 of the selfhost.toml text in use.",
+            "type": "string"
+          },
+          "team": {
+            "description": "Team id, when the policy is a team's.",
+            "type": "string"
+          },
+          "text": {
+            "description": "The selfhost.toml text in use.",
             "type": "string"
           },
           "commit_sha": {

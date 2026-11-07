@@ -63,10 +63,51 @@ masked, `--remove` takes selfhost's settings out again, and `--home <dir>` point
 a fixture home (it also turns off the keychain and version probes). See
 [`@selfhost/agents`](../../packages/agents/README.md) for what is written where.
 
+## Solo and team modes
+
+selfhost starts in solo mode: everything stays on the laptop and no command sends a request to
+a selfhost server. Team mode connects the same install to a shared server
+([`apps/server`](../server/README.md#teams)):
+
+```sh
+selfhost team init --server https://selfhost.example.com --name Platform   # admin token: --token or SELFHOST_TOKEN
+selfhost join https://selfhost.example.com selfhost_inv_...                 # on each laptop
+selfhost status
+selfhost team leave
+```
+
+- `selfhost team init` creates a team with the server's admin token and prints the
+  `selfhost join` command to share. It does not join the machine it runs on.
+- `selfhost join <url> <invite> [--person <id>] [--name <name>]` exchanges the invite for a
+  person token and adds `server`, `token`, `person` and `team` to `~/.selfhost/config.json`
+  (mode 0600), and nothing else: no vendor login or API key is asked for or stored. `--person`
+  defaults to the git email, the same person `selfhost import` uses. A refused invite changes
+  no files.
+- `selfhost import` keeps writing the local ledger, then syncs: the first sync after joining
+  sends the whole local ledger, so solo history shows up on the server with no migration; later
+  syncs resend the `--since` window. Event ids are idempotency keys, so a resend stores nothing
+  twice. Sends go in batches of up to 1000 to `POST /v1/events`, retried with exponential
+  backoff (0.5 s doubling, 4 retries, honouring `Retry-After`) when the server is unreachable,
+  rate limiting or failing; a refused batch is not retried. Person events go up as the joined
+  person, the only one the server accepts for the token; the local ledger keeps them as they
+  were imported. The sync also pulls the team's `selfhost.toml` into
+  `~/.selfhost/team-policy.toml`. A failed sync keeps the local import, reports the error and
+  exits 1; the next sync sends the events. `--watch` sends each batch after the local write,
+  and a batch that fails is kept and sent again on the next poll.
+- `selfhost status` shows solo or team, the server, the person, the last sync and the team
+  policy hash, from local files only. Sync progress is in `~/.selfhost/sync.json`.
+- `selfhost team leave` removes the membership and goes back to solo mode. The local ledger is
+  not touched.
+
+The CLI calls only the configured server, and only its `/v1` API. Agents keep calling their
+vendors directly; no model traffic goes through selfhost.
+
 Every command takes `--json` and prints one object with a `schema` tag: `selfhost.doctor/v1`,
 `selfhost.import/v1` (plus one `selfhost.import_batch/v1` line per batch with `--watch`),
-`selfhost.agents/v1`, `selfhost.agents_configure/v1` and `selfhost.scan/v1`. Errors print `selfhost.error/v1` and
-exit 1. No command needs a network connection.
+`selfhost.agents/v1`, `selfhost.agents_configure/v1`, `selfhost.scan/v1`,
+`selfhost.team_init/v1`, `selfhost.join/v1`, `selfhost.status/v1` and
+`selfhost.team_leave/v1`. Errors print `selfhost.error/v1` and exit 1. In solo mode no command
+needs a network connection.
 
 ## Binaries
 
