@@ -19,6 +19,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@electric-sql/pglite": "catalog:",
     "@selfhost/agents": "workspace:*",
     "@selfhost/attribution": "workspace:*",
     "@selfhost/importers": "workspace:*",

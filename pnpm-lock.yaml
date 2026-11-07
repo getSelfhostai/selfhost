@@ -86,6 +86,9 @@ importers:
 
   apps/cli:
     dependencies:
+      '@electric-sql/pglite':
+        specifier: 'catalog:'
+        version: 0.5.15
       '@selfhost/agents':
         specifier: workspace:*
         version: link:../../packages/agents

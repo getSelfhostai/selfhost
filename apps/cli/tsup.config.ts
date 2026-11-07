@@ -6,7 +6,8 @@ export default defineConfig({
   target: "node20",
   platform: "node",
   clean: true,
-  // Workspace packages export TypeScript source, so they are bundled in.
+  // Workspace packages export TypeScript source, so they are bundled in. Dependencies stay
+  // external; PGlite must, as it reads its wasm and data files from beside its own code.
   noExternal: [/^@selfhost\//],
   // Their CommonJS dependencies (yaml, picomatch) call require, which ESM output lacks.
   banner: {
