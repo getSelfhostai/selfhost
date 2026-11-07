@@ -41,6 +41,10 @@ jobs:
 
   cli:
     runs-on: ubuntu-latest
+    env:
+      # Fixture logs for the import checks, never the runner's home directory.
+      CLAUDE_CONFIG_DIR: ${{ github.workspace }}/fixtures/claude-code
+      CODEX_HOME: ${{ github.workspace }}/fixtures/codex
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
@@ -53,16 +57,31 @@ jobs:
         with:
           bun-version: 1.4.4
       - run: pnpm install --frozen-lockfile
+      - name: Write the embedded ledger check
+        run: |
+          cat > "$RUNNER_TEMP/ledger-check.sh" <<'SH'
+          # Usage: ledger-check.sh <command that runs selfhost>. Imports the fixture logs into a
+          # fresh embedded ledger twice (the second run finds only duplicates), then reads spend.
+          set -eu
+          data="$(mktemp -d)"
+          "$@" import --data-dir "$data" --since 2026-01-01 --json > "$data.first.json"
+          "$@" import --data-dir "$data" --since 2026-01-01 --json > "$data.second.json"
+          jq -es '.[0].accepted > 0 and .[0].duplicates == 0 and .[1].accepted == 0
+            and .[1].duplicates == .[0].accepted' "$data.first.json" "$data.second.json"
+          "$@" spend --data-dir "$data" --since 2026-01-01 --json | jq -e '.total.requests > 0'
+          SH
       - name: Smoke test the Node bundle
         run: |
           pnpm --filter @selfhost/cli build
           node apps/cli/dist/main.js --version
           node apps/cli/dist/main.js policy --help
+          sh "$RUNNER_TEMP/ledger-check.sh" node apps/cli/dist/main.js
       - run: pnpm build:cli
       - name: Smoke test the linux-x64 binary
         run: |
           ./apps/cli/dist/selfhost-linux-x64 --version
           ./apps/cli/dist/selfhost-linux-x64 doctor
+          sh "$RUNNER_TEMP/ledger-check.sh" ./apps/cli/dist/selfhost-linux-x64
       - name: Run the binary with an empty environment and no Node or Bun on PATH
         run: |
           bin="$PWD/apps/cli/dist/selfhost-linux-x64"
@@ -75,6 +94,8 @@ jobs:
           env -i PATH="$empty" "$bin" agents --json > agents.json
           env -i PATH="$empty" "$bin" doctor --json
           grep -q '"schema": "selfhost.agents/v1"' agents.json
+          sh "$RUNNER_TEMP/ledger-check.sh" env -i PATH="$empty" \
+            CLAUDE_CONFIG_DIR="$CLAUDE_CONFIG_DIR" CODEX_HOME="$CODEX_HOME" "$bin"
       - uses: actions/upload-artifact@v4
         with:
           name: selfhost-cli

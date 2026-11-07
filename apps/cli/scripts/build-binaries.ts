@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 // Compiles the CLI into standalone selfhost binaries with `bun build --compile`.
 // Usage: pnpm build:cli [target...], for example `pnpm build:cli bun-darwin-arm64`.
@@ -8,6 +9,15 @@ import { join } from "node:path";
 const TARGETS = ["bun-linux-x64", "bun-linux-arm64", "bun-darwin-arm64", "bun-darwin-x64"];
 
 const root = join(import.meta.dirname, "..");
+
+// PGlite reads its wasm and data files from beside its own code, which in a binary is
+// import.meta.dir, so --asset embeds them there. Its extension tarballs are left out.
+const pglite = dirname(fileURLToPath(import.meta.resolve("@electric-sql/pglite")));
+const assets = ["pglite.wasm", "initdb.wasm", "pglite.data"].flatMap((file) => [
+  "--asset",
+  join(pglite, file),
+]);
+
 const requested = process.argv.slice(2);
 const unknown = requested.filter((target) => !TARGETS.includes(target));
 if (unknown.length > 0) {
@@ -25,7 +35,16 @@ for (const target of requested.length > 0 ? requested : defaults) {
   console.log(`building ${outfile}`);
   const result = spawnSync(
     "bun",
-    ["build", "--compile", "--minify", `--target=${target}`, "src/main.ts", "--outfile", outfile],
+    [
+      "build",
+      "--compile",
+      "--minify",
+      `--target=${target}`,
+      "src/main.ts",
+      ...assets,
+      "--outfile",
+      outfile,
+    ],
     { cwd: root, stdio: "inherit" },
   );
   if (result.error) {
