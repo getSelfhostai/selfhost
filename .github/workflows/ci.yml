@@ -171,9 +171,10 @@ jobs:
         run: |
           . "$RUNNER_TEMP/compose-ci.sh"
           jq -s '{events: .}' ../../packages/schema/fixtures/event/valid/*.json > "$RUNNER_TEMP/events.json"
+          fixtures=$(jq '.events | length' "$RUNNER_TEMP/events.json")
           api /v1/events -X POST -H 'Content-Type: application/json' \
             --data-binary @"$RUNNER_TEMP/events.json" | tee "$RUNNER_TEMP/ingest.json"
-          jq -e '.accepted == 8 and .duplicates == 0' "$RUNNER_TEMP/ingest.json"
+          jq -e --argjson n "$fixtures" '.accepted == $n and .duplicates == 0' "$RUNNER_TEMP/ingest.json"
 
           code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:4318/v1/logs \
             -H 'Content-Type: application/json' --data-binary @../../fixtures/sources/otel/claude-code-logs.json)
@@ -185,8 +186,8 @@ jobs:
             -H "Authorization: Bearer $SELFHOST_OTLP_TOKEN" -H 'Content-Type: application/json' \
             -d '{"resourceMetrics":[{"scopeMetrics":[{"metrics":[{"name":"claude_code.session.count","sum":{"dataPoints":[{"asInt":"1","timeUnixNano":"1791295335204000000"}],"aggregationTemporality":1,"isMonotonic":true}}]}]}]}'
 
-          # 8 fixture events, plus the 6 events the OTel mapper makes of the logs payload.
-          wait_for_count 14
+          # The fixture events, plus the 6 events the OTel mapper makes of the logs payload.
+          wait_for_count $((fixtures + 6))
           api "/v1/events?session=a20d0d4b-8ee2-4416-b55d-ae9364eb8461&limit=100" \
             | jq -e '[.events[] | select(.source == "otel")] | length == 6'
           if docker compose logs --no-color otel-collector | grep -i 'exporting failed'; then
