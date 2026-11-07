@@ -2,7 +2,7 @@ import { validateEvent } from "@selfhost/schema";
 import { describe, expect, it } from "vitest";
 import { SourcePayloadError } from "../../src/sources/common.js";
 import { mapOtelLogs } from "../../src/sources/otel.js";
-import { readJson } from "../helpers.js";
+import { readJson, readJsonLines } from "../helpers.js";
 
 const request = readJson("sources", "otel", "claude-code-logs.json");
 const events = mapOtelLogs(request);
@@ -47,6 +47,10 @@ describe("Claude Code OpenTelemetry logs", () => {
         estimated: true,
       },
     });
+  });
+
+  it("labels a request without query_source unknown", () => {
+    expect(byEvent("api_request")[0]?.data?.request_type).toBe("unknown");
   });
 
   it("maps config decisions to allow and block and user decisions to approve and deny", () => {
@@ -94,5 +98,151 @@ describe("Claude Code OpenTelemetry logs", () => {
 
   it("rejects input that is not an OTLP logs export", () => {
     expect(() => mapOtelLogs({ resourceMetrics: [] })).toThrow(SourcePayloadError);
+  });
+});
+
+type Attr = [key: string, value: string | number];
+
+function record(name: string, ts: string, attrs: Attr[], body = true) {
+  return {
+    ...(body ? { body: { stringValue: name } } : {}),
+    attributes: [["event.name", name] as Attr, ["event.timestamp", ts] as Attr, ...attrs].map(
+      ([key, value]) => ({
+        key,
+        value: typeof value === "number" ? { intValue: String(value) } : { stringValue: value },
+      }),
+    ),
+  };
+}
+
+const exportOf = (...records: unknown[]) => ({
+  resourceLogs: [{ scopeLogs: [{ logRecords: records }] }],
+});
+
+describe("request types on Claude Code api_request events", () => {
+  const week = readJsonLines("sources", "otel", "claude-code-week.jsonl");
+  const costs = mapOtelLogs(week).filter((e) => e.kind === "cost.recorded");
+
+  it("labels every request from query_source", () => {
+    expect(costs).toHaveLength(128);
+    expect(new Set(costs.map((e) => e.data?.request_type))).toEqual(
+      new Set(["main", "subagent", "compaction", "title", "status_line", "background", "retry"]),
+    );
+    for (const event of costs) {
+      const result = validateEvent(event);
+      expect(result.ok ? [] : result.errors).toEqual([]);
+    }
+  });
+
+  it("keeps the vendor's query source next to the request type", () => {
+    const pairs = new Set(costs.map((e) => `${e.data?.request_source} ${e.data?.request_type}`));
+    expect([...pairs].sort()).toEqual([
+      "agent:builtin:general-purpose subagent",
+      "agent_summary status_line",
+      "auto_mode background",
+      "compact compaction",
+      "generate_session_title title",
+      "prompt_suggestion background",
+      "repl_main_thread main",
+      "repl_main_thread retry",
+    ]);
+  });
+
+  it("calls background agent summaries status_line even though they carry the agent's id", () => {
+    const summaries = costs.filter((e) => e.data?.request_source === "agent_summary");
+    expect(summaries.length).toBeGreaterThan(0);
+    expect(summaries.every((e) => e.data?.request_type === "status_line")).toBe(true);
+  });
+
+  it("marks the request Claude Code re-issued after an api_error as a retry", () => {
+    const retries = costs.filter((e) => e.data?.request_type === "retry");
+    expect(retries.map((e) => [e.ts.slice(0, 10), e.actor.id])).toEqual([
+      ["2026-10-29", "bob@example.com"],
+    ]);
+  });
+
+  it("finds the same retries whether exports are mapped together or one at a time", () => {
+    const oneByOne = week.flatMap((line) => mapOtelLogs(line));
+    expect(oneByOne.map((e) => e.id)).toEqual(mapOtelLogs(week).map((e) => e.id));
+    expect(oneByOne.filter((e) => e.data?.request_type === "retry")).toHaveLength(1);
+  });
+
+  it("does not count a new prompt after an error as a retry", () => {
+    const base: Attr[] = [
+      ["session.id", "s1"],
+      ["query_source", "repl_main_thread"],
+      ["input_tokens", 10],
+    ];
+    const events = mapOtelLogs(
+      exportOf(
+        record("claude_code.api_error", "2026-10-29T10:00:00.000Z", [...base, ["prompt.id", "p1"]]),
+        record("claude_code.api_request", "2026-10-29T10:01:00.000Z", [
+          ...base,
+          ["prompt.id", "p2"],
+        ]),
+        record("claude_code.api_request", "2026-10-29T10:02:00.000Z", [
+          ...base,
+          ["prompt.id", "p1"],
+        ]),
+      ),
+    );
+    const types = events.filter((e) => e.kind === "cost.recorded").map((e) => e.data?.request_type);
+    expect(types).toEqual(["main", "retry"]);
+  });
+});
+
+describe("Codex OpenTelemetry events", () => {
+  const conversation: Attr[] = [
+    ["conversation.id", "01a10ca6-8deb-75c0-92f6-bb789b300b1a"],
+    ["app.version", "0.142.5"],
+    ["model", "gpt-5.5"],
+    ["user.email", "dev@example.com"],
+  ];
+  const completed: Attr[] = [
+    ...conversation,
+    ["event.kind", "response.completed"],
+    ["input_token_count", 12000],
+    ["cached_token_count", 9000],
+    ["cache_write_token_count", 1000],
+    ["output_token_count", 400],
+    ["reasoning_token_count", 150],
+  ];
+  const events = mapOtelLogs(
+    exportOf(
+      record("codex.api_request", "2026-10-05T15:20:04.000Z", [...conversation, ["attempt", 0]]),
+      record("codex.sse_event", "2026-10-05T15:20:09.000Z", [
+        ...conversation,
+        ["event.kind", "response.output_item.done"],
+      ]),
+      record("codex.sse_event", "2026-10-05T15:20:09.431Z", completed, false),
+      record("codex.api_request", "2026-10-05T15:21:00.000Z", [...conversation, ["attempt", 0]]),
+      record("codex.api_request", "2026-10-05T15:21:02.000Z", [...conversation, ["attempt", 1]]),
+      record("codex.sse_event", "2026-10-05T15:21:09.000Z", completed, false),
+    ),
+    { price: () => 0.01 },
+  );
+
+  it("records tokens from response.completed and nothing from api_request", () => {
+    expect(events.map((e) => e.kind)).toEqual(["cost.recorded", "cost.recorded"]);
+    expect(events[0]).toMatchObject({
+      source: "otel",
+      agent: { vendor: "codex", version: "0.142.5" },
+      model: "gpt-5.5",
+      session_id: "01a10ca6-8deb-75c0-92f6-bb789b300b1a",
+      actor: { kind: "person", id: "dev@example.com" },
+      cost: {
+        input_tokens: 2000,
+        output_tokens: 400,
+        cache_read_tokens: 9000,
+        cache_write_tokens: 1000,
+        usd: 0.01,
+        estimated: true,
+      },
+      data: { reasoning_output_tokens: 150 },
+    });
+  });
+
+  it("calls a response after a second attempt a retry, and the rest unknown", () => {
+    expect(events.map((e) => e.data?.request_type)).toEqual(["unknown", "retry"]);
   });
 });

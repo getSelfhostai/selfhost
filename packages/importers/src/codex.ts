@@ -1,5 +1,5 @@
 import { basename } from "node:path";
-import type { Actor } from "@selfhost/schema";
+import type { Actor, RequestType } from "@selfhost/schema";
 import { agentActor, buildEvent, isoTimestamp, SESSION_IDLE_MS } from "./events.js";
 import { shortHash } from "./ids.js";
 import {
@@ -102,6 +102,34 @@ export function codexToolDetails(name: string, args: Json, cwd: string | undefin
   }
 }
 
+/**
+ * Request type of a rollout's requests, from `session_meta`: `source` (cli, vscode, exec, or
+ * `{ subagent: review | compact | memory_consolidation | { thread_spawn } }`, or
+ * `{ internal: ... }`) and `thread_source` (user, subagent, guardian_review,
+ * memory_consolidation or a feature name).
+ */
+export function codexThreadRequestType(
+  source: unknown,
+  threadSource: unknown,
+): { type: RequestType; label?: string } {
+  const sub = isObject(source) ? source.subagent : undefined;
+  const subKind = typeof sub === "string" ? sub : isObject(sub) ? Object.keys(sub)[0] : undefined;
+  if (subKind === "compact") return { type: "compaction", label: "subagent_compact" };
+  const thread = str(threadSource);
+  if (thread === "subagent") return { type: "subagent", label: thread };
+  // Automatic approval reviews, memory consolidation and feature threads run on their own.
+  if (thread && thread !== "user") return { type: "background", label: thread };
+  if (subKind === "memory_consolidation") {
+    return { type: "background", label: `subagent_${subKind}` };
+  }
+  if (subKind) return { type: "subagent", label: `subagent_${subKind}` };
+  if (isObject(source) && source.internal !== undefined) {
+    const kind = str(source.internal);
+    return { type: "background", label: `internal_${kind ?? "other"}` };
+  }
+  return { type: "main" };
+}
+
 interface PendingCommit {
   name: string;
   model?: string;
@@ -130,6 +158,7 @@ export class CodexMapper implements LineMapper {
   private cwd?: string;
   private repo?: string;
   private originator?: string;
+  private thread: { type: RequestType; label?: string } = { type: "main" };
   private firstTs?: string;
   private lastTs?: string;
   private metaSeen = false;
@@ -210,6 +239,7 @@ export class CodexMapper implements LineMapper {
     this.version = str(payload.cli_version);
     this.cwd = str(payload.cwd);
     this.originator = str(payload.originator);
+    this.thread = codexThreadRequestType(payload.source, payload.thread_source);
     const git = isObject(payload.git) ? payload.git : {};
     this.repo = repoFromRemote(str(git.repository_url));
   }
@@ -221,6 +251,9 @@ export class CodexMapper implements LineMapper {
       ? `response:${usage.responseId}`
       : `${usage.timestamp}:${raw.inputTokens}:${raw.cachedInputTokens}:${raw.outputTokens}:${raw.reasoningOutputTokens}:${raw.totalTokens}`;
     const data = {
+      // Compaction requests carry the response id of the compacted turn.
+      request_type: usage.responseId ? "compaction" : this.thread.type,
+      ...(this.thread.label ? { request_source: this.thread.label } : {}),
       reasoning_output_tokens: raw.reasoningOutputTokens,
       ...(usage.serviceTier && usage.serviceTier !== "standard"
         ? { service_tier: usage.serviceTier }

@@ -22,6 +22,7 @@
     "@selfhost/importers": "workspace:*",
     "@selfhost/ledger": "workspace:*",
     "@selfhost/schema": "workspace:*",
+    "@selfhost/spend": "workspace:*",
     "commander": "catalog:"
   },
   "devDependencies": {

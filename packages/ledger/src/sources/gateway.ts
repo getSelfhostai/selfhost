@@ -102,6 +102,8 @@ export function mapGatewayLog(line: unknown, ctx: SourceContext = {}): LedgerEve
       cost,
       data: {
         ...data,
+        // LiteLLM's request log does not say which part of the agent sent the request.
+        request_type: "unknown",
         cache_hit: log.cache_hit === true || undefined,
         unpriced: unpriced || undefined,
       },

@@ -34,7 +34,12 @@ describe("LiteLLM gateway request logs", () => {
         usd: 0.0412,
         estimated: true,
       },
-      data: { gateway: "litellm", provider: "bedrock", duration_ms: 6786 },
+      data: {
+        gateway: "litellm",
+        provider: "bedrock",
+        duration_ms: 6786,
+        request_type: "unknown",
+      },
     });
   });
 

@@ -114,7 +114,7 @@ function mapActivity(record: Json, ctx: SourceContext): LedgerEvent | undefined 
       };
       const { cost, unpriced } = costFrom(ctx, model, tokens, num(detail.cost_usd));
       parts.cost = cost;
-      parts.data = { ...parts.data, unpriced: unpriced || undefined };
+      parts.data = { ...parts.data, request_type: "unknown", unpriced: unpriced || undefined };
       break;
     }
   }

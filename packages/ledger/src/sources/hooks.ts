@@ -136,10 +136,17 @@ export function mapCodexHook(payload: unknown, ctx: SourceContext = {}): LedgerE
         cache_write_tokens: count(usage.cache_write_input_tokens),
       };
       const { cost, unpriced } = costFrom(ctx, str(p.model), tokens);
+      // Hooks a subagent fires carry its agent_id; the rest come from the main thread.
+      const requestType = str(p.agent_id) ? "subagent" : "main";
       return [
         event("cost.recorded", {
           cost,
-          data: { ...turn, status: str(p.status), unpriced: unpriced || undefined },
+          data: {
+            ...turn,
+            request_type: requestType,
+            status: str(p.status),
+            unpriced: unpriced || undefined,
+          },
         }),
       ];
     }

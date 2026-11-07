@@ -20,10 +20,26 @@
       "source": "vendor_api",
       "shape": "One page of an Anthropic Compliance API style activity feed ({ data, has_more }).",
       "description": "Claude Code activity for session 665bce74 on 2026-10-05 (start, prompt, a permission decision, usage, end) and a claude.ai chat activity the mapper skips."
+    },
+    {
+      "path": "otel/claude-code-week.jsonl",
+      "source": "otel",
+      "shape": "One OTLP JSON ExportLogsServiceRequest per line, as the OpenTelemetry collector file exporter writes them, one per person and day.",
+      "fieldsFrom": "Claude Code monitoring docs (code.claude.com/docs/en/monitoring-usage): claude_code.api_request with query_source, agent.name, agent_id, request_id and cost_usd; claude_code.api_error with attempt. Standard attributes are cut to session.id, app.version, organization.id and user.email to keep the file small.",
+      "description": "Claude Code 2.1.312, 2026-10-26 to 2026-11-01, three people (alice, bob, chen at example.com), claude-opus-5-5 and claude-haiku-5-5. 128 requests: repl_main_thread, agent:builtin:general-purpose, compact, generate_session_title, prompt_suggestion, auto_mode and agent_summary, plus one api_error 529 on 2026-10-29 followed by the re-issued request. agent_summary (the background agent status label) starts on 2026-10-27 at 3.9% of the day, crosses 10% on 2026-10-28 (16.5%) and is 16.4% of the week's cost_usd. No other overhead type reaches 10% on any day. cost_usd is computed from the token counts at claude-opus-5-5 and claude-haiku-5-5 list prices."
+    },
+    {
+      "path": "subscription-week/",
+      "source": "local_log",
+      "shape": "claude-code/projects/<project>/<session>.jsonl with subagents in <session>/subagents/agent-<id>.jsonl, and codex/sessions/YYYY/MM/DD/rollout-*.jsonl, the same layouts as ~/.claude and ~/.codex.",
+      "fieldsFrom": "Claude Code transcript lines as third-party references describe them for 2.1.305 and later (api-request lines with id and querySource, assistant requestRef, isSidechain and agentId, system api_error lines with retryAttempt), not yet checked against a captured log; Codex 0.142.5 rollout lines (session_meta source and thread_source, token_count, token_usage_record and compacted).",
+      "description": "One developer on subscriptions, 2026-10-19 to 2026-10-24, with no gateway data, so every cost is estimated from the logs. Claude Code: one session a day on claude-opus-5-5 with an Explore subagent (the 2026-10-20 subagent has no api-request lines, to exercise the sidechain fallback) and a request retried after two api_error lines on 2026-10-21. Codex: one gpt-5.5 session a day, a compaction on 2026-10-20, and guardian review threads (thread_source guardian_review, model codex-auto-review, priced as gpt-5.6-luna) that grow from none to 3.0% of the day on 2026-10-21, 13.3% on 2026-10-22, 19.3% on 2026-10-23 and 20.2% on 2026-10-24."
     }
   ],
   "notes": [
     "The compliance activity field names are a best guess until real samples arrive (see Needs under F01 in the build plan). Only the mapper in vendor-audit.ts depends on them.",
-    "LiteLLM prompt_tokens includes cache reads and writes; the mapper subtracts them to get uncached input tokens."
+    "LiteLLM prompt_tokens includes cache reads and writes; the mapper subtracts them to get uncached input tokens.",
+    "The two week fixtures were generated with fixed seeds and checked with the importers and @selfhost/spend; the shares quoted above are asserted in packages/spend/test/fixtures.test.ts.",
+    "The shape of Codex guardian review rollouts (source { internal: guardian } with thread_source guardian_review) is inferred from the Codex protocol types and the codex-auto-review model alias ccusage prices; no real one has been captured yet."
   ]
 }

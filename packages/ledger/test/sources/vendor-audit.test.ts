@@ -40,6 +40,8 @@ describe("Anthropic Compliance API style activity", () => {
       usd: 0.1873,
       estimated: true,
     });
+    // The audit feed does not say which part of the agent made the request.
+    expect(events[3]?.data?.request_type).toBe("unknown");
     expect(events[2]).toMatchObject({
       tool: { name: "Bash" },
       decision: { verdict: "approve", by: "dev@example.com" },

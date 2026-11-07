@@ -26,6 +26,7 @@ It runs as a laptop install (embedded Postgres via PGlite, no Docker), a self-ho
 | `packages/schema`    | v1 contracts: ledger event, `selfhost.toml`, review item, hook payloads, OpenAPI, MCP tools |
 | `packages/ledger`    | Append-only ledger store on Postgres or PGlite, plus a mapper per event source              |
 | `packages/importers` | Local session log importers for Claude Code and Codex (pricing ported from ccusage, MIT)    |
+| `packages/spend`     | Spend by request type, agent, model and person, and the waste detector                      |
 | `packages/sdk`       | API client (placeholder)                                                                    |
 | `apps/server`        | HTTP API server (Hono)                                                                      |
 | `apps/cli`           | `selfhost` command line                                                                     |
@@ -56,6 +57,13 @@ Import the last 30 days of local session logs into the embedded ledger (`~/.self
 ```sh
 pnpm --filter @selfhost/cli dev import
 pnpm --filter @selfhost/cli dev import --watch
+```
+
+See where the spend goes and which overhead started growing (request types are listed in
+[`packages/spend`](./packages/spend/README.md#request-types)):
+
+```sh
+pnpm --filter @selfhost/cli dev spend --since 7d --by request_type,model --threshold 10
 ```
 
 ## License

@@ -21,7 +21,9 @@ any agent. Required: `id` (UUIDv7, also the idempotency key), `schema`, `ts`, `s
 `actor`. Some kinds require more: `tool.called` and `tool.result` need `tool`,
 `decision.recorded` and `policy.evaluated` need `decision`, `cost.recorded` needs `cost`.
 Corrections are new events that point at the old one with `decision.replaces_event_id`.
-Unknown fields are rejected; source-specific extras go in `data`.
+Unknown fields are rejected; source-specific extras go in `data`. `cost.recorded` events put the
+request type in `data.request_type`, one of `REQUEST_TYPES` (`src/request-type.ts`): `main`,
+`subagent`, `compaction`, `title`, `status_line`, `background`, `retry`, `unknown`.
 
 ```ts
 import { validateEvent, validateEventBatch } from "@selfhost/schema";

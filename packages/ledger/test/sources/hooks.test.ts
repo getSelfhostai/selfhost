@@ -140,6 +140,12 @@ describe("hook mapping details", () => {
       estimated: true,
     });
     expect(event?.data?.unpriced).toBe(true);
+    expect(event?.data?.request_type).toBe("main");
+    const subagent = mapCodexHook(
+      { ...(readJson("hooks", "codex", "PostModelRequest.json") as object), agent_id: "a1" },
+      ctx,
+    );
+    expect(subagent[0]?.data?.request_type).toBe("subagent");
     const priced = mapCodexHook(readJson("hooks", "codex", "PostModelRequest.json"), {
       ...ctx,
       price: () => 0.0123,

@@ -1,5 +1,5 @@
 import { basename } from "node:path";
-import type { Actor } from "@selfhost/schema";
+import { type Actor, claudeCodeRequestType } from "@selfhost/schema";
 import { agentActor, buildEvent, isoTimestamp, SESSION_IDLE_MS } from "./events.js";
 import {
   commitsFromOutput,
@@ -57,6 +57,11 @@ interface PendingCost {
   usage: ClaudeTokenUsage;
   costUsd?: number;
   replay?: { group: string; sidechain: boolean };
+  /** id of the transcript's api-request line for this response. */
+  requestRef?: string;
+  sidechain: boolean;
+  /** First response in its thread after an API error. */
+  retry: boolean;
 }
 
 interface UsageRecord {
@@ -130,12 +135,22 @@ function promptText(line: Json): string | undefined {
   return text.trim() === "" ? undefined : text;
 }
 
+/** The main thread or one subagent of a session; retries are tracked per thread. */
+function threadKey(line: Json, sessionId: string): string {
+  const agent = str(line.agentId) ?? (line.isSidechain === true ? "sidechain" : "");
+  return `${sessionId}\n${agent}`;
+}
+
 /** Maps Claude Code transcript lines (`~/.claude/projects/<project>/<session>.jsonl`). */
 export class ClaudeCodeMapper implements LineMapper {
   private readonly sessions = new Map<string, SessionState>();
   private readonly pendingCosts = new Map<string, PendingCost>();
   private readonly emittedCosts = new Set<string>();
   private readonly pendingCommits = new Map<string, PendingCommit>();
+  /** querySource of each api-request line, by its id. */
+  private readonly querySources = new Map<string, string>();
+  /** Threads whose last API call failed, so their next response is a retry. */
+  private readonly failedThreads = new Set<string>();
   private readonly fileSessionId: string;
   private readonly person: Actor;
 
@@ -145,6 +160,11 @@ export class ClaudeCodeMapper implements LineMapper {
   }
 
   line(line: Json): ParsedEvent[] {
+    if (line.type === "api-request") {
+      const id = str(line.id);
+      const source = str(line.querySource);
+      if (id && source) this.querySources.set(id, source);
+    }
     const ts = isoTimestamp(line.timestamp);
     if (!ts) return [];
     const sessionId = str(line.sessionId) ?? this.fileSessionId;
@@ -154,6 +174,9 @@ export class ClaudeCodeMapper implements LineMapper {
     const out: ParsedEvent[] = [];
     if (line.type === "assistant") this.assistant(line, ts, sessionId, version, sidechain, out);
     if (line.type === "user") this.user(line, ts, sessionId, version, sidechain, out);
+    if (line.type === "system" && line.subtype === "api_error") {
+      this.failedThreads.add(threadKey(line, sessionId));
+    }
     return out;
   }
 
@@ -239,6 +262,7 @@ export class ClaudeCodeMapper implements LineMapper {
     const reported = str(message.model);
     const model = reported === "<synthetic>" ? undefined : reported;
     const entry = claudeUsageEntry(line);
+    const thread = threadKey(line, sessionId);
     if (entry) {
       const records: UsageRecord[] = [
         { suffix: "", model: entry.model, usage: entry.usage, costUsd: entry.costUsd },
@@ -248,8 +272,16 @@ export class ClaudeCodeMapper implements LineMapper {
           usage: advisor.usage,
         })),
       ];
-      this.addUsageRecords(entry, ts, sessionId, version, records);
+      const request = {
+        requestRef: str(line.requestRef),
+        sidechain,
+        retry: this.failedThreads.has(thread),
+      };
+      if (this.addUsageRecords(entry, ts, sessionId, version, records, request)) {
+        this.failedThreads.delete(thread);
+      }
     }
+    if (line.isApiErrorMessage === true) this.failedThreads.add(thread);
     if (!Array.isArray(message.content)) return;
     const cwd = str(line.cwd) ?? this.sessions.get(sessionId)?.cwd;
     for (const block of message.content) {
@@ -280,13 +312,16 @@ export class ClaudeCodeMapper implements LineMapper {
     }
   }
 
+  /** Buffers each usage record once; true when a new response was buffered. */
   private addUsageRecords(
     entry: ClaudeUsageEntry,
     ts: string,
     sessionId: string,
     version: string | undefined,
     records: UsageRecord[],
-  ) {
+    request: Pick<PendingCost, "requestRef" | "sidechain" | "retry">,
+  ): boolean {
+    let added = false;
     for (const record of records) {
       if (!record.model || record.model === "<synthetic>") continue;
       if (claudeUsageTotal(record.usage) === 0) continue;
@@ -320,14 +355,24 @@ export class ClaudeCodeMapper implements LineMapper {
         usage: record.usage,
         costUsd: record.costUsd,
         replay,
+        ...request,
       });
+      added = true;
     }
+    return added;
   }
 
   private costEvent(cost: PendingCost): ParsedEvent {
     const estimated = claudeCostUsd(cost.model, cost.usage);
     const usd = cost.costUsd ?? estimated ?? 0;
+    const source =
+      cost.requestRef === undefined ? undefined : this.querySources.get(cost.requestRef);
+    const requestType = cost.retry
+      ? "retry"
+      : (claudeCodeRequestType(source, { subagent: cost.sidechain }) ?? "main");
     const data = {
+      request_type: requestType,
+      ...(source ? { request_source: source } : {}),
       ...(cost.usage.fast ? { speed: "fast" } : {}),
       ...(cost.costUsd === undefined && estimated === undefined ? { unpriced: true } : {}),
     };
@@ -349,7 +394,7 @@ export class ClaudeCodeMapper implements LineMapper {
           usd,
           estimated: cost.costUsd === undefined,
         },
-        ...(Object.keys(data).length > 0 ? { data } : {}),
+        data,
       },
     });
     return cost.replay ? { ...parsed, replay: cost.replay } : parsed;
@@ -395,8 +440,10 @@ export class ClaudeCodeMapper implements LineMapper {
         }
       }
     }
-    if (!this.ctx.logPrompts || sidechain) return;
     const text = promptText(line);
+    // A new prompt after an error is the person's next request, not a retry.
+    if (text !== undefined) this.failedThreads.delete(threadKey(line, sessionId));
+    if (!this.ctx.logPrompts || sidechain) return;
     const uuid = str(line.uuid);
     if (text === undefined || !uuid) return;
     const prompt = promptData(text);

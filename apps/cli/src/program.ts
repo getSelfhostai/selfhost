@@ -2,6 +2,7 @@ import { Command } from "commander";
 import pkg from "../package.json" with { type: "json" };
 import { doctor } from "./doctor.js";
 import { type ImportCommandOptions, runImport, runWatch } from "./import.js";
+import { registerSpend } from "./spend.js";
 
 export const VERSION = pkg.version;
 
@@ -45,6 +46,8 @@ export function createProgram(): Command {
         process.exitCode = 1;
       }
     });
+
+  registerSpend(program);
 
   return program;
 }

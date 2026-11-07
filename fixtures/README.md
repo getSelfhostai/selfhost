@@ -8,7 +8,7 @@ Test inputs for the session importers, hook ingest, ledger source mappers and re
 | `codex/sessions/YYYY/MM/DD/` | 3 Codex rollouts (`~/.codex/sessions` layout) on 2026-10-05, 07 and 09 UTC: exec_command, apply_patch, git commits, token_count events, a model switch between turns. Folder dates use local time. |
 | `hooks/claude-code/` | One stdin payload per Claude Code hook event. |
 | `hooks/codex/` | Codex `notify` payload and one payload per documented Codex hook event. |
-| `sources/` | Synthetic OpenTelemetry logs, LiteLLM gateway request logs and Anthropic Compliance API style activity, for the ledger source mappers. `manifest.json` describes each file. |
+| `sources/` | Synthetic OpenTelemetry logs, LiteLLM gateway request logs and Anthropic Compliance API style activity, for the ledger source mappers, plus two weeks for the waste detector: a Claude Code OpenTelemetry week where the status line is 16.4% of spend, and a subscription-only week of local logs. `manifest.json` describes each file. |
 | `redaction/` | Planted fake secrets and an example.com email. `manifest.json` lists every planted value. |
 | `expected/` | ccusage daily totals for the session fixtures. |
 | `captured/` | Scrubbed real sessions, written by `scripts/capture-fixtures.mjs`. Absent until someone runs it. |

@@ -57,9 +57,16 @@ the source record, so mapping the same record twice gives the same id.
 | Function                                              | Input                                                                      | `source`     |
 | ----------------------------------------------------- | -------------------------------------------------------------------------- | ------------ |
 | `mapClaudeCodeHook`, `mapCodexHook`, `mapCodexNotify` | Hook payloads (`fixtures/hooks/`)                                          | `hook`       |
-| `mapOtelLogs`                                         | OTLP JSON logs from Claude Code (`fixtures/sources/otel/`)                 | `otel`       |
+| `mapOtelLogs`                                         | OTLP JSON logs from Claude Code and Codex (`fixtures/sources/otel/`)       | `otel`       |
 | `mapGatewayLog`                                       | LiteLLM request logs (`fixtures/sources/gateway/`)                         | `gateway`    |
 | `mapVendorAudit`                                      | Anthropic Compliance API style activity (`fixtures/sources/vendor-audit/`) | `vendor_api` |
+
+Every `cost.recorded` event carries `data.request_type` (see
+[`packages/spend`](../spend/README.md#request-types)). `mapOtelLogs` takes one OTLP export or an
+array of them (one per line of the collector's file output) and reads Claude Code's
+`query_source`, finds retries from `api_error` and Codex `attempt` across the whole input, and
+reads Codex tokens from `codex.sse_event` (`response.completed`), since `codex.api_request` has
+none.
 
 Hook payloads carry no time and no user: pass `ts` and `person` in the context. Prompt text is
 dropped unless `logPrompts` is on (`ledger.log_prompts` in `selfhost.toml`); its length is kept and

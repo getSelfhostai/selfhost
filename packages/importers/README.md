@@ -38,6 +38,22 @@ for secret-shaped values and email addresses, and cut at 120 characters. File co
 bodies, tool output and, unless `logPrompts` is on, prompt text are never stored. Any field that
 was masked is listed in `redacted`.
 
+## Request types
+
+Each `cost.recorded` event gets `data.request_type` (see
+[`packages/spend`](../spend/README.md#request-types)) and, when the log names one,
+`data.request_source`:
+
+- Claude Code: the `querySource` of the `api-request` line the response's `requestRef` points at
+  (`repl_main_thread`, `agent:builtin:Explore`, ...). Without it, `isSidechain` means
+  `subagent`, else `main`. The first response in a thread after a `system` `api_error` line or a
+  synthetic `isApiErrorMessage` line is a `retry`, unless a new prompt comes first. Background
+  requests such as `agent_summary` are not in transcripts at all.
+- Codex: `session_meta` `source` and `thread_source` give the rollout's type (`main`, `subagent`,
+  `compaction` for compact subagents, `background` for guardian reviews, memory consolidation and
+  feature threads), and compaction request records are `compaction`. Rollouts do not persist API
+  errors, so Codex retries are not visible here.
+
 ## Ids and re-imports
 
 Each event id is a UUIDv7 whose time bits hold the event time and whose other bits come from a
