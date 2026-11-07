@@ -4,8 +4,9 @@ The open backend for your coding agent fleet: one ledger, one review list, one t
 
 ## Status
 
-Early. Not ready for use. The repository has the toolchain, the v1 contracts, the ledger store
-and an API server that ingests and searches events; the importers and review list come next.
+Early. Not ready for use. The repository has the toolchain, the v1 contracts, the ledger store,
+an API server that ingests and searches events, and importers for local Claude Code and Codex
+session logs. The review list and team config come next.
 
 ## What it is
 
@@ -24,7 +25,7 @@ It runs as a laptop install (embedded Postgres via PGlite, no Docker), a self-ho
 | -------------------- | ------------------------------------------------------------------------------------------- |
 | `packages/schema`    | v1 contracts: ledger event, `selfhost.toml`, review item, hook payloads, OpenAPI, MCP tools |
 | `packages/ledger`    | Append-only ledger store on Postgres or PGlite, plus a mapper per event source              |
-| `packages/importers` | Log and API importers (placeholder)                                                         |
+| `packages/importers` | Local session log importers for Claude Code and Codex (pricing ported from ccusage, MIT)    |
 | `packages/sdk`       | API client (placeholder)                                                                    |
 | `apps/server`        | HTTP API server (Hono)                                                                      |
 | `apps/cli`           | `selfhost` command line                                                                     |
@@ -49,6 +50,13 @@ Other scripts: `pnpm build`, `pnpm format`, `pnpm build:cli` (standalone binarie
 
 After changing a contract in `packages/schema/src`, run `pnpm --filter @selfhost/schema export`
 to regenerate the JSON Schema, OpenAPI and MCP files; a test fails if they are stale.
+
+Import the last 30 days of local session logs into the embedded ledger (`~/.selfhost/data`):
+
+```sh
+pnpm --filter @selfhost/cli dev import
+pnpm --filter @selfhost/cli dev import --watch
+```
 
 ## License
 

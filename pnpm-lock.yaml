@@ -80,6 +80,12 @@ importers:
 
   apps/cli:
     dependencies:
+      '@selfhost/importers':
+        specifier: workspace:*
+        version: link:../../packages/importers
+      '@selfhost/ledger':
+        specifier: workspace:*
+        version: link:../../packages/ledger
       '@selfhost/schema':
         specifier: workspace:*
         version: link:../../packages/schema

@@ -19,6 +19,8 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@selfhost/importers": "workspace:*",
+    "@selfhost/ledger": "workspace:*",
     "@selfhost/schema": "workspace:*",
     "commander": "catalog:"
   },
