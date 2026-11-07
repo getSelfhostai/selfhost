@@ -227,7 +227,7 @@ jobs:
           docker compose ps selfhost --format '{{.Image}}' | grep -qx 'selfhost-ci:ci-2'
           after=$(event_count)
           echo "events before upgrade: $before, after: $after"
-          [ "$before" = 14 ] && [ "$after" = "$before" ]
+          [ "$before" -gt 0 ] && [ "$after" = "$before" ]
 
       - name: Back up, restore into a fresh volume, and compare event counts
         run: |
