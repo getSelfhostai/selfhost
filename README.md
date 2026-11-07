@@ -5,8 +5,9 @@ The open backend for your coding agent fleet: one ledger, one review list, one t
 ## Status
 
 Early. Not ready for use. The repository has the toolchain, the v1 contracts, the ledger store,
-an API server that ingests and searches events, and importers for local Claude Code and Codex
-session logs. The review list and team config come next.
+an API server that ingests and searches events, importers for local Claude Code and Codex
+session logs, and `selfhost agents`, which finds installed agents and their logins and writes
+selfhost's settings into each agent's own config. The review list and team config come next.
 
 ## What it is
 
@@ -27,6 +28,7 @@ It runs as a laptop install (embedded Postgres via PGlite, no Docker), a self-ho
 | `packages/ledger`    | Append-only ledger store on Postgres or PGlite, plus a mapper per event source              |
 | `packages/importers` | Local session log importers for Claude Code and Codex (pricing ported from ccusage, MIT)    |
 | `packages/spend`     | Spend by request type, agent, model and person, and the waste detector                      |
+| `packages/agents`    | Agent and login detection, context file listing, and config writing for five agent CLIs     |
 | `packages/sdk`       | API client (placeholder)                                                                    |
 | `apps/server`        | HTTP API server (Hono)                                                                      |
 | `apps/cli`           | `selfhost` command line                                                                     |

@@ -1,11 +1,18 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { doctor } from "../src/doctor.js";
+
+const dirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 function repo(files: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), "selfhost-doctor-"));
+  dirs.push(dir);
   mkdirSync(join(dir, ".git"));
   for (const [name, content] of Object.entries(files)) {
     mkdirSync(join(dir, name, ".."), { recursive: true });
@@ -14,9 +21,9 @@ function repo(files: Record<string, string>): string {
   return dir;
 }
 
-function run(cwd: string, config?: string, env: NodeJS.ProcessEnv = {}) {
+function run(cwd: string, config?: string, env: NodeJS.ProcessEnv = {}, json = false) {
   const lines: string[] = [];
-  const code = doctor({ cwd, config, env, version: "0.0.0", write: (l) => lines.push(l) });
+  const code = doctor({ cwd, config, env, version: "0.0.0", write: (l) => lines.push(l), json });
   return { code, output: lines.join("\n") };
 }
 
@@ -67,5 +74,29 @@ describe("selfhost doctor", () => {
     const dir = repo({ "conf/team.toml": "version = 1\n" });
     const { output } = run(dir, undefined, { SELFHOST_CONFIG: "conf/team.toml" });
     expect(output).toContain(join(dir, "conf", "team.toml"));
+  });
+
+  it("prints the same facts as JSON", () => {
+    const dir = repo({ "selfhost.toml": 'version = 1\n[ledger]\nretention_days = "x"\n' });
+    const { code, output } = run(dir, undefined, {}, true);
+    expect(code).toBe(1);
+    const report = JSON.parse(output);
+    expect(Object.keys(report)).toEqual(["schema", "version", "runtime", "config"]);
+    expect(report.runtime).toEqual({
+      node: process.version,
+      bun: process.versions.bun ?? null,
+      platform: process.platform,
+      arch: process.arch,
+    });
+    expect(report.config).toEqual({
+      path: join(dir, "selfhost.toml"),
+      from: "search",
+      rules: 0,
+      enforced: 0,
+      errors: [{ field: "ledger.retention_days", line: 3, message: "Expected integer" }],
+      exists: true,
+      valid: false,
+    });
+    expect(JSON.parse(run(repo({}), undefined, {}, true).output).config).toBeNull();
   });
 });

@@ -55,4 +55,22 @@ describe("selfhost import", () => {
       await ledger.close();
     }
   });
+
+  it("prints one JSON object with --json", async () => {
+    const ledger = await openLedger({ dataDir: "memory://" });
+    const lines: string[] = [];
+    try {
+      await runImport(
+        { ...sources, json: true },
+        { env: {}, write: (line) => lines.push(line) },
+        ledger,
+      );
+      expect(lines).toHaveLength(1);
+      const report = JSON.parse(lines[0] ?? "");
+      expect(report).toMatchObject({ schema: "selfhost.import/v1", duplicates: 0 });
+      expect(report.accepted).toBeGreaterThan(0);
+    } finally {
+      await ledger.close();
+    }
+  });
 });

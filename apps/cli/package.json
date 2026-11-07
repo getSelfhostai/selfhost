@@ -19,6 +19,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@selfhost/agents": "workspace:*",
     "@selfhost/importers": "workspace:*",
     "@selfhost/ledger": "workspace:*",
     "@selfhost/schema": "workspace:*",
