@@ -1,0 +1,7 @@
+version = 1
+
+[[rules]]
+id = "broken"
+match = { command = "git push (" }
+action = "block"
+message = "Broken regex."

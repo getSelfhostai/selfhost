@@ -1,0 +1,7 @@
+version = 1
+
+[[rules]]
+id = "ask-before-deploy"
+match = { command = "^(npm|pnpm) run deploy" }
+action = "ask"
+message = "Deploys need a person to approve."

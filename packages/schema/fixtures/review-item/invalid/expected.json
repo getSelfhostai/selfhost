@@ -1,0 +1,20 @@
+{
+  "answered-without-answer.json": {
+    "field": "answer"
+  },
+  "risk-over-100.json": {
+    "field": "risk.score"
+  },
+  "unknown-state.json": {
+    "field": "state"
+  },
+  "missing-owners.json": {
+    "field": "owners"
+  },
+  "unknown-kind.json": {
+    "field": "kind"
+  },
+  "answer-bad-event-id.json": {
+    "field": "answer.decision_event_id"
+  }
+}

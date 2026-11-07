@@ -1,0 +1,67 @@
+version = 1
+
+[org]
+name = "acme"
+
+[ledger]
+retention_days = 180
+log_prompts = false
+
+[[redaction]]
+name = "aws_access_key"
+pattern = "AKIA[0-9A-Z]{16}"
+
+[[redaction]]
+name = "github_token"
+pattern = "gh[pousr]_[A-Za-z0-9]{36}"
+
+[[rules]]
+id = "no-force-push"
+description = "Force pushes rewrite shared history"
+match = { tool = "Bash", command = "git\\s+push\\s+.*--force" }
+action = "block"
+message = "Force pushes are blocked. Open a PR instead."
+irreversible = true
+
+[[rules]]
+id = "protect-migrations"
+mode = "enforce"
+agents = ["claude_code", "codex"]
+action = "ask"
+message = "Migrations need a human review."
+
+[rules.match]
+path = "db/migrations/**"
+
+[[rules]]
+id = "no-prod-urls"
+mode = "off"
+match = { url = "https://*.prod.acme.internal/**" }
+action = "block"
+message = "Agents do not call production services."
+
+[review]
+high_risk_paths = ["db/migrations/**", "infra/**"]
+high_risk_threshold = 65
+
+[review.owners]
+"infra/**" = ["alice@example.com"]
+"db/**" = ["bob@example.com", "carol"]
+
+[packages]
+mode = "observe"
+allow = ["@acme/*"]
+deny = ["event-stream"]
+min_age_days = 7
+
+[alerts]
+spike_factor = 5
+
+[teams.platform]
+members = ["alice@example.com", "bob@example.com"]
+
+[teams.platform.rules.no-force-push]
+mode = "enforce"
+
+[teams.growth]
+members = ["carol"]

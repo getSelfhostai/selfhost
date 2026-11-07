@@ -1,0 +1,23 @@
+{
+  "pre-tool-use-missing-tool-name.json": {
+    "field": "tool_name"
+  },
+  "pre-tool-use-input-not-object.json": {
+    "field": "tool_input"
+  },
+  "missing-session-id.json": {
+    "field": "session_id"
+  },
+  "user-prompt-submit-missing-prompt.json": {
+    "field": "prompt"
+  },
+  "missing-hook-event-name.json": {
+    "field": "hook_event_name"
+  },
+  "unmodeled-event-missing-cwd.json": {
+    "field": "cwd"
+  },
+  "stop-hook-active-not-boolean.json": {
+    "field": "stop_hook_active"
+  }
+}

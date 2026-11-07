@@ -1,0 +1,8 @@
+{
+  "missing-type.json": {
+    "field": "type"
+  },
+  "input-messages-not-array.json": {
+    "field": "input-messages"
+  }
+}

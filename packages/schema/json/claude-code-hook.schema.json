@@ -1,0 +1,855 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://selfhost.ai/schema/v1/claude-code-hook.schema.json",
+  "$comment": "Generated from packages/schema/src. Run `pnpm --filter @selfhost/schema export` after changing the source. Do not edit by hand.",
+  "title": "ClaudeCodeHookInput",
+  "description": "Hook input accepted from Claude Code, one schema per hook_event_name. Unknown fields and unknown events are accepted.",
+  "anyOf": [
+    {
+      "additionalProperties": true,
+      "title": "ClaudeCodeSessionStartHookInput",
+      "description": "A session started or resumed.",
+      "type": "object",
+      "required": [
+        "session_id",
+        "cwd",
+        "hook_event_name",
+        "source"
+      ],
+      "properties": {
+        "session_id": {
+          "description": "Current session id.",
+          "type": "string"
+        },
+        "transcript_path": {
+          "description": "Path to the session transcript (JSONL).",
+          "type": "string"
+        },
+        "cwd": {
+          "description": "Working directory when the hook ran.",
+          "type": "string"
+        },
+        "permission_mode": {
+          "description": "Permission mode: default, plan, acceptEdits, auto, dontAsk or bypassPermissions. Not sent on every event.",
+          "type": "string"
+        },
+        "prompt_id": {
+          "description": "Id of the user prompt being processed. Absent before the first prompt.",
+          "type": "string"
+        },
+        "agent_id": {
+          "description": "Subagent or teammate the hook fired in.",
+          "type": "string"
+        },
+        "agent_type": {
+          "description": "Agent name, for example Explore, when a subagent or --agent is used.",
+          "type": "string"
+        },
+        "effort": {
+          "additionalProperties": true,
+          "description": "Effort level, on events with a tool-use context.",
+          "type": "object",
+          "required": [
+            "level"
+          ],
+          "properties": {
+            "level": {
+              "description": "low, medium, high, xhigh or max.",
+              "type": "string"
+            }
+          }
+        },
+        "scratchpad_dir": {
+          "description": "Session scratchpad directory.",
+          "type": "string"
+        },
+        "hook_event_name": {
+          "const": "SessionStart",
+          "type": "string"
+        },
+        "source": {
+          "description": "startup, resume, clear, compact or fork.",
+          "type": "string"
+        },
+        "model": {
+          "description": "Active model id. Can be missing.",
+          "type": "string"
+        },
+        "session_title": {
+          "type": "string"
+        },
+        "seconds_since_last_response": {
+          "type": "number"
+        },
+        "context_tokens": {
+          "type": "number"
+        },
+        "prompt_cache_likely_expired": {
+          "type": "boolean"
+        },
+        "estimated_cache_write_usd": {
+          "type": "number"
+        }
+      }
+    },
+    {
+      "additionalProperties": true,
+      "title": "ClaudeCodeSessionEndHookInput",
+      "description": "A session ended.",
+      "type": "object",
+      "required": [
+        "session_id",
+        "cwd",
+        "hook_event_name",
+        "reason"
+      ],
+      "properties": {
+        "session_id": {
+          "description": "Current session id.",
+          "type": "string"
+        },
+        "transcript_path": {
+          "description": "Path to the session transcript (JSONL).",
+          "type": "string"
+        },
+        "cwd": {
+          "description": "Working directory when the hook ran.",
+          "type": "string"
+        },
+        "permission_mode": {
+          "description": "Permission mode: default, plan, acceptEdits, auto, dontAsk or bypassPermissions. Not sent on every event.",
+          "type": "string"
+        },
+        "prompt_id": {
+          "description": "Id of the user prompt being processed. Absent before the first prompt.",
+          "type": "string"
+        },
+        "agent_id": {
+          "description": "Subagent or teammate the hook fired in.",
+          "type": "string"
+        },
+        "agent_type": {
+          "description": "Agent name, for example Explore, when a subagent or --agent is used.",
+          "type": "string"
+        },
+        "effort": {
+          "additionalProperties": true,
+          "description": "Effort level, on events with a tool-use context.",
+          "type": "object",
+          "required": [
+            "level"
+          ],
+          "properties": {
+            "level": {
+              "description": "low, medium, high, xhigh or max.",
+              "type": "string"
+            }
+          }
+        },
+        "scratchpad_dir": {
+          "description": "Session scratchpad directory.",
+          "type": "string"
+        },
+        "hook_event_name": {
+          "const": "SessionEnd",
+          "type": "string"
+        },
+        "reason": {
+          "description": "clear, resume, logout, prompt_input_exit or other.",
+          "type": "string"
+        }
+      }
+    },
+    {
+      "additionalProperties": true,
+      "title": "ClaudeCodeUserPromptSubmitHookInput",
+      "description": "The user submitted a prompt.",
+      "type": "object",
+      "required": [
+        "session_id",
+        "cwd",
+        "hook_event_name",
+        "prompt"
+      ],
+      "properties": {
+        "session_id": {
+          "description": "Current session id.",
+          "type": "string"
+        },
+        "transcript_path": {
+          "description": "Path to the session transcript (JSONL).",
+          "type": "string"
+        },
+        "cwd": {
+          "description": "Working directory when the hook ran.",
+          "type": "string"
+        },
+        "permission_mode": {
+          "description": "Permission mode: default, plan, acceptEdits, auto, dontAsk or bypassPermissions. Not sent on every event.",
+          "type": "string"
+        },
+        "prompt_id": {
+          "description": "Id of the user prompt being processed. Absent before the first prompt.",
+          "type": "string"
+        },
+        "agent_id": {
+          "description": "Subagent or teammate the hook fired in.",
+          "type": "string"
+        },
+        "agent_type": {
+          "description": "Agent name, for example Explore, when a subagent or --agent is used.",
+          "type": "string"
+        },
+        "effort": {
+          "additionalProperties": true,
+          "description": "Effort level, on events with a tool-use context.",
+          "type": "object",
+          "required": [
+            "level"
+          ],
+          "properties": {
+            "level": {
+              "description": "low, medium, high, xhigh or max.",
+              "type": "string"
+            }
+          }
+        },
+        "scratchpad_dir": {
+          "description": "Session scratchpad directory.",
+          "type": "string"
+        },
+        "hook_event_name": {
+          "const": "UserPromptSubmit",
+          "type": "string"
+        },
+        "prompt": {
+          "description": "Prompt text. Stored only when ledger.log_prompts is on.",
+          "type": "string"
+        },
+        "session_title": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "additionalProperties": true,
+      "title": "ClaudeCodePreToolUseHookInput",
+      "description": "A tool is about to run. The hook can allow, deny or ask.",
+      "type": "object",
+      "required": [
+        "session_id",
+        "cwd",
+        "hook_event_name",
+        "tool_name",
+        "tool_input"
+      ],
+      "properties": {
+        "session_id": {
+          "description": "Current session id.",
+          "type": "string"
+        },
+        "transcript_path": {
+          "description": "Path to the session transcript (JSONL).",
+          "type": "string"
+        },
+        "cwd": {
+          "description": "Working directory when the hook ran.",
+          "type": "string"
+        },
+        "permission_mode": {
+          "description": "Permission mode: default, plan, acceptEdits, auto, dontAsk or bypassPermissions. Not sent on every event.",
+          "type": "string"
+        },
+        "prompt_id": {
+          "description": "Id of the user prompt being processed. Absent before the first prompt.",
+          "type": "string"
+        },
+        "agent_id": {
+          "description": "Subagent or teammate the hook fired in.",
+          "type": "string"
+        },
+        "agent_type": {
+          "description": "Agent name, for example Explore, when a subagent or --agent is used.",
+          "type": "string"
+        },
+        "effort": {
+          "additionalProperties": true,
+          "description": "Effort level, on events with a tool-use context.",
+          "type": "object",
+          "required": [
+            "level"
+          ],
+          "properties": {
+            "level": {
+              "description": "low, medium, high, xhigh or max.",
+              "type": "string"
+            }
+          }
+        },
+        "scratchpad_dir": {
+          "description": "Session scratchpad directory.",
+          "type": "string"
+        },
+        "hook_event_name": {
+          "const": "PreToolUse",
+          "type": "string"
+        },
+        "tool_name": {
+          "description": "Tool name, for example Bash, Edit or mcp__server__tool.",
+          "type": "string"
+        },
+        "tool_input": {
+          "description": "Tool arguments. File tool paths are absolute.",
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {}
+          }
+        },
+        "tool_use_id": {
+          "description": "Tool call id.",
+          "type": "string"
+        },
+        "mcp_server": {
+          "additionalProperties": true,
+          "description": "MCP server details, for MCP tools only.",
+          "type": "object",
+          "required": [
+            "name",
+            "source"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "source": {
+              "description": "Where the server is defined: plugin, sdk, user, project and others.",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "additionalProperties": true,
+      "title": "ClaudeCodePostToolUseHookInput",
+      "description": "A tool ran successfully.",
+      "type": "object",
+      "required": [
+        "session_id",
+        "cwd",
+        "hook_event_name",
+        "tool_name",
+        "tool_input",
+        "tool_response"
+      ],
+      "properties": {
+        "session_id": {
+          "description": "Current session id.",
+          "type": "string"
+        },
+        "transcript_path": {
+          "description": "Path to the session transcript (JSONL).",
+          "type": "string"
+        },
+        "cwd": {
+          "description": "Working directory when the hook ran.",
+          "type": "string"
+        },
+        "permission_mode": {
+          "description": "Permission mode: default, plan, acceptEdits, auto, dontAsk or bypassPermissions. Not sent on every event.",
+          "type": "string"
+        },
+        "prompt_id": {
+          "description": "Id of the user prompt being processed. Absent before the first prompt.",
+          "type": "string"
+        },
+        "agent_id": {
+          "description": "Subagent or teammate the hook fired in.",
+          "type": "string"
+        },
+        "agent_type": {
+          "description": "Agent name, for example Explore, when a subagent or --agent is used.",
+          "type": "string"
+        },
+        "effort": {
+          "additionalProperties": true,
+          "description": "Effort level, on events with a tool-use context.",
+          "type": "object",
+          "required": [
+            "level"
+          ],
+          "properties": {
+            "level": {
+              "description": "low, medium, high, xhigh or max.",
+              "type": "string"
+            }
+          }
+        },
+        "scratchpad_dir": {
+          "description": "Session scratchpad directory.",
+          "type": "string"
+        },
+        "hook_event_name": {
+          "const": "PostToolUse",
+          "type": "string"
+        },
+        "tool_name": {
+          "description": "Tool name, for example Bash, Edit or mcp__server__tool.",
+          "type": "string"
+        },
+        "tool_input": {
+          "description": "Tool arguments. File tool paths are absolute.",
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {}
+          }
+        },
+        "tool_use_id": {
+          "description": "Tool call id.",
+          "type": "string"
+        },
+        "mcp_server": {
+          "additionalProperties": true,
+          "description": "MCP server details, for MCP tools only.",
+          "type": "object",
+          "required": [
+            "name",
+            "source"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "source": {
+              "description": "Where the server is defined: plugin, sdk, user, project and others.",
+              "type": "string"
+            }
+          }
+        },
+        "tool_response": {
+          "description": "Tool result. Shape depends on the tool."
+        },
+        "duration_ms": {
+          "description": "Tool run time in milliseconds.",
+          "type": "number"
+        }
+      }
+    },
+    {
+      "additionalProperties": true,
+      "title": "ClaudeCodeNotificationHookInput",
+      "description": "Claude Code raised a notification, for example a permission prompt or idle prompt.",
+      "type": "object",
+      "required": [
+        "session_id",
+        "cwd",
+        "hook_event_name",
+        "message"
+      ],
+      "properties": {
+        "session_id": {
+          "description": "Current session id.",
+          "type": "string"
+        },
+        "transcript_path": {
+          "description": "Path to the session transcript (JSONL).",
+          "type": "string"
+        },
+        "cwd": {
+          "description": "Working directory when the hook ran.",
+          "type": "string"
+        },
+        "permission_mode": {
+          "description": "Permission mode: default, plan, acceptEdits, auto, dontAsk or bypassPermissions. Not sent on every event.",
+          "type": "string"
+        },
+        "prompt_id": {
+          "description": "Id of the user prompt being processed. Absent before the first prompt.",
+          "type": "string"
+        },
+        "agent_id": {
+          "description": "Subagent or teammate the hook fired in.",
+          "type": "string"
+        },
+        "agent_type": {
+          "description": "Agent name, for example Explore, when a subagent or --agent is used.",
+          "type": "string"
+        },
+        "effort": {
+          "additionalProperties": true,
+          "description": "Effort level, on events with a tool-use context.",
+          "type": "object",
+          "required": [
+            "level"
+          ],
+          "properties": {
+            "level": {
+              "description": "low, medium, high, xhigh or max.",
+              "type": "string"
+            }
+          }
+        },
+        "scratchpad_dir": {
+          "description": "Session scratchpad directory.",
+          "type": "string"
+        },
+        "hook_event_name": {
+          "const": "Notification",
+          "type": "string"
+        },
+        "message": {
+          "description": "Notification text.",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "notification_type": {
+          "description": "permission_prompt, idle_prompt, auth_success, elicitation_dialog and others.",
+          "type": "string"
+        }
+      }
+    },
+    {
+      "additionalProperties": true,
+      "title": "ClaudeCodeStopHookInput",
+      "description": "The main agent finished its turn.",
+      "type": "object",
+      "required": [
+        "session_id",
+        "cwd",
+        "hook_event_name"
+      ],
+      "properties": {
+        "session_id": {
+          "description": "Current session id.",
+          "type": "string"
+        },
+        "transcript_path": {
+          "description": "Path to the session transcript (JSONL).",
+          "type": "string"
+        },
+        "cwd": {
+          "description": "Working directory when the hook ran.",
+          "type": "string"
+        },
+        "permission_mode": {
+          "description": "Permission mode: default, plan, acceptEdits, auto, dontAsk or bypassPermissions. Not sent on every event.",
+          "type": "string"
+        },
+        "prompt_id": {
+          "description": "Id of the user prompt being processed. Absent before the first prompt.",
+          "type": "string"
+        },
+        "agent_id": {
+          "description": "Subagent or teammate the hook fired in.",
+          "type": "string"
+        },
+        "agent_type": {
+          "description": "Agent name, for example Explore, when a subagent or --agent is used.",
+          "type": "string"
+        },
+        "effort": {
+          "additionalProperties": true,
+          "description": "Effort level, on events with a tool-use context.",
+          "type": "object",
+          "required": [
+            "level"
+          ],
+          "properties": {
+            "level": {
+              "description": "low, medium, high, xhigh or max.",
+              "type": "string"
+            }
+          }
+        },
+        "scratchpad_dir": {
+          "description": "Session scratchpad directory.",
+          "type": "string"
+        },
+        "hook_event_name": {
+          "const": "Stop",
+          "type": "string"
+        },
+        "stop_hook_active": {
+          "description": "true when the turn is already continuing because of a Stop hook.",
+          "type": "boolean"
+        },
+        "last_assistant_message": {
+          "description": "Text of the final assistant message.",
+          "type": "string"
+        },
+        "background_tasks": {
+          "description": "Tasks still running in the background.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "patternProperties": {
+              "^(.*)$": {}
+            }
+          }
+        },
+        "session_crons": {
+          "description": "Scheduled wakeups for the session.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "patternProperties": {
+              "^(.*)$": {}
+            }
+          }
+        }
+      }
+    },
+    {
+      "additionalProperties": true,
+      "title": "ClaudeCodeSubagentStopHookInput",
+      "description": "A subagent finished.",
+      "type": "object",
+      "required": [
+        "session_id",
+        "cwd",
+        "hook_event_name"
+      ],
+      "properties": {
+        "session_id": {
+          "description": "Current session id.",
+          "type": "string"
+        },
+        "transcript_path": {
+          "description": "Path to the session transcript (JSONL).",
+          "type": "string"
+        },
+        "cwd": {
+          "description": "Working directory when the hook ran.",
+          "type": "string"
+        },
+        "permission_mode": {
+          "description": "Permission mode: default, plan, acceptEdits, auto, dontAsk or bypassPermissions. Not sent on every event.",
+          "type": "string"
+        },
+        "prompt_id": {
+          "description": "Id of the user prompt being processed. Absent before the first prompt.",
+          "type": "string"
+        },
+        "agent_id": {
+          "description": "Subagent or teammate the hook fired in.",
+          "type": "string"
+        },
+        "agent_type": {
+          "description": "Agent name, for example Explore, when a subagent or --agent is used.",
+          "type": "string"
+        },
+        "effort": {
+          "additionalProperties": true,
+          "description": "Effort level, on events with a tool-use context.",
+          "type": "object",
+          "required": [
+            "level"
+          ],
+          "properties": {
+            "level": {
+              "description": "low, medium, high, xhigh or max.",
+              "type": "string"
+            }
+          }
+        },
+        "scratchpad_dir": {
+          "description": "Session scratchpad directory.",
+          "type": "string"
+        },
+        "hook_event_name": {
+          "const": "SubagentStop",
+          "type": "string"
+        },
+        "stop_hook_active": {
+          "description": "true when the turn is already continuing because of a Stop hook.",
+          "type": "boolean"
+        },
+        "last_assistant_message": {
+          "description": "Text of the final assistant message.",
+          "type": "string"
+        },
+        "background_tasks": {
+          "description": "Tasks still running in the background.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "patternProperties": {
+              "^(.*)$": {}
+            }
+          }
+        },
+        "session_crons": {
+          "description": "Scheduled wakeups for the session.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "patternProperties": {
+              "^(.*)$": {}
+            }
+          }
+        },
+        "agent_transcript_path": {
+          "description": "The subagent's transcript.",
+          "type": "string"
+        }
+      }
+    },
+    {
+      "additionalProperties": true,
+      "title": "ClaudeCodePreCompactHookInput",
+      "description": "Context compaction is about to run.",
+      "type": "object",
+      "required": [
+        "session_id",
+        "cwd",
+        "hook_event_name",
+        "trigger"
+      ],
+      "properties": {
+        "session_id": {
+          "description": "Current session id.",
+          "type": "string"
+        },
+        "transcript_path": {
+          "description": "Path to the session transcript (JSONL).",
+          "type": "string"
+        },
+        "cwd": {
+          "description": "Working directory when the hook ran.",
+          "type": "string"
+        },
+        "permission_mode": {
+          "description": "Permission mode: default, plan, acceptEdits, auto, dontAsk or bypassPermissions. Not sent on every event.",
+          "type": "string"
+        },
+        "prompt_id": {
+          "description": "Id of the user prompt being processed. Absent before the first prompt.",
+          "type": "string"
+        },
+        "agent_id": {
+          "description": "Subagent or teammate the hook fired in.",
+          "type": "string"
+        },
+        "agent_type": {
+          "description": "Agent name, for example Explore, when a subagent or --agent is used.",
+          "type": "string"
+        },
+        "effort": {
+          "additionalProperties": true,
+          "description": "Effort level, on events with a tool-use context.",
+          "type": "object",
+          "required": [
+            "level"
+          ],
+          "properties": {
+            "level": {
+              "description": "low, medium, high, xhigh or max.",
+              "type": "string"
+            }
+          }
+        },
+        "scratchpad_dir": {
+          "description": "Session scratchpad directory.",
+          "type": "string"
+        },
+        "hook_event_name": {
+          "const": "PreCompact",
+          "type": "string"
+        },
+        "trigger": {
+          "description": "manual or auto.",
+          "type": "string"
+        },
+        "custom_instructions": {
+          "description": "Instructions passed to /compact.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "additionalProperties": true,
+      "title": "ClaudeCodeOtherHookInput",
+      "description": "Any other hook event. Only the common fields are checked.",
+      "type": "object",
+      "required": [
+        "session_id",
+        "cwd",
+        "hook_event_name"
+      ],
+      "properties": {
+        "session_id": {
+          "description": "Current session id.",
+          "type": "string"
+        },
+        "transcript_path": {
+          "description": "Path to the session transcript (JSONL).",
+          "type": "string"
+        },
+        "cwd": {
+          "description": "Working directory when the hook ran.",
+          "type": "string"
+        },
+        "permission_mode": {
+          "description": "Permission mode: default, plan, acceptEdits, auto, dontAsk or bypassPermissions. Not sent on every event.",
+          "type": "string"
+        },
+        "prompt_id": {
+          "description": "Id of the user prompt being processed. Absent before the first prompt.",
+          "type": "string"
+        },
+        "agent_id": {
+          "description": "Subagent or teammate the hook fired in.",
+          "type": "string"
+        },
+        "agent_type": {
+          "description": "Agent name, for example Explore, when a subagent or --agent is used.",
+          "type": "string"
+        },
+        "effort": {
+          "additionalProperties": true,
+          "description": "Effort level, on events with a tool-use context.",
+          "type": "object",
+          "required": [
+            "level"
+          ],
+          "properties": {
+            "level": {
+              "description": "low, medium, high, xhigh or max.",
+              "type": "string"
+            }
+          }
+        },
+        "scratchpad_dir": {
+          "description": "Session scratchpad directory.",
+          "type": "string"
+        },
+        "hook_event_name": {
+          "description": "An event this version of the schema does not model yet.",
+          "not": {
+            "enum": [
+              "SessionStart",
+              "SessionEnd",
+              "UserPromptSubmit",
+              "PreToolUse",
+              "PostToolUse",
+              "Notification",
+              "Stop",
+              "SubagentStop",
+              "PreCompact"
+            ]
+          },
+          "type": "string"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "name": "@selfhost/schema",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Versioned contracts for selfhost: ledger event, selfhost.toml, review item, agent hook payloads, HTTP API and MCP tools.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./json/*": "./json/*",
+    "./openapi.yaml": "./openapi.yaml",
+    "./mcp-tools.json": "./mcp-tools.json"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./json/*": "./json/*",
+      "./openapi.yaml": "./openapi.yaml",
+      "./mcp-tools.json": "./mcp-tools.json"
+    }
+  },
+  "files": [
+    "dist",
+    "json",
+    "openapi.yaml",
+    "mcp-tools.json",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "export": "tsx scripts/export.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "catalog:",
+    "smol-toml": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "ajv": "catalog:",
+    "ajv-formats": "catalog:",
+    "tsup": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:",
+    "yaml": "catalog:"
+  }
+}

@@ -1,0 +1,955 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://selfhost.ai/schema/v1/codex-hook.schema.json",
+  "$comment": "Generated from packages/schema/src. Run `pnpm --filter @selfhost/schema export` after changing the source. Do not edit by hand.",
+  "title": "CodexHookInput",
+  "description": "Hook input accepted from Codex, one schema per hook_event_name. Unknown fields and unknown events are accepted.",
+  "anyOf": [
+    {
+      "additionalProperties": true,
+      "title": "CodexSessionStartHookInput",
+      "description": "A session started.",
+      "type": "object",
+      "required": [
+        "session_id",
+        "cwd",
+        "hook_event_name",
+        "source"
+      ],
+      "properties": {
+        "session_id": {
+          "description": "Codex thread id.",
+          "type": "string"
+        },
+        "turn_id": {
+          "description": "Active turn id, on turn-scoped events.",
+          "type": "string"
+        },
+        "transcript_path": {
+          "description": "Path to the session rollout file, or null.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cwd": {
+          "description": "Working directory.",
+          "type": "string"
+        },
+        "model": {
+          "description": "Active model id.",
+          "type": "string"
+        },
+        "permission_mode": {
+          "description": "default, acceptEdits, plan, dontAsk or bypassPermissions.",
+          "type": "string"
+        },
+        "agent_id": {
+          "description": "Subagent id.",
+          "type": "string"
+        },
+        "agent_type": {
+          "description": "Subagent type.",
+          "type": "string"
+        },
+        "hook_event_name": {
+          "const": "SessionStart",
+          "type": "string"
+        },
+        "source": {
+          "description": "startup, resume, clear, compact or fork.",
+          "type": "string"
+        }
+      }
+    },
+    {
+      "additionalProperties": true,
+      "title": "CodexSessionEndHookInput",
+      "description": "A session ended.",
+      "type": "object",
+      "required": [
+        "session_id",
+        "cwd",
+        "hook_event_name",
+        "reason"
+      ],
+      "properties": {
+        "session_id": {
+          "description": "Codex thread id.",
+          "type": "string"
+        },
+        "turn_id": {
+          "description": "Active turn id, on turn-scoped events.",
+          "type": "string"
+        },
+        "transcript_path": {
+          "description": "Path to the session rollout file, or null.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cwd": {
+          "description": "Working directory.",
+          "type": "string"
+        },
+        "model": {
+          "description": "Active model id.",
+          "type": "string"
+        },
+        "permission_mode": {
+          "description": "default, acceptEdits, plan, dontAsk or bypassPermissions.",
+          "type": "string"
+        },
+        "agent_id": {
+          "description": "Subagent id.",
+          "type": "string"
+        },
+        "agent_type": {
+          "description": "Subagent type.",
+          "type": "string"
+        },
+        "hook_event_name": {
+          "const": "SessionEnd",
+          "type": "string"
+        },
+        "reason": {
+          "description": "End reason. Codex currently always sends other.",
+          "type": "string"
+        }
+      }
+    },
+    {
+      "additionalProperties": true,
+      "title": "CodexUserPromptSubmitHookInput",
+      "description": "The user submitted a prompt.",
+      "type": "object",
+      "required": [
+        "session_id",
+        "cwd",
+        "hook_event_name",
+        "prompt"
+      ],
+      "properties": {
+        "session_id": {
+          "description": "Codex thread id.",
+          "type": "string"
+        },
+        "turn_id": {
+          "description": "Active turn id, on turn-scoped events.",
+          "type": "string"
+        },
+        "transcript_path": {
+          "description": "Path to the session rollout file, or null.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cwd": {
+          "description": "Working directory.",
+          "type": "string"
+        },
+        "model": {
+          "description": "Active model id.",
+          "type": "string"
+        },
+        "permission_mode": {
+          "description": "default, acceptEdits, plan, dontAsk or bypassPermissions.",
+          "type": "string"
+        },
+        "agent_id": {
+          "description": "Subagent id.",
+          "type": "string"
+        },
+        "agent_type": {
+          "description": "Subagent type.",
+          "type": "string"
+        },
+        "hook_event_name": {
+          "const": "UserPromptSubmit",
+          "type": "string"
+        },
+        "prompt": {
+          "description": "Prompt text. Stored only when ledger.log_prompts is on.",
+          "type": "string"
+        }
+      }
+    },
+    {
+      "additionalProperties": true,
+      "title": "CodexPreToolUseHookInput",
+      "description": "A tool is about to run.",
+      "type": "object",
+      "required": [
+        "session_id",
+        "cwd",
+        "hook_event_name",
+        "tool_name",
+        "tool_input"
+      ],
+      "properties": {
+        "session_id": {
+          "description": "Codex thread id.",
+          "type": "string"
+        },
+        "turn_id": {
+          "description": "Active turn id, on turn-scoped events.",
+          "type": "string"
+        },
+        "transcript_path": {
+          "description": "Path to the session rollout file, or null.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cwd": {
+          "description": "Working directory.",
+          "type": "string"
+        },
+        "model": {
+          "description": "Active model id.",
+          "type": "string"
+        },
+        "permission_mode": {
+          "description": "default, acceptEdits, plan, dontAsk or bypassPermissions.",
+          "type": "string"
+        },
+        "agent_id": {
+          "description": "Subagent id.",
+          "type": "string"
+        },
+        "agent_type": {
+          "description": "Subagent type.",
+          "type": "string"
+        },
+        "hook_event_name": {
+          "const": "PreToolUse",
+          "type": "string"
+        },
+        "tool_name": {
+          "description": "Tool name, for example Bash or apply_patch.",
+          "type": "string"
+        },
+        "tool_input": {
+          "description": "Tool arguments. Usually an object."
+        },
+        "tool_use_id": {
+          "description": "Tool call id. Short and opaque.",
+          "type": "string"
+        }
+      }
+    },
+    {
+      "additionalProperties": true,
+      "title": "CodexPermissionRequestHookInput",
+      "description": "Codex asks for permission to run a tool.",
+      "type": "object",
+      "required": [
+        "session_id",
+        "cwd",
+        "hook_event_name",
+        "tool_name",
+        "tool_input"
+      ],
+      "properties": {
+        "session_id": {
+          "description": "Codex thread id.",
+          "type": "string"
+        },
+        "turn_id": {
+          "description": "Active turn id, on turn-scoped events.",
+          "type": "string"
+        },
+        "transcript_path": {
+          "description": "Path to the session rollout file, or null.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cwd": {
+          "description": "Working directory.",
+          "type": "string"
+        },
+        "model": {
+          "description": "Active model id.",
+          "type": "string"
+        },
+        "permission_mode": {
+          "description": "default, acceptEdits, plan, dontAsk or bypassPermissions.",
+          "type": "string"
+        },
+        "agent_id": {
+          "description": "Subagent id.",
+          "type": "string"
+        },
+        "agent_type": {
+          "description": "Subagent type.",
+          "type": "string"
+        },
+        "hook_event_name": {
+          "const": "PermissionRequest",
+          "type": "string"
+        },
+        "tool_name": {
+          "description": "Tool name, for example Bash or apply_patch.",
+          "type": "string"
+        },
+        "tool_input": {
+          "description": "Tool arguments. Usually an object."
+        }
+      }
+    },
+    {
+      "additionalProperties": true,
+      "title": "CodexPostToolUseHookInput",
+      "description": "A tool ran.",
+      "type": "object",
+      "required": [
+        "session_id",
+        "cwd",
+        "hook_event_name",
+        "tool_name",
+        "tool_input"
+      ],
+      "properties": {
+        "session_id": {
+          "description": "Codex thread id.",
+          "type": "string"
+        },
+        "turn_id": {
+          "description": "Active turn id, on turn-scoped events.",
+          "type": "string"
+        },
+        "transcript_path": {
+          "description": "Path to the session rollout file, or null.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cwd": {
+          "description": "Working directory.",
+          "type": "string"
+        },
+        "model": {
+          "description": "Active model id.",
+          "type": "string"
+        },
+        "permission_mode": {
+          "description": "default, acceptEdits, plan, dontAsk or bypassPermissions.",
+          "type": "string"
+        },
+        "agent_id": {
+          "description": "Subagent id.",
+          "type": "string"
+        },
+        "agent_type": {
+          "description": "Subagent type.",
+          "type": "string"
+        },
+        "hook_event_name": {
+          "const": "PostToolUse",
+          "type": "string"
+        },
+        "tool_name": {
+          "description": "Tool name, for example Bash or apply_patch.",
+          "type": "string"
+        },
+        "tool_input": {
+          "description": "Tool arguments. Usually an object."
+        },
+        "tool_response": {
+          "description": "Tool result."
+        },
+        "tool_use_id": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "additionalProperties": true,
+      "title": "CodexPostModelRequestHookInput",
+      "description": "A model request finished.",
+      "type": "object",
+      "required": [
+        "session_id",
+        "cwd",
+        "hook_event_name"
+      ],
+      "properties": {
+        "session_id": {
+          "description": "Codex thread id.",
+          "type": "string"
+        },
+        "turn_id": {
+          "description": "Active turn id, on turn-scoped events.",
+          "type": "string"
+        },
+        "transcript_path": {
+          "description": "Path to the session rollout file, or null.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cwd": {
+          "description": "Working directory.",
+          "type": "string"
+        },
+        "model": {
+          "description": "Active model id.",
+          "type": "string"
+        },
+        "permission_mode": {
+          "description": "default, acceptEdits, plan, dontAsk or bypassPermissions.",
+          "type": "string"
+        },
+        "agent_id": {
+          "description": "Subagent id.",
+          "type": "string"
+        },
+        "agent_type": {
+          "description": "Subagent type.",
+          "type": "string"
+        },
+        "hook_event_name": {
+          "const": "PostModelRequest",
+          "type": "string"
+        },
+        "status": {
+          "description": "completed, failed or cancelled.",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "token_usage": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object",
+              "properties": {
+                "input_tokens": {
+                  "type": "integer"
+                },
+                "cached_input_tokens": {
+                  "type": "integer"
+                },
+                "cache_write_input_tokens": {
+                  "type": "integer"
+                },
+                "output_tokens": {
+                  "type": "integer"
+                },
+                "reasoning_output_tokens": {
+                  "type": "integer"
+                },
+                "total_tokens": {
+                  "type": "integer"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "additionalProperties": true,
+      "title": "CodexStopHookInput",
+      "description": "The agent finished its turn.",
+      "type": "object",
+      "required": [
+        "session_id",
+        "cwd",
+        "hook_event_name"
+      ],
+      "properties": {
+        "session_id": {
+          "description": "Codex thread id.",
+          "type": "string"
+        },
+        "turn_id": {
+          "description": "Active turn id, on turn-scoped events.",
+          "type": "string"
+        },
+        "transcript_path": {
+          "description": "Path to the session rollout file, or null.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cwd": {
+          "description": "Working directory.",
+          "type": "string"
+        },
+        "model": {
+          "description": "Active model id.",
+          "type": "string"
+        },
+        "permission_mode": {
+          "description": "default, acceptEdits, plan, dontAsk or bypassPermissions.",
+          "type": "string"
+        },
+        "agent_id": {
+          "description": "Subagent id.",
+          "type": "string"
+        },
+        "agent_type": {
+          "description": "Subagent type.",
+          "type": "string"
+        },
+        "hook_event_name": {
+          "const": "Stop",
+          "type": "string"
+        },
+        "stop_hook_active": {
+          "type": "boolean"
+        },
+        "last_assistant_message": {
+          "description": "Text of the final assistant message.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "additionalProperties": true,
+      "title": "CodexSubagentStartHookInput",
+      "description": "A subagent started.",
+      "type": "object",
+      "required": [
+        "session_id",
+        "cwd",
+        "hook_event_name"
+      ],
+      "properties": {
+        "session_id": {
+          "description": "Codex thread id.",
+          "type": "string"
+        },
+        "turn_id": {
+          "description": "Active turn id, on turn-scoped events.",
+          "type": "string"
+        },
+        "transcript_path": {
+          "description": "Path to the session rollout file, or null.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cwd": {
+          "description": "Working directory.",
+          "type": "string"
+        },
+        "model": {
+          "description": "Active model id.",
+          "type": "string"
+        },
+        "permission_mode": {
+          "description": "default, acceptEdits, plan, dontAsk or bypassPermissions.",
+          "type": "string"
+        },
+        "agent_id": {
+          "description": "Subagent id.",
+          "type": "string"
+        },
+        "agent_type": {
+          "description": "Subagent type.",
+          "type": "string"
+        },
+        "hook_event_name": {
+          "const": "SubagentStart",
+          "type": "string"
+        }
+      }
+    },
+    {
+      "additionalProperties": true,
+      "title": "CodexSubagentStopHookInput",
+      "description": "A subagent finished.",
+      "type": "object",
+      "required": [
+        "session_id",
+        "cwd",
+        "hook_event_name"
+      ],
+      "properties": {
+        "session_id": {
+          "description": "Codex thread id.",
+          "type": "string"
+        },
+        "turn_id": {
+          "description": "Active turn id, on turn-scoped events.",
+          "type": "string"
+        },
+        "transcript_path": {
+          "description": "Path to the session rollout file, or null.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cwd": {
+          "description": "Working directory.",
+          "type": "string"
+        },
+        "model": {
+          "description": "Active model id.",
+          "type": "string"
+        },
+        "permission_mode": {
+          "description": "default, acceptEdits, plan, dontAsk or bypassPermissions.",
+          "type": "string"
+        },
+        "agent_id": {
+          "description": "Subagent id.",
+          "type": "string"
+        },
+        "agent_type": {
+          "description": "Subagent type.",
+          "type": "string"
+        },
+        "hook_event_name": {
+          "const": "SubagentStop",
+          "type": "string"
+        },
+        "stop_hook_active": {
+          "type": "boolean"
+        },
+        "last_assistant_message": {
+          "description": "Text of the final assistant message.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "agent_transcript_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "additionalProperties": true,
+      "title": "CodexPreCompactHookInput",
+      "description": "Context compaction is about to run.",
+      "type": "object",
+      "required": [
+        "session_id",
+        "cwd",
+        "hook_event_name",
+        "trigger"
+      ],
+      "properties": {
+        "session_id": {
+          "description": "Codex thread id.",
+          "type": "string"
+        },
+        "turn_id": {
+          "description": "Active turn id, on turn-scoped events.",
+          "type": "string"
+        },
+        "transcript_path": {
+          "description": "Path to the session rollout file, or null.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cwd": {
+          "description": "Working directory.",
+          "type": "string"
+        },
+        "model": {
+          "description": "Active model id.",
+          "type": "string"
+        },
+        "permission_mode": {
+          "description": "default, acceptEdits, plan, dontAsk or bypassPermissions.",
+          "type": "string"
+        },
+        "agent_id": {
+          "description": "Subagent id.",
+          "type": "string"
+        },
+        "agent_type": {
+          "description": "Subagent type.",
+          "type": "string"
+        },
+        "hook_event_name": {
+          "const": "PreCompact",
+          "type": "string"
+        },
+        "trigger": {
+          "description": "manual or auto.",
+          "type": "string"
+        }
+      }
+    },
+    {
+      "additionalProperties": true,
+      "title": "CodexPostCompactHookInput",
+      "description": "Context compaction finished.",
+      "type": "object",
+      "required": [
+        "session_id",
+        "cwd",
+        "hook_event_name",
+        "trigger"
+      ],
+      "properties": {
+        "session_id": {
+          "description": "Codex thread id.",
+          "type": "string"
+        },
+        "turn_id": {
+          "description": "Active turn id, on turn-scoped events.",
+          "type": "string"
+        },
+        "transcript_path": {
+          "description": "Path to the session rollout file, or null.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cwd": {
+          "description": "Working directory.",
+          "type": "string"
+        },
+        "model": {
+          "description": "Active model id.",
+          "type": "string"
+        },
+        "permission_mode": {
+          "description": "default, acceptEdits, plan, dontAsk or bypassPermissions.",
+          "type": "string"
+        },
+        "agent_id": {
+          "description": "Subagent id.",
+          "type": "string"
+        },
+        "agent_type": {
+          "description": "Subagent type.",
+          "type": "string"
+        },
+        "hook_event_name": {
+          "const": "PostCompact",
+          "type": "string"
+        },
+        "trigger": {
+          "description": "manual or auto.",
+          "type": "string"
+        }
+      }
+    },
+    {
+      "additionalProperties": true,
+      "title": "CodexInterruptHookInput",
+      "description": "The user interrupted the turn.",
+      "type": "object",
+      "required": [
+        "session_id",
+        "cwd",
+        "hook_event_name"
+      ],
+      "properties": {
+        "session_id": {
+          "description": "Codex thread id.",
+          "type": "string"
+        },
+        "turn_id": {
+          "description": "Active turn id, on turn-scoped events.",
+          "type": "string"
+        },
+        "transcript_path": {
+          "description": "Path to the session rollout file, or null.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cwd": {
+          "description": "Working directory.",
+          "type": "string"
+        },
+        "model": {
+          "description": "Active model id.",
+          "type": "string"
+        },
+        "permission_mode": {
+          "description": "default, acceptEdits, plan, dontAsk or bypassPermissions.",
+          "type": "string"
+        },
+        "agent_id": {
+          "description": "Subagent id.",
+          "type": "string"
+        },
+        "agent_type": {
+          "description": "Subagent type.",
+          "type": "string"
+        },
+        "hook_event_name": {
+          "const": "Interrupt",
+          "type": "string"
+        }
+      }
+    },
+    {
+      "additionalProperties": true,
+      "title": "CodexOtherHookInput",
+      "description": "Any other hook event. Only the common fields are checked.",
+      "type": "object",
+      "required": [
+        "session_id",
+        "cwd",
+        "hook_event_name"
+      ],
+      "properties": {
+        "session_id": {
+          "description": "Codex thread id.",
+          "type": "string"
+        },
+        "turn_id": {
+          "description": "Active turn id, on turn-scoped events.",
+          "type": "string"
+        },
+        "transcript_path": {
+          "description": "Path to the session rollout file, or null.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cwd": {
+          "description": "Working directory.",
+          "type": "string"
+        },
+        "model": {
+          "description": "Active model id.",
+          "type": "string"
+        },
+        "permission_mode": {
+          "description": "default, acceptEdits, plan, dontAsk or bypassPermissions.",
+          "type": "string"
+        },
+        "agent_id": {
+          "description": "Subagent id.",
+          "type": "string"
+        },
+        "agent_type": {
+          "description": "Subagent type.",
+          "type": "string"
+        },
+        "hook_event_name": {
+          "description": "An event this version of the schema does not model yet.",
+          "not": {
+            "enum": [
+              "SessionStart",
+              "SessionEnd",
+              "UserPromptSubmit",
+              "PreToolUse",
+              "PermissionRequest",
+              "PostToolUse",
+              "PostModelRequest",
+              "Stop",
+              "SubagentStart",
+              "SubagentStop",
+              "PreCompact",
+              "PostCompact",
+              "Interrupt"
+            ]
+          },
+          "type": "string"
+        }
+      }
+    }
+  ]
+}

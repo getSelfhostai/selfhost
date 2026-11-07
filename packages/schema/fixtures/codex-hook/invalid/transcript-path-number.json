@@ -1,0 +1,11 @@
+{
+  "session_id": "019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b",
+  "transcript_path": 7,
+  "cwd": "/home/dev/acme-api",
+  "model": "gpt-5-codex",
+  "turn_id": "12345",
+  "hook_event_name": "Stop",
+  "permission_mode": "default",
+  "stop_hook_active": false,
+  "last_assistant_message": "Rename complete."
+}

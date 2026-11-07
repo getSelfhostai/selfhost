@@ -1,0 +1,6 @@
+{
+  "type": "agent-turn-complete",
+  "turn-id": "12345",
+  "input-messages": ["Rename foo to bar"],
+  "last-assistant-message": null
+}

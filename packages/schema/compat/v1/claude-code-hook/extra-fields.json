@@ -1,0 +1,14 @@
+{
+  "session_id": "abc123",
+  "transcript_path": "/home/dev/.claude/projects/-home-dev-acme-api/abc123.jsonl",
+  "cwd": "/home/dev/acme-api",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Read",
+  "tool_input": {
+    "file_path": "/home/dev/acme-api/README.md"
+  },
+  "tool_use_id": "toolu_01ABC126",
+  "some_future_field": {
+    "nested": true
+  }
+}

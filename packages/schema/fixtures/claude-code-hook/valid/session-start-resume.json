@@ -1,0 +1,12 @@
+{
+  "session_id": "abc123",
+  "transcript_path": "/home/dev/.claude/projects/-home-dev-acme-api/abc123.jsonl",
+  "cwd": "/home/dev/acme-api",
+  "hook_event_name": "SessionStart",
+  "source": "resume",
+  "model": "claude-opus-4",
+  "seconds_since_last_response": 5400,
+  "context_tokens": 182340,
+  "prompt_cache_likely_expired": true,
+  "estimated_cache_write_usd": 1.1396
+}

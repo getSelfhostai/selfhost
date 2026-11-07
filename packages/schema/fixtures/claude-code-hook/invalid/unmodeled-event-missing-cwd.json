@@ -1,0 +1,10 @@
+{
+  "session_id": "abc123",
+  "transcript_path": "/home/dev/.claude/projects/-home-dev-acme-api/abc123.jsonl",
+  "permission_mode": "default",
+  "hook_event_name": "PermissionRequest",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "rm -rf build"
+  }
+}

@@ -1,0 +1,573 @@
+# Generated from packages/schema/src. Run `pnpm --filter @selfhost/schema export` after changing the source. Do not edit by hand.
+openapi: 3.1.0
+info:
+  title: selfhost API
+  version: "1"
+  description: "HTTP API of the selfhost server: ledger ingest and search, the review list and team policy. Laptop, self-hosted and hosted installs serve the same API."
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+security:
+  - bearerAuth: []
+paths:
+  /v1/health:
+    get:
+      operationId: getHealth
+      summary: Liveness check.
+      security: []
+      responses:
+        "200":
+          description: Server is up.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /v1/events:
+    post:
+      operationId: ingestEvents
+      summary: Append a batch of ledger events.
+      description: "Atomic: if any event is invalid, nothing is written and the response lists every error by index and field. Event ids are idempotency keys, so retrying a batch is safe."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IngestEventsRequest"
+      responses:
+        "200":
+          description: All events stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestEventsResponse"
+        "400":
+          description: At least one event is invalid. Nothing was written.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestEventsError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          description: More than 1000 events in one batch.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    get:
+      operationId: listEvents
+      summary: Search ledger events.
+      parameters:
+        - name: person
+          in: query
+          required: false
+          description: actor.id of a person.
+          schema:
+            type: string
+        - name: agent
+          in: query
+          required: false
+          description: agent.vendor.
+          schema:
+            type: string
+            enum:
+              - claude_code
+              - codex
+              - opencode
+              - goose
+              - cursor
+              - copilot
+              - other
+        - name: model
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: session
+          in: query
+          required: false
+          description: session_id.
+          schema:
+            type: string
+        - name: kind
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - session.started
+              - session.ended
+              - prompt.submitted
+              - tool.called
+              - tool.result
+              - approval.requested
+              - decision.recorded
+              - cost.recorded
+              - commit.created
+              - pr.opened
+              - pr.merged
+              - pr.closed
+              - policy.evaluated
+              - alert.raised
+        - name: from
+          in: query
+          required: false
+          description: Events at or after this time.
+          schema:
+            format: date-time
+            type: string
+        - name: to
+          in: query
+          required: false
+          description: Events before this time.
+          schema:
+            format: date-time
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of results.
+          schema:
+            minimum: 1
+            maximum: 1000
+            default: 100
+            type: integer
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque cursor from next_cursor of the previous page.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: One page of events.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventsPage"
+        "400":
+          description: Invalid filter.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/review-items:
+    get:
+      operationId: listReviewItems
+      summary: List review items, ranked.
+      parameters:
+        - name: state
+          in: query
+          required: false
+          schema:
+            default: open
+            type: string
+            enum:
+              - open
+              - answered
+              - dismissed
+              - expired
+        - name: owner
+          in: query
+          required: false
+          description: Only items this person owns.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of results.
+          schema:
+            minimum: 1
+            maximum: 1000
+            default: 100
+            type: integer
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque cursor from next_cursor of the previous page.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: One page of items.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewItemsPage"
+        "400":
+          description: Invalid filter.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/review-items/{id}/decision:
+    post:
+      operationId: recordDecision
+      summary: Answer a review item.
+      description: Writes a decision.recorded event, attributed to the person the token belongs to, and closes the item.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Review item id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecisionRequest"
+      responses:
+        "200":
+          description: Decision recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DecisionResponse"
+        "400":
+          description: Invalid decision.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No such review item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: The item is no longer open.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/policy:
+    get:
+      operationId: getPolicy
+      summary: Get the team config in use and the rules that apply.
+      parameters:
+        - name: person
+          in: query
+          required: false
+          description: Resolve team overrides for this person.
+          schema:
+            type: string
+        - name: agent
+          in: query
+          required: false
+          description: Only rules for this agent.
+          schema:
+            type: string
+            enum:
+              - claude_code
+              - codex
+              - opencode
+              - goose
+              - cursor
+              - copilot
+              - other
+      responses:
+        "200":
+          description: Policy in use.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PolicyResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: API token from the selfhost server.
+  responses:
+    Unauthorized:
+      description: Missing or invalid bearer token.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+  schemas:
+    LedgerEvent:
+      $ref: ./json/event.schema.json
+    ReviewItem:
+      $ref: ./json/review-item.schema.json
+    SelfhostConfig:
+      $ref: ./json/config.schema.json
+    HealthResponse:
+      additionalProperties: false
+      title: HealthResponse
+      type: object
+      required:
+        - ok
+        - version
+      properties:
+        ok:
+          const: true
+          type: boolean
+        version:
+          description: Server version.
+          type: string
+    ApiError:
+      additionalProperties: false
+      title: ApiError
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          additionalProperties: false
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              description: Stable machine-readable code, for example not_found.
+              type: string
+            message:
+              description: Human-readable message.
+              type: string
+    IngestEventsRequest:
+      additionalProperties: false
+      title: IngestEventsRequest
+      type: object
+      required:
+        - events
+      properties:
+        events:
+          minItems: 1
+          maxItems: 1000
+          type: array
+          items:
+            $ref: "#/components/schemas/LedgerEvent"
+    IngestEventsResponse:
+      additionalProperties: false
+      title: IngestEventsResponse
+      type: object
+      required:
+        - accepted
+        - duplicates
+      properties:
+        accepted:
+          minimum: 0
+          description: Events written by this request.
+          type: integer
+        duplicates:
+          minimum: 0
+          description: Events skipped because an event with the same id was already stored.
+          type: integer
+    IngestEventsError:
+      additionalProperties: false
+      title: IngestEventsError
+      type: object
+      required:
+        - error
+        - errors
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              const: invalid_events
+              type: string
+            message:
+              type: string
+        errors:
+          type: array
+          items:
+            additionalProperties: false
+            type: object
+            required:
+              - index
+              - field
+              - message
+            properties:
+              index:
+                minimum: -1
+                description: Position of the failing event, or -1 when the batch itself is wrong.
+                type: integer
+              field:
+                description: Field path, for example actor.kind.
+                type: string
+              message:
+                type: string
+    EventsPage:
+      additionalProperties: false
+      title: EventsPage
+      type: object
+      required:
+        - events
+        - next_cursor
+      properties:
+        events:
+          description: Newest first.
+          type: array
+          items:
+            $ref: "#/components/schemas/LedgerEvent"
+        next_cursor:
+          description: Pass as cursor to get the next page. null on the last page.
+          anyOf:
+            - type: string
+            - type: "null"
+    ReviewItemsPage:
+      additionalProperties: false
+      title: ReviewItemsPage
+      type: object
+      required:
+        - items
+        - next_cursor
+      properties:
+        items:
+          description: "Ranked: blocking first, then by risk score, then oldest first."
+          type: array
+          items:
+            $ref: "#/components/schemas/ReviewItem"
+        next_cursor:
+          description: Pass as cursor to get the next page. null on the last page.
+          anyOf:
+            - type: string
+            - type: "null"
+    DecisionRequest:
+      additionalProperties: false
+      title: DecisionRequest
+      type: object
+      required:
+        - verdict
+      properties:
+        verdict:
+          type: string
+          enum:
+            - approve
+            - deny
+            - answer
+            - override
+        reason:
+          description: Why. For a question, the answer text.
+          type: string
+    DecisionResponse:
+      additionalProperties: false
+      title: DecisionResponse
+      type: object
+      required:
+        - item
+        - decision_event
+      properties:
+        item:
+          $ref: "#/components/schemas/ReviewItem"
+        decision_event:
+          $ref: "#/components/schemas/LedgerEvent"
+    PolicyResponse:
+      additionalProperties: false
+      title: PolicyResponse
+      type: object
+      required:
+        - hash
+        - loaded_at
+        - config
+        - effective_rules
+      properties:
+        hash:
+          description: sha256 of the selfhost.toml text in use.
+          type: string
+        commit_sha:
+          description: Git commit of selfhost.toml, when it is read from a repo.
+          type: string
+        loaded_at:
+          format: date-time
+          type: string
+        config:
+          $ref: "#/components/schemas/SelfhostConfig"
+        effective_rules:
+          description: Rules after team overrides for the given person and agent, with defaults applied. Rules in mode off are left out.
+          type: array
+          items:
+            additionalProperties: false
+            type: object
+            required:
+              - id
+              - match
+              - action
+              - message
+            properties:
+              id:
+                pattern: ^[A-Za-z0-9][A-Za-z0-9_.-]*$
+                description: Stable rule id, recorded on every decision the rule makes.
+                type: string
+              description:
+                description: What the rule is for.
+                type: string
+              mode:
+                description: observe records what the rule would have done, enforce applies it, off disables it.
+                default: observe
+                type: string
+                enum:
+                  - observe
+                  - enforce
+                  - off
+              agents:
+                minItems: 1
+                description: Agents the rule applies to. "all" matches every agent.
+                default:
+                  - all
+                type: array
+                items:
+                  type: string
+                  enum:
+                    - all
+                    - claude_code
+                    - codex
+                    - opencode
+                    - goose
+                    - cursor
+                    - copilot
+                    - other
+              match:
+                additionalProperties: false
+                minProperties: 1
+                description: What the rule matches. Every field given must match.
+                type: object
+                properties:
+                  tool:
+                    minLength: 1
+                    description: Exact tool name, for example Bash, Edit or an MCP tool name.
+                    type: string
+                  command:
+                    minLength: 1
+                    description: Regular expression tested against shell commands.
+                    type: string
+                  path:
+                    minLength: 1
+                    description: Glob tested against file paths relative to the repository root.
+                    type: string
+                  url:
+                    minLength: 1
+                    description: Glob tested against URLs the agent requests.
+                    type: string
+              action:
+                description: block stops the action, ask sends it to a person.
+                type: string
+                enum:
+                  - block
+                  - ask
+              message:
+                minLength: 1
+                description: Shown to the agent and the person when the rule fires.
+                type: string
+              irreversible:
+                default: false
+                description: true when the matched action cannot be undone, which raises review risk.
+                type: boolean

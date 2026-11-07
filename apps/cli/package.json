@@ -1,0 +1,32 @@
+{
+  "name": "@selfhost/cli",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The selfhost command line.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "selfhost": "./dist/main.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "build:cli": "tsx scripts/build-binaries.ts",
+    "dev": "tsx src/main.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@selfhost/schema": "workspace:*",
+    "commander": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsup": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

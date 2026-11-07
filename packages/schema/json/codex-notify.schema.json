@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://selfhost.ai/schema/v1/codex-notify.schema.json",
+  "$comment": "Generated from packages/schema/src. Run `pnpm --filter @selfhost/schema export` after changing the source. Do not edit by hand.",
+  "title": "CodexNotifyPayload",
+  "description": "JSON that Codex passes as the last argument to the program set in its notify setting, after each agent turn.",
+  "additionalProperties": true,
+  "type": "object",
+  "required": [
+    "type"
+  ],
+  "properties": {
+    "type": {
+      "description": "Notification type. Codex sends agent-turn-complete.",
+      "type": "string"
+    },
+    "thread-id": {
+      "description": "Codex thread (session) id.",
+      "type": "string"
+    },
+    "turn-id": {
+      "description": "Turn id.",
+      "type": "string"
+    },
+    "cwd": {
+      "description": "Working directory.",
+      "type": "string"
+    },
+    "client": {
+      "description": "Client that ran the turn, for example codex-tui.",
+      "type": "string"
+    },
+    "input-messages": {
+      "description": "User messages that started the turn.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "last-assistant-message": {
+      "description": "Final assistant message.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}

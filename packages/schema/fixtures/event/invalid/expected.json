@@ -1,0 +1,44 @@
+{
+  "missing-actor-kind.json": {
+    "field": "actor.kind"
+  },
+  "unknown-kind.json": {
+    "field": "kind"
+  },
+  "id-not-uuidv7.json": {
+    "field": "id"
+  },
+  "ts-without-offset.json": {
+    "field": "ts"
+  },
+  "misspelled-field.json": {
+    "field": "sesion_id"
+  },
+  "decision-kind-without-decision.json": {
+    "field": "decision"
+  },
+  "tool-kind-without-tool.json": {
+    "field": "tool"
+  },
+  "negative-cost.json": {
+    "field": "cost.usd"
+  },
+  "cost-missing-estimated.json": {
+    "field": "cost.estimated"
+  },
+  "repo-not-owner-name.json": {
+    "field": "repo"
+  },
+  "wrong-schema-tag.json": {
+    "field": "schema"
+  },
+  "unknown-verdict.json": {
+    "field": "decision.verdict"
+  },
+  "unknown-vendor.json": {
+    "field": "agent.vendor"
+  },
+  "bad-pr-url.json": {
+    "field": "links.pr_url"
+  }
+}

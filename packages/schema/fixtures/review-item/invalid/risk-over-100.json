@@ -1,0 +1,26 @@
+{
+  "id": "01930c4e-2f1a-7b2c-8d3e-4f5a6b7c8d40",
+  "schema": "selfhost.review_item/v1",
+  "kind": "approval",
+  "title": "Run database migration 0042 on staging",
+  "created_at": "2026-11-07T09:30:00.000Z",
+  "updated_at": "2026-11-07T09:30:00.000Z",
+  "state": "open",
+  "blocking": true,
+  "risk": {
+    "score": 140,
+    "reasons": ["Touches db/migrations", "Irreversible command"]
+  },
+  "repo": "acme/api",
+  "owners": ["alice@example.com"],
+  "agent": {
+    "vendor": "claude_code",
+    "version": "2.1.270"
+  },
+  "session_id": "3f1c9a2e-5b7d-4c1e-9a0b-2d4e6f8a1c3e",
+  "brief": "The agent wants to run `npm run migrate -- --env staging`.\n\n- Adds a NOT NULL column to `orders`\n- No backfill step",
+  "source_event_ids": [
+    "01930c4e-2f1a-7b2c-8d3e-4f5a6b7c8d02",
+    "01930c4e-2f1a-7b2c-8d3e-4f5a6b7c8d03"
+  ]
+}

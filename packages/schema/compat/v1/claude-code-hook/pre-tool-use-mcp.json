@@ -1,0 +1,16 @@
+{
+  "session_id": "abc123",
+  "transcript_path": "/home/dev/.claude/projects/-home-dev-acme-api/abc123.jsonl",
+  "cwd": "/home/dev/acme-api",
+  "permission_mode": "default",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "mcp__github__create_pull_request",
+  "tool_input": {
+    "title": "Add retry"
+  },
+  "tool_use_id": "toolu_01ABC124",
+  "mcp_server": {
+    "name": "github",
+    "source": "user"
+  }
+}

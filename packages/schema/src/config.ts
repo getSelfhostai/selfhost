@@ -1,0 +1,364 @@
+import { type Static, Type } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
+import { parse as parseToml, TomlError } from "smol-toml";
+import { NonEmpty, StringEnum, schemaId } from "./common.js";
+import { AGENT_VENDORS } from "./event.js";
+import { TomlLineIndex } from "./toml-lines.js";
+import {
+  type FieldError,
+  formatField,
+  lazyCheck,
+  type SegmentError,
+  schemaErrors,
+} from "./validate.js";
+
+export const CONFIG_FILE_NAME = "selfhost.toml";
+
+export const RULE_MODES = ["observe", "enforce", "off"] as const;
+export const RULE_ACTIONS = ["block", "ask"] as const;
+export const AGENT_SELECTORS = ["all", ...AGENT_VENDORS] as const;
+
+export type RuleMode = (typeof RULE_MODES)[number];
+export type RuleAction = (typeof RULE_ACTIONS)[number];
+
+const RULE_ID_PATTERN = "^[A-Za-z0-9][A-Za-z0-9_.-]*$";
+
+const RuleModeSchema = (description: string, withDefault: boolean) =>
+  StringEnum(RULE_MODES, withDefault ? { description, default: "observe" } : { description });
+
+const AgentsSchema = (withDefault: boolean) =>
+  Type.Array(StringEnum(AGENT_SELECTORS), {
+    minItems: 1,
+    description: 'Agents the rule applies to. "all" matches every agent.',
+    ...(withDefault ? { default: ["all"] } : {}),
+  });
+
+export const RuleMatchSchema = Type.Object(
+  {
+    tool: Type.Optional(
+      NonEmpty({ description: "Exact tool name, for example Bash, Edit or an MCP tool name." }),
+    ),
+    command: Type.Optional(
+      NonEmpty({ description: "Regular expression tested against shell commands." }),
+    ),
+    path: Type.Optional(
+      NonEmpty({ description: "Glob tested against file paths relative to the repository root." }),
+    ),
+    url: Type.Optional(NonEmpty({ description: "Glob tested against URLs the agent requests." })),
+  },
+  {
+    additionalProperties: false,
+    minProperties: 1,
+    description: "What the rule matches. Every field given must match.",
+  },
+);
+
+export const RuleSchema = Type.Object(
+  {
+    id: Type.String({
+      pattern: RULE_ID_PATTERN,
+      description: "Stable rule id, recorded on every decision the rule makes.",
+    }),
+    description: Type.Optional(Type.String({ description: "What the rule is for." })),
+    mode: Type.Optional(
+      RuleModeSchema(
+        "observe records what the rule would have done, enforce applies it, off disables it.",
+        true,
+      ),
+    ),
+    agents: Type.Optional(AgentsSchema(true)),
+    match: RuleMatchSchema,
+    action: StringEnum(RULE_ACTIONS, {
+      description: "block stops the action, ask sends it to a person.",
+    }),
+    message: NonEmpty({ description: "Shown to the agent and the person when the rule fires." }),
+    irreversible: Type.Optional(
+      Type.Boolean({
+        default: false,
+        description: "true when the matched action cannot be undone, which raises review risk.",
+      }),
+    ),
+  },
+  { additionalProperties: false },
+);
+
+export const RedactionSchema = Type.Object(
+  {
+    name: NonEmpty({ description: "Name recorded in the event's redacted list." }),
+    pattern: NonEmpty({
+      description: "Regular expression whose matches are masked before storage.",
+    }),
+  },
+  { additionalProperties: false },
+);
+
+export const RuleOverrideSchema = Type.Object(
+  {
+    mode: Type.Optional(RuleModeSchema("Mode for this team.", false)),
+    agents: Type.Optional(AgentsSchema(false)),
+    action: Type.Optional(StringEnum(RULE_ACTIONS)),
+    message: Type.Optional(NonEmpty()),
+  },
+  { additionalProperties: false, minProperties: 1 },
+);
+
+export const TeamSchema = Type.Object(
+  {
+    members: Type.Optional(
+      Type.Array(NonEmpty(), { default: [], description: "People in the team." }),
+    ),
+    rules: Type.Optional(
+      Type.Record(Type.String(), RuleOverrideSchema, {
+        default: {},
+        description: "Per-rule overrides for this team, keyed by rule id.",
+      }),
+    ),
+  },
+  // The default lets Value.Default fill members and rules inside the teams record.
+  { additionalProperties: false, default: {} },
+);
+
+export const SelfhostConfigSchema = Type.Object(
+  {
+    version: Type.Literal(1, { description: "selfhost.toml format version." }),
+    org: Type.Optional(
+      Type.Object(
+        { name: NonEmpty({ description: "Organization name." }) },
+        {
+          additionalProperties: false,
+        },
+      ),
+    ),
+    ledger: Type.Optional(
+      Type.Object(
+        {
+          retention_days: Type.Optional(
+            Type.Integer({ minimum: 1, default: 90, description: "Days to keep ledger events." }),
+          ),
+          log_prompts: Type.Optional(
+            Type.Boolean({
+              default: false,
+              description: "Store prompt text. Off by default: only metadata is stored.",
+            }),
+          ),
+        },
+        { additionalProperties: false, default: {} },
+      ),
+    ),
+    redaction: Type.Optional(Type.Array(RedactionSchema, { default: [] })),
+    rules: Type.Optional(Type.Array(RuleSchema, { default: [] })),
+    review: Type.Optional(
+      Type.Object(
+        {
+          high_risk_paths: Type.Optional(
+            Type.Array(NonEmpty(), {
+              default: [],
+              description: "Globs whose changes always rank as high risk.",
+            }),
+          ),
+          high_risk_threshold: Type.Optional(
+            Type.Integer({
+              minimum: 0,
+              maximum: 100,
+              default: 70,
+              description: "Risk score at or above which an item counts as high risk.",
+            }),
+          ),
+          owners: Type.Optional(
+            Type.Record(Type.String(), Type.Array(NonEmpty(), { minItems: 1 }), {
+              default: {},
+              description: "Path glob to the people who review changes under it.",
+            }),
+          ),
+        },
+        { additionalProperties: false, default: {} },
+      ),
+    ),
+    packages: Type.Optional(
+      Type.Object(
+        {
+          mode: Type.Optional(
+            RuleModeSchema(
+              "observe logs installs that break the policy, enforce blocks them.",
+              true,
+            ),
+          ),
+          allow: Type.Optional(
+            Type.Array(NonEmpty(), {
+              default: [],
+              description: "Package names or globs to allow.",
+            }),
+          ),
+          deny: Type.Optional(
+            Type.Array(NonEmpty(), { default: [], description: "Package names or globs to deny." }),
+          ),
+          min_age_days: Type.Optional(
+            Type.Integer({
+              minimum: 0,
+              description: "Flag package versions published fewer than this many days ago.",
+            }),
+          ),
+        },
+        { additionalProperties: false, default: {} },
+      ),
+    ),
+    alerts: Type.Optional(
+      Type.Object(
+        {
+          spike_factor: Type.Optional(
+            Type.Number({
+              exclusiveMinimum: 1,
+              default: 10,
+              description:
+                "Raise a spend spike when spend exceeds this multiple of the usual rate.",
+            }),
+          ),
+        },
+        { additionalProperties: false, default: {} },
+      ),
+    ),
+    teams: Type.Optional(
+      Type.Record(Type.String(), TeamSchema, { default: {}, description: "Teams by name." }),
+    ),
+  },
+  {
+    $id: schemaId("config.schema.json"),
+    title: "SelfhostConfig",
+    description:
+      "selfhost.toml: team config compiled into each agent's own config. Rules start in observe and move to enforce.",
+    additionalProperties: false,
+  },
+);
+
+export type SelfhostConfig = Static<typeof SelfhostConfigSchema>;
+export type Rule = Static<typeof RuleSchema>;
+export type RuleMatch = Static<typeof RuleMatchSchema>;
+export type RuleOverride = Static<typeof RuleOverrideSchema>;
+export type Team = Static<typeof TeamSchema>;
+
+type Present<T> = Exclude<T, undefined>;
+
+export type ResolvedRule = Rule & Required<Pick<Rule, "mode" | "agents" | "irreversible">>;
+export type ResolvedTeam = Required<Team>;
+
+/** A config after defaults are applied: every section is present. */
+export type ResolvedSelfhostConfig = Omit<
+  SelfhostConfig,
+  "ledger" | "redaction" | "rules" | "review" | "packages" | "alerts" | "teams"
+> & {
+  ledger: Required<Present<SelfhostConfig["ledger"]>>;
+  redaction: Present<SelfhostConfig["redaction"]>;
+  rules: ResolvedRule[];
+  review: Required<Present<SelfhostConfig["review"]>>;
+  packages: Present<SelfhostConfig["packages"]> &
+    Required<Pick<Present<SelfhostConfig["packages"]>, "mode" | "allow" | "deny">>;
+  alerts: Required<Present<SelfhostConfig["alerts"]>>;
+  teams: Record<string, ResolvedTeam>;
+};
+
+export type ConfigResult =
+  | { ok: true; config: ResolvedSelfhostConfig }
+  | { ok: false; errors: FieldError[] };
+
+const configCheck = lazyCheck(SelfhostConfigSchema);
+
+function regexError(pattern: string): string | undefined {
+  try {
+    new RegExp(pattern);
+    return undefined;
+  } catch (error) {
+    return `Invalid regular expression: ${(error as Error).message}`;
+  }
+}
+
+function semanticErrors(config: ResolvedSelfhostConfig): SegmentError[] {
+  const errors: SegmentError[] = [];
+  const ruleIds = new Map<string, number>();
+  config.rules.forEach((rule, index) => {
+    const earlier = ruleIds.get(rule.id);
+    if (earlier !== undefined) {
+      errors.push({
+        segments: ["rules", index, "id"],
+        message: `Duplicate rule id "${rule.id}", also used by rules[${earlier}]`,
+      });
+    } else {
+      ruleIds.set(rule.id, index);
+    }
+    if (rule.match.command !== undefined) {
+      const message = regexError(rule.match.command);
+      if (message) errors.push({ segments: ["rules", index, "match", "command"], message });
+    }
+  });
+  config.redaction.forEach((redaction, index) => {
+    const message = regexError(redaction.pattern);
+    if (message) errors.push({ segments: ["redaction", index, "pattern"], message });
+  });
+  for (const [team, { rules }] of Object.entries(config.teams)) {
+    for (const ruleId of Object.keys(rules)) {
+      if (!ruleIds.has(ruleId)) {
+        errors.push({
+          segments: ["teams", team, "rules", ruleId],
+          message: `Override for unknown rule "${ruleId}"`,
+        });
+      }
+    }
+  }
+  return errors;
+}
+
+function check(value: unknown): { config?: ResolvedSelfhostConfig; errors: SegmentError[] } {
+  const withDefaults = Value.Default(SelfhostConfigSchema, Value.Clone(value));
+  const errors = schemaErrors(configCheck(), withDefaults);
+  if (errors.length > 0) return { errors };
+  const config = withDefaults as ResolvedSelfhostConfig;
+  const semantic = semanticErrors(config);
+  return semantic.length > 0 ? { errors: semantic } : { config, errors: [] };
+}
+
+/** Validates an already parsed config object and applies defaults. */
+export function validateConfig(value: unknown): ConfigResult {
+  const { config, errors } = check(value);
+  if (config) return { ok: true, config };
+  return {
+    ok: false,
+    errors: errors.map((e) => ({ field: formatField(e.segments), message: e.message })),
+  };
+}
+
+/**
+ * Parses selfhost.toml text, applies defaults and validates it. Errors name the field and,
+ * when it can be found, the line.
+ */
+export function parseConfig(text: string): ConfigResult {
+  let raw: unknown;
+  try {
+    raw = parseToml(text);
+  } catch (error) {
+    if (error instanceof TomlError) {
+      const message = error.message.split("\n")[0] ?? error.message;
+      return {
+        ok: false,
+        errors: [{ field: "(toml)", message, line: error.line, column: error.column }],
+      };
+    }
+    throw error;
+  }
+  const { config, errors } = check(raw);
+  if (config) return { ok: true, config };
+  const lines = new TomlLineIndex(text);
+  return {
+    ok: false,
+    errors: errors.map((e) => {
+      const line = lines.lineOf(e.segments);
+      const field = formatField(e.segments);
+      return line === undefined
+        ? { field, message: e.message }
+        : { field, message: e.message, line };
+    }),
+  };
+}
+
+export function formatConfigError(error: FieldError, file = CONFIG_FILE_NAME): string {
+  const where = error.line === undefined ? file : `${file}:${error.line}`;
+  return `${where}: ${error.field}: ${error.message}`;
+}

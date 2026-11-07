@@ -1,0 +1,8 @@
+version = 1
+
+[[rules]]
+id = "no-force-push"
+mode = "loud"
+match = { command = "git push --force" }
+action = "block"
+message = "No force pushes."

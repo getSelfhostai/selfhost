@@ -1,0 +1,7 @@
+version = 1
+
+[teams.platform]
+members = ["alice@example.com"]
+
+[teams.platform.rules.does-not-exist]
+mode = "enforce"

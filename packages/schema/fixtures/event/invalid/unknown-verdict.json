@@ -1,0 +1,32 @@
+{
+  "id": "01930c4e-2f1a-7b2c-8d3e-4f5a6b7c8d03",
+  "schema": "selfhost.event/v1",
+  "ts": "2026-11-07T09:30:00.000Z",
+  "source": "hook",
+  "kind": "policy.evaluated",
+  "actor": {
+    "kind": "system",
+    "id": "selfhost-policy"
+  },
+  "repo": "acme/api",
+  "agent": {
+    "vendor": "claude_code",
+    "version": "2.1.270"
+  },
+  "session_id": "3f1c9a2e-5b7d-4c1e-9a0b-2d4e6f8a1c3e",
+  "tool": {
+    "name": "Bash",
+    "input_summary": "git push --force origin main"
+  },
+  "target": {
+    "type": "command",
+    "value": "git push --force origin main"
+  },
+  "decision": {
+    "verdict": "maybe",
+    "by": "selfhost-policy",
+    "reason": "Force pushes rewrite shared history",
+    "rule_id": "no-force-push",
+    "mode": "observe"
+  }
+}

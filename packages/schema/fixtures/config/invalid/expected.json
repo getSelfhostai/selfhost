@@ -1,0 +1,13 @@
+{
+  "rule-mode-unknown.toml": { "field": "rules[0].mode", "line": 5 },
+  "missing-version.toml": { "field": "version" },
+  "misspelled-key.toml": { "field": "ledger.retention", "line": 4 },
+  "empty-match.toml": { "field": "rules[0].match", "line": 5 },
+  "bad-command-regex.toml": { "field": "rules[0].match.command", "line": 5 },
+  "duplicate-rule-id.toml": { "field": "rules[1].id", "line": 10 },
+  "threshold-out-of-range.toml": { "field": "review.high_risk_threshold", "line": 4 },
+  "override-unknown-rule.toml": { "field": "teams.platform.rules.does-not-exist", "line": 6 },
+  "rule-missing-message.toml": { "field": "rules[1].message", "line": 9 },
+  "not-toml.toml": { "field": "(toml)", "line": 2 },
+  "version-two.toml": { "field": "version", "line": 1 }
+}

@@ -1,0 +1,13 @@
+version = 1
+
+[[rules]]
+id = "same"
+match = { tool = "Bash" }
+action = "ask"
+message = "First."
+
+[[rules]]
+id = "same"
+match = { tool = "Edit" }
+action = "ask"
+message = "Second."

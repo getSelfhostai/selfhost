@@ -1,0 +1,427 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://selfhost.ai/schema/v1/event.schema.json",
+  "$comment": "Generated from packages/schema/src. Run `pnpm --filter @selfhost/schema export` after changing the source. Do not edit by hand.",
+  "title": "LedgerEvent",
+  "description": "One ledger record: a run, tool call, approval, human decision or cost, from any coding agent. Events are append-only.",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "tool.called"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "tool"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "tool.result"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "tool"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "decision.recorded"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "decision"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "policy.evaluated"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "decision"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "cost.recorded"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "cost"
+        ]
+      }
+    }
+  ],
+  "type": "object",
+  "required": [
+    "id",
+    "schema",
+    "ts",
+    "source",
+    "kind",
+    "actor"
+  ],
+  "properties": {
+    "id": {
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+      "description": "Event id, a UUIDv7 so ids sort by time. Also the idempotency key: writing the same id twice stores one event.",
+      "type": "string"
+    },
+    "schema": {
+      "description": "Schema version tag.",
+      "const": "selfhost.event/v1",
+      "type": "string"
+    },
+    "ts": {
+      "format": "date-time",
+      "description": "When the event happened (not when it was ingested), with a UTC offset.",
+      "type": "string"
+    },
+    "source": {
+      "description": "Ingest path: hook (agent hook), otel (OpenTelemetry export), local_log (agent log on disk), vendor_api (vendor audit or compliance API), github, gateway (model gateway), sdk, cli, or server (selfhost itself).",
+      "type": "string",
+      "enum": [
+        "hook",
+        "otel",
+        "local_log",
+        "vendor_api",
+        "github",
+        "gateway",
+        "sdk",
+        "cli",
+        "server"
+      ]
+    },
+    "kind": {
+      "description": "What happened.",
+      "type": "string",
+      "enum": [
+        "session.started",
+        "session.ended",
+        "prompt.submitted",
+        "tool.called",
+        "tool.result",
+        "approval.requested",
+        "decision.recorded",
+        "cost.recorded",
+        "commit.created",
+        "pr.opened",
+        "pr.merged",
+        "pr.closed",
+        "policy.evaluated",
+        "alert.raised"
+      ]
+    },
+    "actor": {
+      "additionalProperties": false,
+      "description": "Who did it.",
+      "type": "object",
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "description": "person for a human, agent for a coding agent acting on its own, system for selfhost, CI or another service.",
+          "type": "string",
+          "enum": [
+            "person",
+            "agent",
+            "system"
+          ]
+        },
+        "id": {
+          "minLength": 1,
+          "description": "Stable identifier: email or login for a person, agent or run id for an agent, component name for system.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Display name.",
+          "type": "string"
+        }
+      }
+    },
+    "org": {
+      "description": "Organization slug.",
+      "type": "string"
+    },
+    "team": {
+      "description": "Team name from selfhost.toml [teams].",
+      "type": "string"
+    },
+    "repo": {
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+      "description": "Repository as owner/name.",
+      "type": "string"
+    },
+    "agent": {
+      "additionalProperties": false,
+      "description": "Which coding agent was involved.",
+      "type": "object",
+      "required": [
+        "vendor"
+      ],
+      "properties": {
+        "vendor": {
+          "description": "Agent product.",
+          "type": "string",
+          "enum": [
+            "claude_code",
+            "codex",
+            "opencode",
+            "goose",
+            "cursor",
+            "copilot",
+            "other"
+          ]
+        },
+        "version": {
+          "description": "Agent CLI or app version, for example 2.1.0.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Agent or subagent name when the vendor reports one, for example a Claude Code subagent type.",
+          "type": "string"
+        }
+      }
+    },
+    "model": {
+      "description": "Model id as the vendor reports it, for example claude-opus-4 or gpt-5-codex.",
+      "type": "string"
+    },
+    "session_id": {
+      "description": "Vendor session id, for example the Claude Code session_id or Codex thread id.",
+      "type": "string"
+    },
+    "run_id": {
+      "description": "Run id that groups work on one task, or a CI run id.",
+      "type": "string"
+    },
+    "tool": {
+      "additionalProperties": false,
+      "description": "Tool call details.",
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "description": "Tool name as the vendor reports it, for example Bash, Edit or an MCP tool name.",
+          "type": "string"
+        },
+        "input_summary": {
+          "description": "Short, redacted summary of the tool input, such as the command or file path. Full inputs are not stored here.",
+          "type": "string"
+        }
+      }
+    },
+    "target": {
+      "additionalProperties": false,
+      "description": "What the action touched.",
+      "type": "object",
+      "required": [
+        "type",
+        "value"
+      ],
+      "properties": {
+        "type": {
+          "description": "What kind of thing was touched.",
+          "type": "string",
+          "enum": [
+            "file",
+            "command",
+            "url",
+            "repo",
+            "pr",
+            "resource"
+          ]
+        },
+        "value": {
+          "minLength": 1,
+          "description": "The file path, command, URL, owner/name, PR URL or resource id.",
+          "type": "string"
+        }
+      }
+    },
+    "decision": {
+      "additionalProperties": false,
+      "description": "A rule verdict or a human decision.",
+      "type": "object",
+      "required": [
+        "verdict"
+      ],
+      "properties": {
+        "verdict": {
+          "description": "allow, block and ask come from a rule. approve, deny, answer and override come from a person.",
+          "type": "string",
+          "enum": [
+            "allow",
+            "block",
+            "ask",
+            "approve",
+            "deny",
+            "answer",
+            "override"
+          ]
+        },
+        "by": {
+          "description": "Person who decided, or the rule engine for rule verdicts.",
+          "type": "string"
+        },
+        "reason": {
+          "description": "Why. For a question, the answer text.",
+          "type": "string"
+        },
+        "rule_id": {
+          "description": "Rule id from selfhost.toml when a rule decided.",
+          "type": "string"
+        },
+        "mode": {
+          "description": "Rule mode at decision time. In observe, block and ask verdicts are recorded but not applied.",
+          "type": "string",
+          "enum": [
+            "observe",
+            "enforce"
+          ]
+        },
+        "item_id": {
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+          "description": "Review item this decision answers.",
+          "type": "string"
+        },
+        "replaces_event_id": {
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+          "description": "Earlier decision event this one supersedes. The ledger is append-only, so corrections are new events.",
+          "type": "string"
+        }
+      }
+    },
+    "cost": {
+      "additionalProperties": false,
+      "description": "Tokens and spend for this event.",
+      "type": "object",
+      "required": [
+        "input_tokens",
+        "output_tokens",
+        "cache_read_tokens",
+        "cache_write_tokens",
+        "usd",
+        "estimated"
+      ],
+      "properties": {
+        "input_tokens": {
+          "minimum": 0,
+          "description": "Uncached input tokens.",
+          "type": "integer"
+        },
+        "output_tokens": {
+          "minimum": 0,
+          "description": "Output tokens, including reasoning tokens.",
+          "type": "integer"
+        },
+        "cache_read_tokens": {
+          "minimum": 0,
+          "description": "Input tokens read from the prompt cache.",
+          "type": "integer"
+        },
+        "cache_write_tokens": {
+          "minimum": 0,
+          "description": "Input tokens written to the prompt cache.",
+          "type": "integer"
+        },
+        "usd": {
+          "minimum": 0,
+          "description": "Cost in US dollars.",
+          "type": "number"
+        },
+        "estimated": {
+          "description": "true when usd was computed from a price table, false when the vendor reported it.",
+          "type": "boolean"
+        }
+      }
+    },
+    "links": {
+      "additionalProperties": false,
+      "description": "Links to related objects.",
+      "type": "object",
+      "properties": {
+        "pr_url": {
+          "format": "uri",
+          "description": "Pull request URL.",
+          "type": "string"
+        },
+        "commit_sha": {
+          "pattern": "^[0-9a-f]{7,64}$",
+          "description": "Git commit SHA.",
+          "type": "string"
+        },
+        "run_url": {
+          "format": "uri",
+          "description": "CI run or agent run URL.",
+          "type": "string"
+        },
+        "item_id": {
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+          "description": "Related review item.",
+          "type": "string"
+        }
+      }
+    },
+    "data": {
+      "description": "Source-specific extras with no field of their own. Keep it small and never put secrets here.",
+      "type": "object",
+      "patternProperties": {
+        "^(.*)$": {}
+      }
+    },
+    "redacted": {
+      "description": "Field paths whose values were removed or masked before the event was written, for example tool.input_summary.",
+      "type": "array",
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      }
+    }
+  }
+}

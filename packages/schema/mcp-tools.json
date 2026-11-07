@@ -1,0 +1,2614 @@
+{
+  "$comment": "Generated from packages/schema/src. Run `pnpm --filter @selfhost/schema export` after changing the source. Do not edit by hand.",
+  "schema": "selfhost.mcp_tools/v1",
+  "tools": [
+    {
+      "name": "get_policy",
+      "description": "Get the team rules that apply to you: selfhost.toml with team overrides resolved for a person and agent.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "person": {
+            "description": "Resolve team overrides for this person.",
+            "type": "string"
+          },
+          "agent": {
+            "description": "Only rules for this agent.",
+            "type": "string",
+            "enum": [
+              "claude_code",
+              "codex",
+              "opencode",
+              "goose",
+              "cursor",
+              "copilot",
+              "other"
+            ]
+          }
+        }
+      },
+      "outputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "hash",
+          "loaded_at",
+          "config",
+          "effective_rules"
+        ],
+        "properties": {
+          "hash": {
+            "description": "sha256 of the selfhost.toml text in use.",
+            "type": "string"
+          },
+          "commit_sha": {
+            "description": "Git commit of selfhost.toml, when it is read from a repo.",
+            "type": "string"
+          },
+          "loaded_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "config": {
+            "title": "SelfhostConfig",
+            "description": "selfhost.toml: team config compiled into each agent's own config. Rules start in observe and move to enforce.",
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "version"
+            ],
+            "properties": {
+              "version": {
+                "description": "selfhost.toml format version.",
+                "const": 1,
+                "type": "number"
+              },
+              "org": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "minLength": 1,
+                    "description": "Organization name.",
+                    "type": "string"
+                  }
+                }
+              },
+              "ledger": {
+                "additionalProperties": false,
+                "default": {},
+                "type": "object",
+                "properties": {
+                  "retention_days": {
+                    "minimum": 1,
+                    "default": 90,
+                    "description": "Days to keep ledger events.",
+                    "type": "integer"
+                  },
+                  "log_prompts": {
+                    "default": false,
+                    "description": "Store prompt text. Off by default: only metadata is stored.",
+                    "type": "boolean"
+                  }
+                }
+              },
+              "redaction": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "name",
+                    "pattern"
+                  ],
+                  "properties": {
+                    "name": {
+                      "minLength": 1,
+                      "description": "Name recorded in the event's redacted list.",
+                      "type": "string"
+                    },
+                    "pattern": {
+                      "minLength": 1,
+                      "description": "Regular expression whose matches are masked before storage.",
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "rules": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "match",
+                    "action",
+                    "message"
+                  ],
+                  "properties": {
+                    "id": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+                      "description": "Stable rule id, recorded on every decision the rule makes.",
+                      "type": "string"
+                    },
+                    "description": {
+                      "description": "What the rule is for.",
+                      "type": "string"
+                    },
+                    "mode": {
+                      "description": "observe records what the rule would have done, enforce applies it, off disables it.",
+                      "default": "observe",
+                      "type": "string",
+                      "enum": [
+                        "observe",
+                        "enforce",
+                        "off"
+                      ]
+                    },
+                    "agents": {
+                      "minItems": 1,
+                      "description": "Agents the rule applies to. \"all\" matches every agent.",
+                      "default": [
+                        "all"
+                      ],
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "all",
+                          "claude_code",
+                          "codex",
+                          "opencode",
+                          "goose",
+                          "cursor",
+                          "copilot",
+                          "other"
+                        ]
+                      }
+                    },
+                    "match": {
+                      "additionalProperties": false,
+                      "minProperties": 1,
+                      "description": "What the rule matches. Every field given must match.",
+                      "type": "object",
+                      "properties": {
+                        "tool": {
+                          "minLength": 1,
+                          "description": "Exact tool name, for example Bash, Edit or an MCP tool name.",
+                          "type": "string"
+                        },
+                        "command": {
+                          "minLength": 1,
+                          "description": "Regular expression tested against shell commands.",
+                          "type": "string"
+                        },
+                        "path": {
+                          "minLength": 1,
+                          "description": "Glob tested against file paths relative to the repository root.",
+                          "type": "string"
+                        },
+                        "url": {
+                          "minLength": 1,
+                          "description": "Glob tested against URLs the agent requests.",
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "action": {
+                      "description": "block stops the action, ask sends it to a person.",
+                      "type": "string",
+                      "enum": [
+                        "block",
+                        "ask"
+                      ]
+                    },
+                    "message": {
+                      "minLength": 1,
+                      "description": "Shown to the agent and the person when the rule fires.",
+                      "type": "string"
+                    },
+                    "irreversible": {
+                      "default": false,
+                      "description": "true when the matched action cannot be undone, which raises review risk.",
+                      "type": "boolean"
+                    }
+                  }
+                }
+              },
+              "review": {
+                "additionalProperties": false,
+                "default": {},
+                "type": "object",
+                "properties": {
+                  "high_risk_paths": {
+                    "default": [],
+                    "description": "Globs whose changes always rank as high risk.",
+                    "type": "array",
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "high_risk_threshold": {
+                    "minimum": 0,
+                    "maximum": 100,
+                    "default": 70,
+                    "description": "Risk score at or above which an item counts as high risk.",
+                    "type": "integer"
+                  },
+                  "owners": {
+                    "default": {},
+                    "description": "Path glob to the people who review changes under it.",
+                    "type": "object",
+                    "patternProperties": {
+                      "^(.*)$": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "packages": {
+                "additionalProperties": false,
+                "default": {},
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "description": "observe logs installs that break the policy, enforce blocks them.",
+                    "default": "observe",
+                    "type": "string",
+                    "enum": [
+                      "observe",
+                      "enforce",
+                      "off"
+                    ]
+                  },
+                  "allow": {
+                    "default": [],
+                    "description": "Package names or globs to allow.",
+                    "type": "array",
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "deny": {
+                    "default": [],
+                    "description": "Package names or globs to deny.",
+                    "type": "array",
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "min_age_days": {
+                    "minimum": 0,
+                    "description": "Flag package versions published fewer than this many days ago.",
+                    "type": "integer"
+                  }
+                }
+              },
+              "alerts": {
+                "additionalProperties": false,
+                "default": {},
+                "type": "object",
+                "properties": {
+                  "spike_factor": {
+                    "exclusiveMinimum": 1,
+                    "default": 10,
+                    "description": "Raise a spend spike when spend exceeds this multiple of the usual rate.",
+                    "type": "number"
+                  }
+                }
+              },
+              "teams": {
+                "default": {},
+                "description": "Teams by name.",
+                "type": "object",
+                "patternProperties": {
+                  "^(.*)$": {
+                    "additionalProperties": false,
+                    "default": {},
+                    "type": "object",
+                    "properties": {
+                      "members": {
+                        "default": [],
+                        "description": "People in the team.",
+                        "type": "array",
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "rules": {
+                        "default": {},
+                        "description": "Per-rule overrides for this team, keyed by rule id.",
+                        "type": "object",
+                        "patternProperties": {
+                          "^(.*)$": {
+                            "additionalProperties": false,
+                            "minProperties": 1,
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "description": "Mode for this team.",
+                                "type": "string",
+                                "enum": [
+                                  "observe",
+                                  "enforce",
+                                  "off"
+                                ]
+                              },
+                              "agents": {
+                                "minItems": 1,
+                                "description": "Agents the rule applies to. \"all\" matches every agent.",
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "enum": [
+                                    "all",
+                                    "claude_code",
+                                    "codex",
+                                    "opencode",
+                                    "goose",
+                                    "cursor",
+                                    "copilot",
+                                    "other"
+                                  ]
+                                }
+                              },
+                              "action": {
+                                "type": "string",
+                                "enum": [
+                                  "block",
+                                  "ask"
+                                ]
+                              },
+                              "message": {
+                                "minLength": 1,
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "effective_rules": {
+            "description": "Rules after team overrides for the given person and agent, with defaults applied. Rules in mode off are left out.",
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "id",
+                "match",
+                "action",
+                "message"
+              ],
+              "properties": {
+                "id": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+                  "description": "Stable rule id, recorded on every decision the rule makes.",
+                  "type": "string"
+                },
+                "description": {
+                  "description": "What the rule is for.",
+                  "type": "string"
+                },
+                "mode": {
+                  "description": "observe records what the rule would have done, enforce applies it, off disables it.",
+                  "default": "observe",
+                  "type": "string",
+                  "enum": [
+                    "observe",
+                    "enforce",
+                    "off"
+                  ]
+                },
+                "agents": {
+                  "minItems": 1,
+                  "description": "Agents the rule applies to. \"all\" matches every agent.",
+                  "default": [
+                    "all"
+                  ],
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "all",
+                      "claude_code",
+                      "codex",
+                      "opencode",
+                      "goose",
+                      "cursor",
+                      "copilot",
+                      "other"
+                    ]
+                  }
+                },
+                "match": {
+                  "additionalProperties": false,
+                  "minProperties": 1,
+                  "description": "What the rule matches. Every field given must match.",
+                  "type": "object",
+                  "properties": {
+                    "tool": {
+                      "minLength": 1,
+                      "description": "Exact tool name, for example Bash, Edit or an MCP tool name.",
+                      "type": "string"
+                    },
+                    "command": {
+                      "minLength": 1,
+                      "description": "Regular expression tested against shell commands.",
+                      "type": "string"
+                    },
+                    "path": {
+                      "minLength": 1,
+                      "description": "Glob tested against file paths relative to the repository root.",
+                      "type": "string"
+                    },
+                    "url": {
+                      "minLength": 1,
+                      "description": "Glob tested against URLs the agent requests.",
+                      "type": "string"
+                    }
+                  }
+                },
+                "action": {
+                  "description": "block stops the action, ask sends it to a person.",
+                  "type": "string",
+                  "enum": [
+                    "block",
+                    "ask"
+                  ]
+                },
+                "message": {
+                  "minLength": 1,
+                  "description": "Shown to the agent and the person when the rule fires.",
+                  "type": "string"
+                },
+                "irreversible": {
+                  "default": false,
+                  "description": "true when the matched action cannot be undone, which raises review risk.",
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "get_budget",
+      "description": "Get spend so far, the budget and the forecast for a person or team.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "person": {
+            "type": "string"
+          },
+          "team": {
+            "type": "string"
+          },
+          "period": {
+            "default": "month",
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ]
+          }
+        }
+      },
+      "outputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "period",
+          "from",
+          "to",
+          "spent_usd",
+          "limit_usd",
+          "remaining_usd",
+          "forecast_usd"
+        ],
+        "properties": {
+          "period": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ]
+          },
+          "from": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "to": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "spent_usd": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "limit_usd": {
+            "description": "Budget for the period, or null when none is set.",
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "remaining_usd": {
+            "description": "limit_usd minus spent_usd, or null when no budget is set.",
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "forecast_usd": {
+            "description": "Projected spend for the whole period, or null without enough data.",
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "list_review_items",
+      "description": "List review items, ranked: blocking first, then by risk.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "state": {
+            "default": "open",
+            "type": "string",
+            "enum": [
+              "open",
+              "answered",
+              "dismissed",
+              "expired"
+            ]
+          },
+          "owner": {
+            "description": "Only items this person owns.",
+            "type": "string"
+          },
+          "limit": {
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Maximum number of results.",
+            "type": "integer"
+          },
+          "cursor": {
+            "description": "Opaque cursor from next_cursor of the previous page.",
+            "type": "string"
+          }
+        }
+      },
+      "outputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "properties": {
+          "items": {
+            "description": "Ranked: blocking first, then by risk score, then oldest first.",
+            "type": "array",
+            "items": {
+              "title": "ReviewItem",
+              "description": "One entry in the review list: something that needs a human, ranked by risk and whether an agent is blocked.",
+              "additionalProperties": false,
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "state": {
+                        "const": "answered"
+                      }
+                    },
+                    "required": [
+                      "state"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "answer"
+                    ]
+                  }
+                }
+              ],
+              "type": "object",
+              "required": [
+                "id",
+                "schema",
+                "kind",
+                "title",
+                "created_at",
+                "updated_at",
+                "state",
+                "blocking",
+                "risk",
+                "owners",
+                "source_event_ids"
+              ],
+              "properties": {
+                "id": {
+                  "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                  "description": "Review item id.",
+                  "type": "string"
+                },
+                "schema": {
+                  "description": "Schema version tag.",
+                  "const": "selfhost.review_item/v1",
+                  "type": "string"
+                },
+                "kind": {
+                  "description": "pr (agent pull request), approval (an agent waits for permission), question (an agent asks a person), blocked_action (a rule blocked something), stuck_run, budget, spend_spike, quality, or policy_report (what an observed rule would have blocked).",
+                  "type": "string",
+                  "enum": [
+                    "pr",
+                    "approval",
+                    "question",
+                    "blocked_action",
+                    "stuck_run",
+                    "budget",
+                    "spend_spike",
+                    "quality",
+                    "policy_report"
+                  ]
+                },
+                "title": {
+                  "minLength": 1,
+                  "description": "One line shown in the list.",
+                  "type": "string"
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "updated_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "state": {
+                  "description": "Lifecycle state.",
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "answered",
+                    "dismissed",
+                    "expired"
+                  ]
+                },
+                "blocking": {
+                  "description": "true when an agent is waiting on this answer.",
+                  "type": "boolean"
+                },
+                "risk": {
+                  "additionalProperties": false,
+                  "description": "Risk score and why.",
+                  "type": "object",
+                  "required": [
+                    "score",
+                    "reasons"
+                  ],
+                  "properties": {
+                    "score": {
+                      "minimum": 0,
+                      "maximum": 100,
+                      "description": "0 is safe to skim, 100 needs a careful human read. Drives the ranking.",
+                      "type": "integer"
+                    },
+                    "reasons": {
+                      "description": "Plain-language reasons behind the score, most important first.",
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "repo": {
+                  "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+                  "description": "Repository as owner/name.",
+                  "type": "string"
+                },
+                "url": {
+                  "format": "uri",
+                  "description": "Where to act, for example the PR URL.",
+                  "type": "string"
+                },
+                "owners": {
+                  "description": "People who should answer, from [review.owners] or the session owner.",
+                  "type": "array",
+                  "items": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "agent": {
+                  "additionalProperties": false,
+                  "description": "Which coding agent was involved.",
+                  "type": "object",
+                  "required": [
+                    "vendor"
+                  ],
+                  "properties": {
+                    "vendor": {
+                      "description": "Agent product.",
+                      "type": "string",
+                      "enum": [
+                        "claude_code",
+                        "codex",
+                        "opencode",
+                        "goose",
+                        "cursor",
+                        "copilot",
+                        "other"
+                      ]
+                    },
+                    "version": {
+                      "description": "Agent CLI or app version, for example 2.1.0.",
+                      "type": "string"
+                    },
+                    "name": {
+                      "description": "Agent or subagent name when the vendor reports one, for example a Claude Code subagent type.",
+                      "type": "string"
+                    }
+                  }
+                },
+                "session_id": {
+                  "description": "Vendor session id.",
+                  "type": "string"
+                },
+                "run_id": {
+                  "description": "Run id.",
+                  "type": "string"
+                },
+                "brief": {
+                  "description": "Markdown summary of what the reviewer needs to know to decide quickly.",
+                  "type": "string"
+                },
+                "source_event_ids": {
+                  "description": "Ledger events this item was built from.",
+                  "type": "array",
+                  "items": {
+                    "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                    "type": "string"
+                  }
+                },
+                "answer": {
+                  "additionalProperties": false,
+                  "description": "The human answer that closed the item.",
+                  "type": "object",
+                  "required": [
+                    "by",
+                    "verdict",
+                    "at",
+                    "decision_event_id"
+                  ],
+                  "properties": {
+                    "by": {
+                      "minLength": 1,
+                      "description": "Person who answered.",
+                      "type": "string"
+                    },
+                    "verdict": {
+                      "description": "allow, block and ask come from a rule. approve, deny, answer and override come from a person.",
+                      "type": "string",
+                      "enum": [
+                        "allow",
+                        "block",
+                        "ask",
+                        "approve",
+                        "deny",
+                        "answer",
+                        "override"
+                      ]
+                    },
+                    "reason": {
+                      "description": "Why. For a question, the answer text.",
+                      "type": "string"
+                    },
+                    "at": {
+                      "format": "date-time",
+                      "description": "When the answer was recorded.",
+                      "type": "string"
+                    },
+                    "decision_event_id": {
+                      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                      "description": "The decision.recorded ledger event that holds this answer.",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "description": "Pass as cursor to get the next page. null on the last page.",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "search_events",
+      "description": "Search the ledger by person, agent, model, session, kind and time range.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "person": {
+            "description": "actor.id of a person.",
+            "type": "string"
+          },
+          "agent": {
+            "description": "agent.vendor.",
+            "type": "string",
+            "enum": [
+              "claude_code",
+              "codex",
+              "opencode",
+              "goose",
+              "cursor",
+              "copilot",
+              "other"
+            ]
+          },
+          "model": {
+            "type": "string"
+          },
+          "session": {
+            "description": "session_id.",
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "session.started",
+              "session.ended",
+              "prompt.submitted",
+              "tool.called",
+              "tool.result",
+              "approval.requested",
+              "decision.recorded",
+              "cost.recorded",
+              "commit.created",
+              "pr.opened",
+              "pr.merged",
+              "pr.closed",
+              "policy.evaluated",
+              "alert.raised"
+            ]
+          },
+          "from": {
+            "format": "date-time",
+            "description": "Events at or after this time.",
+            "type": "string"
+          },
+          "to": {
+            "format": "date-time",
+            "description": "Events before this time.",
+            "type": "string"
+          },
+          "limit": {
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Maximum number of results.",
+            "type": "integer"
+          },
+          "cursor": {
+            "description": "Opaque cursor from next_cursor of the previous page.",
+            "type": "string"
+          }
+        }
+      },
+      "outputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "events",
+          "next_cursor"
+        ],
+        "properties": {
+          "events": {
+            "description": "Newest first.",
+            "type": "array",
+            "items": {
+              "title": "LedgerEvent",
+              "description": "One ledger record: a run, tool call, approval, human decision or cost, from any coding agent. Events are append-only.",
+              "additionalProperties": false,
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "tool.called"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "tool"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "tool.result"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "tool"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "decision.recorded"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "decision"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "policy.evaluated"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "decision"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "cost.recorded"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "cost"
+                    ]
+                  }
+                }
+              ],
+              "type": "object",
+              "required": [
+                "id",
+                "schema",
+                "ts",
+                "source",
+                "kind",
+                "actor"
+              ],
+              "properties": {
+                "id": {
+                  "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                  "description": "Event id, a UUIDv7 so ids sort by time. Also the idempotency key: writing the same id twice stores one event.",
+                  "type": "string"
+                },
+                "schema": {
+                  "description": "Schema version tag.",
+                  "const": "selfhost.event/v1",
+                  "type": "string"
+                },
+                "ts": {
+                  "format": "date-time",
+                  "description": "When the event happened (not when it was ingested), with a UTC offset.",
+                  "type": "string"
+                },
+                "source": {
+                  "description": "Ingest path: hook (agent hook), otel (OpenTelemetry export), local_log (agent log on disk), vendor_api (vendor audit or compliance API), github, gateway (model gateway), sdk, cli, or server (selfhost itself).",
+                  "type": "string",
+                  "enum": [
+                    "hook",
+                    "otel",
+                    "local_log",
+                    "vendor_api",
+                    "github",
+                    "gateway",
+                    "sdk",
+                    "cli",
+                    "server"
+                  ]
+                },
+                "kind": {
+                  "description": "What happened.",
+                  "type": "string",
+                  "enum": [
+                    "session.started",
+                    "session.ended",
+                    "prompt.submitted",
+                    "tool.called",
+                    "tool.result",
+                    "approval.requested",
+                    "decision.recorded",
+                    "cost.recorded",
+                    "commit.created",
+                    "pr.opened",
+                    "pr.merged",
+                    "pr.closed",
+                    "policy.evaluated",
+                    "alert.raised"
+                  ]
+                },
+                "actor": {
+                  "additionalProperties": false,
+                  "description": "Who did it.",
+                  "type": "object",
+                  "required": [
+                    "kind",
+                    "id"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "description": "person for a human, agent for a coding agent acting on its own, system for selfhost, CI or another service.",
+                      "type": "string",
+                      "enum": [
+                        "person",
+                        "agent",
+                        "system"
+                      ]
+                    },
+                    "id": {
+                      "minLength": 1,
+                      "description": "Stable identifier: email or login for a person, agent or run id for an agent, component name for system.",
+                      "type": "string"
+                    },
+                    "name": {
+                      "description": "Display name.",
+                      "type": "string"
+                    }
+                  }
+                },
+                "org": {
+                  "description": "Organization slug.",
+                  "type": "string"
+                },
+                "team": {
+                  "description": "Team name from selfhost.toml [teams].",
+                  "type": "string"
+                },
+                "repo": {
+                  "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+                  "description": "Repository as owner/name.",
+                  "type": "string"
+                },
+                "agent": {
+                  "additionalProperties": false,
+                  "description": "Which coding agent was involved.",
+                  "type": "object",
+                  "required": [
+                    "vendor"
+                  ],
+                  "properties": {
+                    "vendor": {
+                      "description": "Agent product.",
+                      "type": "string",
+                      "enum": [
+                        "claude_code",
+                        "codex",
+                        "opencode",
+                        "goose",
+                        "cursor",
+                        "copilot",
+                        "other"
+                      ]
+                    },
+                    "version": {
+                      "description": "Agent CLI or app version, for example 2.1.0.",
+                      "type": "string"
+                    },
+                    "name": {
+                      "description": "Agent or subagent name when the vendor reports one, for example a Claude Code subagent type.",
+                      "type": "string"
+                    }
+                  }
+                },
+                "model": {
+                  "description": "Model id as the vendor reports it, for example claude-opus-4 or gpt-5-codex.",
+                  "type": "string"
+                },
+                "session_id": {
+                  "description": "Vendor session id, for example the Claude Code session_id or Codex thread id.",
+                  "type": "string"
+                },
+                "run_id": {
+                  "description": "Run id that groups work on one task, or a CI run id.",
+                  "type": "string"
+                },
+                "tool": {
+                  "additionalProperties": false,
+                  "description": "Tool call details.",
+                  "type": "object",
+                  "required": [
+                    "name"
+                  ],
+                  "properties": {
+                    "name": {
+                      "minLength": 1,
+                      "description": "Tool name as the vendor reports it, for example Bash, Edit or an MCP tool name.",
+                      "type": "string"
+                    },
+                    "input_summary": {
+                      "description": "Short, redacted summary of the tool input, such as the command or file path. Full inputs are not stored here.",
+                      "type": "string"
+                    }
+                  }
+                },
+                "target": {
+                  "additionalProperties": false,
+                  "description": "What the action touched.",
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "properties": {
+                    "type": {
+                      "description": "What kind of thing was touched.",
+                      "type": "string",
+                      "enum": [
+                        "file",
+                        "command",
+                        "url",
+                        "repo",
+                        "pr",
+                        "resource"
+                      ]
+                    },
+                    "value": {
+                      "minLength": 1,
+                      "description": "The file path, command, URL, owner/name, PR URL or resource id.",
+                      "type": "string"
+                    }
+                  }
+                },
+                "decision": {
+                  "additionalProperties": false,
+                  "description": "A rule verdict or a human decision.",
+                  "type": "object",
+                  "required": [
+                    "verdict"
+                  ],
+                  "properties": {
+                    "verdict": {
+                      "description": "allow, block and ask come from a rule. approve, deny, answer and override come from a person.",
+                      "type": "string",
+                      "enum": [
+                        "allow",
+                        "block",
+                        "ask",
+                        "approve",
+                        "deny",
+                        "answer",
+                        "override"
+                      ]
+                    },
+                    "by": {
+                      "description": "Person who decided, or the rule engine for rule verdicts.",
+                      "type": "string"
+                    },
+                    "reason": {
+                      "description": "Why. For a question, the answer text.",
+                      "type": "string"
+                    },
+                    "rule_id": {
+                      "description": "Rule id from selfhost.toml when a rule decided.",
+                      "type": "string"
+                    },
+                    "mode": {
+                      "description": "Rule mode at decision time. In observe, block and ask verdicts are recorded but not applied.",
+                      "type": "string",
+                      "enum": [
+                        "observe",
+                        "enforce"
+                      ]
+                    },
+                    "item_id": {
+                      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                      "description": "Review item this decision answers.",
+                      "type": "string"
+                    },
+                    "replaces_event_id": {
+                      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                      "description": "Earlier decision event this one supersedes. The ledger is append-only, so corrections are new events.",
+                      "type": "string"
+                    }
+                  }
+                },
+                "cost": {
+                  "additionalProperties": false,
+                  "description": "Tokens and spend for this event.",
+                  "type": "object",
+                  "required": [
+                    "input_tokens",
+                    "output_tokens",
+                    "cache_read_tokens",
+                    "cache_write_tokens",
+                    "usd",
+                    "estimated"
+                  ],
+                  "properties": {
+                    "input_tokens": {
+                      "minimum": 0,
+                      "description": "Uncached input tokens.",
+                      "type": "integer"
+                    },
+                    "output_tokens": {
+                      "minimum": 0,
+                      "description": "Output tokens, including reasoning tokens.",
+                      "type": "integer"
+                    },
+                    "cache_read_tokens": {
+                      "minimum": 0,
+                      "description": "Input tokens read from the prompt cache.",
+                      "type": "integer"
+                    },
+                    "cache_write_tokens": {
+                      "minimum": 0,
+                      "description": "Input tokens written to the prompt cache.",
+                      "type": "integer"
+                    },
+                    "usd": {
+                      "minimum": 0,
+                      "description": "Cost in US dollars.",
+                      "type": "number"
+                    },
+                    "estimated": {
+                      "description": "true when usd was computed from a price table, false when the vendor reported it.",
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "links": {
+                  "additionalProperties": false,
+                  "description": "Links to related objects.",
+                  "type": "object",
+                  "properties": {
+                    "pr_url": {
+                      "format": "uri",
+                      "description": "Pull request URL.",
+                      "type": "string"
+                    },
+                    "commit_sha": {
+                      "pattern": "^[0-9a-f]{7,64}$",
+                      "description": "Git commit SHA.",
+                      "type": "string"
+                    },
+                    "run_url": {
+                      "format": "uri",
+                      "description": "CI run or agent run URL.",
+                      "type": "string"
+                    },
+                    "item_id": {
+                      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                      "description": "Related review item.",
+                      "type": "string"
+                    }
+                  }
+                },
+                "data": {
+                  "description": "Source-specific extras with no field of their own. Keep it small and never put secrets here.",
+                  "type": "object",
+                  "patternProperties": {
+                    "^(.*)$": {}
+                  }
+                },
+                "redacted": {
+                  "description": "Field paths whose values were removed or masked before the event was written, for example tool.input_summary.",
+                  "type": "array",
+                  "items": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "description": "Pass as cursor to get the next page. null on the last page.",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "search_decisions",
+      "description": "Search past rule verdicts and human decisions, for example to check whether a person already decided a similar case.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "text": {
+            "description": "Words to match in the decision reason.",
+            "type": "string"
+          },
+          "rule_id": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "allow",
+              "block",
+              "ask",
+              "approve",
+              "deny",
+              "answer",
+              "override"
+            ]
+          },
+          "repo": {
+            "type": "string"
+          },
+          "target": {
+            "description": "Substring of the target value: file path, command or URL.",
+            "type": "string"
+          },
+          "person": {
+            "description": "Who decided.",
+            "type": "string"
+          },
+          "item_id": {
+            "type": "string"
+          },
+          "from": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "to": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "limit": {
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Maximum number of results.",
+            "type": "integer"
+          },
+          "cursor": {
+            "description": "Opaque cursor from next_cursor of the previous page.",
+            "type": "string"
+          }
+        }
+      },
+      "outputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "decisions",
+          "next_cursor"
+        ],
+        "properties": {
+          "decisions": {
+            "description": "decision.recorded and policy.evaluated events, newest first.",
+            "type": "array",
+            "items": {
+              "title": "LedgerEvent",
+              "description": "One ledger record: a run, tool call, approval, human decision or cost, from any coding agent. Events are append-only.",
+              "additionalProperties": false,
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "tool.called"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "tool"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "tool.result"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "tool"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "decision.recorded"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "decision"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "policy.evaluated"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "decision"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "cost.recorded"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "cost"
+                    ]
+                  }
+                }
+              ],
+              "type": "object",
+              "required": [
+                "id",
+                "schema",
+                "ts",
+                "source",
+                "kind",
+                "actor"
+              ],
+              "properties": {
+                "id": {
+                  "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                  "description": "Event id, a UUIDv7 so ids sort by time. Also the idempotency key: writing the same id twice stores one event.",
+                  "type": "string"
+                },
+                "schema": {
+                  "description": "Schema version tag.",
+                  "const": "selfhost.event/v1",
+                  "type": "string"
+                },
+                "ts": {
+                  "format": "date-time",
+                  "description": "When the event happened (not when it was ingested), with a UTC offset.",
+                  "type": "string"
+                },
+                "source": {
+                  "description": "Ingest path: hook (agent hook), otel (OpenTelemetry export), local_log (agent log on disk), vendor_api (vendor audit or compliance API), github, gateway (model gateway), sdk, cli, or server (selfhost itself).",
+                  "type": "string",
+                  "enum": [
+                    "hook",
+                    "otel",
+                    "local_log",
+                    "vendor_api",
+                    "github",
+                    "gateway",
+                    "sdk",
+                    "cli",
+                    "server"
+                  ]
+                },
+                "kind": {
+                  "description": "What happened.",
+                  "type": "string",
+                  "enum": [
+                    "session.started",
+                    "session.ended",
+                    "prompt.submitted",
+                    "tool.called",
+                    "tool.result",
+                    "approval.requested",
+                    "decision.recorded",
+                    "cost.recorded",
+                    "commit.created",
+                    "pr.opened",
+                    "pr.merged",
+                    "pr.closed",
+                    "policy.evaluated",
+                    "alert.raised"
+                  ]
+                },
+                "actor": {
+                  "additionalProperties": false,
+                  "description": "Who did it.",
+                  "type": "object",
+                  "required": [
+                    "kind",
+                    "id"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "description": "person for a human, agent for a coding agent acting on its own, system for selfhost, CI or another service.",
+                      "type": "string",
+                      "enum": [
+                        "person",
+                        "agent",
+                        "system"
+                      ]
+                    },
+                    "id": {
+                      "minLength": 1,
+                      "description": "Stable identifier: email or login for a person, agent or run id for an agent, component name for system.",
+                      "type": "string"
+                    },
+                    "name": {
+                      "description": "Display name.",
+                      "type": "string"
+                    }
+                  }
+                },
+                "org": {
+                  "description": "Organization slug.",
+                  "type": "string"
+                },
+                "team": {
+                  "description": "Team name from selfhost.toml [teams].",
+                  "type": "string"
+                },
+                "repo": {
+                  "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+                  "description": "Repository as owner/name.",
+                  "type": "string"
+                },
+                "agent": {
+                  "additionalProperties": false,
+                  "description": "Which coding agent was involved.",
+                  "type": "object",
+                  "required": [
+                    "vendor"
+                  ],
+                  "properties": {
+                    "vendor": {
+                      "description": "Agent product.",
+                      "type": "string",
+                      "enum": [
+                        "claude_code",
+                        "codex",
+                        "opencode",
+                        "goose",
+                        "cursor",
+                        "copilot",
+                        "other"
+                      ]
+                    },
+                    "version": {
+                      "description": "Agent CLI or app version, for example 2.1.0.",
+                      "type": "string"
+                    },
+                    "name": {
+                      "description": "Agent or subagent name when the vendor reports one, for example a Claude Code subagent type.",
+                      "type": "string"
+                    }
+                  }
+                },
+                "model": {
+                  "description": "Model id as the vendor reports it, for example claude-opus-4 or gpt-5-codex.",
+                  "type": "string"
+                },
+                "session_id": {
+                  "description": "Vendor session id, for example the Claude Code session_id or Codex thread id.",
+                  "type": "string"
+                },
+                "run_id": {
+                  "description": "Run id that groups work on one task, or a CI run id.",
+                  "type": "string"
+                },
+                "tool": {
+                  "additionalProperties": false,
+                  "description": "Tool call details.",
+                  "type": "object",
+                  "required": [
+                    "name"
+                  ],
+                  "properties": {
+                    "name": {
+                      "minLength": 1,
+                      "description": "Tool name as the vendor reports it, for example Bash, Edit or an MCP tool name.",
+                      "type": "string"
+                    },
+                    "input_summary": {
+                      "description": "Short, redacted summary of the tool input, such as the command or file path. Full inputs are not stored here.",
+                      "type": "string"
+                    }
+                  }
+                },
+                "target": {
+                  "additionalProperties": false,
+                  "description": "What the action touched.",
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "properties": {
+                    "type": {
+                      "description": "What kind of thing was touched.",
+                      "type": "string",
+                      "enum": [
+                        "file",
+                        "command",
+                        "url",
+                        "repo",
+                        "pr",
+                        "resource"
+                      ]
+                    },
+                    "value": {
+                      "minLength": 1,
+                      "description": "The file path, command, URL, owner/name, PR URL or resource id.",
+                      "type": "string"
+                    }
+                  }
+                },
+                "decision": {
+                  "additionalProperties": false,
+                  "description": "A rule verdict or a human decision.",
+                  "type": "object",
+                  "required": [
+                    "verdict"
+                  ],
+                  "properties": {
+                    "verdict": {
+                      "description": "allow, block and ask come from a rule. approve, deny, answer and override come from a person.",
+                      "type": "string",
+                      "enum": [
+                        "allow",
+                        "block",
+                        "ask",
+                        "approve",
+                        "deny",
+                        "answer",
+                        "override"
+                      ]
+                    },
+                    "by": {
+                      "description": "Person who decided, or the rule engine for rule verdicts.",
+                      "type": "string"
+                    },
+                    "reason": {
+                      "description": "Why. For a question, the answer text.",
+                      "type": "string"
+                    },
+                    "rule_id": {
+                      "description": "Rule id from selfhost.toml when a rule decided.",
+                      "type": "string"
+                    },
+                    "mode": {
+                      "description": "Rule mode at decision time. In observe, block and ask verdicts are recorded but not applied.",
+                      "type": "string",
+                      "enum": [
+                        "observe",
+                        "enforce"
+                      ]
+                    },
+                    "item_id": {
+                      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                      "description": "Review item this decision answers.",
+                      "type": "string"
+                    },
+                    "replaces_event_id": {
+                      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                      "description": "Earlier decision event this one supersedes. The ledger is append-only, so corrections are new events.",
+                      "type": "string"
+                    }
+                  }
+                },
+                "cost": {
+                  "additionalProperties": false,
+                  "description": "Tokens and spend for this event.",
+                  "type": "object",
+                  "required": [
+                    "input_tokens",
+                    "output_tokens",
+                    "cache_read_tokens",
+                    "cache_write_tokens",
+                    "usd",
+                    "estimated"
+                  ],
+                  "properties": {
+                    "input_tokens": {
+                      "minimum": 0,
+                      "description": "Uncached input tokens.",
+                      "type": "integer"
+                    },
+                    "output_tokens": {
+                      "minimum": 0,
+                      "description": "Output tokens, including reasoning tokens.",
+                      "type": "integer"
+                    },
+                    "cache_read_tokens": {
+                      "minimum": 0,
+                      "description": "Input tokens read from the prompt cache.",
+                      "type": "integer"
+                    },
+                    "cache_write_tokens": {
+                      "minimum": 0,
+                      "description": "Input tokens written to the prompt cache.",
+                      "type": "integer"
+                    },
+                    "usd": {
+                      "minimum": 0,
+                      "description": "Cost in US dollars.",
+                      "type": "number"
+                    },
+                    "estimated": {
+                      "description": "true when usd was computed from a price table, false when the vendor reported it.",
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "links": {
+                  "additionalProperties": false,
+                  "description": "Links to related objects.",
+                  "type": "object",
+                  "properties": {
+                    "pr_url": {
+                      "format": "uri",
+                      "description": "Pull request URL.",
+                      "type": "string"
+                    },
+                    "commit_sha": {
+                      "pattern": "^[0-9a-f]{7,64}$",
+                      "description": "Git commit SHA.",
+                      "type": "string"
+                    },
+                    "run_url": {
+                      "format": "uri",
+                      "description": "CI run or agent run URL.",
+                      "type": "string"
+                    },
+                    "item_id": {
+                      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                      "description": "Related review item.",
+                      "type": "string"
+                    }
+                  }
+                },
+                "data": {
+                  "description": "Source-specific extras with no field of their own. Keep it small and never put secrets here.",
+                  "type": "object",
+                  "patternProperties": {
+                    "^(.*)$": {}
+                  }
+                },
+                "redacted": {
+                  "description": "Field paths whose values were removed or masked before the event was written, for example tool.input_summary.",
+                  "type": "array",
+                  "items": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "description": "Pass as cursor to get the next page. null on the last page.",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "record_decision",
+      "description": "Record a human decision on a review item. Writes a decision.recorded event.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "item_id",
+          "verdict"
+        ],
+        "properties": {
+          "item_id": {
+            "minLength": 1,
+            "description": "Review item to answer.",
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "approve",
+              "deny",
+              "answer",
+              "override"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "outputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "item",
+          "decision_event"
+        ],
+        "properties": {
+          "item": {
+            "title": "ReviewItem",
+            "description": "One entry in the review list: something that needs a human, ranked by risk and whether an agent is blocked.",
+            "additionalProperties": false,
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "state": {
+                      "const": "answered"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "answer"
+                  ]
+                }
+              }
+            ],
+            "type": "object",
+            "required": [
+              "id",
+              "schema",
+              "kind",
+              "title",
+              "created_at",
+              "updated_at",
+              "state",
+              "blocking",
+              "risk",
+              "owners",
+              "source_event_ids"
+            ],
+            "properties": {
+              "id": {
+                "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                "description": "Review item id.",
+                "type": "string"
+              },
+              "schema": {
+                "description": "Schema version tag.",
+                "const": "selfhost.review_item/v1",
+                "type": "string"
+              },
+              "kind": {
+                "description": "pr (agent pull request), approval (an agent waits for permission), question (an agent asks a person), blocked_action (a rule blocked something), stuck_run, budget, spend_spike, quality, or policy_report (what an observed rule would have blocked).",
+                "type": "string",
+                "enum": [
+                  "pr",
+                  "approval",
+                  "question",
+                  "blocked_action",
+                  "stuck_run",
+                  "budget",
+                  "spend_spike",
+                  "quality",
+                  "policy_report"
+                ]
+              },
+              "title": {
+                "minLength": 1,
+                "description": "One line shown in the list.",
+                "type": "string"
+              },
+              "created_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "updated_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "state": {
+                "description": "Lifecycle state.",
+                "type": "string",
+                "enum": [
+                  "open",
+                  "answered",
+                  "dismissed",
+                  "expired"
+                ]
+              },
+              "blocking": {
+                "description": "true when an agent is waiting on this answer.",
+                "type": "boolean"
+              },
+              "risk": {
+                "additionalProperties": false,
+                "description": "Risk score and why.",
+                "type": "object",
+                "required": [
+                  "score",
+                  "reasons"
+                ],
+                "properties": {
+                  "score": {
+                    "minimum": 0,
+                    "maximum": 100,
+                    "description": "0 is safe to skim, 100 needs a careful human read. Drives the ranking.",
+                    "type": "integer"
+                  },
+                  "reasons": {
+                    "description": "Plain-language reasons behind the score, most important first.",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "repo": {
+                "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+                "description": "Repository as owner/name.",
+                "type": "string"
+              },
+              "url": {
+                "format": "uri",
+                "description": "Where to act, for example the PR URL.",
+                "type": "string"
+              },
+              "owners": {
+                "description": "People who should answer, from [review.owners] or the session owner.",
+                "type": "array",
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "agent": {
+                "additionalProperties": false,
+                "description": "Which coding agent was involved.",
+                "type": "object",
+                "required": [
+                  "vendor"
+                ],
+                "properties": {
+                  "vendor": {
+                    "description": "Agent product.",
+                    "type": "string",
+                    "enum": [
+                      "claude_code",
+                      "codex",
+                      "opencode",
+                      "goose",
+                      "cursor",
+                      "copilot",
+                      "other"
+                    ]
+                  },
+                  "version": {
+                    "description": "Agent CLI or app version, for example 2.1.0.",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "Agent or subagent name when the vendor reports one, for example a Claude Code subagent type.",
+                    "type": "string"
+                  }
+                }
+              },
+              "session_id": {
+                "description": "Vendor session id.",
+                "type": "string"
+              },
+              "run_id": {
+                "description": "Run id.",
+                "type": "string"
+              },
+              "brief": {
+                "description": "Markdown summary of what the reviewer needs to know to decide quickly.",
+                "type": "string"
+              },
+              "source_event_ids": {
+                "description": "Ledger events this item was built from.",
+                "type": "array",
+                "items": {
+                  "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                  "type": "string"
+                }
+              },
+              "answer": {
+                "additionalProperties": false,
+                "description": "The human answer that closed the item.",
+                "type": "object",
+                "required": [
+                  "by",
+                  "verdict",
+                  "at",
+                  "decision_event_id"
+                ],
+                "properties": {
+                  "by": {
+                    "minLength": 1,
+                    "description": "Person who answered.",
+                    "type": "string"
+                  },
+                  "verdict": {
+                    "description": "allow, block and ask come from a rule. approve, deny, answer and override come from a person.",
+                    "type": "string",
+                    "enum": [
+                      "allow",
+                      "block",
+                      "ask",
+                      "approve",
+                      "deny",
+                      "answer",
+                      "override"
+                    ]
+                  },
+                  "reason": {
+                    "description": "Why. For a question, the answer text.",
+                    "type": "string"
+                  },
+                  "at": {
+                    "format": "date-time",
+                    "description": "When the answer was recorded.",
+                    "type": "string"
+                  },
+                  "decision_event_id": {
+                    "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                    "description": "The decision.recorded ledger event that holds this answer.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "decision_event": {
+            "title": "LedgerEvent",
+            "description": "One ledger record: a run, tool call, approval, human decision or cost, from any coding agent. Events are append-only.",
+            "additionalProperties": false,
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "const": "tool.called"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "tool"
+                  ]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "const": "tool.result"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "tool"
+                  ]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "const": "decision.recorded"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "decision"
+                  ]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "const": "policy.evaluated"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "decision"
+                  ]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "const": "cost.recorded"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "cost"
+                  ]
+                }
+              }
+            ],
+            "type": "object",
+            "required": [
+              "id",
+              "schema",
+              "ts",
+              "source",
+              "kind",
+              "actor"
+            ],
+            "properties": {
+              "id": {
+                "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                "description": "Event id, a UUIDv7 so ids sort by time. Also the idempotency key: writing the same id twice stores one event.",
+                "type": "string"
+              },
+              "schema": {
+                "description": "Schema version tag.",
+                "const": "selfhost.event/v1",
+                "type": "string"
+              },
+              "ts": {
+                "format": "date-time",
+                "description": "When the event happened (not when it was ingested), with a UTC offset.",
+                "type": "string"
+              },
+              "source": {
+                "description": "Ingest path: hook (agent hook), otel (OpenTelemetry export), local_log (agent log on disk), vendor_api (vendor audit or compliance API), github, gateway (model gateway), sdk, cli, or server (selfhost itself).",
+                "type": "string",
+                "enum": [
+                  "hook",
+                  "otel",
+                  "local_log",
+                  "vendor_api",
+                  "github",
+                  "gateway",
+                  "sdk",
+                  "cli",
+                  "server"
+                ]
+              },
+              "kind": {
+                "description": "What happened.",
+                "type": "string",
+                "enum": [
+                  "session.started",
+                  "session.ended",
+                  "prompt.submitted",
+                  "tool.called",
+                  "tool.result",
+                  "approval.requested",
+                  "decision.recorded",
+                  "cost.recorded",
+                  "commit.created",
+                  "pr.opened",
+                  "pr.merged",
+                  "pr.closed",
+                  "policy.evaluated",
+                  "alert.raised"
+                ]
+              },
+              "actor": {
+                "additionalProperties": false,
+                "description": "Who did it.",
+                "type": "object",
+                "required": [
+                  "kind",
+                  "id"
+                ],
+                "properties": {
+                  "kind": {
+                    "description": "person for a human, agent for a coding agent acting on its own, system for selfhost, CI or another service.",
+                    "type": "string",
+                    "enum": [
+                      "person",
+                      "agent",
+                      "system"
+                    ]
+                  },
+                  "id": {
+                    "minLength": 1,
+                    "description": "Stable identifier: email or login for a person, agent or run id for an agent, component name for system.",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "Display name.",
+                    "type": "string"
+                  }
+                }
+              },
+              "org": {
+                "description": "Organization slug.",
+                "type": "string"
+              },
+              "team": {
+                "description": "Team name from selfhost.toml [teams].",
+                "type": "string"
+              },
+              "repo": {
+                "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+                "description": "Repository as owner/name.",
+                "type": "string"
+              },
+              "agent": {
+                "additionalProperties": false,
+                "description": "Which coding agent was involved.",
+                "type": "object",
+                "required": [
+                  "vendor"
+                ],
+                "properties": {
+                  "vendor": {
+                    "description": "Agent product.",
+                    "type": "string",
+                    "enum": [
+                      "claude_code",
+                      "codex",
+                      "opencode",
+                      "goose",
+                      "cursor",
+                      "copilot",
+                      "other"
+                    ]
+                  },
+                  "version": {
+                    "description": "Agent CLI or app version, for example 2.1.0.",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "Agent or subagent name when the vendor reports one, for example a Claude Code subagent type.",
+                    "type": "string"
+                  }
+                }
+              },
+              "model": {
+                "description": "Model id as the vendor reports it, for example claude-opus-4 or gpt-5-codex.",
+                "type": "string"
+              },
+              "session_id": {
+                "description": "Vendor session id, for example the Claude Code session_id or Codex thread id.",
+                "type": "string"
+              },
+              "run_id": {
+                "description": "Run id that groups work on one task, or a CI run id.",
+                "type": "string"
+              },
+              "tool": {
+                "additionalProperties": false,
+                "description": "Tool call details.",
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "minLength": 1,
+                    "description": "Tool name as the vendor reports it, for example Bash, Edit or an MCP tool name.",
+                    "type": "string"
+                  },
+                  "input_summary": {
+                    "description": "Short, redacted summary of the tool input, such as the command or file path. Full inputs are not stored here.",
+                    "type": "string"
+                  }
+                }
+              },
+              "target": {
+                "additionalProperties": false,
+                "description": "What the action touched.",
+                "type": "object",
+                "required": [
+                  "type",
+                  "value"
+                ],
+                "properties": {
+                  "type": {
+                    "description": "What kind of thing was touched.",
+                    "type": "string",
+                    "enum": [
+                      "file",
+                      "command",
+                      "url",
+                      "repo",
+                      "pr",
+                      "resource"
+                    ]
+                  },
+                  "value": {
+                    "minLength": 1,
+                    "description": "The file path, command, URL, owner/name, PR URL or resource id.",
+                    "type": "string"
+                  }
+                }
+              },
+              "decision": {
+                "additionalProperties": false,
+                "description": "A rule verdict or a human decision.",
+                "type": "object",
+                "required": [
+                  "verdict"
+                ],
+                "properties": {
+                  "verdict": {
+                    "description": "allow, block and ask come from a rule. approve, deny, answer and override come from a person.",
+                    "type": "string",
+                    "enum": [
+                      "allow",
+                      "block",
+                      "ask",
+                      "approve",
+                      "deny",
+                      "answer",
+                      "override"
+                    ]
+                  },
+                  "by": {
+                    "description": "Person who decided, or the rule engine for rule verdicts.",
+                    "type": "string"
+                  },
+                  "reason": {
+                    "description": "Why. For a question, the answer text.",
+                    "type": "string"
+                  },
+                  "rule_id": {
+                    "description": "Rule id from selfhost.toml when a rule decided.",
+                    "type": "string"
+                  },
+                  "mode": {
+                    "description": "Rule mode at decision time. In observe, block and ask verdicts are recorded but not applied.",
+                    "type": "string",
+                    "enum": [
+                      "observe",
+                      "enforce"
+                    ]
+                  },
+                  "item_id": {
+                    "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                    "description": "Review item this decision answers.",
+                    "type": "string"
+                  },
+                  "replaces_event_id": {
+                    "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                    "description": "Earlier decision event this one supersedes. The ledger is append-only, so corrections are new events.",
+                    "type": "string"
+                  }
+                }
+              },
+              "cost": {
+                "additionalProperties": false,
+                "description": "Tokens and spend for this event.",
+                "type": "object",
+                "required": [
+                  "input_tokens",
+                  "output_tokens",
+                  "cache_read_tokens",
+                  "cache_write_tokens",
+                  "usd",
+                  "estimated"
+                ],
+                "properties": {
+                  "input_tokens": {
+                    "minimum": 0,
+                    "description": "Uncached input tokens.",
+                    "type": "integer"
+                  },
+                  "output_tokens": {
+                    "minimum": 0,
+                    "description": "Output tokens, including reasoning tokens.",
+                    "type": "integer"
+                  },
+                  "cache_read_tokens": {
+                    "minimum": 0,
+                    "description": "Input tokens read from the prompt cache.",
+                    "type": "integer"
+                  },
+                  "cache_write_tokens": {
+                    "minimum": 0,
+                    "description": "Input tokens written to the prompt cache.",
+                    "type": "integer"
+                  },
+                  "usd": {
+                    "minimum": 0,
+                    "description": "Cost in US dollars.",
+                    "type": "number"
+                  },
+                  "estimated": {
+                    "description": "true when usd was computed from a price table, false when the vendor reported it.",
+                    "type": "boolean"
+                  }
+                }
+              },
+              "links": {
+                "additionalProperties": false,
+                "description": "Links to related objects.",
+                "type": "object",
+                "properties": {
+                  "pr_url": {
+                    "format": "uri",
+                    "description": "Pull request URL.",
+                    "type": "string"
+                  },
+                  "commit_sha": {
+                    "pattern": "^[0-9a-f]{7,64}$",
+                    "description": "Git commit SHA.",
+                    "type": "string"
+                  },
+                  "run_url": {
+                    "format": "uri",
+                    "description": "CI run or agent run URL.",
+                    "type": "string"
+                  },
+                  "item_id": {
+                    "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                    "description": "Related review item.",
+                    "type": "string"
+                  }
+                }
+              },
+              "data": {
+                "description": "Source-specific extras with no field of their own. Keep it small and never put secrets here.",
+                "type": "object",
+                "patternProperties": {
+                  "^(.*)$": {}
+                }
+              },
+              "redacted": {
+                "description": "Field paths whose values were removed or masked before the event was written, for example tool.input_summary.",
+                "type": "array",
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

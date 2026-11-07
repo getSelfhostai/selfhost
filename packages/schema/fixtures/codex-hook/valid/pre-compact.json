@@ -1,0 +1,9 @@
+{
+  "session_id": "019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b",
+  "transcript_path": "/home/dev/.codex/sessions/2026/11/07/rollout-2026-11-07T09-30-00-019a2b3c.jsonl",
+  "cwd": "/home/dev/acme-api",
+  "model": "gpt-5-codex",
+  "turn_id": "12345",
+  "hook_event_name": "PreCompact",
+  "trigger": "auto"
+}

@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: selfhost
+          POSTGRES_USER: selfhost
+          POSTGRES_PASSWORD: selfhost
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U selfhost -d selfhost"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://selfhost:selfhost@localhost:5432/selfhost
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+
+  cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      # Keep in step with the bun entry in the pnpm-workspace.yaml catalog.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:cli
+      - name: Smoke test the linux-x64 binary
+        run: |
+          ./apps/cli/dist/selfhost-linux-x64 --version
+          ./apps/cli/dist/selfhost-linux-x64 doctor
+      - uses: actions/upload-artifact@v4
+        with:
+          name: selfhost-cli
+          path: apps/cli/dist/selfhost-*
+          if-no-files-found: error

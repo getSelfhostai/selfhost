@@ -1,0 +1,7 @@
+version = 1
+
+[[rules]]
+id = "nothing"
+match = {}
+action = "block"
+message = "Matches nothing."

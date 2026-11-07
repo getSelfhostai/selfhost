@@ -1,0 +1,233 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://selfhost.ai/schema/v1/review-item.schema.json",
+  "$comment": "Generated from packages/schema/src. Run `pnpm --filter @selfhost/schema export` after changing the source. Do not edit by hand.",
+  "title": "ReviewItem",
+  "description": "One entry in the review list: something that needs a human, ranked by risk and whether an agent is blocked.",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "answered"
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "then": {
+        "required": [
+          "answer"
+        ]
+      }
+    }
+  ],
+  "type": "object",
+  "required": [
+    "id",
+    "schema",
+    "kind",
+    "title",
+    "created_at",
+    "updated_at",
+    "state",
+    "blocking",
+    "risk",
+    "owners",
+    "source_event_ids"
+  ],
+  "properties": {
+    "id": {
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+      "description": "Review item id.",
+      "type": "string"
+    },
+    "schema": {
+      "description": "Schema version tag.",
+      "const": "selfhost.review_item/v1",
+      "type": "string"
+    },
+    "kind": {
+      "description": "pr (agent pull request), approval (an agent waits for permission), question (an agent asks a person), blocked_action (a rule blocked something), stuck_run, budget, spend_spike, quality, or policy_report (what an observed rule would have blocked).",
+      "type": "string",
+      "enum": [
+        "pr",
+        "approval",
+        "question",
+        "blocked_action",
+        "stuck_run",
+        "budget",
+        "spend_spike",
+        "quality",
+        "policy_report"
+      ]
+    },
+    "title": {
+      "minLength": 1,
+      "description": "One line shown in the list.",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "state": {
+      "description": "Lifecycle state.",
+      "type": "string",
+      "enum": [
+        "open",
+        "answered",
+        "dismissed",
+        "expired"
+      ]
+    },
+    "blocking": {
+      "description": "true when an agent is waiting on this answer.",
+      "type": "boolean"
+    },
+    "risk": {
+      "additionalProperties": false,
+      "description": "Risk score and why.",
+      "type": "object",
+      "required": [
+        "score",
+        "reasons"
+      ],
+      "properties": {
+        "score": {
+          "minimum": 0,
+          "maximum": 100,
+          "description": "0 is safe to skim, 100 needs a careful human read. Drives the ranking.",
+          "type": "integer"
+        },
+        "reasons": {
+          "description": "Plain-language reasons behind the score, most important first.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "repo": {
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+      "description": "Repository as owner/name.",
+      "type": "string"
+    },
+    "url": {
+      "format": "uri",
+      "description": "Where to act, for example the PR URL.",
+      "type": "string"
+    },
+    "owners": {
+      "description": "People who should answer, from [review.owners] or the session owner.",
+      "type": "array",
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "agent": {
+      "additionalProperties": false,
+      "description": "Which coding agent was involved.",
+      "type": "object",
+      "required": [
+        "vendor"
+      ],
+      "properties": {
+        "vendor": {
+          "description": "Agent product.",
+          "type": "string",
+          "enum": [
+            "claude_code",
+            "codex",
+            "opencode",
+            "goose",
+            "cursor",
+            "copilot",
+            "other"
+          ]
+        },
+        "version": {
+          "description": "Agent CLI or app version, for example 2.1.0.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Agent or subagent name when the vendor reports one, for example a Claude Code subagent type.",
+          "type": "string"
+        }
+      }
+    },
+    "session_id": {
+      "description": "Vendor session id.",
+      "type": "string"
+    },
+    "run_id": {
+      "description": "Run id.",
+      "type": "string"
+    },
+    "brief": {
+      "description": "Markdown summary of what the reviewer needs to know to decide quickly.",
+      "type": "string"
+    },
+    "source_event_ids": {
+      "description": "Ledger events this item was built from.",
+      "type": "array",
+      "items": {
+        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+        "type": "string"
+      }
+    },
+    "answer": {
+      "additionalProperties": false,
+      "description": "The human answer that closed the item.",
+      "type": "object",
+      "required": [
+        "by",
+        "verdict",
+        "at",
+        "decision_event_id"
+      ],
+      "properties": {
+        "by": {
+          "minLength": 1,
+          "description": "Person who answered.",
+          "type": "string"
+        },
+        "verdict": {
+          "description": "allow, block and ask come from a rule. approve, deny, answer and override come from a person.",
+          "type": "string",
+          "enum": [
+            "allow",
+            "block",
+            "ask",
+            "approve",
+            "deny",
+            "answer",
+            "override"
+          ]
+        },
+        "reason": {
+          "description": "Why. For a question, the answer text.",
+          "type": "string"
+        },
+        "at": {
+          "format": "date-time",
+          "description": "When the answer was recorded.",
+          "type": "string"
+        },
+        "decision_event_id": {
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+          "description": "The decision.recorded ledger event that holds this answer.",
+          "type": "string"
+        }
+      }
+    }
+  }
+}

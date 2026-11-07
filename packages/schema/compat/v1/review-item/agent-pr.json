@@ -1,0 +1,23 @@
+{
+  "id": "01930c4e-2f1a-7b2c-8d3e-4f5a6b7c8d42",
+  "schema": "selfhost.review_item/v1",
+  "kind": "pr",
+  "title": "Add retry to webhook sender",
+  "created_at": "2026-11-07T09:30:00.000Z",
+  "updated_at": "2026-11-07T09:30:00.000Z",
+  "state": "open",
+  "blocking": false,
+  "risk": {
+    "score": 55,
+    "reasons": [
+      "No tests changed"
+    ]
+  },
+  "repo": "acme/api",
+  "url": "https://github.com/acme/api/pull/413",
+  "owners": [
+    "carol"
+  ],
+  "run_id": "run_7",
+  "source_event_ids": []
+}

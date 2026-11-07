@@ -1,0 +1,14 @@
+{
+  "pre-tool-use-missing-tool-name.json": {
+    "field": "tool_name"
+  },
+  "missing-cwd.json": {
+    "field": "cwd"
+  },
+  "stop-hook-active-not-boolean.json": {
+    "field": "stop_hook_active"
+  },
+  "transcript-path-number.json": {
+    "field": "transcript_path"
+  }
+}

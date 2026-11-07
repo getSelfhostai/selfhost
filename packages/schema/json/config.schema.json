@@ -1,0 +1,343 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://selfhost.ai/schema/v1/config.schema.json",
+  "$comment": "Generated from packages/schema/src. Run `pnpm --filter @selfhost/schema export` after changing the source. Do not edit by hand.",
+  "title": "SelfhostConfig",
+  "description": "selfhost.toml: team config compiled into each agent's own config. Rules start in observe and move to enforce.",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "version"
+  ],
+  "properties": {
+    "version": {
+      "description": "selfhost.toml format version.",
+      "const": 1,
+      "type": "number"
+    },
+    "org": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "description": "Organization name.",
+          "type": "string"
+        }
+      }
+    },
+    "ledger": {
+      "additionalProperties": false,
+      "default": {},
+      "type": "object",
+      "properties": {
+        "retention_days": {
+          "minimum": 1,
+          "default": 90,
+          "description": "Days to keep ledger events.",
+          "type": "integer"
+        },
+        "log_prompts": {
+          "default": false,
+          "description": "Store prompt text. Off by default: only metadata is stored.",
+          "type": "boolean"
+        }
+      }
+    },
+    "redaction": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "pattern"
+        ],
+        "properties": {
+          "name": {
+            "minLength": 1,
+            "description": "Name recorded in the event's redacted list.",
+            "type": "string"
+          },
+          "pattern": {
+            "minLength": 1,
+            "description": "Regular expression whose matches are masked before storage.",
+            "type": "string"
+          }
+        }
+      }
+    },
+    "rules": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "match",
+          "action",
+          "message"
+        ],
+        "properties": {
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+            "description": "Stable rule id, recorded on every decision the rule makes.",
+            "type": "string"
+          },
+          "description": {
+            "description": "What the rule is for.",
+            "type": "string"
+          },
+          "mode": {
+            "description": "observe records what the rule would have done, enforce applies it, off disables it.",
+            "default": "observe",
+            "type": "string",
+            "enum": [
+              "observe",
+              "enforce",
+              "off"
+            ]
+          },
+          "agents": {
+            "minItems": 1,
+            "description": "Agents the rule applies to. \"all\" matches every agent.",
+            "default": [
+              "all"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "all",
+                "claude_code",
+                "codex",
+                "opencode",
+                "goose",
+                "cursor",
+                "copilot",
+                "other"
+              ]
+            }
+          },
+          "match": {
+            "additionalProperties": false,
+            "minProperties": 1,
+            "description": "What the rule matches. Every field given must match.",
+            "type": "object",
+            "properties": {
+              "tool": {
+                "minLength": 1,
+                "description": "Exact tool name, for example Bash, Edit or an MCP tool name.",
+                "type": "string"
+              },
+              "command": {
+                "minLength": 1,
+                "description": "Regular expression tested against shell commands.",
+                "type": "string"
+              },
+              "path": {
+                "minLength": 1,
+                "description": "Glob tested against file paths relative to the repository root.",
+                "type": "string"
+              },
+              "url": {
+                "minLength": 1,
+                "description": "Glob tested against URLs the agent requests.",
+                "type": "string"
+              }
+            }
+          },
+          "action": {
+            "description": "block stops the action, ask sends it to a person.",
+            "type": "string",
+            "enum": [
+              "block",
+              "ask"
+            ]
+          },
+          "message": {
+            "minLength": 1,
+            "description": "Shown to the agent and the person when the rule fires.",
+            "type": "string"
+          },
+          "irreversible": {
+            "default": false,
+            "description": "true when the matched action cannot be undone, which raises review risk.",
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "review": {
+      "additionalProperties": false,
+      "default": {},
+      "type": "object",
+      "properties": {
+        "high_risk_paths": {
+          "default": [],
+          "description": "Globs whose changes always rank as high risk.",
+          "type": "array",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "high_risk_threshold": {
+          "minimum": 0,
+          "maximum": 100,
+          "default": 70,
+          "description": "Risk score at or above which an item counts as high risk.",
+          "type": "integer"
+        },
+        "owners": {
+          "default": {},
+          "description": "Path glob to the people who review changes under it.",
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "packages": {
+      "additionalProperties": false,
+      "default": {},
+      "type": "object",
+      "properties": {
+        "mode": {
+          "description": "observe logs installs that break the policy, enforce blocks them.",
+          "default": "observe",
+          "type": "string",
+          "enum": [
+            "observe",
+            "enforce",
+            "off"
+          ]
+        },
+        "allow": {
+          "default": [],
+          "description": "Package names or globs to allow.",
+          "type": "array",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "deny": {
+          "default": [],
+          "description": "Package names or globs to deny.",
+          "type": "array",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "min_age_days": {
+          "minimum": 0,
+          "description": "Flag package versions published fewer than this many days ago.",
+          "type": "integer"
+        }
+      }
+    },
+    "alerts": {
+      "additionalProperties": false,
+      "default": {},
+      "type": "object",
+      "properties": {
+        "spike_factor": {
+          "exclusiveMinimum": 1,
+          "default": 10,
+          "description": "Raise a spend spike when spend exceeds this multiple of the usual rate.",
+          "type": "number"
+        }
+      }
+    },
+    "teams": {
+      "default": {},
+      "description": "Teams by name.",
+      "type": "object",
+      "patternProperties": {
+        "^(.*)$": {
+          "additionalProperties": false,
+          "default": {},
+          "type": "object",
+          "properties": {
+            "members": {
+              "default": [],
+              "description": "People in the team.",
+              "type": "array",
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "rules": {
+              "default": {},
+              "description": "Per-rule overrides for this team, keyed by rule id.",
+              "type": "object",
+              "patternProperties": {
+                "^(.*)$": {
+                  "additionalProperties": false,
+                  "minProperties": 1,
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "description": "Mode for this team.",
+                      "type": "string",
+                      "enum": [
+                        "observe",
+                        "enforce",
+                        "off"
+                      ]
+                    },
+                    "agents": {
+                      "minItems": 1,
+                      "description": "Agents the rule applies to. \"all\" matches every agent.",
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "all",
+                          "claude_code",
+                          "codex",
+                          "opencode",
+                          "goose",
+                          "cursor",
+                          "copilot",
+                          "other"
+                        ]
+                      }
+                    },
+                    "action": {
+                      "type": "string",
+                      "enum": [
+                        "block",
+                        "ask"
+                      ]
+                    },
+                    "message": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
