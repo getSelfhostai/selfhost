@@ -7,6 +7,7 @@ import {
   type ConfigureOptions,
   configureCommand,
 } from "./agents.js";
+import { registerAlerts } from "./alerts/commands.js";
 import { defaultConfigPath } from "./config-file.js";
 import { doctor } from "./doctor.js";
 import { type ImportCommandOptions, type ImportIo, runImport, runWatch } from "./import.js";
@@ -218,6 +219,18 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
     });
 
   registerSpend(program);
+  registerAlerts(
+    program,
+    () => ({
+      env: deps.env,
+      cwd: deps.cwd,
+      write: deps.write,
+      setExitCode: deps.setExitCode,
+      now: deps.now,
+      configPath: deps.configPath ?? defaultConfigPath(),
+    }),
+    fail,
+  );
 
   registerPolicy(
     program,

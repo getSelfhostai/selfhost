@@ -2,7 +2,9 @@
 
 Spend grouped by request type, agent, model and person, per UTC day, and a detector that flags a
 request type the day its share of spend crosses a threshold. Status pings, retry loops and
-background requests show up the day they start, not at the end of the month.
+background requests show up the day they start, not at the end of the month. Also: when each
+person's Claude and Codex plan limits run out this week ([limit forecast](#limit-forecast)), and
+spend that jumps out of its usual band as a possible stolen key ([spike alarm](#spike-alarm)).
 
 ```ts
 import { detectWaste, groupSpend, oneSourcePerSession } from "@selfhost/spend";
@@ -108,3 +110,93 @@ A session can reach the ledger from several sources at once, for example OpenTel
 local logs. `oneSourcePerSession(events)` keeps the cost events of one source per agent and
 session, in the order `otel`, `local_log`, `hook`, `gateway`, `vendor_api`, so nothing is counted
 twice. OpenTelemetry comes first because it is the only source that sees every request.
+
+## Limit forecast
+
+`forecastLimits(events, person, { now, tiers, limits, warnHours, overflow })` says, for each of a
+person's plans (`claude` from Claude Code usage, `codex` from Codex usage), when the plan's limit
+runs out this week. It reads only `cost.recorded` events and the `usage_limit` alerts the
+importers write; it never reads vendor logins or credentials. Gateway spend is billed to an API
+key, not the subscription, so it does not count.
+
+Usage is in API-equivalent USD: the estimated cost the ledger records for the same tokens.
+Vendors publish limits as multiples and hours, not numbers, so a limit is resolved per window,
+and the output names which basis it used (`basis`, `basis_label`):
+
+1. `calibrated`: the person's own limit hits in the last 28 days. The importers turn the hit
+   Claude Code and Codex log (see [`packages/importers`](../importers/README.md#events)) into an
+   `alert.raised` event with `data.alert: "usage_limit"`; the limit is the median, over the
+   latest three hits, of the usage in that window up to the hit. A hit that does not name its
+   window counts as the 5-hour window.
+2. `table`: the tier the person set (`selfhost spend plan claude=max_5x`), from `[plans]` in
+   selfhost.toml, else the built-in table below.
+3. `none`: no hit and no tier, so no forecast for that window.
+
+The built-in table (`PLAN_LIMITS`, as of `PLAN_LIMITS_AS_OF`, 2026-11-01) holds rough starting
+points, to be replaced by calibration or by `[plans]`. Check them against real accounts before
+relying on them.
+
+| Plan   | Tier       | 5-hour | Weekly |
+| ------ | ---------- | -----: | -----: |
+| claude | `pro`      |    $10 |    $75 |
+| claude | `max_5x`   |    $50 |   $375 |
+| claude | `max_20x`  |   $200 |  $1500 |
+| codex  | `plus`     |     $8 |    $50 |
+| codex  | `business` |     $8 |    $50 |
+| codex  | `pro`      |    $60 |   $400 |
+
+Each plan has two windows:
+
+- **5-hour session window**: starts at the hour of the first request after the previous one
+  ended, as ccusage models it. The projection takes the burn rate over the last hour (at least
+  half an hour, so a burst in the first minutes is spread out) to the end of the window.
+  `run_out` is null when the window resets first.
+- **Weekly window**: Monday 00:00 UTC to Monday, unless a weekly limit hit gave a reset time, in
+  which case weeks start there. The projection replays the same hours of the week from the last
+  7 days over the rest of this week, hour by hour. `run_out` is null when the week ends first
+  ("not this week").
+
+A window is `warn` when its run-out is within `warnHours` (default 24, `[alerts]
+forecast_warn_hours`), `reached` when usage is at the limit, `idle` when no session window is
+running, and `unknown` without a limit. A plan that warns or has reached a limit gets a
+`suggestion`: overflow to the team's API key (`[plans.overflow]`) while its spend this month is
+under its cap, else move background work to the quietest 4 hours of the person's day.
+
+## Spike alarm
+
+`detectSpikes(events, { now, since, factor, floorUsd, baselineDays, madK })` adds up spend per
+15-minute slot for each series: one key (`data.key_alias` from the gateway, or a provider key
+actor), person, agent and runtime (`data.runtime`). Each slot from `since` to `now` is compared
+with that series' own baseline at the same time of day:
+
+- For each of the trailing `baselineDays` (default 14, `[alerts] spike_baseline_days`) on which
+  the series had any spend, take the highest slot within 30 minutes of the same time of day.
+- `band = max(factor x median, median + madK x 1.4826 x MAD)`, with `factor` from `[alerts]
+  spike_factor` (default 10) and `madK` 6.
+- A slot above the band alarms, unless it is under `floorUsd` (default 5, `[alerts]
+  spike_floor_usd`); spend under the floor never alarms. A series with fewer than 3 days of
+  spend has no baseline yet, so any slot at or above the floor alarms (`reason: no_baseline`).
+
+A slot's baseline only looks back, so evaluating a week at once gives the same alarms as
+evaluating each slot as it ends. Each alarm lists the actions that apply: `rotate_key` always,
+`pause_runtime` when the spend ran on a runtime, `disable_virtual_key` when it went through a
+gateway key. On a synthetic three-person team, a normal week replayed slot by slot raises
+nothing even with no floor, and one person's normal week spent in one hour alarms in its first
+15 minutes (`test/spike.test.ts`, `test/backtest.test.ts`).
+
+## Key rotation runbook
+
+What a spend spike alarm links to (override with `[alerts] runbook_url`). Treat it as a
+possible stolen key until shown otherwise.
+
+1. Find the series in the alarm: key, person, agent, runtime. `selfhost spend --since 1d --by
+   person,agent` shows what else it spent.
+2. Gateway virtual key: disable it in the gateway (LiteLLM: `POST /key/block`), then issue a new
+   one to its owner.
+3. Provider API key: create a new key in the Anthropic or OpenAI console, roll it out, then
+   revoke the old one and check the provider's usage page for spend you do not recognise.
+4. A person's own login: sign out of the agent on every machine (`/logout` in Claude Code,
+   `codex logout`), sign in again, and review the account's active sessions.
+5. A runtime: pause it and its scheduled runs until the owner confirms the work.
+6. Tell the owner and the budget owner what was rotated. The alarm stays in the ledger as an
+   `alert.raised` event with `data.alert: "spend_spike"`.

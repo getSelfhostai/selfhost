@@ -1,7 +1,7 @@
 import { type Static, Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { parse as parseToml, TomlError } from "smol-toml";
-import { NonEmpty, StringEnum, schemaId } from "./common.js";
+import { NonEmpty, StringEnum, schemaId, Url } from "./common.js";
 import { AGENT_VENDORS } from "./event.js";
 import { TomlLineIndex } from "./toml-lines.js";
 import {
@@ -148,6 +148,30 @@ export const TeamSchema = Type.Object(
   { additionalProperties: false, default: {} },
 );
 
+const UsdPerWindow = (description: string) =>
+  Type.Optional(Type.Number({ exclusiveMinimum: 0, description }));
+
+export const PlanLimitsSchema = Type.Object(
+  {
+    session_usd: UsdPerWindow("Usage that fills the 5-hour session window."),
+    weekly_usd: UsdPerWindow("Usage that fills the weekly window."),
+  },
+  {
+    additionalProperties: false,
+    minProperties: 1,
+    description:
+      "Approximate limits of one plan tier, in API-equivalent USD (the estimated cost the ledger records for the same tokens).",
+  },
+);
+
+const PlanTiersSchema = (plan: string) =>
+  Type.Optional(
+    Type.Record(Type.String({ pattern: "^[a-z0-9_]+$" }), PlanLimitsSchema, {
+      additionalProperties: false,
+      description: `${plan} plan tiers by name, for example max_5x. Each one overrides the same tier in the built-in table.`,
+    }),
+  );
+
 export const SelfhostConfigSchema = Type.Object(
   {
     version: Type.Literal(1, { description: "selfhost.toml format version." }),
@@ -257,8 +281,68 @@ export const SelfhostConfigSchema = Type.Object(
                 "Raise a spend spike when spend exceeds this multiple of the usual rate.",
             }),
           ),
+          spike_floor_usd: Type.Optional(
+            Type.Number({
+              minimum: 0,
+              default: 5,
+              description: "Spend under this many USD in 15 minutes never raises a spike alarm.",
+            }),
+          ),
+          spike_baseline_days: Type.Optional(
+            Type.Integer({
+              minimum: 3,
+              maximum: 60,
+              default: 14,
+              description:
+                "Trailing days the spike baseline uses for each 15-minute slot of the day.",
+            }),
+          ),
+          forecast_warn_hours: Type.Optional(
+            Type.Number({
+              exclusiveMinimum: 0,
+              default: 24,
+              description: "Warn when a plan limit is forecast to run out within this many hours.",
+            }),
+          ),
+          runbook_url: Type.Optional(
+            Url({ description: "Key rotation runbook linked from spend spike alarms." }),
+          ),
         },
         { additionalProperties: false, default: {} },
+      ),
+    ),
+    plans: Type.Optional(
+      Type.Object(
+        {
+          as_of: Type.Optional(
+            Type.String({
+              pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+              description: "Day the limits below were last checked, YYYY-MM-DD.",
+            }),
+          ),
+          claude: PlanTiersSchema("Claude"),
+          codex: PlanTiersSchema("Codex"),
+          overflow: Type.Optional(
+            Type.Object(
+              {
+                key: NonEmpty({
+                  description:
+                    "Team API key to overflow to, by its gateway alias, suggested when a plan limit is about to run out.",
+                }),
+                monthly_cap_usd: Type.Number({
+                  exclusiveMinimum: 0,
+                  description: "Spend cap on that key per calendar month (UTC).",
+                }),
+              },
+              { additionalProperties: false },
+            ),
+          ),
+        },
+        {
+          additionalProperties: false,
+          description:
+            "Subscription plan limits for the limit forecast. Vendors do not publish them as numbers, so these override a dated built-in table. Each person sets their own tier.",
+        },
       ),
     ),
     teams: Type.Optional(
@@ -279,6 +363,7 @@ export type Rule = Static<typeof RuleSchema>;
 export type RuleMatch = Static<typeof RuleMatchSchema>;
 export type RuleOverride = Static<typeof RuleOverrideSchema>;
 export type Team = Static<typeof TeamSchema>;
+export type PlanLimits = Static<typeof PlanLimitsSchema>;
 
 type Present<T> = Exclude<T, undefined>;
 
@@ -298,7 +383,8 @@ export type ResolvedSelfhostConfig = Omit<
     Required<Pick<Present<SelfhostConfig["packages"]>, "mode" | "allow" | "deny">>;
   mcp: Required<Present<SelfhostConfig["mcp"]>>;
   models: Required<Present<SelfhostConfig["models"]>>;
-  alerts: Required<Present<SelfhostConfig["alerts"]>>;
+  alerts: Present<SelfhostConfig["alerts"]> &
+    Required<Omit<Present<SelfhostConfig["alerts"]>, "runbook_url">>;
   teams: Record<string, ResolvedTeam>;
 };
 

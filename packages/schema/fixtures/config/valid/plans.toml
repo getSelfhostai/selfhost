@@ -1,0 +1,23 @@
+# Limit forecast and spend spike settings.
+version = 1
+
+[alerts]
+spike_factor = 8
+spike_floor_usd = 2.5
+spike_baseline_days = 21
+forecast_warn_hours = 12
+runbook_url = "https://wiki.example.com/runbooks/key-rotation"
+
+[plans]
+as_of = "2026-11-05"
+
+[plans.claude.max_5x]
+session_usd = 60
+weekly_usd = 450
+
+[plans.codex.plus]
+weekly_usd = 55
+
+[plans.overflow]
+key = "team-overflow"
+monthly_cap_usd = 500

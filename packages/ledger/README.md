@@ -78,6 +78,9 @@ array of them (one per line of the collector's file output) and reads Claude Cod
 reads Codex tokens from `codex.sse_event` (`response.completed`), since `codex.api_request` has
 none.
 
+Gateway events carry the virtual key's alias in `data.key_alias` (never the key or its hash),
+which the spend spike alarm uses to tell keys apart and to offer disabling one.
+
 Hook payloads carry no time and no user: pass `ts` and `person` in the context. Prompt text is
 dropped unless `logPrompts` is on (`ledger.log_prompts` in `selfhost.toml`); its length is kept and
 `redacted` lists `data.prompt`. Token counts without a reported cost use `ctx.price`, else `usd`

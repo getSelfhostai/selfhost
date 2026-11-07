@@ -15,7 +15,12 @@ describe("parseConfig", () => {
         packages: { mode: "observe", allow: [], deny: [] },
         mcp: { mode: "observe", allow: [] },
         models: { mode: "observe", allow: [] },
-        alerts: { spike_factor: 10 },
+        alerts: {
+          spike_factor: 10,
+          spike_floor_usd: 5,
+          spike_baseline_days: 14,
+          forecast_warn_hours: 24,
+        },
         teams: {},
       },
     });
@@ -47,7 +52,23 @@ spike_factor = 3
 `);
     if (!result.ok) throw new Error(JSON.stringify(result.errors));
     expect(result.config.ledger).toEqual({ retention_days: 30, log_prompts: true });
-    expect(result.config.alerts).toEqual({ spike_factor: 3 });
+    expect(result.config.alerts).toMatchObject({ spike_factor: 3 });
+  });
+
+  it("checks [plans] tier names, limits and the overflow key", () => {
+    const result = parseConfig(`version = 1
+[plans.claude."Max 5x"]
+weekly_usd = 300
+[plans.codex.plus]
+session_usd = 0
+[plans.overflow]
+key = "team-overflow"
+`);
+    expect(result.ok ? [] : result.errors.map((error) => [error.field, error.line])).toEqual([
+      ['plans.claude["Max 5x"]', 2],
+      ["plans.codex.plus.session_usd", 5],
+      ["plans.overflow.monthly_cap_usd", 6],
+    ]);
   });
 
   it("does not share default objects between calls", () => {

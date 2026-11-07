@@ -63,6 +63,28 @@ allow = ["claude-opus-*", "gpt-5*"]
 mode = "enforce"
 ```
 
+`[alerts]` and `[plans]` tune the spend spike alarm and the plan limit forecast
+([`packages/spend`](../spend/README.md#limit-forecast)). Both are optional; the defaults are
+shown.
+
+```toml
+[alerts]
+spike_factor = 10           # band is at least this multiple of the usual spend at that time of day
+spike_floor_usd = 5         # spend under this in 15 minutes never alarms
+spike_baseline_days = 14
+forecast_warn_hours = 24
+# runbook_url = "https://wiki.example.com/key-rotation"
+
+[plans]                     # API-equivalent USD per window, overriding the built-in table per tier
+as_of = "2026-11-05"
+[plans.claude.max_5x]
+session_usd = 60
+weekly_usd = 450
+[plans.overflow]            # suggested when a plan limit is about to run out
+key = "team-overflow"       # gateway key alias
+monthly_cap_usd = 500
+```
+
 ## Review item
 
 One entry in the review list: `kind`, `state`, `blocking`, `risk` (score 0 to 100 with reasons),

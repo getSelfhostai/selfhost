@@ -6,6 +6,9 @@ The `selfhost` command line.
 pnpm --filter @selfhost/cli dev --version
 pnpm --filter @selfhost/cli dev doctor [--config path/to/selfhost.toml]
 pnpm --filter @selfhost/cli dev spend --since 7d --by request_type,model
+pnpm --filter @selfhost/cli dev spend forecast
+pnpm --filter @selfhost/cli dev spend alarms --since 1h
+pnpm --filter @selfhost/cli dev statusline
 pnpm --filter @selfhost/cli dev policy check
 pnpm --filter @selfhost/cli dev policy test --tool Bash --command "git push --force"
 pnpm --filter @selfhost/cli dev policy observe --since 30d
@@ -20,6 +23,67 @@ reads `cost.recorded` events from the ledger (the same one `selfhost import` wri
 share, then every request type that crossed `--threshold` percent of a day's spend, with the day
 it crossed and the days before. `--by` takes `request_type`, `agent`, `model` and `person`; flags
 are always by request type. See [`packages/spend`](../../packages/spend/README.md).
+
+### Plan limits and spend alarms
+
+`selfhost spend plan [claude=<tier>] [codex=<tier>]` sets your own plan tiers (`pro`,
+`max_5x`, `max_20x` for Claude; `plus`, `business`, `pro` for Codex; `none` clears one) in
+`~/.selfhost/config.json`, and with no arguments prints them and the limit table. selfhost never
+reads a vendor login or credential file to find your plan: you say which one you are on.
+
+`selfhost spend forecast [--person <id>] [--plan claude=max_5x] [--warn-hours 24] [--json]`
+prints, per person and plan, the 5-hour and weekly windows: usage, limit, when it runs out
+("not this week" when it lasts) and the basis of the limit: `calibrated from N limit hits in the
+logs`, the tier row of `selfhost.toml [plans]` or the built-in table (with its date), or none. A
+window forecast to run out within `--warn-hours` (default `[alerts] forecast_warn_hours`, 24)
+prints a warning with a fix: overflow to the team's API key under its cap (`[plans.overflow]`),
+or move background work to quieter hours. Each warning is recorded once per window as an
+`alert.raised` event with `data.alert: "limit_forecast"`, so a rerun records nothing new.
+`--json` prints `selfhost.limit_forecast/v1`. See
+[limit forecast](../../packages/spend/README.md#limit-forecast).
+
+`selfhost spend alarms [--since 1h] [--json]` evaluates the 15-minute slots since `--since`
+(`15m`, `1h`, `2d` or a date) for every key, person, agent and runtime against its own baseline
+at the same time of day, and records each slot outside the band as an `alert.raised` event with
+`data.alert: "spend_spike"`, labeled a possible stolen key, not a budget warning, with the
+actions that apply (the key rotation runbook, pausing the runtime, disabling the gateway key).
+Ids depend only on the series and the slot, so reruns record nothing twice. It exits 2 when there
+is an alarm and 1 on errors, so a script can page on it:
+
+```sh
+*/5 * * * * selfhost spend alarms --since 15m || notify-on-call   # with Postgres (DATABASE_URL)
+```
+
+With the embedded ledger, one process at a time can open it, so let `selfhost import --watch` do
+this instead: after each batch it forecasts your plans, looks for spikes, records and prints new
+warnings and alarms (`Limit warning: ...`, `SPEND ALARM: ...`, or one `selfhost.alert/v1` line
+each with `--json`), and rewrites `~/.selfhost/statusline.json`. A check runs at most every 15
+seconds while batches keep coming, so an alarm prints within a minute of the spend landing.
+Thresholds come from `[alerts]` and `[plans]` in the `selfhost.toml` found from the current
+folder, else the team policy from the last sync. Slack, Telegram and email delivery come with
+the review list and the Slack app.
+
+### Statusline
+
+`selfhost statusline` prints one short line: a possible stolen key alarm from the last hour,
+else a plan limit about to run out (`Claude 5h limit in ~1h40m · overflow to team-overflow`),
+else your spend today (`selfhost: $12.34 today`). It reads `~/.selfhost/statusline.json`
+(`--cache` or `SELFHOST_STATUSLINE_CACHE` to move it), which `import --watch` keeps fresh, and
+takes about 50 ms. It opens the ledger only when no watcher is running and the cache is more
+than 5 minutes old (about 1.2 s on 35 days of a heavy user's history), then keeps the result in
+the cache. It never opens the embedded ledger while a watcher holds it, and with no data it
+prints `selfhost: no data yet, run selfhost import` instead of failing.
+
+In Claude Code, add it to `~/.claude/settings.json` (Claude Code passes session details on
+stdin, which selfhost ignores):
+
+```json
+{
+  "statusLine": { "type": "command", "command": "selfhost statusline" }
+}
+```
+
+Keep `selfhost import --watch` running so the line stays current.
 
 `selfhost scan [--since 30d] [--repo <dir>] [--json] [--report <file>] [--share <file>]` is a
 one-command audit of the local Claude Code and Codex logs. It needs no account, no ledger and no
@@ -143,6 +207,7 @@ Every command takes `--json` and prints one object with a `schema` tag: `selfhos
 `selfhost.agents/v1`, `selfhost.agents_configure/v1`, `selfhost.scan/v1`,
 `selfhost.policy_check/v1`, `selfhost.policy_test/v1`, `selfhost.policy_observe/v1`,
 `selfhost.policy_promote/v1`, `selfhost.review_item/v1` (from `policy report`),
+`selfhost.limit_forecast/v1`, `selfhost.plan_tiers/v1`, `selfhost.spend_alarms/v1`,
 `selfhost.team_init/v1`, `selfhost.join/v1`, `selfhost.status/v1` and
 `selfhost.team_leave/v1`. Errors print `selfhost.error/v1` and exit 1. In solo mode no command
 needs a network connection.
