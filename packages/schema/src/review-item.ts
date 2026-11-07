@@ -28,8 +28,20 @@ export const REVIEW_ITEM_KINDS = [
 
 export const REVIEW_ITEM_STATES = ["open", "answered", "dismissed", "expired"] as const;
 
+/** What a person can do with an item. answer replies to a question; open follows its url. */
+export const REVIEW_ACTIONS = ["approve", "deny", "answer", "snooze", "open"] as const;
+
+/** instant: push now, because an agent is blocked or risk is high. digest: the next digest. */
+export const REVIEW_DELIVERIES = ["instant", "digest"] as const;
+
+/** Which routing step found the owners: the owner, the team, the fallback, or none of them. */
+export const REVIEW_ROUTE_STEPS = ["owner", "team", "fallback", "none"] as const;
+
 export type ReviewItemKind = (typeof REVIEW_ITEM_KINDS)[number];
 export type ReviewItemState = (typeof REVIEW_ITEM_STATES)[number];
+export type ReviewAction = (typeof REVIEW_ACTIONS)[number];
+export type ReviewDelivery = (typeof REVIEW_DELIVERIES)[number];
+export type ReviewRouteStep = (typeof REVIEW_ROUTE_STEPS)[number];
 
 export const REVIEW_ITEM_STATE_REQUIRES = {
   answered: ["answer"],
@@ -60,6 +72,34 @@ export const ReviewAnswerSchema = Type.Object(
     }),
   },
   { additionalProperties: false, description: "The human answer that closed the item." },
+);
+
+export const ReviewWhySchema = Type.Object(
+  {
+    signal: NonEmpty({
+      description:
+        "The ledger signal behind the item: an event kind such as approval.requested, policy.evaluated or pr.opened, or alert.raised:<alert> for an alert.",
+    }),
+    rule_id: Type.Optional(
+      Type.String({ description: "Rule from selfhost.toml, when a rule raised the item." }),
+    ),
+    text: NonEmpty({ description: "Why a person is needed, in plain language." }),
+  },
+  { additionalProperties: false, description: "Why the item exists: the rule or signal." },
+);
+
+export const ReviewRouteSchema = Type.Object(
+  {
+    step: StringEnum(REVIEW_ROUTE_STEPS, {
+      description:
+        "owner ([review.owners] path globs, else the session's person), team (members of the item's team in [teams]), fallback ([review] fallback), or none when selfhost.toml names nobody.",
+    }),
+    from: Type.String({
+      description:
+        'Where the owners came from, for example [review.owners] "db/**", the session\'s person, [teams.platform] or [review] fallback.',
+    }),
+  },
+  { additionalProperties: false, description: "How the owners were chosen." },
 );
 
 export const ReviewItemSchema = Type.Object(
@@ -93,6 +133,35 @@ export const ReviewItemSchema = Type.Object(
       description: "Ledger events this item was built from.",
     }),
     answer: Type.Optional(ReviewAnswerSchema),
+    why: Type.Optional(ReviewWhySchema),
+    deadline: Type.Optional(
+      DateTime({
+        description:
+          "When the item times out. A blocking approval with no answer by then is denied, and the deny is written to the decision log.",
+      }),
+    ),
+    actions: Type.Optional(
+      Type.Array(StringEnum(REVIEW_ACTIONS), {
+        description: "What a person can do with this item. open needs url.",
+      }),
+    ),
+    delivery: Type.Optional(
+      StringEnum(REVIEW_DELIVERIES, {
+        description:
+          "instant when an agent is blocked or risk is at or above [review] high_risk_threshold, else digest.",
+      }),
+    ),
+    group: Type.Optional(
+      Type.String({
+        description:
+          "Items from the same run or session share this value: run:<run_id>, else session:<session_id>.",
+      }),
+    ),
+    route: Type.Optional(ReviewRouteSchema),
+    snoozed_until: Type.Optional(
+      DateTime({ description: "Snoozed: ranked after every other item until this time." }),
+    ),
+    snoozed_by: Type.Optional(Type.String({ description: "Person who snoozed the item." })),
   },
   {
     $id: schemaId("review-item.schema.json"),
@@ -106,6 +175,8 @@ export const ReviewItemSchema = Type.Object(
 
 export type ReviewItem = Static<typeof ReviewItemSchema>;
 export type ReviewAnswer = Static<typeof ReviewAnswerSchema>;
+export type ReviewWhy = Static<typeof ReviewWhySchema>;
+export type ReviewRoute = Static<typeof ReviewRouteSchema>;
 
 export const reviewItemValidator = createValidator(ReviewItemSchema, (item) =>
   requiredWhenErrors(item, "state", REVIEW_ITEM_STATE_REQUIRES),

@@ -31,6 +31,7 @@
     "@selfhost/importers": "workspace:*",
     "@selfhost/ledger": "workspace:*",
     "@selfhost/policy": "workspace:*",
+    "@selfhost/review": "workspace:*",
     "@selfhost/schema": "workspace:*",
     "@selfhost/spend": "workspace:*",
     "commander": "catalog:"

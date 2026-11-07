@@ -102,7 +102,15 @@ monthly_cap_usd = 500
 
 One entry in the review list: `kind`, `state`, `blocking`, `risk` (score 0 to 100 with reasons),
 `owners`, links back to the ledger in `source_event_ids`, and the human `answer`, which is
-required once `state` is `answered`.
+required once `state` is `answered`. Optional fields the review list engine
+([`packages/review`](../review/README.md)) fills in: `why` (the signal and rule behind the item),
+`deadline` (when a blocking approval times out to a deny), `actions` (approve, deny, answer,
+snooze, open), `delivery` (`instant` or `digest`), `group` (`run:<id>` or `session:<id>`),
+`route` (which routing step chose the owners) and `snoozed_until` with `snoozed_by`.
+
+`[review]` in `selfhost.toml` routes and times items: `owners` (path glob to people),
+`fallback` (people who get items nobody else owns), `approval_timeout_minutes` (default 30),
+`high_risk_paths` and `high_risk_threshold` (default 70, also the line for instant delivery).
 
 ## Hook payloads
 
@@ -135,8 +143,9 @@ Open questions on Codex, to settle with real fixtures (M0.3):
 ## API and MCP
 
 `openapi.yaml` (OpenAPI 3.1, bearer auth) covers `GET /v1/health`, `POST /v1/events` (atomic
-batches of up to 1000), `GET /v1/events`, `GET /v1/review-items`,
-`POST /v1/review-items/{id}/decision`, `GET` and `PUT /v1/policy`, and the team endpoints
+batches of up to 1000), `GET /v1/events`, `GET /v1/review-items`, `GET /v1/review-items/{id}`,
+`POST /v1/review-items/{id}/decision` (409 with the current item when it is no longer open),
+`POST /v1/review-items/{id}/snooze`, `GET` and `PUT /v1/policy`, and the team endpoints
 `POST /v1/teams`, `POST /v1/join` (no bearer token: the invite code is the credential) and
 `GET /v1/me`, whose bodies are in `src/team.ts`. It references the JSON Schema files for events,
 review items and the config. `mcp-tools.json` lists `get_policy`, `get_budget`,

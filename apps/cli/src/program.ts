@@ -18,6 +18,7 @@ import { registerLedger } from "./ledger.js";
 import { registerPolicy } from "./policy/commands.js";
 import { registerPolicyEditing } from "./policy/editing.js";
 import { registerReview } from "./review.js";
+import { registerReviewList } from "./review-list.js";
 import type { CollectAttribution } from "./scan/attribution.js";
 import { gitAttribution } from "./scan/git-attribution.js";
 import { runScan, type ScanCommandOptions } from "./scan/index.js";
@@ -312,6 +313,18 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
   registerReview(
     program,
     () => ({ env: deps.env, cwd: deps.cwd, write: deps.write, now: deps.now }),
+    fail,
+  );
+
+  registerReviewList(
+    program,
+    () => ({
+      env: deps.env,
+      cwd: deps.cwd,
+      write: deps.write,
+      now: deps.now,
+      configPath: deps.configPath ?? defaultConfigPath(),
+    }),
     fail,
   );
 

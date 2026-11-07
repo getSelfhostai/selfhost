@@ -11,8 +11,9 @@ which finds installed agents and their logins and writes selfhost's settings int
 own config, and solo and team modes: `selfhost team init` and `selfhost join` connect laptops to
 a shared server that holds their usage and one team policy, and the human decision log:
 `selfhost decide`, `selfhost decisions` and `POST /v1/decisions` record every person's answer on
-agent work with its reason and find past ones by file or topic. The review list and team config
-come next.
+agent work with its reason and find past ones by file or topic, and the review list engine:
+items built from ledger signals, routed by `selfhost.toml`, ranked, with approval timeouts,
+served by `GET /v1/review-items` and `selfhost review list`. The team config comes next.
 
 ## What it is
 
@@ -35,6 +36,7 @@ from the same code.
 | `packages/importers`   | Local session log importers for Claude Code and Codex (pricing ported from ccusage, MIT)    |
 | `packages/spend`       | Spend by request type, agent, model and person, and the waste detector                      |
 | `packages/policy`      | Evaluates `selfhost.toml` rules against tool calls and records would-block events           |
+| `packages/review`      | The review list: items from ledger signals, deduped, routed, ranked, with approval timeouts |
 | `packages/agents`      | Agent and login detection, context file listing, and config writing for five agent CLIs     |
 | `packages/attribution` | Links commits and pull requests to the agent and model that produced them, with merge stats |
 | `packages/sdk`         | API client (placeholder)                                                                    |

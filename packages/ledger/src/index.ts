@@ -1,4 +1,10 @@
-export { isPostgresUrl, MEMORY_DATA_DIR, resolveDataDir } from "./db.js";
+export {
+  type Database,
+  isPostgresUrl,
+  MEMORY_DATA_DIR,
+  type Queryable,
+  resolveDataDir,
+} from "./db.js";
 export { type ChatButtonPress, chatDecision } from "./decisions/chat.js";
 export {
   DecisionInputError,
@@ -19,6 +25,7 @@ export { type LedgerFieldError, LedgerQueryError, LedgerValidationError } from "
 export {
   type AppendOptions,
   type AppendResult,
+  databaseOf,
   type EventFilter,
   type EventPage,
   type Ledger,

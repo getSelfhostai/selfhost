@@ -31,12 +31,14 @@ import {
   MeResponseSchema,
   PolicyQuerySchema,
   PolicyResponseSchema,
+  ReviewItemConflictSchema,
   ReviewItemQuerySchema,
   ReviewItemSchema,
   ReviewItemsPageSchema,
   RevokeTokensResponseSchema,
   SelfhostConfigSchema,
   SetPolicyRequestSchema,
+  SnoozeRequestSchema,
 } from "../src/index.js";
 
 /** Files generated from the TypeBox sources. The drift test fails when they are stale. */
@@ -115,6 +117,8 @@ const COMPONENT_SCHEMAS: ReadonlyArray<readonly [name: string, schema: TSchema]>
   ["ReviewItemsPage", ReviewItemsPageSchema],
   ["DecisionRequest", DecisionRequestSchema],
   ["DecisionResponse", DecisionResponseSchema],
+  ["SnoozeRequest", SnoozeRequestSchema],
+  ["ReviewItemConflict", ReviewItemConflictSchema],
   ["DecisionsPage", DecisionsPageSchema],
   ["CreateDecisionRequest", CreateDecisionRequestSchema],
   ["CreateDecisionResponse", CreateDecisionResponseSchema],
@@ -245,11 +249,26 @@ function openApiDocument(): Json {
         get: {
           operationId: "listReviewItems",
           summary: "List review items, ranked.",
+          description:
+            "Blocking items first, then by risk score, then oldest first, then by id; snoozed items after the rest until their snooze ends. With a person token, only items built from that team's events.",
           parameters: queryParameters(ReviewItemQuerySchema),
           responses: {
             "200": { description: "One page of items.", content: jsonContent("ReviewItemsPage") },
             "400": errorResponse("Invalid filter."),
             ...authErrors,
+            "403": errorResponse("A person token asked for another team's items."),
+          },
+        },
+      },
+      "/v1/review-items/{id}": {
+        get: {
+          operationId: "getReviewItem",
+          summary: "Open one review item.",
+          parameters: [pathParameter("id", "Review item id.")],
+          responses: {
+            "200": { description: "The item.", content: jsonContent("ReviewItem") },
+            ...authErrors,
+            "404": errorResponse("No such review item."),
           },
         },
       },
@@ -258,7 +277,7 @@ function openApiDocument(): Json {
           operationId: "recordDecision",
           summary: "Answer a review item.",
           description:
-            "Writes a decision.recorded event, attributed to the person the token belongs to, and closes the item.",
+            "Writes a decision.recorded event, attributed to the person the token belongs to (with the admin token, to by), and closes the item. Every surface reads the same list, so the next read anywhere shows the answer.",
           parameters: [pathParameter("id", "Review item id.")],
           requestBody: { required: true, content: jsonContent("DecisionRequest") },
           responses: {
@@ -266,7 +285,30 @@ function openApiDocument(): Json {
             "400": errorResponse("Invalid decision."),
             ...authErrors,
             "404": errorResponse("No such review item."),
-            "409": errorResponse("The item is no longer open."),
+            "409": {
+              description: "The item is no longer open. Nothing was written.",
+              content: jsonContent("ReviewItemConflict"),
+            },
+          },
+        },
+      },
+      "/v1/review-items/{id}/snooze": {
+        post: {
+          operationId: "snoozeReviewItem",
+          summary: "Snooze a review item.",
+          description:
+            "Ranks the item after the rest until the given time. It stays open, and a blocking approval still times out at its deadline.",
+          parameters: [pathParameter("id", "Review item id.")],
+          requestBody: { required: true, content: jsonContent("SnoozeRequest") },
+          responses: {
+            "200": { description: "The snoozed item.", content: jsonContent("ReviewItem") },
+            "400": errorResponse("Invalid snooze."),
+            ...authErrors,
+            "404": errorResponse("No such review item."),
+            "409": {
+              description: "The item is no longer open.",
+              content: jsonContent("ReviewItemConflict"),
+            },
           },
         },
       },

@@ -228,6 +228,21 @@ export const SelfhostConfigSchema = Type.Object(
               description: "Path glob to the people who review changes under it.",
             }),
           ),
+          fallback: Type.Optional(
+            Type.Array(NonEmpty(), {
+              default: [],
+              description:
+                "People who get review items that match no owner glob, have no session person and no team in [teams].",
+            }),
+          ),
+          approval_timeout_minutes: Type.Optional(
+            Type.Integer({
+              minimum: 1,
+              default: 30,
+              description:
+                "Minutes an approval that blocks an agent waits for an answer. Then it is denied and the deny is written to the decision log.",
+            }),
+          ),
         },
         { additionalProperties: false, default: {} },
       ),

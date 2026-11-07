@@ -184,6 +184,15 @@ ledger (`--database` / `--data-dir` as for `spend`).
   `--path` matches the file, files inside a folder, and folders that hold the file; `--topic`
   needs every word in the question or reason. `--limit` and `--cursor` page through.
 
+## Review list
+
+`selfhost review list [--state open|answered|dismissed|expired] [--owner <person>] [--json]`
+brings the review list in the local ledger up to date (`--database` / `--data-dir` as for
+`spend`) and prints it: what needs a person, blocking first, then by risk, then oldest first.
+Routing and the approval timeout come from the `selfhost.toml` the other commands find. `--limit`
+and `--cursor` page through. Answer an item with `selfhost decide <item-id> approve|deny|answer`;
+the next `review list` shows it answered. See [`packages/review`](../../packages/review/README.md).
+
 ## Risk score
 
 `selfhost review risk <pr-number | --base <ref>> [--head <ref>] [--tests passed|failed|not-run]
@@ -308,7 +317,7 @@ Every command takes `--json` and prints one object with a `schema` tag: `selfhos
 `selfhost.ledger_prune/v1`, `selfhost.agents/v1`, `selfhost.agents_configure/v1`, `selfhost.scan/v1`,
 `selfhost.policy_check/v1`, `selfhost.policy_test/v1`, `selfhost.policy_observe/v1`,
 `selfhost.policy_promote/v1`, `selfhost.review_item/v1` (from `policy report`),
-`selfhost.decide/v1`, `selfhost.review_risk/v1`, `selfhost.decisions/v1`,
+`selfhost.decide/v1`, `selfhost.review_risk/v1`, `selfhost.review_list/v1`, `selfhost.decisions/v1`,
 `selfhost.limit_forecast/v1`, `selfhost.plan_tiers/v1`, `selfhost.spend_alarms/v1`,
 `selfhost.team_init/v1`, `selfhost.team_invite/v1`, `selfhost.team_revoke/v1`,
 `selfhost.join/v1`, `selfhost.status/v1` and `selfhost.team_leave/v1`. Errors print `selfhost.error/v1` and exit 1. In solo mode no command

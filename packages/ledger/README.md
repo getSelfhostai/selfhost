@@ -108,6 +108,9 @@ console.log(renderDecisions(page));
   `rule_id` or `pr_url`). One file becomes the event's `target`, several go in `data.paths`; the
   question goes in `data.question` and the surface in `data.surface`. Invalid input throws
   `DecisionInputError` and writes nothing.
+- The actor is the person in `by`. With the option `system: true` it is a system actor instead,
+  for the one decision no person makes: the review list denying an approval at its timeout
+  (`by: "selfhost"`, `surface: "timeout"`).
 - Idempotency: with `key` (the surface's own id for the action, such as a GitHub review id) and
   `ts`, the event id is derived from the surface, key and time, so a redelivery stores nothing
   new and returns the stored decision with `duplicate: true`. Without a key every call records a
@@ -144,6 +147,13 @@ written with a person token, from the token's team and never from the event body
 `query({ team })` reads one team's events. The column is added without touching stored rows, so
 events written before it have no team.
 
+## Review list
+
+`0004_review_items.sql` adds `review_items`, `review_signals` and `review_progress` for the
+review list ([`packages/review`](../review/README.md)), in the same database. Like teams, items
+change; every change of state is also a ledger event or decision. `databaseOf(ledger)` gives
+that package the database behind a ledger.
+
 ## Sources
 
 Every event records its `source`, so a session one source misses still shows up from another,
@@ -167,7 +177,10 @@ none.
 Gateway events carry the virtual key's alias in `data.key_alias` (never the key or its hash),
 which the spend spike alarm uses to tell keys apart and to offer disabling one.
 
-Hook payloads carry no time and no user: pass `ts` and `person` in the context. Prompt text is
+Hook payloads carry no time and no user: pass `ts` and `person` in the context. Claude Code
+notifications become `approval.requested` only when the agent waits on a person:
+`notification_type` `permission_prompt`, `idle_prompt` or `elicitation_dialog`, kept in
+`data.notification_type`; the review list reads the last two as questions. Prompt text is
 dropped unless `logPrompts` is on (`ledger.log_prompts` in `selfhost.toml`); its length is kept and
 `redacted` lists `data.prompt`. `append` drops it again unless the ledger's own settings keep
 prompts. Token counts without a reported cost use `ctx.price`, else `usd`

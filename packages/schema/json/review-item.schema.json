@@ -228,6 +228,96 @@
           "type": "string"
         }
       }
+    },
+    "why": {
+      "additionalProperties": false,
+      "description": "Why the item exists: the rule or signal.",
+      "type": "object",
+      "required": [
+        "signal",
+        "text"
+      ],
+      "properties": {
+        "signal": {
+          "minLength": 1,
+          "description": "The ledger signal behind the item: an event kind such as approval.requested, policy.evaluated or pr.opened, or alert.raised:<alert> for an alert.",
+          "type": "string"
+        },
+        "rule_id": {
+          "description": "Rule from selfhost.toml, when a rule raised the item.",
+          "type": "string"
+        },
+        "text": {
+          "minLength": 1,
+          "description": "Why a person is needed, in plain language.",
+          "type": "string"
+        }
+      }
+    },
+    "deadline": {
+      "format": "date-time",
+      "description": "When the item times out. A blocking approval with no answer by then is denied, and the deny is written to the decision log.",
+      "type": "string"
+    },
+    "actions": {
+      "description": "What a person can do with this item. open needs url.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "approve",
+          "deny",
+          "answer",
+          "snooze",
+          "open"
+        ]
+      }
+    },
+    "delivery": {
+      "description": "instant when an agent is blocked or risk is at or above [review] high_risk_threshold, else digest.",
+      "type": "string",
+      "enum": [
+        "instant",
+        "digest"
+      ]
+    },
+    "group": {
+      "description": "Items from the same run or session share this value: run:<run_id>, else session:<session_id>.",
+      "type": "string"
+    },
+    "route": {
+      "additionalProperties": false,
+      "description": "How the owners were chosen.",
+      "type": "object",
+      "required": [
+        "step",
+        "from"
+      ],
+      "properties": {
+        "step": {
+          "description": "owner ([review.owners] path globs, else the session's person), team (members of the item's team in [teams]), fallback ([review] fallback), or none when selfhost.toml names nobody.",
+          "type": "string",
+          "enum": [
+            "owner",
+            "team",
+            "fallback",
+            "none"
+          ]
+        },
+        "from": {
+          "description": "Where the owners came from, for example [review.owners] \"db/**\", the session's person, [teams.platform] or [review] fallback.",
+          "type": "string"
+        }
+      }
+    },
+    "snoozed_until": {
+      "format": "date-time",
+      "description": "Snoozed: ranked after every other item until this time.",
+      "type": "string"
+    },
+    "snoozed_by": {
+      "description": "Person who snoozed the item.",
+      "type": "string"
     }
   }
 }
