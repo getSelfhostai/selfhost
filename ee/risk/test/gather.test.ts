@@ -304,6 +304,6 @@ describe("gatherRiskInputs from a pull request", () => {
     repo.commit({ message: "Initial", at: "2026-09-20T10:00:00Z", files: { "a.txt": "a\n" } });
     await expect(
       reviewRisk({ repoDir: repo.dir, pr: "101", config: policy, now: NOW }),
-    ).rejects.toThrow("Pass --base <ref> to score local commits");
+    ).rejects.toThrow("Pass --base <ref> to use the local commits instead");
   });
 });

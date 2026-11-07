@@ -1,0 +1,43 @@
+{
+  "name": "@selfhost/pr",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Reads an agent pull request or a local commit range: changed files and hunks with line numbers, new dependencies, test file changes, and the agent sessions in the ledger that produced it.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@selfhost/attribution": "workspace:*",
+    "@selfhost/ledger": "workspace:*",
+    "@selfhost/policy": "workspace:*",
+    "@selfhost/schema": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

@@ -1,5 +1,5 @@
 import { posix } from "node:path";
-import type { NewDependency } from "./types.js";
+import type { ManifestChange, NewDependency } from "./types.js";
 
 /**
  * New direct dependencies: names in a manifest after the change that were not in it before.
@@ -121,13 +121,6 @@ export function isLockfile(path: string): boolean {
 
 export function isManifest(path: string): boolean {
   return manifestNames(path) !== undefined;
-}
-
-/** A manifest's text before and after the change; absent before when added, after when deleted. */
-export interface ManifestChange {
-  path: string;
-  before?: string;
-  after?: string;
 }
 
 /** Dependencies each manifest gained, sorted by manifest and name. */
