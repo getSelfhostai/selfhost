@@ -1,0 +1,29 @@
+{
+  "synthetic": true,
+  "description": "Sample payloads for the ledger source mappers in packages/ledger/src/sources. All values are invented and reuse the sessions in claude-code/ and codex/.",
+  "files": [
+    {
+      "path": "otel/claude-code-logs.json",
+      "source": "otel",
+      "shape": "OTLP JSON ExportLogsServiceRequest, as the OpenTelemetry collector file exporter writes it.",
+      "fieldsFrom": "Claude Code monitoring docs (code.claude.com/docs/en/monitoring-usage): claude_code.* event names, standard attributes (session.id, user.email, organization.id, app.version, prompt.id, event.sequence) and per-event attributes.",
+      "description": "Claude Code 2.1.309 events for session a20d0d4b on 2026-10-06: user_prompt without prompt text, api_request with tokens and cost_usd, tool_decision accepted by config and rejected by the user, a failing Bash tool_result, an api_error 529, and an mcp_server_connection event the mapper skips."
+    },
+    {
+      "path": "gateway/litellm-requests.jsonl",
+      "source": "gateway",
+      "shape": "One LiteLLM StandardLoggingPayload per line, as its logging callbacks emit it, with user agent tagging on and message bodies redacted.",
+      "description": "A Claude Code request through Bedrock for session 538b2156 (a session the compliance feed does not cover), a Codex request through OpenAI for thread 01a10ca6, and a throttled Bedrock request that failed."
+    },
+    {
+      "path": "vendor-audit/anthropic-compliance-activities.json",
+      "source": "vendor_api",
+      "shape": "One page of an Anthropic Compliance API style activity feed ({ data, has_more }).",
+      "description": "Claude Code activity for session 665bce74 on 2026-10-05 (start, prompt, a permission decision, usage, end) and a claude.ai chat activity the mapper skips."
+    }
+  ],
+  "notes": [
+    "The compliance activity field names are a best guess until real samples arrive (see Needs under F01 in the build plan). Only the mapper in vendor-audit.ts depends on them.",
+    "LiteLLM prompt_tokens includes cache reads and writes; the mapper subtracts them to get uncached input tokens."
+  ]
+}

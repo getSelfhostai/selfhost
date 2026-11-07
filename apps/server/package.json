@@ -16,9 +16,12 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@electric-sql/pglite": "catalog:",
     "@hono/node-server": "catalog:",
+    "@selfhost/ledger": "workspace:*",
     "@selfhost/schema": "workspace:*",
-    "hono": "catalog:"
+    "hono": "catalog:",
+    "postgres": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",

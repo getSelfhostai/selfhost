@@ -7,7 +7,8 @@
     },
     "typecheck": {},
     "test": {
-      "env": ["DATABASE_URL"]
+      "env": ["DATABASE_URL"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/fixtures/**"]
     },
     "dev": {
       "cache": false,

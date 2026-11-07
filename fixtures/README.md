@@ -1,6 +1,6 @@
 # Fixtures
 
-Test inputs for the session importers, hook ingest and redaction. Sessions are synthetic: their line shapes mirror real Claude Code and Codex logs observed in November 2026, and all content is invented (project `acme-api` at `/home/dev/acme-api`, user `dev`, emails at `example.com`). Each vendor folder has a `manifest.json` with the CLI versions observed and one line per file.
+Test inputs for the session importers, hook ingest, ledger source mappers and redaction. Sessions are synthetic: their line shapes mirror real Claude Code and Codex logs observed in November 2026, and all content is invented (project `acme-api` at `/home/dev/acme-api`, user `dev`, emails at `example.com`). Each vendor folder has a `manifest.json` with the CLI versions observed and one line per file.
 
 | Folder | Holds |
 | --- | --- |
@@ -8,6 +8,7 @@ Test inputs for the session importers, hook ingest and redaction. Sessions are s
 | `codex/sessions/YYYY/MM/DD/` | 3 Codex rollouts (`~/.codex/sessions` layout) on 2026-10-05, 07 and 09 UTC: exec_command, apply_patch, git commits, token_count events, a model switch between turns. Folder dates use local time. |
 | `hooks/claude-code/` | One stdin payload per Claude Code hook event. |
 | `hooks/codex/` | Codex `notify` payload and one payload per documented Codex hook event. |
+| `sources/` | Synthetic OpenTelemetry logs, LiteLLM gateway request logs and Anthropic Compliance API style activity, for the ledger source mappers. `manifest.json` describes each file. |
 | `redaction/` | Planted fake secrets and an example.com email. `manifest.json` lists every planted value. |
 | `expected/` | ccusage daily totals for the session fixtures. |
 | `captured/` | Scrubbed real sessions, written by `scripts/capture-fixtures.mjs`. Absent until someone runs it. |

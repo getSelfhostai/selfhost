@@ -105,15 +105,24 @@ importers:
 
   apps/server:
     dependencies:
+      '@electric-sql/pglite':
+        specifier: 'catalog:'
+        version: 0.5.15
       '@hono/node-server':
         specifier: 'catalog:'
         version: 2.1.6(hono@4.13.17)
+      '@selfhost/ledger':
+        specifier: workspace:*
+        version: link:../../packages/ledger
       '@selfhost/schema':
         specifier: workspace:*
         version: link:../../packages/schema
       hono:
         specifier: 'catalog:'
         version: 4.13.17
+      postgres:
+        specifier: 'catalog:'
+        version: 4.1.0
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -165,9 +174,15 @@ importers:
       tsup:
         specifier: 'catalog:'
         version: 8.5.1(postcss@8.5.32)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)
+      tsx:
+        specifier: 'catalog:'
+        version: 4.23.15
       typescript:
         specifier: 'catalog:'
         version: 5.9.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.12(@types/node@20.19.43)(vite@8.3.6(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/schema:
     dependencies:

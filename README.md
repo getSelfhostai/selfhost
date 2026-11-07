@@ -4,8 +4,8 @@ The open backend for your coding agent fleet: one ledger, one review list, one t
 
 ## Status
 
-Early. Not ready for use. The repository has the toolchain, the v1 contracts and a health-check
-server; the ledger, importers and review list come next.
+Early. Not ready for use. The repository has the toolchain, the v1 contracts, the ledger store
+and an API server that ingests and searches events; the importers and review list come next.
 
 ## What it is
 
@@ -23,7 +23,7 @@ It runs as a laptop install (embedded Postgres via PGlite, no Docker), a self-ho
 | Path                 | What                                                                                        |
 | -------------------- | ------------------------------------------------------------------------------------------- |
 | `packages/schema`    | v1 contracts: ledger event, `selfhost.toml`, review item, hook payloads, OpenAPI, MCP tools |
-| `packages/ledger`    | Ledger store (placeholder)                                                                  |
+| `packages/ledger`    | Append-only ledger store on Postgres or PGlite, plus a mapper per event source              |
 | `packages/importers` | Log and API importers (placeholder)                                                         |
 | `packages/sdk`       | API client (placeholder)                                                                    |
 | `apps/server`        | HTTP API server (Hono)                                                                      |

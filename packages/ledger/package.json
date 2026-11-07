@@ -18,6 +18,7 @@
   },
   "files": [
     "dist",
+    "migrations",
     "README.md"
   ],
   "engines": {
@@ -25,7 +26,9 @@
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --clean",
-    "typecheck": "tsc -p tsconfig.json"
+    "embed-migrations": "tsx scripts/embed-migrations.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
   },
   "dependencies": {
     "@electric-sql/pglite": "catalog:",
@@ -35,6 +38,8 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "tsup": "catalog:",
-    "typescript": "catalog:"
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }
