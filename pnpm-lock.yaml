@@ -83,6 +83,9 @@ importers:
       '@selfhost/agents':
         specifier: workspace:*
         version: link:../../packages/agents
+      '@selfhost/attribution':
+        specifier: workspace:*
+        version: link:../../packages/attribution
       '@selfhost/importers':
         specifier: workspace:*
         version: link:../../packages/importers

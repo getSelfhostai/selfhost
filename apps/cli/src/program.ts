@@ -9,7 +9,8 @@ import {
 } from "./agents.js";
 import { doctor } from "./doctor.js";
 import { type ImportCommandOptions, runImport, runWatch } from "./import.js";
-import { type CollectAttribution, noAttribution } from "./scan/attribution.js";
+import type { CollectAttribution } from "./scan/attribution.js";
+import { gitAttribution } from "./scan/git-attribution.js";
 import { runScan, type ScanCommandOptions } from "./scan/index.js";
 import { type Ask, askOnTerminal, type SendPing } from "./scan/telemetry.js";
 import { registerSpend } from "./spend.js";
@@ -26,7 +27,7 @@ export interface CliDeps {
   writeError: (line: string) => void;
   setExitCode: (code: number) => void;
   now?: Date;
-  /** Joins sessions with git and GitHub for `selfhost scan`. Default: no join yet. */
+  /** Joins sessions with git and GitHub for `selfhost scan`. */
   collectAttribution?: CollectAttribution;
   /** Asks a yes or no question; undefined when stdin is not a terminal. */
   ask?: Ask;
@@ -53,7 +54,7 @@ function defaultDeps(): CliDeps {
     setExitCode: (code) => {
       process.exitCode = code;
     },
-    collectAttribution: noAttribution,
+    collectAttribution: gitAttribution(),
     ask: process.stdin.isTTY ? askOnTerminal : undefined,
   };
 }

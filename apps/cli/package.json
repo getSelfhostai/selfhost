@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@selfhost/agents": "workspace:*",
+    "@selfhost/attribution": "workspace:*",
     "@selfhost/importers": "workspace:*",
     "@selfhost/ledger": "workspace:*",
     "@selfhost/schema": "workspace:*",
