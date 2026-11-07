@@ -5,10 +5,13 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**"]
     },
-    "typecheck": {},
+    "typecheck": {
+      "dependsOn": ["^typecheck"]
+    },
     "test": {
       "env": ["DATABASE_URL"],
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/fixtures/**"]
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/fixtures/**"],
+      "dependsOn": ["^typecheck"]
     },
     "dev": {
       "cache": false,
