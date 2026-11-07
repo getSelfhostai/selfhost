@@ -4,6 +4,7 @@ import { redactionSettings } from "@selfhost/schema";
 import pkg from "../package.json" with { type: "json" };
 import { createApp } from "./app.js";
 import { serverConfig, startRetentionJob } from "./retention.js";
+import { startReviewRefreshJob } from "./review.js";
 import { loadApiToken } from "./token.js";
 
 const port = Number(process.env.PORT ?? 4400);
@@ -23,7 +24,7 @@ if (created) {
 }
 
 const server = serve(
-  { fetch: createApp({ version: pkg.version, ledger, token }).fetch, port, hostname },
+  { fetch: createApp({ version: pkg.version, ledger, token, config }).fetch, port, hostname },
   (info) => {
     console.log(`selfhost server ${pkg.version} listening on http://${hostname}:${info.port}`);
   },
@@ -35,9 +36,17 @@ const retention =
     ? undefined
     : startRetentionJob(ledger, { days: config.ledger.retention_days });
 
+// SELFHOST_REVIEW_REFRESH=off stops building review items from new events and timing out
+// approvals, for installs where another server does it against the same database.
+const reviews =
+  process.env.SELFHOST_REVIEW_REFRESH === "off"
+    ? undefined
+    : startReviewRefreshJob(ledger, { config });
+
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
     retention?.stop();
+    reviews?.stop();
     server.close(() => {
       ledger.close().finally(() => process.exit(0));
     });

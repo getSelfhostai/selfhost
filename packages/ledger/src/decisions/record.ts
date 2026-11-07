@@ -22,6 +22,11 @@ export interface RecordDecisionOptions {
   source?: EventSource;
   /** Time of the decision when the input has no ts. Default: the current time. */
   now?: Date;
+  /**
+   * Records `by` as a system actor instead of a person, for the few decisions no person makes,
+   * such as a review item's approval timeout.
+   */
+  system?: boolean;
 }
 
 export interface RecordedDecision {
@@ -173,7 +178,7 @@ export async function recordDecision(
     ts,
     source: options.source ?? (GITHUB_SURFACES.has(surface) ? "github" : "server"),
     kind: "decision.recorded",
-    actor: { kind: "person", id: by, ...(name ? { name } : {}) },
+    actor: { kind: options.system ? "system" : "person", id: by, ...(name ? { name } : {}) },
     ...compact({ repo: subject.repo, run_id: subject.run_id }),
     ...(target ? { target } : {}),
     decision,

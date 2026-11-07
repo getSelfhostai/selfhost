@@ -44,7 +44,12 @@ const noLedger = () => ({ SELFHOST_DATA_DIR: tempDir("data").path("none") });
 describe("selfhost review risk", () => {
   it("is registered on the program", () => {
     const review = createProgram().commands.find((command) => command.name() === "review");
-    expect(review?.commands.map((command) => command.name())).toEqual(["risk", "brief", "trace"]);
+    expect(review?.commands.map((command) => command.name())).toEqual([
+      "risk",
+      "brief",
+      "trace",
+      "list",
+    ]);
   });
 
   it("prints the label and the check result with the inputs and what was missing", async () => {

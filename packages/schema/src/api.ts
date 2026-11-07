@@ -121,6 +121,12 @@ export const ReviewItemQuerySchema = Type.Object(
   {
     state: Type.Optional(StringEnum(REVIEW_ITEM_STATES, { default: "open" })),
     owner: Type.Optional(Type.String({ description: "Only items this person owns." })),
+    team: Type.Optional(
+      Type.String({
+        description:
+          "Team id on a team server: items built from that team's events. A person token reads only its own team.",
+      }),
+    ),
     limit: Type.Optional(Limit),
     cursor: Type.Optional(Cursor),
   },
@@ -130,7 +136,8 @@ export const ReviewItemQuerySchema = Type.Object(
 export const ReviewItemsPageSchema = Type.Object(
   {
     items: Type.Array(ReviewItemSchema, {
-      description: "Ranked: blocking first, then by risk score, then oldest first.",
+      description:
+        "Ranked: blocking first, then by risk score, then oldest first, then by id. Snoozed items come after the rest until their snooze ends.",
     }),
     next_cursor: NextCursor,
   },
@@ -141,8 +148,48 @@ export const DecisionRequestSchema = Type.Object(
   {
     verdict: StringEnum(PERSON_VERDICTS),
     reason: Type.Optional(Type.String({ description: "Why. For a question, the answer text." })),
+    by: Type.Optional(
+      NonEmpty({
+        description:
+          "Person who decided. Required with the admin token; a person token always decides as its own person.",
+      }),
+    ),
   },
   { additionalProperties: false, title: "DecisionRequest" },
+);
+
+export const SnoozeRequestSchema = Type.Object(
+  {
+    until: DateTime({
+      description:
+        "Rank the item after the rest until this time. A time in the past ends a snooze.",
+    }),
+    by: Type.Optional(
+      NonEmpty({
+        description:
+          "Person who snoozed. Required with the admin token; a person token always snoozes as its own person.",
+      }),
+    ),
+  },
+  { additionalProperties: false, title: "SnoozeRequest" },
+);
+
+export const ReviewItemConflictSchema = Type.Object(
+  {
+    error: Type.Object(
+      {
+        code: Type.Literal("not_open"),
+        message: Type.String({ description: "Human-readable message." }),
+      },
+      { additionalProperties: false },
+    ),
+    item: ReviewItemSchema,
+  },
+  {
+    additionalProperties: false,
+    title: "ReviewItemConflict",
+    description: "The item is no longer open: someone answered it, it expired or was closed.",
+  },
 );
 
 export const DecisionResponseSchema = Type.Object(
@@ -251,7 +298,11 @@ export const DecisionsPageSchema = Type.Object(
   { additionalProperties: false, title: "DecisionsPage" },
 );
 
-/** Where a person made a decision. Every surface records it through POST /v1/decisions. */
+/**
+ * Where a decision was made. Every surface records it through POST /v1/decisions or the
+ * recordDecision call behind it. timeout is the review list denying an approval nobody answered
+ * in time, the one decision no person makes.
+ */
 export const DECISION_SURFACES = [
   "cli",
   "rule_promotion",
@@ -262,6 +313,7 @@ export const DECISION_SURFACES = [
   "telegram",
   "mcp",
   "api",
+  "timeout",
 ] as const;
 
 export type DecisionSurface = (typeof DECISION_SURFACES)[number];
@@ -349,6 +401,8 @@ export type ReviewItemQuery = Static<typeof ReviewItemQuerySchema>;
 export type ReviewItemsPage = Static<typeof ReviewItemsPageSchema>;
 export type DecisionRequest = Static<typeof DecisionRequestSchema>;
 export type DecisionResponse = Static<typeof DecisionResponseSchema>;
+export type SnoozeRequest = Static<typeof SnoozeRequestSchema>;
+export type ReviewItemConflict = Static<typeof ReviewItemConflictSchema>;
 export type PolicyQuery = Static<typeof PolicyQuerySchema>;
 export type PolicyResponse = Static<typeof PolicyResponseSchema>;
 export type BudgetQuery = Static<typeof BudgetQuerySchema>;

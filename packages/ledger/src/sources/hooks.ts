@@ -32,6 +32,14 @@ import {
 
 type Payload = Json & { hook_event_name: string; session_id: string; cwd: string };
 
+/**
+ * Claude Code notifications that mean the agent waits on a person: a permission prompt, an idle
+ * prompt (it finished and waits for input) and an MCP elicitation (a tool asks a question). Each
+ * maps to approval.requested with data.notification_type, which the review list reads as an
+ * approval or a question.
+ */
+const WAITING_NOTIFICATIONS = new Set(["permission_prompt", "idle_prompt", "elicitation_dialog"]);
+
 function hookContext(vendor: AgentVendor, payload: Payload, ctx: SourceContext) {
   const ts = ctx.ts ?? new Date().toISOString();
   const sessionId = payload.session_id;
@@ -87,13 +95,15 @@ export function mapClaudeCodeHook(payload: unknown, ctx: SourceContext = {}): Le
           data: { tool_use_id: str(p.tool_use_id), duration_ms: num(p.duration_ms) },
         }),
       ];
-    case "Notification":
-      if (p.notification_type !== "permission_prompt") return [];
+    case "Notification": {
+      const type = str(p.notification_type);
+      if (type === undefined || !WAITING_NOTIFICATIONS.has(type)) return [];
       return [
         event("approval.requested", {
-          data: { notification_type: "permission_prompt", message: str(p.message) },
+          data: { notification_type: type, message: str(p.message) },
         }),
       ];
+    }
     default:
       return [];
   }

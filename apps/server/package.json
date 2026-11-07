@@ -23,6 +23,7 @@
     "@hono/node-server": "catalog:",
     "@selfhost/ledger": "workspace:*",
     "@selfhost/policy": "workspace:*",
+    "@selfhost/review": "workspace:*",
     "@selfhost/schema": "workspace:*",
     "hono": "catalog:",
     "postgres": "catalog:"

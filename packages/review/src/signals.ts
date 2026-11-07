@@ -1,0 +1,373 @@
+import { decisionPaths } from "@selfhost/ledger";
+import type { AgentVendor, LedgerEvent, ReviewItemKind, ReviewWhy } from "@selfhost/schema";
+
+/**
+ * What one ledger signal says about the item it belongs to. Signals with the same dedupeKey make
+ * one item while it is open.
+ */
+export interface Draft {
+  kind: ReviewItemKind;
+  dedupeKey: string;
+  title: string;
+  why: ReviewWhy;
+  score: number;
+  reasons: string[];
+  /** The signal carries its own risk score (a PR's), which replaces the stored one. */
+  scored: boolean;
+  /** An agent waits on the answer. */
+  blocking: boolean;
+  /** Times out to a deny: a blocking approval. */
+  timesOut: boolean;
+  /** Tool an approval waits on, when known. Its next result in the session ends the wait. */
+  tool?: string;
+  paths: string[];
+  /** The person named by the signal itself; otherwise the session's person is looked up. */
+  person?: string;
+  /** Team name on the event, matched against [teams]. */
+  team?: string;
+  url?: string;
+}
+
+/** Alerts that become items, by data.alert. Other alerts stay in the ledger only. */
+const ALERT_KINDS: Record<string, ReviewItemKind> = {
+  spend_spike: "spend_spike",
+  limit_forecast: "budget",
+  usage_limit: "budget",
+  budget: "budget",
+  budget_exceeded: "budget",
+  run_failed: "stuck_run",
+  run_stuck: "stuck_run",
+  api_error: "stuck_run",
+  model_request_failed: "stuck_run",
+  quality: "quality",
+  quality_alarm: "quality",
+};
+
+/** Claude Code notification types that ask a question rather than for permission. */
+const QUESTION_NOTIFICATIONS = new Set(["idle_prompt", "elicitation_dialog"]);
+
+/** A policy verdict counts as live, so an agent can be waiting on it, within this of the call. */
+const LIVE_EVALUATION_MS = 60_000;
+
+const TITLE_MAX = 200;
+
+const AGENT_NAMES: Record<AgentVendor, string> = {
+  claude_code: "Claude Code",
+  codex: "Codex",
+  opencode: "OpenCode",
+  goose: "Goose",
+  cursor: "Cursor",
+  copilot: "Copilot",
+  other: "An agent",
+};
+
+function text(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const flat = value.replace(/\s+/g, " ").trim();
+  return flat === "" ? undefined : flat;
+}
+
+/** A person id from a data field. Masked values (emails are masked under data) are no use. */
+function personId(value: unknown): string | undefined {
+  const id = text(value);
+  return id && !id.includes("[redacted") ? id : undefined;
+}
+
+function title(value: string): string {
+  const flat = value.replace(/\s+/g, " ").trim();
+  return flat.length > TITLE_MAX ? `${flat.slice(0, TITLE_MAX - 3)}...` : flat;
+}
+
+function agentName(event: LedgerEvent): string {
+  return event.agent ? AGENT_NAMES[event.agent.vendor] : "An agent";
+}
+
+/** "Bash: git push", "Edit: src/app.ts", or the tool alone. */
+function call(event: LedgerEvent, tool: string | undefined): string | undefined {
+  const input = text(event.tool?.input_summary) ?? text(event.target?.value);
+  if (tool && input) return `${tool}: ${input}`;
+  return tool ?? input;
+}
+
+function eventPerson(event: LedgerEvent): string | undefined {
+  return event.actor.kind === "person" ? event.actor.id : undefined;
+}
+
+function clampScore(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  return Math.min(100, Math.max(0, Math.round(value)));
+}
+
+function strings(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item !== "")
+    : [];
+}
+
+function base(event: LedgerEvent) {
+  return {
+    paths: decisionPaths(event),
+    person: eventPerson(event),
+    ...(event.team ? { team: event.team } : {}),
+    ...(event.links?.run_url ? { url: event.links.run_url } : {}),
+  };
+}
+
+/** approval.requested: a permission prompt is an approval, an idle prompt or elicitation a question. */
+function fromApprovalRequest(event: LedgerEvent): Draft {
+  const data = event.data ?? {};
+  const message = text(data.message);
+  const waitKey = event.session_id ?? event.id;
+  const agent = agentName(event);
+  const notification = text(data.notification_type);
+  if (notification && QUESTION_NOTIFICATIONS.has(notification)) {
+    return {
+      ...base(event),
+      kind: "question",
+      dedupeKey: `question:${waitKey}`,
+      title: title(message ?? `${agent} is waiting for an answer`),
+      why: {
+        signal: "approval.requested",
+        text:
+          notification === "elicitation_dialog"
+            ? "A tool asked a question and the agent waits for the answer."
+            : "The agent stopped and waits for your input.",
+      },
+      score: 30,
+      reasons: ["An agent is waiting for an answer"],
+      scored: false,
+      blocking: true,
+      timesOut: false,
+    };
+  }
+  const tool = event.tool?.name ?? /permission to use (\S+)/i.exec(message ?? "")?.[1];
+  const what = call(event, event.tool?.name);
+  return {
+    ...base(event),
+    kind: "approval",
+    dedupeKey: `approval:${waitKey}`,
+    title: title(
+      message ?? (what ? `${agent} asks to use ${what}` : `${agent} is waiting for permission`),
+    ),
+    why: { signal: "approval.requested", text: "The agent is waiting for permission to go on." },
+    score: 50,
+    reasons: ["An agent is waiting for permission"],
+    scored: false,
+    blocking: true,
+    timesOut: true,
+    ...(tool ? { tool } : {}),
+  };
+}
+
+/**
+ * true when the verdict was given while the call was being made, so an agent can be waiting on
+ * it. The observe pass (`selfhost policy observe`, source cli) judges calls after the fact.
+ */
+function isLive(event: LedgerEvent): boolean {
+  if (event.source === "cli") return false;
+  const evaluatedAt = event.data?.evaluated_at;
+  if (typeof evaluatedAt !== "string") return true;
+  return Math.abs(Date.parse(evaluatedAt) - Date.parse(event.ts)) <= LIVE_EVALUATION_MS;
+}
+
+/** policy.evaluated in enforce mode: ask is an approval, block a blocked action. */
+function fromPolicyVerdict(event: LedgerEvent): Draft | undefined {
+  const decision = event.decision;
+  if (!decision || (decision.verdict !== "ask" && decision.verdict !== "block")) return undefined;
+  if (decision.mode === "observe") return undefined;
+  const rule = decision.rule_id ?? "unknown";
+  const irreversible = event.data?.irreversible === true;
+  const tool = event.tool?.name;
+  const what = call(event, tool) ?? "an action";
+  const why: ReviewWhy = {
+    signal: "policy.evaluated",
+    rule_id: rule,
+    text: text(decision.reason) ?? `Rule ${rule} ${decision.verdict}s this action.`,
+  };
+  const irreversibleReason = irreversible ? ["The rule marks this action as irreversible"] : [];
+  // A verdict recorded after the fact finds no agent waiting on it.
+  const live = isLive(event);
+  if (decision.verdict === "ask") {
+    return {
+      ...base(event),
+      kind: "approval",
+      dedupeKey: live
+        ? `approval:${event.session_id ?? event.id}`
+        : `ask:${rule}:${String(event.data?.tool_event_id ?? event.id)}`,
+      title: title(`Approve ${what}`),
+      why,
+      score: irreversible ? 90 : 50,
+      reasons: [`Rule ${rule} asks a person first`, ...irreversibleReason],
+      scored: false,
+      blocking: live,
+      timesOut: live,
+      ...(tool ? { tool } : {}),
+    };
+  }
+  return {
+    ...base(event),
+    kind: "blocked_action",
+    dedupeKey: `blocked:${rule}:${event.session_id ?? ""}:${what}`,
+    title: title(live ? `Blocked ${what}` : `Rule ${rule} blocks ${what}`),
+    why,
+    score: irreversible ? 70 : 40,
+    reasons: [`Rule ${rule} blocked it`, ...irreversibleReason],
+    scored: false,
+    blocking: false,
+    timesOut: false,
+  };
+}
+
+function stable(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    const entries = Object.entries(value).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stable(v)}`).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
+/** alert.raised: spend spikes, budget and plan-limit warnings, failed runs and quality alarms. */
+function fromAlert(event: LedgerEvent): Draft | undefined {
+  const data = event.data ?? {};
+  const alert = text(data.alert);
+  const kind = alert ? ALERT_KINDS[alert] : undefined;
+  if (!alert || !kind) return undefined;
+  const message = text(data.message);
+  const agent = agentName(event);
+  const common = {
+    ...base(event),
+    kind,
+    scored: false,
+    blocking: false,
+    timesOut: false,
+  };
+  const signal = `alert.raised:${alert}`;
+  switch (kind) {
+    case "spend_spike": {
+      const series = (
+        data.series !== null && typeof data.series === "object" ? data.series : {}
+      ) as Record<string, unknown>;
+      const person = personId(series.person) ?? personId(data.owner);
+      return {
+        ...common,
+        dedupeKey: `spend_spike:${stable(data.series ?? data.owner ?? event.actor.id)}`,
+        title: title(message ?? "Spend spike"),
+        why: {
+          signal,
+          text: text(data.reason) ?? text(data.label) ?? "Spend jumped far above the usual rate.",
+        },
+        score: 90,
+        reasons: ["Spend far above the usual rate can mean a stolen key"],
+        ...(person ? { person } : {}),
+      };
+    }
+    case "budget": {
+      const person = personId(data.owner) ?? eventPerson(event);
+      const window = text(data.window) ?? "";
+      const hit = alert === "usage_limit";
+      return {
+        ...common,
+        dedupeKey: `budget:${alert}:${person ?? event.actor.id}:${text(data.plan) ?? event.agent?.vendor ?? ""}:${window}`,
+        title: title(
+          message ??
+            (hit
+              ? `${agent} reached its ${window ? `${window} ` : ""}usage limit`
+              : "Budget or plan limit warning"),
+        ),
+        why: {
+          signal,
+          text:
+            text(data.suggestion) ??
+            (hit
+              ? `The agent stopped at a plan limit${text(data.resets_at) ? ` until ${data.resets_at}` : ""}.`
+              : "Spend is on course to pass a budget or plan limit."),
+        },
+        score: hit ? 60 : 50,
+        reasons: [hit ? "A plan limit stopped an agent" : "A budget or plan limit is close"],
+        ...(person ? { person } : {}),
+      };
+    }
+    case "stuck_run": {
+      const failed = alert === "run_failed" || alert === "run_stuck";
+      const error = text(data.error);
+      return {
+        ...common,
+        dedupeKey: `stuck_run:${event.run_id ?? event.session_id ?? event.id}`,
+        title: title(
+          message ??
+            (alert === "run_stuck"
+              ? `${agent} run looks stuck`
+              : `${agent} run failing${error ? `: ${error}` : ""}`),
+        ),
+        why: { signal, text: error ?? `The run reported ${alert}.` },
+        score: failed ? 60 : 30,
+        reasons: [failed ? "A run failed or stopped making progress" : "A run hit errors"],
+      };
+    }
+    default: {
+      const metric = text(data.metric) ?? text(data.check);
+      return {
+        ...common,
+        dedupeKey: `quality:${metric ?? event.model ?? event.id}`,
+        title: title(message ?? `Quality alarm${metric ? `: ${metric}` : ""}`),
+        why: { signal, text: text(data.reason) ?? "A quality check fell below its threshold." },
+        score: 60,
+        reasons: ["Agent output quality dropped"],
+      };
+    }
+  }
+}
+
+/** pr.opened for an agent PR. The risk score is an input (data.risk or data.risk_score). */
+function fromPullRequest(event: LedgerEvent): Draft | undefined {
+  const data = event.data ?? {};
+  if (data.unattributed === true || !event.agent) return undefined;
+  const url = event.links?.pr_url ?? (event.target?.type === "pr" ? event.target.value : undefined);
+  if (!url) return undefined;
+  const risk = data.risk !== null && typeof data.risk === "object" ? data.risk : undefined;
+  const score =
+    clampScore((risk as Record<string, unknown> | undefined)?.score) ?? clampScore(data.risk_score);
+  const reasons = strings((risk as Record<string, unknown> | undefined)?.reasons);
+  const number = typeof data.number === "number" ? `#${data.number}` : url;
+  const signal = text(data.signal);
+  return {
+    ...base(event),
+    paths: [...new Set([...decisionPaths(event), ...strings(data.files)])],
+    kind: "pr",
+    dedupeKey: `pr:${url}`,
+    title: title(text(data.title) ?? `Agent PR ${number}${event.repo ? ` in ${event.repo}` : ""}`),
+    why: {
+      signal: "pr.opened",
+      text: `${agentName(event)} opened this pull request${signal ? ` (found by ${signal})` : ""}.`,
+    },
+    score: score ?? 50,
+    reasons: score === undefined ? ["No risk score for this pull request yet"] : reasons,
+    scored: score !== undefined,
+    blocking: false,
+    timesOut: false,
+    url,
+  };
+}
+
+/** The item a signal opens or adds to, or undefined when it opens none. */
+export function draftFor(event: LedgerEvent): Draft | undefined {
+  switch (event.kind) {
+    case "approval.requested":
+      return fromApprovalRequest(event);
+    case "policy.evaluated":
+      return fromPolicyVerdict(event);
+    case "alert.raised":
+      return fromAlert(event);
+    case "pr.opened":
+      return fromPullRequest(event);
+    default:
+      return undefined;
+  }
+}
+
+/** The pull request a pr.merged or pr.closed event closes. */
+export function closedPullRequest(event: LedgerEvent): string | undefined {
+  if (event.kind !== "pr.merged" && event.kind !== "pr.closed") return undefined;
+  return event.links?.pr_url ?? (event.target?.type === "pr" ? event.target.value : undefined);
+}

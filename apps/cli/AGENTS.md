@@ -50,6 +50,6 @@ in `~/.selfhost/spool` (readable by this user only) until the next import. With 
 
 - Hook events wait in `~/.selfhost/spool` until the next `selfhost import`; keep
   `selfhost import --watch` running to see them as they happen.
-- Look around with `selfhost spend`, `selfhost policy report` and `selfhost scan`.
+- Look around with `selfhost spend`, `selfhost review list`, `selfhost policy report` and `selfhost scan`.
 - If `selfhost` is not on PATH, the hooks call the node binary and script that ran init by
   absolute path. Install it globally and run `selfhost init` again for a path that lasts.

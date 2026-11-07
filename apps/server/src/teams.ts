@@ -30,9 +30,11 @@ export interface TeamRouteOptions {
   ledger: Ledger;
   /** The admin token. */
   token: string;
+  /** Adds more routes a person token may call; the person is in `c.env.person`. */
+  personRoutes?: (person: Hono<PersonEnv>) => void;
 }
 
-type PersonEnv = { Bindings: { person: Person } };
+export type PersonEnv = { Bindings: { person: Person } };
 type EventsEnv = { team: string };
 type BatchError = IngestEventsError["errors"][number];
 
@@ -88,7 +90,7 @@ export function teamId(name: string): string | undefined {
  * There is no route that forwards anything to a model provider: agents keep talking to their
  * vendors directly, and this server only stores events and the team policy.
  */
-export function teamRoutes(app: Hono, { ledger, token }: TeamRouteOptions): void {
+export function teamRoutes(app: Hono, { ledger, token, personRoutes }: TeamRouteOptions): void {
   const { teams } = ledger;
   const isAdminToken = sameAs(token);
   const adminOnly = requireBearerToken(token);
@@ -105,7 +107,7 @@ export function teamRoutes(app: Hono, { ledger, token }: TeamRouteOptions): void
     c.json(
       apiError(
         "forbidden",
-        "A person token can write and read its team's events, read /v1/me and its team's policy, and revoke itself. This route needs the admin token.",
+        "A person token can write and read its team's events, read and act on its team's review items, read /v1/me and its team's policy, and revoke itself. This route needs the admin token.",
       ),
       403,
     ),
@@ -170,6 +172,8 @@ export function teamRoutes(app: Hono, { ledger, token }: TeamRouteOptions): void
     }
     return setPolicy(c, team);
   });
+
+  personRoutes?.(person);
 
   app.use("*", async (c, next) => {
     if (PUBLIC_PATHS.has(c.req.path)) return next();

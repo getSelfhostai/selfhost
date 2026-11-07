@@ -200,6 +200,15 @@ ledger (`--database` / `--data-dir` as for `spend`).
   `--path` matches the file, files inside a folder, and folders that hold the file; `--topic`
   needs every word in the question or reason. `--limit` and `--cursor` page through.
 
+## Review list
+
+`selfhost review list [--state open|answered|dismissed|expired] [--owner <person>] [--json]`
+brings the review list in the local ledger up to date (`--database` / `--data-dir` as for
+`spend`) and prints it: what needs a person, blocking first, then by risk, then oldest first.
+Routing and the approval timeout come from the `selfhost.toml` the other commands find. `--limit`
+and `--cursor` page through. Answer an item with `selfhost decide <item-id> approve|deny|answer`;
+the next `review list` shows it answered. See [`packages/review`](../../packages/review/README.md).
+
 ## Inbox
 
 `selfhost inbox [--all] [--json]` lists the review items waiting on you, ranked like the review
@@ -377,7 +386,7 @@ Every command takes `--json` and prints one object with a `schema` tag: `selfhos
 `selfhost.policy_check/v1`, `selfhost.policy_test/v1`, `selfhost.policy_observe/v1`,
 `selfhost.policy_promote/v1`, `selfhost.review_item/v1` (from `policy report`),
 `selfhost.decide/v1`, `selfhost.review_risk/v1`, `selfhost.review_brief/v1`,
-`selfhost.review_trace/v1`, `selfhost.decisions/v1`,
+`selfhost.review_trace/v1`, `selfhost.review_list/v1`, `selfhost.decisions/v1`,
 `selfhost.inbox/v1`, `selfhost.inbox_action/v1`, `selfhost.inbox_item/v1`,
 `selfhost.inbox_sync/v1`,
 `selfhost.limit_forecast/v1`, `selfhost.plan_tiers/v1`, `selfhost.spend_alarms/v1`,

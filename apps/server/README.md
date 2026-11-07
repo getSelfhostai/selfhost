@@ -14,6 +14,14 @@ The selfhost HTTP API, specified in
   `paths`, links, `surface`, and `key` with `ts` for retries). Returns 201 with the stored
   event, or 200 with `duplicate: true` when the same `key` and `ts` were already recorded. Every
   surface records decisions through this call or the `recordDecision` function behind it.
+- `GET /v1/review-items`: the review list ([`packages/review`](../../packages/review/README.md)),
+  ranked: blocking first, then by risk, then oldest first, then by id, snoozed items last. Filters
+  `state` (default `open`), `owner` and `team`, with `limit` and `cursor`. `GET
+  /v1/review-items/{id}` opens one item. `POST /v1/review-items/{id}/decision` answers it
+  (`{ verdict, reason?, by? }`): one `decision.recorded` event, then the item is answered. `POST
+  /v1/review-items/{id}/snooze` (`{ until, by? }`) ranks it last until then. An item that is no
+  longer open answers 409 with `{ error, item }` and nothing is written. With the admin token
+  `by` is required; a person token acts as its own person.
 - `GET /v1/decisions`: `decision.recorded` and `policy.evaluated` events, newest first, by
   `path` (a file, the files under a folder, the folders that hold it), `topic` (every word in
   the question or reason), `text`, `rule_id`, `verdict`, `repo`, `target`, `person`,
@@ -59,8 +67,10 @@ bootstrap admin; everything else is a token the server issues and keeps only as 
   like `selfhost doctor`. Admin token with `?team=`, or a person token whose role is owner or
   admin.
 
-A person token can call `POST` and `GET /v1/events` (its own team only), `GET /v1/me`,
-`DELETE /v1/me/token` and `/v1/policy`, and gets 403 everywhere else, including decisions. Before its events are written, an event with no
+A person token can call `POST` and `GET /v1/events` (its own team only), the review item routes
+(its own team's items only: another team's item is 404 and `?team=` of another team 403),
+`GET /v1/me`, `DELETE /v1/me/token` and `/v1/policy`, and gets 403 everywhere else, including
+`/v1/decisions`. Before its events are written, an event with no
 actor gets the person, a person actor must be that person, system actors are refused, and
 `team` is set to the person's team; the batch then goes through the ordinary events route, so
 validation, atomicity and idempotent ids are the same. Each new event is also stored with the
@@ -93,6 +103,13 @@ On start and then once a day the server deletes events older than their retentio
 `ledger.retention_days`, else the one in `SELFHOST_CONFIG`, else 90 days.
 `SELFHOST_RETENTION_SWEEP=off` turns that off.
 
+On start and then every 15 seconds the server refreshes the review list: new signals become
+items, PRs that merged or closed and waits the session moved on from are closed, decisions
+recorded on other paths are applied, last week's would-block report is filed, and blocking
+approvals past their deadline are denied in the decision log. Items from a team's events use the
+team's stored `selfhost.toml`, others `SELFHOST_CONFIG`. `SELFHOST_REVIEW_REFRESH=off` turns
+that off, for a second server on the same database.
+
 With default settings the server opens no outbound connection and sends no telemetry;
 `test/privacy.test.ts` ingests fixture events, OTLP and team writes with every outbound path
 stubbed to fail, then reads every table to check that no planted secret was stored.
@@ -105,12 +122,13 @@ pnpm --filter @selfhost/server start   # runs the build
 
 Environment:
 
-| Variable                   | Default            | Meaning                                                                                           |
-| -------------------------- | ------------------ | ------------------------------------------------------------------------------------------------- |
-| `PORT`                     | `4400`             | Port to listen on.                                                                                |
-| `HOST`                     | `127.0.0.1`        | Address to bind.                                                                                  |
-| `DATABASE_URL`             | unset              | `postgres://` URL. Unset uses the embedded database.                                              |
-| `SELFHOST_DATA_DIR`        | `~/.selfhost/data` | Embedded database and token file.                                                                 |
-| `SELFHOST_TOKEN`           | unset              | API token. Unset uses or creates `<data dir>/token`.                                              |
-| `SELFHOST_CONFIG`          | unset              | `selfhost.toml` with the defaults for events with no team policy: `[ledger]` and `[[redaction]]`. |
-| `SELFHOST_RETENTION_SWEEP` | `daily`            | `off` keeps every event instead of deleting expired ones daily.                                   |
+| Variable                   | Default            | Meaning                                                                                                    |
+| -------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------- |
+| `PORT`                     | `4400`             | Port to listen on.                                                                                         |
+| `HOST`                     | `127.0.0.1`        | Address to bind.                                                                                           |
+| `DATABASE_URL`             | unset              | `postgres://` URL. Unset uses the embedded database.                                                       |
+| `SELFHOST_DATA_DIR`        | `~/.selfhost/data` | Embedded database and token file.                                                                          |
+| `SELFHOST_TOKEN`           | unset              | API token. Unset uses or creates `<data dir>/token`.                                                       |
+| `SELFHOST_CONFIG`          | unset              | `selfhost.toml` with the defaults for events with no team policy: `[ledger]`, `[[redaction]]`, `[review]`. |
+| `SELFHOST_RETENTION_SWEEP` | `daily`            | `off` keeps every event instead of deleting expired ones daily.                                            |
+| `SELFHOST_REVIEW_REFRESH`  | `15s`              | `off` stops building review items and timing out approvals on this server.                                 |

@@ -170,6 +170,7 @@ paths:
     get:
       operationId: listReviewItems
       summary: List review items, ranked.
+      description: Blocking items first, then by risk score, then oldest first, then by id; snoozed items after the rest until their snooze ends. With a person token, only items built from that team's events.
       parameters:
         - name: state
           in: query
@@ -186,6 +187,12 @@ paths:
           in: query
           required: false
           description: Only items this person owns.
+          schema:
+            type: string
+        - name: team
+          in: query
+          required: false
+          description: "Team id on a team server: items built from that team's events. A person token reads only its own team."
           schema:
             type: string
         - name: limit
@@ -218,11 +225,43 @@ paths:
                 $ref: "#/components/schemas/ApiError"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: A person token asked for another team's items.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/review-items/{id}:
+    get:
+      operationId: getReviewItem
+      summary: Open one review item.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Review item id.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewItem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No such review item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /v1/review-items/{id}/decision:
     post:
       operationId: recordDecision
       summary: Answer a review item.
-      description: Writes a decision.recorded event, attributed to the person the token belongs to, and closes the item.
+      description: Writes a decision.recorded event, attributed to the person the token belongs to (with the admin token, to by), and closes the item. Every surface reads the same list, so the next read anywhere shows the answer.
       parameters:
         - name: id
           in: path
@@ -258,11 +297,56 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
         "409":
-          description: The item is no longer open.
+          description: The item is no longer open. Nothing was written.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewItemConflict"
+  /v1/review-items/{id}/snooze:
+    post:
+      operationId: snoozeReviewItem
+      summary: Snooze a review item.
+      description: Ranks the item after the rest until the given time. It stays open, and a blocking approval still times out at its deadline.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Review item id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SnoozeRequest"
+      responses:
+        "200":
+          description: The snoozed item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewItem"
+        "400":
+          description: Invalid snooze.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No such review item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: The item is no longer open.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewItemConflict"
   /v1/decisions:
     get:
       operationId: listDecisions
@@ -860,7 +944,7 @@ components:
         - next_cursor
       properties:
         items:
-          description: "Ranked: blocking first, then by risk score, then oldest first."
+          description: "Ranked: blocking first, then by risk score, then oldest first, then by id. Snoozed items come after the rest until their snooze ends."
           type: array
           items:
             $ref: "#/components/schemas/ReviewItem"
@@ -886,6 +970,10 @@ components:
         reason:
           description: Why. For a question, the answer text.
           type: string
+        by:
+          minLength: 1
+          description: Person who decided. Required with the admin token; a person token always decides as its own person.
+          type: string
     DecisionResponse:
       additionalProperties: false
       title: DecisionResponse
@@ -898,6 +986,45 @@ components:
           $ref: "#/components/schemas/ReviewItem"
         decision_event:
           $ref: "#/components/schemas/LedgerEvent"
+    SnoozeRequest:
+      additionalProperties: false
+      title: SnoozeRequest
+      type: object
+      required:
+        - until
+      properties:
+        until:
+          format: date-time
+          description: Rank the item after the rest until this time. A time in the past ends a snooze.
+          type: string
+        by:
+          minLength: 1
+          description: Person who snoozed. Required with the admin token; a person token always snoozes as its own person.
+          type: string
+    ReviewItemConflict:
+      additionalProperties: false
+      title: ReviewItemConflict
+      description: "The item is no longer open: someone answered it, it expired or was closed."
+      type: object
+      required:
+        - error
+        - item
+      properties:
+        error:
+          additionalProperties: false
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              const: not_open
+              type: string
+            message:
+              description: Human-readable message.
+              type: string
+        item:
+          $ref: "#/components/schemas/ReviewItem"
     DecisionsPage:
       additionalProperties: false
       title: DecisionsPage
@@ -997,6 +1124,7 @@ components:
             - telegram
             - mcp
             - api
+            - timeout
         key:
           minLength: 1
           maxLength: 256

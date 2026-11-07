@@ -1,0 +1,266 @@
+import type { Ledger } from "@selfhost/ledger";
+import {
+  AlreadyAnsweredError,
+  openReviewList,
+  type RefreshResult,
+  ReviewInputError,
+  ReviewItemNotFoundError,
+  type ReviewList,
+  refreshReviewList,
+} from "@selfhost/review";
+import {
+  type ApiError,
+  createValidator,
+  type DecisionRequest,
+  DecisionRequestSchema,
+  type Person,
+  REVIEW_ITEM_STATES,
+  type ResolvedSelfhostConfig,
+  type ReviewItemConflict,
+  type ReviewItemState,
+  type SnoozeRequest,
+  SnoozeRequestSchema,
+  type ValidationResult,
+} from "@selfhost/schema";
+import type { Context, Env, Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
+
+/** A decision or snooze is a few fields; anything this big is not one. */
+const MAX_ACTION_BYTES = 64 * 1024;
+const QUERY_KEYS = new Set(["state", "owner", "team", "limit", "cursor"]);
+
+export const REVIEW_REFRESH_INTERVAL_MS = 15_000;
+
+export interface ReviewRouteOptions {
+  /** selfhost.toml for events with no team policy. */
+  config?: ResolvedSelfhostConfig;
+  now?: () => Date;
+  /** The person a person token belongs to; undefined for the admin token. */
+  person?: (c: Context) => Person | undefined;
+}
+
+const apiError = (code: string, message: string): ApiError => ({ error: { code, message } });
+
+const decisionBody = createValidator(DecisionRequestSchema);
+const snoozeBody = createValidator(SnoozeRequestSchema);
+
+function conflict(c: Context, error: AlreadyAnsweredError) {
+  const body: ReviewItemConflict = {
+    error: { code: "not_open", message: `This item is ${error.item.state}, not open` },
+    item: error.item,
+  };
+  return c.json(body, 409);
+}
+
+async function readBody<T>(
+  c: Context,
+  validator: { validate(value: unknown): ValidationResult<T> },
+  code: string,
+): Promise<T | Response> {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json(apiError(code, "Expected a JSON body"), 400);
+  }
+  const result = validator.validate(body);
+  if (result.ok) return result.value;
+  const [first] = result.errors;
+  return c.json(apiError(code, `${first?.field}: ${first?.message}`), 400);
+}
+
+/**
+ * The review list over HTTP: GET /v1/review-items and /v1/review-items/{id}, and POST
+ * .../decision and .../snooze. A person token reads and acts on its own team's items and acts
+ * as its own person; the admin token reads every item and names who acts in `by`.
+ */
+export function reviewRoutes<E extends Env>(
+  app: Hono<E>,
+  ledger: Ledger,
+  options: ReviewRouteOptions = {},
+): void {
+  const lists = new Map<string, ReviewList>();
+  const listFor = (team: string | undefined): ReviewList => {
+    const key = team ?? "";
+    let list = lists.get(key);
+    if (!list) {
+      list = openReviewList(ledger, {
+        ...(options.config ? { config: options.config } : {}),
+        ...(options.now ? { now: options.now } : {}),
+        ...(team !== undefined ? { team } : {}),
+      });
+      lists.set(key, list);
+    }
+    return list;
+  };
+  const scope = (c: Context) => {
+    const person = options.person?.(c);
+    return { person, list: listFor(person?.team) };
+  };
+  const limit = bodyLimit({
+    maxSize: MAX_ACTION_BYTES,
+    onError: (c) =>
+      c.json(apiError("payload_too_large", `Request body over ${MAX_ACTION_BYTES} bytes`), 413),
+  });
+  /** Who acts: the person token's person, else `by` from the body (admin token). */
+  const actor = (c: Context, by: string | undefined): string | Response => {
+    const { person } = scope(c);
+    if (person) {
+      if (by !== undefined && by !== person.id) {
+        return c.json(apiError("forbidden", "A person token acts as its own person"), 403);
+      }
+      return person.id;
+    }
+    if (by === undefined || by.trim() === "") {
+      return c.json(apiError("invalid_request", "by: Required with the admin token"), 400);
+    }
+    return by;
+  };
+
+  app.get("/v1/review-items", async (c) => {
+    const query: { state?: ReviewItemState; owner?: string; limit?: number; cursor?: string } = {};
+    let team: string | undefined;
+    for (const [key, values] of Object.entries(c.req.queries())) {
+      const fail = (message: string) =>
+        c.json(apiError("invalid_query", `${key}: ${message}`), 400);
+      if (!QUERY_KEYS.has(key)) return fail("Unknown query parameter");
+      if (values.length !== 1) return fail("Expected one value");
+      const [value = ""] = values;
+      if (key === "limit") {
+        if (!/^\d+$/.test(value)) return fail("Expected an integer");
+        query.limit = Number(value);
+      } else if (key === "state") {
+        if (!(REVIEW_ITEM_STATES as readonly string[]).includes(value)) {
+          return fail(`Expected one of: ${REVIEW_ITEM_STATES.join(", ")}`);
+        }
+        query.state = value as ReviewItemState;
+      } else if (key === "team") {
+        team = value;
+      } else if (key === "owner") {
+        query.owner = value;
+      } else {
+        query.cursor = value;
+      }
+    }
+    const person = options.person?.(c);
+    if (person && team !== undefined && team !== person.team) {
+      return c.json(apiError("forbidden", "A person token reads only its own team's items"), 403);
+    }
+    try {
+      return c.json(await listFor(person?.team ?? team).list(query));
+    } catch (error) {
+      if (error instanceof ReviewInputError) {
+        return c.json(apiError("invalid_query", error.message), 400);
+      }
+      throw error;
+    }
+  });
+
+  app.get("/v1/review-items/:id", async (c) => {
+    const id = c.req.param("id");
+    const item = await scope(c).list.get(id);
+    if (!item) return c.json(apiError("not_found", `No review item ${id}`), 404);
+    return c.json(item);
+  });
+
+  app.post("/v1/review-items/:id/decision", limit, async (c) => {
+    const body = await readBody<DecisionRequest>(c, decisionBody, "invalid_decision");
+    if (body instanceof Response) return body;
+    const by = actor(c, body.by);
+    if (by instanceof Response) return by;
+    const id = c.req.param("id");
+    try {
+      const response = await scope(c).list.decide(id, {
+        verdict: body.verdict,
+        by,
+        ...(body.reason !== undefined ? { reason: body.reason } : {}),
+        surface: "api",
+      });
+      return c.json(response);
+    } catch (error) {
+      if (error instanceof AlreadyAnsweredError) return conflict(c, error);
+      if (error instanceof ReviewItemNotFoundError) {
+        return c.json(apiError("not_found", error.message), 404);
+      }
+      if (error instanceof ReviewInputError) {
+        return c.json(apiError("invalid_decision", error.message), 400);
+      }
+      throw error;
+    }
+  });
+
+  app.post("/v1/review-items/:id/snooze", limit, async (c) => {
+    const body = await readBody<SnoozeRequest>(c, snoozeBody, "invalid_request");
+    if (body instanceof Response) return body;
+    const by = actor(c, body.by);
+    if (by instanceof Response) return by;
+    const id = c.req.param("id");
+    try {
+      return c.json(await scope(c).list.snooze(id, { by, until: body.until }));
+    } catch (error) {
+      if (error instanceof AlreadyAnsweredError) return conflict(c, error);
+      if (error instanceof ReviewItemNotFoundError) {
+        return c.json(apiError("not_found", error.message), 404);
+      }
+      if (error instanceof ReviewInputError) {
+        return c.json(apiError("invalid_request", error.message), 400);
+      }
+      throw error;
+    }
+  });
+}
+
+export interface ReviewRefreshJobOptions {
+  config?: ResolvedSelfhostConfig;
+  /** Default: every 15 seconds. */
+  intervalMs?: number;
+  /** Where the job reports. Default: console.log. */
+  log?: (line: string) => void;
+  now?: () => Date;
+}
+
+export interface ReviewRefreshJob {
+  /** One refresh now. undefined when it failed; the failure is logged. */
+  run(): Promise<RefreshResult | undefined>;
+  stop(): void;
+}
+
+/**
+ * Builds review items from new ledger signals and applies approval timeouts now and then every
+ * intervalMs, like the retention job: one refresh at a time, a timer that never keeps the
+ * process alive, and a log line with counts only.
+ */
+export function startReviewRefreshJob(
+  ledger: Ledger,
+  options: ReviewRefreshJobOptions = {},
+): ReviewRefreshJob {
+  const { intervalMs = REVIEW_REFRESH_INTERVAL_MS, log = console.log } = options;
+  const list = openReviewList(ledger, {
+    ...(options.config ? { config: options.config } : {}),
+    ...(options.now ? { now: options.now } : {}),
+  });
+  let running: Promise<RefreshResult | undefined> | undefined;
+  const run = () => {
+    running ??= refreshReviewList(ledger, list)
+      .then(
+        (result) => {
+          if (result.created > 0 || result.updated > 0) {
+            log(`review list: ${result.created} new, ${result.updated} changed`);
+          }
+          return result;
+        },
+        (error: unknown) => {
+          log(`review list: refresh failed: ${error instanceof Error ? error.message : error}`);
+          return undefined;
+        },
+      )
+      .finally(() => {
+        running = undefined;
+      });
+    return running;
+  };
+  const timer = setInterval(run, intervalMs);
+  timer.unref();
+  void run();
+  return { run, stop: () => clearInterval(timer) };
+}

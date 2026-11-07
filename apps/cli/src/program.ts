@@ -21,6 +21,7 @@ import { registerLedger } from "./ledger.js";
 import { registerPolicy } from "./policy/commands.js";
 import { registerPolicyEditing } from "./policy/editing.js";
 import { registerReview } from "./review.js";
+import { localReviewList, registerReviewList } from "./review-list.js";
 import type { CollectAttribution } from "./scan/attribution.js";
 import { gitAttribution } from "./scan/git-attribution.js";
 import { runScan, type ScanCommandOptions } from "./scan/index.js";
@@ -83,6 +84,15 @@ const collect = (value: string, previous: string[]) => [...previous, value];
 
 export function createProgram(overrides: Partial<CliDeps> = {}): Command {
   const deps = { ...defaultDeps(), ...overrides };
+  const openLocalList =
+    deps.localReviewList ??
+    localReviewList({
+      env: deps.env,
+      cwd: deps.cwd,
+      write: deps.write,
+      now: deps.now,
+      configPath: deps.configPath ?? defaultConfigPath(),
+    });
   const fail = (error: unknown, json: boolean | undefined) => {
     const message = error instanceof Error ? error.message : String(error);
     if (json) {
@@ -145,7 +155,7 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
         configPath: deps.configPath,
         fetch: deps.fetch,
         retry: deps.retry,
-        localReviewList: deps.localReviewList,
+        localReviewList: openLocalList,
       };
       try {
         if (options.watch) await runWatch(options, importIo);
@@ -333,6 +343,18 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
     fail,
   );
 
+  registerReviewList(
+    program,
+    () => ({
+      env: deps.env,
+      cwd: deps.cwd,
+      write: deps.write,
+      now: deps.now,
+      configPath: deps.configPath ?? defaultConfigPath(),
+    }),
+    fail,
+  );
+
   registerTeam(
     program,
     () => ({
@@ -354,7 +376,7 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       now: deps.now,
       configPath: deps.configPath ?? defaultConfigPath(),
       fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
-      localReviewList: deps.localReviewList,
+      localReviewList: openLocalList,
     }),
     fail,
   );

@@ -602,9 +602,15 @@ describe("selfhost inbox in solo mode", () => {
     expect(attempts).toEqual([]);
   });
 
-  it("needs the local review list", async () => {
-    const result = await run(["inbox", "--json"], { configPath: laptop().configPath });
-    expect(parse(result.out).error).toMatch(/Solo mode has no review list in this build yet/);
+  it("reads the local review list from the ledger by default", async () => {
+    const attempts = blockNetwork();
+    const result = await run(["inbox", "--json", "--data-dir", "memory://"], {
+      configPath: laptop().configPath,
+      env: { SELFHOST_PERSON: PERSON },
+      now: NOW,
+    });
+    expect(parse(result.out)).toMatchObject({ mode: "solo", person: PERSON, items: [] });
+    expect(attempts).toEqual([]);
   });
 
   it("queues while import --watch holds the ledger, and the watcher applies the queue", async () => {

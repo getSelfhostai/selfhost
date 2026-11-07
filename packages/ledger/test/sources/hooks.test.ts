@@ -173,6 +173,21 @@ describe("hook mapping details", () => {
     });
   });
 
+  it("records notifications where the agent waits on a person, and only those", () => {
+    const notification = readJson("hooks", "claude-code", "Notification.json") as object;
+    const waits = (type: string) =>
+      mapClaudeCodeHook({ ...notification, notification_type: type, message: "Waiting" }, ctx);
+    for (const type of ["permission_prompt", "idle_prompt", "elicitation_dialog"]) {
+      expect(waits(type).map((e) => [e.kind, e.data])).toEqual([
+        [
+          "approval.requested",
+          { hook_event: "Notification", notification_type: type, message: "Waiting" },
+        ],
+      ]);
+    }
+    expect(waits("auth_success")).toEqual([]);
+  });
+
   it("maps unknown hook events to nothing", () => {
     const payload = { session_id: "s", cwd: "/home/dev/acme-api", hook_event_name: "TeammateIdle" };
     expect(mapClaudeCodeHook(payload, ctx)).toEqual([]);
