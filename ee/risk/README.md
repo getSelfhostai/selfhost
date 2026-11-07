@@ -3,8 +3,9 @@
 Commercial code, under [`ee/LICENSE`](../LICENSE), not Apache-2.0.
 
 Scores an agent pull request as low, medium or high from the rules in `selfhost.toml`, and
-builds the PR label and the check result that lists the inputs behind the level. Posting both
-through the GitHub App comes with F20; this package only builds them as data.
+builds the PR label and the check result that lists the inputs behind the level. This package
+only builds them as data; the server's GitHub App route posts them (see
+[`apps/server`](../../apps/server/README.md#github-app)).
 
 ```ts
 import { gatherRiskInputs, riskCheck, riskLabel, scoreRisk } from "@selfhost/ee-risk";
@@ -89,5 +90,6 @@ command hidden in a script is not seen.
 This package is in the `ee/*` workspace with `"license": "SEE LICENSE IN ../LICENSE"`. Apache
 code never imports it: a Biome `noRestrictedImports` override fails lint on any import of
 `@selfhost/ee-*` or an `ee/` path outside `ee/`, except `apps/cli/src/ee.ts`, which loads the
-package when `selfhost review risk` runs. `test/boundary.test.ts` checks the license fields and
-that only the CLI depends on an `ee/` package.
+package when `selfhost review risk` runs, and `apps/server/src/ee.ts`, which loads it when the
+GitHub App first scores an agent pull request. `test/boundary.test.ts` checks the license fields
+and that only the CLI and the server depend on an `ee/` package.

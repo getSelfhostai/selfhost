@@ -12,5 +12,6 @@
   "version-two.toml": { "field": "version", "line": 1 },
   "mcp-mode-unknown.toml": { "field": "mcp.mode", "line": 4 },
   "models-allow-empty.toml": { "field": "models.allow[1]", "line": 4 },
-  "reserved-rule-id.toml": { "field": "rules[0].id", "line": 7 }
+  "reserved-rule-id.toml": { "field": "rules[0].id", "line": 7 },
+  "github-login-invalid.toml": { "field": "review.github_logins[\"bob@example.com\"]", "line": 4 }
 }

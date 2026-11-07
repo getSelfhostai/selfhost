@@ -1,6 +1,7 @@
 import { type Ledger, openLedger } from "@selfhost/ledger";
 import type { Hono } from "hono";
 import { createApp } from "../src/app.js";
+import type { GitHubRouteOptions } from "../src/github.js";
 
 export const TOKEN = "test-token";
 
@@ -11,9 +12,9 @@ export interface TestServer {
   request(path: string, init?: RequestInit): Promise<Response>;
 }
 
-export async function startTestServer(): Promise<TestServer> {
+export async function startTestServer(github?: GitHubRouteOptions): Promise<TestServer> {
   const ledger = await openLedger({ dataDir: "memory://" });
-  const app = createApp({ version: "1.2.3", ledger, token: TOKEN });
+  const app = createApp({ version: "1.2.3", ledger, token: TOKEN, ...(github ? { github } : {}) });
   return {
     app,
     ledger,

@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { requireBearerToken } from "./auth.js";
 import { decisionRoutes } from "./decisions.js";
 import { eventRoutes } from "./events.js";
+import { type GitHubRouteOptions, githubRoutes } from "./github.js";
 import { otlpRoutes } from "./otlp.js";
 import { reviewRoutes } from "./review.js";
 import { type PersonEnv, teamRoutes } from "./teams.js";
@@ -17,12 +18,16 @@ export interface AppOptions {
   config?: ResolvedSelfhostConfig;
   /** Clock for review list reads and answers. */
   now?: () => Date;
+  /** The GitHub App delivery. Without an App, POST /v1/github/webhooks answers 404. */
+  github?: GitHubRouteOptions;
 }
 
-export function createApp({ version, ledger, token, config, now }: AppOptions): Hono {
+export function createApp({ version, ledger, token, config, now, github = {} }: AppOptions): Hono {
   const app = new Hono();
   const review = { ...(config ? { config } : {}), ...(now ? { now } : {}) };
 
+  // Signed by GitHub instead of a bearer token, so it goes before both token checks.
+  githubRoutes(app, ledger, github);
   teamRoutes(app, {
     ledger,
     token,

@@ -16,11 +16,15 @@
     { "number": 111, "state": "open", "case": "One Claude Code commit and one Codex commit: conflicting evidence, so unattributed." }
   ],
   "webhooks": {
-    "description": "Webhook deliveries as a GitHub App receives them, for the decision mapper in packages/attribution: the body, with the X-GitHub-Event header as the first part of the file name.",
+    "description": "Webhook deliveries as a GitHub App receives them, for the decision mapper in packages/attribution and the GitHub delivery in apps/server (POST /v1/github/webhooks): the body, with the X-GitHub-Event header as the first part of the file name and the action as the second.",
     "files": [
       { "file": "webhooks/pull_request_review.approved.json", "case": "bob approves Claude Code pull request 101 with a reason." },
       { "file": "webhooks/pull_request_review.changes_requested.json", "case": "bob requests changes on Codex pull request 103." },
-      { "file": "webhooks/issue_comment.created.json", "case": "carol answers in the conversation of Claude Code pull request 101." }
+      { "file": "webhooks/issue_comment.created.json", "case": "carol answers in the conversation of Claude Code pull request 101." },
+      { "file": "webhooks/pull_request.opened.json", "case": "alice opens pull request 101 from a claude/ branch: an agent pull request, at head 5786c5c9." },
+      { "file": "webhooks/pull_request.synchronize.json", "case": "A push moves pull request 101 to head b2e4f6a8; it already carries selfhost:risk-low and selfhost:agent-claude-code." },
+      { "file": "webhooks/pull_request.labeled.json", "case": "carol adds selfhost:risk-medium to pull request 101 by hand." },
+      { "file": "webhooks/pull_request.opened.person.json", "case": "bob opens plain pull request 106: no agent, so nothing is synced." }
     ]
   }
 }

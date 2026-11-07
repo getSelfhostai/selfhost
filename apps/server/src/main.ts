@@ -3,6 +3,7 @@ import { openLedger, resolveDataDir } from "@selfhost/ledger";
 import { redactionSettings } from "@selfhost/schema";
 import pkg from "../package.json" with { type: "json" };
 import { createApp } from "./app.js";
+import { githubAppFromEnv, githubConfig } from "./github.js";
 import { serverConfig, startRetentionJob } from "./retention.js";
 import { startReviewRefreshJob } from "./review.js";
 import { loadApiToken } from "./token.js";
@@ -23,8 +24,17 @@ if (created) {
   console.log(`API token (${where}): ${token}`);
 }
 
+const github = {
+  app: githubAppFromEnv(),
+  config: githubConfig(ledger, config, process.env.SELFHOST_GITHUB_TEAM?.trim() || undefined),
+};
+
 const server = serve(
-  { fetch: createApp({ version: pkg.version, ledger, token, config }).fetch, port, hostname },
+  {
+    fetch: createApp({ version: pkg.version, ledger, token, config, github }).fetch,
+    port,
+    hostname,
+  },
   (info) => {
     console.log(`selfhost server ${pkg.version} listening on http://${hostname}:${info.port}`);
   },

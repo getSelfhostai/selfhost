@@ -41,6 +41,7 @@ from the same code.
 | `packages/attribution` | Links commits and pull requests to the agent and model that produced them, with merge stats |
 | `packages/pr`          | Reads a pull request or local commits: hunks, new dependencies, test changes, the agent run |
 | `packages/brief`       | The review brief comment on agent pull requests, as data and as Markdown                    |
+| `packages/github`      | Labels, review check run, review requests and brief comment on agent PRs, via a GitHub App  |
 | `packages/sdk`         | API client (placeholder)                                                                    |
 | `apps/server`          | HTTP API server (Hono)                                                                      |
 | `apps/cli`             | `selfhost` command line                                                                     |

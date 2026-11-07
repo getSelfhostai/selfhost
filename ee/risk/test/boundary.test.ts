@@ -63,7 +63,7 @@ describe("the ee/ license boundary", () => {
     expect(root.license).toBe("Apache-2.0");
   });
 
-  it("lets only the CLI depend on ee/ packages", () => {
+  it("lets only the CLI and the server depend on ee/ packages", () => {
     const eeNames = new Set(
       manifests.filter((m) => m.dir.startsWith("ee/")).map((m) => m.manifest.name),
     );
@@ -76,6 +76,9 @@ describe("the ee/ license boundary", () => {
             .map((name) => `${dir} -> ${name}`),
         ),
       );
-    expect(dependents).toEqual(["apps/cli -> @selfhost/ee-risk"]);
+    expect(dependents).toEqual([
+      "apps/cli -> @selfhost/ee-risk",
+      "apps/server -> @selfhost/ee-risk",
+    ]);
   });
 });

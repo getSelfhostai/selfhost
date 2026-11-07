@@ -28,7 +28,8 @@ The selfhost HTTP API, specified in
   `item_id`, `from` and `to`. `format=text` returns the plain text the CLI and the MCP tool
   print: each decision's id, who, verdict, reason and links.
 
-Every route except `/v1/health` and `/v1/join` needs `Authorization: Bearer <token>`. The admin
+Every route except `/v1/health`, `/v1/join` and `/v1/github/webhooks` needs
+`Authorization: Bearer <token>`. The admin
 token is `SELFHOST_TOKEN` when set; otherwise the server generates one on first start, saves it
 to `<data dir>/token` with mode 0600 and prints it once.
 
@@ -85,9 +86,98 @@ reached through `ledger.teams`.
 
 No model traffic passes through this server. It has no route that forwards requests to Anthropic,
 OpenAI or any other provider, and serving a request opens no connection other than to its own
-database: agents keep calling their vendors directly under each developer's own login, and
+database (and, for a signed GitHub App delivery, to the GitHub API): agents keep calling their vendors directly under each developer's own login, and
 selfhost never asks for or stores those logins or provider keys. `test/teams.test.ts` checks that vendor API paths are not served and that
 serving team requests opens no connection.
+
+## GitHub App
+
+`POST /v1/github/webhooks` receives the selfhost GitHub App's webhooks and keeps every open agent
+pull request showing its review-list state, through
+[`@selfhost/github`](../../packages/github/README.md):
+
+- a risk label (`selfhost:risk-low`, `-medium`, `-high`) and an agent label
+  (`selfhost:agent-claude-code`); when the risk changes the old label is removed and the new
+  one added;
+- a `selfhost/review` check run on the head commit whose summary is the review brief's summary,
+  the risk and who was asked to review, with the brief and the risk inputs in its details;
+- a review request to the owner the review list picked, under their login in
+  `[review] github_logins`, else to the team in `[review] github_team`;
+- the review brief as one comment, edited in place on later deliveries.
+
+It answers 404 until `SELFHOST_GITHUB_APP_ID`, `SELFHOST_GITHUB_PRIVATE_KEY` (or
+`SELFHOST_GITHUB_PRIVATE_KEY_FILE`) and `SELFHOST_GITHUB_WEBHOOK_SECRET` are all set; a partial
+setup is reported at start by variable name. It needs no bearer token: the request must carry
+`X-Hub-Signature-256` for its exact body under the webhook secret (checked by
+`@octokit/webhooks`), else 401. Bodies up to 25 MB are read, as GitHub sends no more.
+
+- `pull_request` with action `opened`, `reopened`, `synchronize`, `ready_for_review`, or
+  `labeled` by a person (the App's own label changes come back as `labeled` by a bot and are
+  skipped) on an open pull request that [`@selfhost/attribution`](../../packages/attribution/README.md)
+  ties to an agent (attribution lines and session links in the body, an agent account as author,
+  an agent branch prefix) is synced. Draft pull requests get labels and the check, and the review
+  request once they are ready.
+- Each `X-GitHub-Delivery` id is handled once. The id is stored before the sync (table
+  `github_deliveries`, migration `0005_github_deliveries.sql`, kept 7 days); the same delivery
+  again answers `{ delivery, handled: false, duplicate: true }` without a single GitHub call. A
+  sync that fails forgets the id and answers 500, so GitHub's redelivery runs it again.
+- Every other signed delivery (other events, actions, closed pull requests, pull requests by
+  people, `ping`) answers 200 with `handled: false` and `skipped`, the reason, which shows in
+  the App's delivery log on GitHub.
+- Syncs for one pull request run one at a time, so two deliveries never race to create a second
+  check run. The sync itself only writes what differs, so a new delivery for an unchanged pull
+  request writes nothing.
+- The log gets one line per delivery: its id, event, repository, pull request number and how
+  many changes were made. Payloads, tokens, the private key and the secret are never logged.
+
+The `[review]` settings come from the stored `selfhost.toml` of the team in
+`SELFHOST_GITHUB_TEAM` when that is set and the team has one, else from `SELFHOST_CONFIG`:
+
+```toml
+[review]
+github_team = "platform-reviewers"   # slug, as in github.com/orgs/<org>/teams/<slug>
+block_merge_on_high = false          # true: the check fails on high risk
+
+[review.github_logins]               # person id (as in [review.owners]) = GitHub login
+"bob@example.com" = "bob"
+```
+
+The owner gets the request when they have a login and did not open the pull request themselves;
+otherwise the team does, and with no team nobody is asked and the check says why. The check
+names GitHub accounts only, never person ids.
+
+**Blocking merges is opt in.** The check's conclusion is `neutral` (which passes a required
+check) unless the risk is high and `block_merge_on_high = true`, which makes it `failure`. Even
+then it blocks a merge only when the team adds `selfhost/review` as a required status check in
+branch protection or a ruleset (Settings, Branches or Rules, "Require status checks to pass",
+search for `selfhost/review` once it has run on a pull request).
+
+Where each part comes from is a provider in `src/github-pull.ts`, so other parts of the review
+list plug in without touching the route:
+
+| Provider | Default                                                                                                                                                          |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `risk`   | The ee/ risk score (`src/github-risk.ts`, loaded through `src/ee.ts` on first use) from the pull request's files and new dependencies; none when ee/ is left out |
+| `owner`  | None, so the request goes to `[review] github_team`; the review list's routing replaces it                                                                       |
+| `brief`  | None, so no comment and the check names the agent; the review brief renderer replaces it                                                                         |
+
+On the server the risk score reads the files, the manifests and the agent from GitHub; the agent
+run, tests and revert history are listed as missing inputs in the check.
+
+### Registering the App
+
+1. Create a GitHub App (organization settings, Developer settings, GitHub Apps). Webhook URL:
+   `https://<server>/v1/github/webhooks`. Webhook secret: a random value, for example
+   `openssl rand -hex 32`.
+2. Repository permissions: Checks read and write, Pull requests read and write, Issues read and
+   write (labels and comments on pull requests), Contents read-only (changed manifests for the
+   risk score), Metadata read-only.
+3. Subscribe to the **Pull request** event.
+4. Generate a private key, and set `SELFHOST_GITHUB_APP_ID`, `SELFHOST_GITHUB_PRIVATE_KEY_FILE`
+   (or `SELFHOST_GITHUB_PRIVATE_KEY`) and `SELFHOST_GITHUB_WEBHOOK_SECRET` on the server, plus
+   `SELFHOST_GITHUB_TEAM` on a team server.
+5. Install the App on the repositories, and add `[review] github_logins` and `github_team` to
+   `selfhost.toml`. The team to request must have access to the repository.
 
 ## Privacy and retention
 
@@ -110,7 +200,8 @@ approvals past their deadline are denied in the decision log. Items from a team'
 team's stored `selfhost.toml`, others `SELFHOST_CONFIG`. `SELFHOST_REVIEW_REFRESH=off` turns
 that off, for a second server on the same database.
 
-With default settings the server opens no outbound connection and sends no telemetry;
+With default settings the server opens no outbound connection and sends no telemetry (a
+configured GitHub App calls the GitHub API, and only while handling a signed delivery);
 `test/privacy.test.ts` ingests fixture events, OTLP and team writes with every outbound path
 stubbed to fail, then reads every table to check that no planted secret was stored.
 
@@ -122,13 +213,18 @@ pnpm --filter @selfhost/server start   # runs the build
 
 Environment:
 
-| Variable                   | Default            | Meaning                                                                                                    |
-| -------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------- |
-| `PORT`                     | `4400`             | Port to listen on.                                                                                         |
-| `HOST`                     | `127.0.0.1`        | Address to bind.                                                                                           |
-| `DATABASE_URL`             | unset              | `postgres://` URL. Unset uses the embedded database.                                                       |
-| `SELFHOST_DATA_DIR`        | `~/.selfhost/data` | Embedded database and token file.                                                                          |
-| `SELFHOST_TOKEN`           | unset              | API token. Unset uses or creates `<data dir>/token`.                                                       |
-| `SELFHOST_CONFIG`          | unset              | `selfhost.toml` with the defaults for events with no team policy: `[ledger]`, `[[redaction]]`, `[review]`. |
-| `SELFHOST_RETENTION_SWEEP` | `daily`            | `off` keeps every event instead of deleting expired ones daily.                                            |
-| `SELFHOST_REVIEW_REFRESH`  | `15s`              | `off` stops building review items and timing out approvals on this server.                                 |
+| Variable                           | Default            | Meaning                                                                                                    |
+| ---------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------- |
+| `PORT`                             | `4400`             | Port to listen on.                                                                                         |
+| `HOST`                             | `127.0.0.1`        | Address to bind.                                                                                           |
+| `DATABASE_URL`                     | unset              | `postgres://` URL. Unset uses the embedded database.                                                       |
+| `SELFHOST_DATA_DIR`                | `~/.selfhost/data` | Embedded database and token file.                                                                          |
+| `SELFHOST_TOKEN`                   | unset              | API token. Unset uses or creates `<data dir>/token`.                                                       |
+| `SELFHOST_CONFIG`                  | unset              | `selfhost.toml` with the defaults for events with no team policy: `[ledger]`, `[[redaction]]`, `[review]`. |
+| `SELFHOST_RETENTION_SWEEP`         | `daily`            | `off` keeps every event instead of deleting expired ones daily.                                            |
+| `SELFHOST_REVIEW_REFRESH`          | `15s`              | `off` stops building review items and timing out approvals on this server.                                 |
+| `SELFHOST_GITHUB_APP_ID`           | unset              | GitHub App id. With the key and secret, turns on `POST /v1/github/webhooks`.                               |
+| `SELFHOST_GITHUB_PRIVATE_KEY`      | unset              | The App's private key (PEM, or one line with `\n` escapes).                                                |
+| `SELFHOST_GITHUB_PRIVATE_KEY_FILE` | unset              | Path to the App's .pem, instead of `SELFHOST_GITHUB_PRIVATE_KEY`.                                          |
+| `SELFHOST_GITHUB_WEBHOOK_SECRET`   | unset              | The App's webhook secret.                                                                                  |
+| `SELFHOST_GITHUB_TEAM`             | unset              | Team whose stored `selfhost.toml` sets `[review]` for GitHub. Unset uses `SELFHOST_CONFIG`.                |

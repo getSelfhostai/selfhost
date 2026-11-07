@@ -17,6 +17,8 @@ describe("parseConfig", () => {
           owners: {},
           fallback: [],
           approval_timeout_minutes: 30,
+          github_logins: {},
+          block_merge_on_high: false,
         },
         packages: { mode: "observe", allow: [], deny: [] },
         mcp: { mode: "observe", allow: [] },

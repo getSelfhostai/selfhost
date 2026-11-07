@@ -284,6 +284,28 @@
                     "default": 30,
                     "description": "Minutes an approval that blocks an agent waits for an answer. Then it is denied and the deny is written to the decision log.",
                     "type": "integer"
+                  },
+                  "github_logins": {
+                    "default": {},
+                    "description": "Person id (as in owners) to GitHub login. The GitHub App requests a review from the owner the review list picked under this login.",
+                    "type": "object",
+                    "patternProperties": {
+                      "^(.*)$": {
+                        "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$",
+                        "description": "GitHub login, without the @.",
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "github_team": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+                    "description": "Slug of the GitHub team asked to review when the owner has no login in github_logins, as in github.com/orgs/<org>/teams/<slug>.",
+                    "type": "string"
+                  },
+                  "block_merge_on_high": {
+                    "default": false,
+                    "description": "Fail the selfhost/review check on high risk pull requests. It blocks a merge only once branch protection or a ruleset makes the check required.",
+                    "type": "boolean"
                   }
                 }
               },

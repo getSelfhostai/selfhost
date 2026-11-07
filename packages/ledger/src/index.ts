@@ -21,6 +21,11 @@ export {
   normalizeDecisionPath,
 } from "./decisions/store.js";
 export { renderDecision, renderDecisions } from "./decisions/text.js";
+export {
+  type ClaimOptions,
+  DELIVERY_RETENTION_DAYS,
+  type DeliveryStore,
+} from "./deliveries.js";
 export { type LedgerFieldError, LedgerQueryError, LedgerValidationError } from "./errors.js";
 export {
   type AppendOptions,
