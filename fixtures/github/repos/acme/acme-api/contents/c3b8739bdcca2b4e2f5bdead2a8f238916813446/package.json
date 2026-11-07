@@ -1,0 +1,13 @@
+{
+  "name": "acme-api",
+  "private": true,
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "hono": "^4.13.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

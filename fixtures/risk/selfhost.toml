@@ -1,0 +1,26 @@
+version = 1
+
+[review]
+high_risk_paths = ["src/auth/**", "src/payments/**", "db/migrations/**", "infra/**"]
+high_risk_threshold = 70
+
+# Campaign templates are sent to customers when they merge; a sent email cannot be recalled.
+[[rules]]
+id = "customer-email-templates"
+match = { path = "emails/campaigns/**" }
+action = "ask"
+message = "Campaign templates go out on merge. Ask before changing them."
+irreversible = true
+
+[[rules]]
+id = "prod-database"
+match = { command = "psql\\s.*prod" }
+action = "block"
+message = "No queries against the production database."
+irreversible = true
+
+[[rules]]
+id = "no-force-push"
+match = { command = "git\\s+push\\s+.*--force" }
+action = "block"
+message = "Force pushes are blocked. Open a PR instead."

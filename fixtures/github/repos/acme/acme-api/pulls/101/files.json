@@ -1,0 +1,24 @@
+[
+  {
+    "sha": "9f3c1a5e2b7d4c8a6e0f1b2c3d4e5f6a7b8c9d0e",
+    "filename": "src/middleware/rate-limit.ts",
+    "status": "added",
+    "additions": 85,
+    "deletions": 28,
+    "changes": 113,
+    "blob_url": "https://github.com/acme/acme-api/blob/5786c5c9d81ca4218b7e44bf0007f5580f66c489/src%2Fmiddleware%2Frate-limit.ts",
+    "raw_url": "https://github.com/acme/acme-api/raw/5786c5c9d81ca4218b7e44bf0007f5580f66c489/src%2Fmiddleware%2Frate-limit.ts",
+    "contents_url": "https://api.github.com/repos/acme/acme-api/contents/src%2Fmiddleware%2Frate-limit.ts?ref=5786c5c9d81ca4218b7e44bf0007f5580f66c489"
+  },
+  {
+    "sha": "0a1b2c3d4e5f60718293a4b5c6d7e8f901234567",
+    "filename": "package.json",
+    "status": "modified",
+    "additions": 5,
+    "deletions": 2,
+    "changes": 7,
+    "blob_url": "https://github.com/acme/acme-api/blob/5786c5c9d81ca4218b7e44bf0007f5580f66c489/package.json",
+    "raw_url": "https://github.com/acme/acme-api/raw/5786c5c9d81ca4218b7e44bf0007f5580f66c489/package.json",
+    "contents_url": "https://api.github.com/repos/acme/acme-api/contents/package.json?ref=5786c5c9d81ca4218b7e44bf0007f5580f66c489"
+  }
+]

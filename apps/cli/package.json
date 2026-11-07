@@ -22,6 +22,7 @@
     "@electric-sql/pglite": "catalog:",
     "@selfhost/agents": "workspace:*",
     "@selfhost/attribution": "workspace:*",
+    "@selfhost/ee-risk": "workspace:*",
     "@selfhost/importers": "workspace:*",
     "@selfhost/ledger": "workspace:*",
     "@selfhost/policy": "workspace:*",

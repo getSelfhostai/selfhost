@@ -12,6 +12,7 @@ import { doctor } from "./doctor.js";
 import { type ImportCommandOptions, type ImportIo, runImport, runWatch } from "./import.js";
 import { registerPolicy } from "./policy/commands.js";
 import { registerPolicyEditing } from "./policy/editing.js";
+import { registerReview } from "./review.js";
 import type { CollectAttribution } from "./scan/attribution.js";
 import { gitAttribution } from "./scan/git-attribution.js";
 import { runScan, type ScanCommandOptions } from "./scan/index.js";
@@ -232,6 +233,12 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
   );
 
   registerPolicyEditing(
+    program,
+    () => ({ env: deps.env, cwd: deps.cwd, write: deps.write, now: deps.now }),
+    fail,
+  );
+
+  registerReview(
     program,
     () => ({ env: deps.env, cwd: deps.cwd, write: deps.write, now: deps.now }),
     fail,

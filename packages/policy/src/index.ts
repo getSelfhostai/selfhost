@@ -6,6 +6,7 @@ export {
   policyChecks,
   type RuleScope,
 } from "./evaluate.js";
+export { anyGlobMatches, globMatches } from "./match.js";
 export {
   type ObservedRule,
   type ObserveOptions,

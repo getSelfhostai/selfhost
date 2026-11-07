@@ -1,0 +1,43 @@
+{
+  "name": "@selfhost/ee-risk",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Scores the risk of an agent pull request as low, medium or high from the rules in selfhost.toml, and builds the PR label and check result that show it.",
+  "license": "SEE LICENSE IN ../LICENSE",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@selfhost/attribution": "workspace:*",
+    "@selfhost/ledger": "workspace:*",
+    "@selfhost/policy": "workspace:*",
+    "@selfhost/schema": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
