@@ -21,10 +21,12 @@ await list.snooze(items[1].id, { by: "alice@example.com", until: "2026-11-10T14:
 ```
 
 `openReviewList(ledger, { config?, now?, team? })` returns a `ReviewList`: `list`, `get`,
-`decide` and `snooze`. With `team` it reads and acts on that team's items only, as a person token
-does on the server. `decide` throws `AlreadyAnsweredError` (with the current `item`) when the
-item is not open, `ReviewItemNotFoundError` for an unknown id or another team's item, and
-`ReviewInputError` for a bad verdict, person or time; in each case nothing is written.
+`pullRequest`, `decide` and `snooze`. With `team` it reads and acts on that team's items only, as a
+person token does on the server. `pullRequest(url)` is the `pr` item of an agent pull request (the
+open one, else the one opened last), which the GitHub delivery asks for its owner. `decide` throws
+`AlreadyAnsweredError` (with the current `item`) when the item is not open,
+`ReviewItemNotFoundError` for an unknown id or another team's item, and `ReviewInputError` for a bad
+verdict, person or time; in each case nothing is written.
 
 ## Store
 

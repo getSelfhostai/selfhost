@@ -3,9 +3,9 @@ import { createPublicKey, type KeyObject, verify } from "node:crypto";
 /**
  * An in-memory GitHub REST API for tests, served through a fetch function handed to Octokit, so
  * nothing reaches the network. It keeps the state of each pull request (labels, check runs,
- * review requests, reviews, comments, files) and records every request, so a test can check
- * exactly what was read and written. Only the routes the GitHub delivery uses are served; any
- * other request answers 404 and is recorded under `unknown`.
+ * review requests, reviews, comments, files, commits) and records every request, so a test can
+ * check exactly what was read and written. Only the routes the GitHub delivery uses are served;
+ * any other request answers 404 and is recorded under `unknown`.
  */
 
 export interface FakeRequest {
@@ -43,6 +43,12 @@ export interface FakeFile {
   status: string;
   additions: number;
   deletions: number;
+  patch?: string;
+}
+
+export interface FakeCommit {
+  sha: string;
+  commit: { message: string; author: { name?: string; email?: string; date?: string } | null };
 }
 
 export interface FakePull {
@@ -53,6 +59,7 @@ export interface FakePull {
   reviews: { login: string; state: string }[];
   comments: FakeComment[];
   files: FakeFile[];
+  commits: FakeCommit[];
 }
 
 export interface FakeGitHubOptions {
@@ -107,6 +114,7 @@ export class FakeGitHub {
       reviews: [],
       comments: [],
       files: [],
+      commits: [],
       ...pull,
     };
     this.pulls.set(`${repo}#${number}`, state);
@@ -295,6 +303,7 @@ export class FakeGitHub {
       return json(201, comment);
     }
     if (rest === "files" && method === "GET") return json(200, pull.files);
+    if (rest === "commits" && method === "GET") return json(200, pull.commits);
     return notFound();
   }
 

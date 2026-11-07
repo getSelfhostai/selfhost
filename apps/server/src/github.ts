@@ -12,6 +12,8 @@ import { type ApiError, parseConfig, type ResolvedSelfhostConfig } from "@selfho
 import type { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { type AgentPull, desiredState, type GitHubProviders } from "./github-pull.js";
+import { pullReads } from "./github-reads.js";
+import { reviewBrief, reviewOwner } from "./github-review.js";
 import { eeRisk } from "./github-risk.js";
 
 export const GITHUB_WEBHOOK_PATH = "/v1/github/webhooks";
@@ -32,6 +34,16 @@ export interface GitHubRouteOptions {
   app?: GitHubApp;
   /** The selfhost.toml whose [review] settings apply, read for every delivery. */
   config?: () => Promise<ResolvedSelfhostConfig>;
+  /**
+   * The team whose review items pick the owner and whose `[teams]` members routing falls back
+   * to (SELFHOST_GITHUB_TEAM). Default: every item, and no team step.
+   */
+  team?: string;
+  /**
+   * This server's base URL as people reach it (SELFHOST_PUBLIC_URL), for the brief's trace
+   * links. Default: the origin the delivery was sent to.
+   */
+  publicUrl?: string;
   /** Replaces the default risk, owner and brief providers. */
   providers?: Partial<GitHubProviders>;
   /** One line per handled delivery: ids, repository and counts, never payloads or secrets. */
@@ -58,12 +70,6 @@ const DEFAULT_CONFIG = (() => {
   if (!parsed.ok) throw new Error("The built-in selfhost.toml defaults are invalid");
   return parsed.config;
 })();
-
-const DEFAULT_PROVIDERS: GitHubProviders = {
-  risk: eeRisk(),
-  owner: async () => undefined,
-  brief: async () => undefined,
-};
 
 /** One line about an error, without request or response bodies. */
 function errorLine(error: unknown): string {
@@ -100,6 +106,7 @@ function agentPull(
       repo: body.repository.name,
       number: pr.number,
       title: pr.title,
+      ...(pr.body ? { body: pr.body } : {}),
       url: pr.html_url,
       headSha: pr.head.sha,
       baseSha: pr.base.sha,
@@ -144,7 +151,12 @@ export function githubRoutes(app: Hono, ledger: Ledger, options: GitHubRouteOpti
     );
     return;
   }
-  const providers: GitHubProviders = { ...DEFAULT_PROVIDERS, ...options.providers };
+  const providers: GitHubProviders = {
+    risk: eeRisk(),
+    owner: reviewOwner(ledger, options.team),
+    brief: reviewBrief(),
+    ...options.providers,
+  };
   const config = options.config ?? (async () => DEFAULT_CONFIG);
   const log = options.log ?? console.log;
   const serial = queue();
@@ -192,12 +204,14 @@ export function githubRoutes(app: Hono, ledger: Ledger, options: GitHubRouteOpti
 
       const { pull, installation, agent } = target;
       const where = `${pull.owner}/${pull.repo}#${pull.number}`;
+      const server = options.publicUrl ?? new URL(c.req.url).origin;
       let result: SyncResult;
       try {
         result = await serial(`${installation}/${where}`, async () => {
           const octokit = github.installation(installation);
+          const reads = pullReads(octokit, pull, agent, ledger);
           const desired = await desiredState(
-            { octokit, pull, agent, config: await config() },
+            { octokit, pull, agent, config: await config(), reads, server },
             providers,
           );
           return syncPullRequest(

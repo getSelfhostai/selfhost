@@ -75,8 +75,8 @@ export type ChangeTarget = { pr: number } | { base: string; head?: string };
 
 /** What was read. */
 export interface ChangeRef {
-  /** The repository root. */
-  root: string;
+  /** The repository root. Absent for a pull request read from GitHub's API alone. */
+  root?: string;
   pr?: { repo: string; number: number; url: string };
   base: string;
   head: string;

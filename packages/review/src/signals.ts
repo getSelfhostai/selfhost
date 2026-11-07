@@ -319,6 +319,9 @@ function fromAlert(event: LedgerEvent): Draft | undefined {
   }
 }
 
+/** The dedupe key of a pull request's `pr` item: one open item per PR URL in a team scope. */
+export const pullRequestKey = (url: string) => `pr:${url}`;
+
 /** pr.opened for an agent PR. The risk score is an input (data.risk or data.risk_score). */
 function fromPullRequest(event: LedgerEvent): Draft | undefined {
   const data = event.data ?? {};
@@ -335,7 +338,7 @@ function fromPullRequest(event: LedgerEvent): Draft | undefined {
     ...base(event),
     paths: [...new Set([...decisionPaths(event), ...strings(data.files)])],
     kind: "pr",
-    dedupeKey: `pr:${url}`,
+    dedupeKey: pullRequestKey(url),
     title: title(text(data.title) ?? `Agent PR ${number}${event.repo ? ` in ${event.repo}` : ""}`),
     why: {
       signal: "pr.opened",

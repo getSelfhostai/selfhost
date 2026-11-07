@@ -7,6 +7,7 @@ import {
   type RiskLevel,
 } from "@selfhost/github";
 import type { ResolvedSelfhostConfig } from "@selfhost/schema";
+import type { PullReads } from "./github-reads.js";
 
 /** An open agent pull request, from the webhook that announced it. */
 export interface AgentPull {
@@ -14,6 +15,8 @@ export interface AgentPull {
   repo: string;
   number: number;
   title: string;
+  /** The description, when it has one. */
+  body?: string;
   url: string;
   headSha: string;
   baseSha: string;
@@ -29,6 +32,10 @@ export interface PullContext {
   pull: AgentPull;
   agent: AgentRef;
   config: ResolvedSelfhostConfig;
+  /** GitHub and ledger reads for this delivery, each made once and shared by the providers. */
+  reads: PullReads;
+  /** This server's base URL as people reach it, for links back to it such as trace links. */
+  server: string;
 }
 
 /** A risk level, with the check run text that explains it. */
@@ -51,19 +58,17 @@ export interface ReviewBrief {
   summary?: string;
 }
 
-/**
- * Where the GitHub delivery gets what it shows. Each one is a seam: the server ships defaults,
- * and the review list's routing and the brief renderer replace `owner` and `brief`.
- */
+/** Where the GitHub delivery gets what it shows. Each one is a seam tests can replace. */
 export interface GitHubProviders {
   /** Default: the ee risk score when this build has ee/, else none and no risk label. */
   risk(ctx: PullContext): Promise<RiskAssessment | undefined>;
   /**
-   * The selfhost person id the review list picked to review, such as a git email. Default: none,
-   * and the request goes to `[review] github_team`.
+   * The selfhost person id the review list routes the pull request to, such as a git email.
+   * Default: the owner of its `pr` review item, else `routeItem` on its files. None sends the
+   * request to `[review] github_team`.
    */
   owner(ctx: PullContext & { risk?: RiskAssessment }): Promise<string | undefined>;
-  /** Default: none, and no brief comment is posted. */
+  /** Default: the review brief built from GitHub and the ledger. None posts no comment. */
   brief(
     ctx: PullContext & { risk?: RiskAssessment; owner?: string },
   ): Promise<ReviewBrief | undefined>;

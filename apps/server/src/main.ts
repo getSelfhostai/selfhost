@@ -24,9 +24,13 @@ if (created) {
   console.log(`API token (${where}): ${token}`);
 }
 
+const githubTeam = process.env.SELFHOST_GITHUB_TEAM?.trim() || undefined;
+const publicUrl = process.env.SELFHOST_PUBLIC_URL?.trim() || undefined;
 const github = {
   app: githubAppFromEnv(),
-  config: githubConfig(ledger, config, process.env.SELFHOST_GITHUB_TEAM?.trim() || undefined),
+  config: githubConfig(ledger, config, githubTeam),
+  ...(githubTeam ? { team: githubTeam } : {}),
+  ...(publicUrl ? { publicUrl } : {}),
 };
 
 const server = serve(

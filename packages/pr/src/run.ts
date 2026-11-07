@@ -1,6 +1,11 @@
 import { realpathSync } from "node:fs";
 import { sep } from "node:path";
-import type { CommitRecord, SessionHint } from "@selfhost/attribution";
+import {
+  type AgentRef,
+  type CommitRecord,
+  FILE_TIME_SLACK_MS,
+  type SessionHint,
+} from "@selfhost/attribution";
 import type { EventFilter, Ledger } from "@selfhost/ledger";
 import { type ToolCall, toolCallFromEvent } from "@selfhost/policy";
 import { AGENT_VENDORS, type AgentVendor, type LedgerEvent } from "@selfhost/schema";
@@ -8,6 +13,7 @@ import { compare } from "./dependencies.js";
 import type { Run, RunGuardrail } from "./types.js";
 
 const PAGE = 1000;
+const DAY_MS = 86_400_000;
 
 /** Tools that write or patch files, across claude_code and codex. */
 const EDIT_TOOLS: ReadonlySet<string> = new Set([
@@ -143,13 +149,36 @@ function rootAsSeenFrom(root: string, cwd: string | undefined): string {
 }
 
 /**
+ * Where to look for a change's sessions: from a day before its first commit to just after its
+ * last. Undefined without commit times.
+ */
+export function commitWindow(times: string[]): { from: Date; to: Date } | undefined {
+  const stamps = times.map((time) => Date.parse(time)).filter(Number.isFinite);
+  if (stamps.length === 0) return undefined;
+  return {
+    from: new Date(Math.min(...stamps) - DAY_MS),
+    to: new Date(Math.max(...stamps) + FILE_TIME_SLACK_MS),
+  };
+}
+
+/** The agent and model of the run's tool calls, when its commits carry no attribution. */
+export function runAgent(run: Run | undefined): AgentRef | undefined {
+  const call = run?.toolCalls.find((c) => c.agent !== undefined);
+  if (!call?.agent) return undefined;
+  const model = run?.toolCalls.find((c) => c.agent === call.agent && c.model)?.model;
+  return { vendor: call.agent, ...(model ? { model } : {}) };
+}
+
+/**
  * The run behind a change: sessions whose commits are in it (commit.created events, or the
  * sessions readCommits matched by session link, file and time), with every event they recorded,
  * their tool calls and the guardrail hits on them. Undefined when no session made the commits.
+ * Without `root` (a change read from GitHub alone) tool call paths are relative to the session's
+ * own folder.
  */
 export async function readRun(
   ledger: Pick<Ledger, "query">,
-  root: string,
+  root: string | undefined,
   commits: string[],
   matched: CommitRecord[],
   window: { from: Date; to: Date },
@@ -182,7 +211,8 @@ export async function readRun(
     for (const event of own) {
       // Calls outside the repository count too: an outside effect rarely touches it.
       const call =
-        toolCallFromEvent(event, rootAsSeenFrom(root, cwd), cwd) ?? toolCallFromEvent(event);
+        toolCallFromEvent(event, root === undefined ? cwd : rootAsSeenFrom(root, cwd), cwd) ??
+        toolCallFromEvent(event);
       if (call) toolCalls.push(call);
     }
     events.push(...own);

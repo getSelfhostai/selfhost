@@ -165,6 +165,9 @@ importers:
       '@selfhost/attribution':
         specifier: workspace:*
         version: link:../../packages/attribution
+      '@selfhost/brief':
+        specifier: workspace:*
+        version: link:../../packages/brief
       '@selfhost/ee-risk':
         specifier: workspace:*
         version: link:../../ee/risk

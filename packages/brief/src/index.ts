@@ -9,6 +9,7 @@ export {
   isBriefComment,
   LIST_LIMITS,
   renderBrief,
+  summarizeBrief,
 } from "./render.js";
 export {
   BRIEF_MARKER,

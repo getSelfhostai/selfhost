@@ -20,6 +20,14 @@ request, its files with their patches, its commits, and manifests at the base an
 `{ base, head? }` reads the local commits since the merge base with `git diff -M`. Nothing is
 written anywhere.
 
+`readPullRequest({ repo, pull, api, ledger?, agent? })` gives the same `Change` with no clone
+and no gh, for the server: `api` is any `PullRequestApi` (the files with their patches, the
+commits, and a file's contents at a commit, which it asks for changed manifests only). Without
+local git there is no attribution from history and no matching by file and time, so `history`
+and `matched` are empty, `target.root` is absent, and the run is the sessions with a
+`commit.created` event for one of its commits. `readPullFiles` is the files and manifests part
+alone, which the server's risk score uses.
+
 ## The run
 
 `change.run` is the set of ledger sessions behind the change: sessions with a `commit.created`

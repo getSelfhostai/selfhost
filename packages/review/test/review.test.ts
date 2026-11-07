@@ -573,6 +573,17 @@ describe.each(BACKENDS)("review list on $name", (backend) => {
       expect((await all(list, "answered")).map((item) => item.answer?.by)).toEqual([
         "rev@example.com",
       ]);
+
+      // The item for a pull request: the open one, else the one opened last.
+      expect((await list.pullRequest(merged))?.state).toBe("dismissed");
+      const answered = await list.pullRequest(PR_URL);
+      expect(answered?.state).toBe("answered");
+      await append([pullRequest(at(NOW, -1), 30)]);
+      await refresh();
+      const reopened = await list.pullRequest(PR_URL);
+      expect(reopened?.state).toBe("open");
+      expect(reopened?.id).not.toBe(answered?.id);
+      expect(await list.pullRequest("https://github.com/acme/api/pull/999")).toBeUndefined();
     });
 
     it("checks what it is given", async () => {

@@ -9,6 +9,7 @@ import {
   GITHUB_COMMENT_LIMIT,
   isBriefComment,
   renderBrief,
+  summarizeBrief,
 } from "../src/index.js";
 import { FIXTURE_NAMES, fixture } from "./helpers.js";
 
@@ -54,6 +55,23 @@ describe("renderBrief on fixture runs", () => {
       const run = { sessions: inputs.run?.sessions ?? [], events: order };
       expect(renderBrief(buildBrief({ ...inputs, run }))).toBe(once);
     }
+  });
+});
+
+describe("summarizeBrief", () => {
+  it("gives one paragraph for the check run: size, lines to look at, tests and blocks", () => {
+    expect(summarizeBrief(buildBrief(fixture("agent-pr")))).toBe(
+      "Agent: `claude_code claude-sonnet-4-5`. 2 commits, 8 files, +37 -14, 2 agent sessions. 6 lines to look at. 3 test runs. The last run passed. 2 blocked actions.",
+    );
+    expect(summarizeBrief(buildBrief(fixture("local")))).toBe(
+      "Agent: `codex gpt-5-codex`. 2 commits, 2 files, +6 -1, 1 agent session. 1 line to look at. No tests ran in this run.",
+    );
+  });
+
+  it("says why there is no run instead of the tests", () => {
+    expect(summarizeBrief(buildBrief(fixture("no-run")))).toBe(
+      "No agent attributed. 1 commit, 2 files, +3 -2. Nothing flagged to look at. No trace found: no session in the ledger made or edited these commits.",
+    );
   });
 });
 

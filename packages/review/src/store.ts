@@ -189,6 +189,22 @@ export async function openItemByKey(
   return row ? toStored(row) : undefined;
 }
 
+/** The item with this key in the scope: the open one, else the one opened last. */
+export async function latestItemByKey(
+  q: Queryable,
+  scope: Scope,
+  key: string,
+): Promise<StoredItem | undefined> {
+  const params: unknown[] = [key];
+  const team = scoped(scope, params);
+  const [row] = await q.query<Row>(
+    `SELECT ${COLUMNS} FROM review_items WHERE dedupe_key = $1${team}
+     ORDER BY state = 'open' DESC, created_at DESC, id DESC LIMIT 1`,
+    params,
+  );
+  return row ? toStored(row) : undefined;
+}
+
 /** Open approvals and questions an agent waits on, with the session that can end the wait. */
 export async function openWaitingItems(q: Queryable): Promise<StoredItem[]> {
   const rows = await q.query<Row>(

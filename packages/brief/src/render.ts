@@ -343,6 +343,32 @@ export function renderBrief(brief: Brief, options: { maxChars?: number } = {}): 
   return `${render(brief, scaled(0)).slice(0, Math.max(0, max - cut.length))}${cut}`;
 }
 
+/**
+ * One paragraph for the check run summary: the agent and the size of the change, how many lines
+ * to look at, then the tests and blocked actions, or why no run was found. The same brief always
+ * gives the same text.
+ */
+export function summarizeBrief(brief: Brief): string {
+  const parts = [header(brief)];
+  parts.push(
+    brief.risky.length > 0
+      ? `${plural(brief.risky.length, "line")} to look at.`
+      : "Nothing flagged to look at.",
+  );
+  if (brief.trace.length === 0) {
+    parts.push(...(brief.notes.trace ?? []).map(escapeText));
+  } else {
+    const last = brief.tests[brief.tests.length - 1];
+    parts.push(
+      last
+        ? `${plural(brief.tests.length, "test run")}. ${LAST_RUN[last.result]}`
+        : "No tests ran in this run.",
+    );
+    if (brief.blocked.length > 0) parts.push(`${plural(brief.blocked.length, "blocked action")}.`);
+  }
+  return parts.join(" ");
+}
+
 /** true for a comment body that is a brief, so the delivery edits it instead of posting again. */
 export function isBriefComment(body: string): boolean {
   return body.startsWith(BRIEF_MARKER);

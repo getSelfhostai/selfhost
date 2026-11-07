@@ -4,9 +4,10 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { devNull, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { type Ledger, MEMORY_DATA_DIR, openLedger, stableEventId } from "@selfhost/ledger";
+import { type PullRequestApi, readPullRequest } from "@selfhost/pr";
 import { EVENT_SCHEMA, type LedgerEvent } from "@selfhost/schema";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { gatherBrief, renderBrief } from "../src/index.js";
+import { briefInputs, buildBrief, gatherBrief, renderBrief } from "../src/index.js";
 import { BRIEF_FIXTURES } from "./helpers.js";
 
 const dirs: string[] = [];
@@ -290,5 +291,96 @@ describe("gatherBrief from a pull request", () => {
     ]);
     expect(brief.tests.map((t) => t.result)).toEqual(["failed", "passed"]);
     expect(gh.calls.every((args) => args[0] === "api")).toBe(true);
+  });
+
+  it("builds the same brief from GitHub's API alone, with no clone and no gh", async () => {
+    const repo = repository();
+    repo.git("remote", "add", "origin", "https://github.com/acme/acme-api.git");
+    repo.commit("Initial", "2026-10-01T10:00:00Z", { "a.txt": "a\n" });
+    const { inputs } = JSON.parse(readFileSync(join(BRIEF_FIXTURES, "agent-pr.json"), "utf8")) as {
+      inputs: { run: { events: LedgerEvent[] } };
+    };
+    await ledger.append(inputs.run.events);
+    const settings = {
+      highRiskPaths: ["src/auth/**", "db/migrations/**"],
+      server: "https://selfhost.acme.example.com",
+    };
+    const fromGh = await gatherBrief({
+      repoDir: repo.dir,
+      target: { pr: 142 },
+      ledger,
+      ...settings,
+      gh: recordedGh().run,
+      ghCacheDir: tempDir("gh-cache"),
+    });
+
+    const recorded = (path: string) =>
+      JSON.parse(readFileSync(join(GITHUB, "repos/acme/acme-api", `${path}.json`), "utf8"));
+    const pull = recorded("pulls/142");
+    const reads: string[] = [];
+    const api: PullRequestApi = {
+      files: async () => recorded("pulls/142/files"),
+      commits: async () => recorded("pulls/142/commits"),
+      contents: async (path, ref) => {
+        reads.push(`${ref}:${path}`);
+        try {
+          return readFileSync(join(GITHUB, "repos/acme/acme-api/contents", ref, path), "utf8");
+        } catch {
+          return undefined;
+        }
+      },
+    };
+    const change = await readPullRequest({
+      repo: "acme/acme-api",
+      pull: {
+        number: 142,
+        url: pull.html_url,
+        title: pull.title,
+        body: pull.body,
+        base: pull.base.sha,
+        head: pull.head.sha,
+      },
+      api,
+      ledger,
+      agent: fromGh.agent,
+    });
+    expect(change.target.root).toBeUndefined();
+    expect(change.run?.sessions).toEqual(["5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87"]);
+    // Contents only for the changed manifest, at the base and the head.
+    expect(reads).toEqual([`${pull.base.sha}:package.json`, `${pull.head.sha}:package.json`]);
+    expect(buildBrief(briefInputs(change, settings))).toEqual(fromGh);
+  });
+
+  it("says the run data is missing when no session made the commits", async () => {
+    const recorded = (path: string) =>
+      JSON.parse(readFileSync(join(GITHUB, "repos/acme/acme-api", `${path}.json`), "utf8"));
+    const empty = await openLedger({ dataDir: MEMORY_DATA_DIR });
+    try {
+      const change = await readPullRequest({
+        repo: "acme/acme-api",
+        pull: {
+          number: 142,
+          url: "https://github.com/acme/acme-api/pull/142",
+          title: "Add per-key rate limiting to the public API",
+          base: "2b4d6f8a0c1e3a5b7d9f1a3c5e7b9d0f2a4c6e8b",
+          head: "9c1e5a7b3d2f4e6a8b0c1d3e5f7a9b2c4d6e8f0a",
+        },
+        api: {
+          files: async () => recorded("pulls/142/files"),
+          commits: async () => recorded("pulls/142/commits"),
+          contents: async () => undefined,
+        },
+        ledger: empty,
+      });
+      expect(change.run).toBeUndefined();
+      expect(change.runMissing).toBe("no session in the ledger made these commits");
+      expect(change.manifestProblem).toBe("could not read package.json from GitHub");
+      const brief = buildBrief(briefInputs(change, { highRiskPaths: [] }));
+      expect(brief.notes.trace).toEqual([
+        "No trace found: no session in the ledger made these commits.",
+      ]);
+    } finally {
+      await empty.close();
+    }
   });
 });

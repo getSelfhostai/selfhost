@@ -21,7 +21,11 @@ const body = renderBrief(brief); // starts with BRIEF_MARKER
 
 `buildBrief(inputs)` is the pure part: the same inputs give the same brief and the same text, so
 the comment can be rebuilt on every run and edited in place. `gatherBrief` reads the inputs
-through [`@selfhost/pr`](../pr/README.md) and never writes to GitHub.
+through [`@selfhost/pr`](../pr/README.md) and never writes to GitHub. The server builds the
+same inputs with `briefInputs(await readPullRequest(...), settings)`, reading the pull request
+through its GitHub App instead of a clone. `summarizeBrief(brief)` is one paragraph (the agent,
+the size of the change, lines to look at, tests and blocked actions, or why no run was found)
+for the check run summary.
 
 ## The comment
 

@@ -18,10 +18,12 @@ import {
   validateConfig,
 } from "@selfhost/schema";
 import { AlreadyAnsweredError, ReviewInputError, ReviewItemNotFoundError } from "./errors.js";
+import { pullRequestKey } from "./signals.js";
 import {
   claimItem,
   finishClaim,
   getItem,
+  latestItemByKey,
   listItems,
   releaseClaim,
   type Scope,
@@ -55,6 +57,11 @@ export interface ReviewList {
   /** Items in rank order (see rank.ts). state defaults to open. */
   list(query: ReviewListQuery): Promise<ReviewItemsPage>;
   get(id: string): Promise<ReviewItem | undefined>;
+  /**
+   * The `pr` item for an agent pull request, by its URL: the open one, else the one opened last.
+   * Undefined when the list has none for it.
+   */
+  pullRequest(url: string): Promise<ReviewItem | undefined>;
   /**
    * Answers an open item: writes one decision.recorded event with recordDecision, then closes
    * the item as answered. Throws AlreadyAnsweredError when the item is not open, and nothing is
@@ -158,6 +165,10 @@ export function openReviewList(ledger: Ledger, options: ReviewListOptions = {}):
 
     async get(id) {
       return (await getItem(db, id, scope))?.item;
+    },
+
+    async pullRequest(url) {
+      return (await latestItemByKey(db, scope, pullRequestKey(url)))?.item;
     },
 
     async decide(id, input) {

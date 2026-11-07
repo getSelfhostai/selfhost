@@ -1,7 +1,6 @@
 import {
   type AgentRef,
   type CommitRecord,
-  FILE_TIME_SLACK_MS,
   type GitHubCommit,
   type GitHubPull,
   type GitHubSource,
@@ -11,20 +10,11 @@ import {
 } from "@selfhost/attribution";
 import type { Ledger } from "@selfhost/ledger";
 import { compare, isManifest } from "./dependencies.js";
-import { parseDiff, parseHunks } from "./diff.js";
+import { parseDiff } from "./diff.js";
 import { ghCli, githubRepo, gitIn, parseNumstat, type Runner } from "./git.js";
-import { readRun, sessionHints } from "./run.js";
-import type {
-  Change,
-  ChangedFile,
-  ChangeRef,
-  ChangeTarget,
-  FileStatus,
-  ManifestChange,
-  Run,
-} from "./types.js";
-
-const DAY_MS = 86_400_000;
+import { commitTimes, type PullRequestFile, readPullFiles } from "./pull.js";
+import { commitWindow, readRun, runAgent, sessionHints } from "./run.js";
+import type { Change, ChangedFile, ChangeRef, ChangeTarget, ManifestChange, Run } from "./types.js";
 
 export interface ReadChangeOptions {
   /** Any folder inside the repository. */
@@ -66,7 +56,7 @@ export function parseChangeTarget(args: {
 
 /** The diff and commits, before attribution and the run are added. */
 interface Diff {
-  target: ChangeRef;
+  target: ChangeRef & { root: string };
   pull?: { title: string; body?: string };
   subjects: string[];
   files: ChangedFile[];
@@ -147,27 +137,6 @@ interface PullDetail extends GitHubPull {
   head: { ref: string; sha: string };
 }
 
-interface PullFile {
-  filename: string;
-  previous_filename?: string;
-  status: string;
-  additions: number;
-  deletions: number;
-  /** Absent for binary files and diffs too large for GitHub to return. */
-  patch?: string;
-}
-
-const PULL_STATUS: Record<string, FileStatus> = {
-  added: "added",
-  removed: "removed",
-  renamed: "renamed",
-};
-
-const commitTimes = (commits: GitHubCommit[]) =>
-  commits
-    .map((commit) => commit.commit.author?.date)
-    .filter((time): time is string => typeof time === "string");
-
 const api = (gh: Runner, path: string, accept = "application/vnd.github+json") =>
   gh(["api", "-H", `Accept: ${accept}`, "-H", "X-GitHub-Api-Version: 2022-11-28", path]);
 
@@ -182,63 +151,35 @@ async function pullDiff(
   local: () => Promise<CommitRecord[]>,
 ): Promise<Diff> {
   const number = pull.number;
-  const listed: PullFile[] = [];
-  // GitHub lists at most 3000 files.
-  for (let page = 1; page <= 30; page++) {
-    const batch = JSON.parse(
-      await api(gh, `repos/${repo}/pulls/${number}/files?per_page=100&page=${page}`),
-    ) as PullFile[];
-    listed.push(...batch);
-    if (batch.length < 100) break;
-  }
-  const files: ChangedFile[] = listed.map((file) => {
-    const hunks =
-      file.patch !== undefined
-        ? parseHunks(file.patch)
-        : file.additions + file.deletions === 0
-          ? []
-          : undefined;
-    return {
-      path: file.filename,
-      ...(file.previous_filename ? { previousPath: file.previous_filename } : {}),
-      additions: file.additions,
-      deletions: file.deletions,
-      status: PULL_STATUS[file.status] ?? "modified",
-      ...(hunks ? { hunks } : {}),
-    };
-  });
-  const contents = async (path: string, ref: string) => {
-    try {
-      return await api(
-        gh,
-        `repos/${repo}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${ref}`,
-        "application/vnd.github.raw+json",
-      );
-    } catch {
-      return undefined;
-    }
-  };
-  const manifests: ManifestChange[] = [];
-  let manifestProblem: string | undefined;
-  for (const file of listed.filter((f) => isManifest(f.filename))) {
-    const before =
-      file.status === "added"
-        ? undefined
-        : await contents(file.previous_filename ?? file.filename, pull.base.sha);
-    const after =
-      file.status === "removed" ? undefined : await contents(file.filename, pull.head.sha);
-    if (
-      (file.status !== "added" && before === undefined) ||
-      (file.status !== "removed" && after === undefined)
-    ) {
-      manifestProblem = `could not read ${file.filename} from GitHub`;
-    }
-    manifests.push({
-      path: file.filename,
-      ...(before !== undefined ? { before } : {}),
-      ...(after !== undefined ? { after } : {}),
-    });
-  }
+  const { files, manifests, manifestProblem } = await readPullFiles(
+    {
+      async files() {
+        const listed: PullRequestFile[] = [];
+        // GitHub lists at most 3000 files.
+        for (let page = 1; page <= 30; page++) {
+          const batch = JSON.parse(
+            await api(gh, `repos/${repo}/pulls/${number}/files?per_page=100&page=${page}`),
+          ) as PullRequestFile[];
+          listed.push(...batch);
+          if (batch.length < 100) break;
+        }
+        return listed;
+      },
+      async contents(path, ref) {
+        try {
+          return await api(
+            gh,
+            `repos/${repo}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${ref}`,
+            "application/vnd.github.raw+json",
+          );
+        } catch {
+          return undefined;
+        }
+      },
+    },
+    pull.base.sha,
+    pull.head.sha,
+  );
 
   // Attribution as readPulls does it, for this one pull request.
   const [record] = await readPulls(repo, {
@@ -278,14 +219,6 @@ function mainAgent(commits: CommitRecord[]): AgentRef | undefined {
   return best?.[1].agent;
 }
 
-/** The agent and model of the run's tool calls, when its commits carry no attribution. */
-function runAgent(run: Run | undefined): AgentRef | undefined {
-  const call = run?.toolCalls.find((c) => c.agent !== undefined);
-  if (!call?.agent) return undefined;
-  const model = run?.toolCalls.find((c) => c.agent === call.agent && c.model)?.model;
-  return { vendor: call.agent, ...(model ? { model } : {}) };
-}
-
 async function originRepo(root: string): Promise<string | undefined> {
   try {
     return githubRepo(await gitIn(root)(["remote", "get-url", "origin"]));
@@ -294,12 +227,15 @@ async function originRepo(root: string): Promise<string | undefined> {
   }
 }
 
+/** A change read from a clone, so its repository root is known. */
+export type LocalChange = Change & { target: { root: string } };
+
 /**
  * Reads a change locally: the diff, its hunks and manifests from git (or from GitHub through gh
  * for a pull request number), attribution from git, and the agent run from the ledger. Never
  * writes to GitHub.
  */
-export async function readChange(opts: ReadChangeOptions): Promise<Change> {
+export async function readChange(opts: ReadChangeOptions): Promise<LocalChange> {
   const root = (await gitIn(opts.repoDir)(["rev-parse", "--show-toplevel"])).trim();
   const cwds = new Map<string, string | undefined>();
 
@@ -314,14 +250,6 @@ export async function readChange(opts: ReadChangeOptions): Promise<Change> {
     const since = new Date(starts.length > 0 ? Math.min(...starts) : 0);
     history = await readCommits(root, { since, sessions });
     return history;
-  };
-  const windowOf = (times: string[]) => {
-    const stamps = times.map((time) => Date.parse(time)).filter(Number.isFinite);
-    if (stamps.length === 0) return undefined;
-    return {
-      from: new Date(Math.min(...stamps) - DAY_MS),
-      to: new Date(Math.max(...stamps) + FILE_TIME_SLACK_MS),
-    };
   };
 
   let diff: Diff;
@@ -342,12 +270,12 @@ export async function readChange(opts: ReadChangeOptions): Promise<Change> {
     // The window needs the commit times, so read them before the local commits.
     const pull = JSON.parse(await api(gh, `repos/${repo}/pulls/${number}`)) as PullDetail;
     const apiCommits = await source.commits(repo, { number, updatedAt: pull.updated_at });
-    window = windowOf(commitTimes(apiCommits));
+    window = commitWindow(commitTimes(apiCommits));
     diff = await pullDiff(root, repo, pull, apiCommits, gh, source, readLocal);
   } else {
     repo = opts.repo ?? (await originRepo(root));
     diff = await localDiff(root, opts.target.base, opts.target.head ?? "HEAD");
-    window = windowOf(diff.times);
+    window = commitWindow(diff.times);
   }
 
   const local = await readLocal();

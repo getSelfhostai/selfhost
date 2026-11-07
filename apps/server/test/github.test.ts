@@ -4,9 +4,21 @@ import { join } from "node:path";
 import { Webhooks } from "@octokit/webhooks";
 import { checkExternalId, createGitHubApp, type RiskLevel } from "@selfhost/github";
 import { FakeGitHub } from "@selfhost/github/testing";
-import { parseConfig, type ResolvedSelfhostConfig } from "@selfhost/schema";
+import { stableEventId } from "@selfhost/ledger";
+import { openReviewList, refreshReviewList } from "@selfhost/review";
+import {
+  EVENT_SCHEMA,
+  type LedgerEvent,
+  parseConfig,
+  type ResolvedSelfhostConfig,
+} from "@selfhost/schema";
 import { afterEach, describe, expect, it } from "vitest";
-import { GITHUB_WEBHOOK_PATH, githubAppFromEnv, githubConfig } from "../src/github.js";
+import {
+  GITHUB_WEBHOOK_PATH,
+  type GitHubRouteOptions,
+  githubAppFromEnv,
+  githubConfig,
+} from "../src/github.js";
 import type { GitHubProviders, ReviewBrief } from "../src/github-pull.js";
 import { eeRisk } from "../src/github-risk.js";
 import { startTestServer, type TestServer } from "./helpers.js";
@@ -75,7 +87,13 @@ afterEach(async () => {
 let deliveries = 0;
 
 async function harness(
-  options: { app?: boolean; providers?: Partial<GitHubProviders> } = {},
+  options: {
+    app?: boolean;
+    providers?: Partial<GitHubProviders>;
+    /** The server's own owner and brief providers instead of the stubs. */
+    review?: boolean;
+    route?: Pick<GitHubRouteOptions, "team" | "publicUrl">;
+  } = {},
 ): Promise<Harness> {
   const github = new FakeGitHub({ appId: APP_ID, publicKey: PUBLIC_KEY });
   github.addPull(REPO, 101, { author: "alice" });
@@ -99,10 +117,10 @@ async function harness(
           summary: `Risk is ${state.risk}.`,
           text: "| Input | Points |",
         },
-      owner: async () => state.owner,
-      brief: async () => state.brief,
+      ...(options.review ? {} : { owner: async () => state.owner, brief: async () => state.brief }),
       ...options.providers,
     },
+    ...options.route,
   });
   open.push(server);
   return {
@@ -429,6 +447,218 @@ describe("risk from ee", () => {
       conclusion: "neutral",
       output: { title: "Not scored" },
     });
+  });
+});
+
+const BRIEF_FIXTURES = join(GITHUB_FIXTURES, "..", "brief");
+const briefRepoFile = (...parts: string[]) =>
+  readFileSync(join(BRIEF_FIXTURES, "github", "repos", "acme", "acme-api", ...parts), "utf8");
+const PR_142 = JSON.parse(briefRepoFile("pulls", "142.json")) as {
+  html_url: string;
+  title: string;
+  body: string;
+  base: { sha: string };
+  head: { sha: string };
+};
+const SERVER = "https://selfhost.acme.example.com";
+/** The session in the ledger that made the first commit of pull request 142. */
+const SESSION = "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87";
+
+const OWNERS_TOML = `version = 1
+[review]
+github_team = "platform-reviewers"
+high_risk_paths = ["src/auth/**", "db/migrations/**"]
+[review.owners]
+"src/auth/**" = ["bob@example.com"]
+[review.github_logins]
+"bob@example.com" = "bob"
+"carol@example.com" = "carol"
+`;
+
+/** The recorded opened delivery, moved to pull request 142, whose recorded files have patches. */
+function opened142(): Payload {
+  const payload = fixture("pull_request.opened");
+  const pr = payload.pull_request;
+  Object.assign(pr, {
+    number: 142,
+    html_url: PR_142.html_url,
+    title: PR_142.title,
+    body: PR_142.body,
+    head: { ...(pr.head as object), sha: PR_142.head.sha },
+    base: { ...(pr.base as object), sha: PR_142.base.sha },
+  });
+  return payload;
+}
+
+/** Every event of the two sessions in the brief fixture; only one made a commit of 142. */
+const runEvents = (): LedgerEvent[] =>
+  (
+    JSON.parse(readFileSync(join(BRIEF_FIXTURES, "agent-pr.json"), "utf8")) as {
+      inputs: { run: { events: LedgerEvent[] } };
+    }
+  ).inputs.run.events;
+
+/** pr.opened as PR attribution writes it, by the person whose session opened the pull request. */
+const prOpened = (person: string): LedgerEvent => ({
+  id: stableEventId("2026-10-12T09:30:00.000Z", `github-test:pr.opened:${PR_142.html_url}`),
+  schema: EVENT_SCHEMA,
+  ts: "2026-10-12T09:30:00.000Z",
+  source: "github",
+  kind: "pr.opened",
+  actor: { kind: "person", id: person },
+  repo: "acme/acme-api",
+  agent: { vendor: "claude_code" },
+  target: { type: "pr", value: PR_142.html_url },
+  links: { pr_url: PR_142.html_url },
+  data: { number: 142, files: ["docs/rate-limits.md"] },
+});
+
+/** The server's own owner and brief providers, over pull request 142 on the fake GitHub. */
+async function reviewHarness(options: Parameters<typeof harness>[0] = {}): Promise<Harness> {
+  const h = await harness({ review: true, route: { publicUrl: SERVER }, ...options });
+  h.state.config = config(OWNERS_TOML);
+  h.github.addPull(REPO, 142, {
+    author: "alice",
+    files: JSON.parse(briefRepoFile("pulls", "142", "files.json")),
+    commits: JSON.parse(briefRepoFile("pulls", "142", "commits.json")),
+  });
+  for (const sha of [PR_142.base.sha, PR_142.head.sha]) {
+    h.github.contents.set(
+      `${REPO}@${sha}:package.json`,
+      briefRepoFile("contents", sha, "package.json"),
+    );
+  }
+  return h;
+}
+
+/** How many GETs went to paths matching `pattern`. */
+const gets = (h: Harness, pattern: RegExp) =>
+  h.github.requests.filter((r) => r.method === "GET" && pattern.test(r.path)).length;
+
+describe("owner and brief from the review list", () => {
+  it("posts one brief comment built from GitHub and the ledger, and requests the routed owner", async () => {
+    const h = await reviewHarness();
+    await h.server.ledger.append(runEvents());
+    const res = await h.deliver(opened142(), { id: "d-brief" });
+    expect(res).toEqual({ status: 200, json: { delivery: "d-brief", handled: true, writes: 4 } });
+
+    const pull = h.github.pull(REPO, 142);
+    // [review.owners] "src/auth/**" picks bob: the pull request changes src/auth/keys.ts.
+    expect(pull.requestedUsers).toEqual(["bob"]);
+    expect(pull.comments).toHaveLength(1);
+    const body = pull.comments[0]?.body ?? "";
+    expect(body.startsWith(`${MARKER}\n## Review brief`)).toBe(true);
+    expect(body).toContain("**Add per-key rate limiting to the public API**");
+    expect(body).toContain(
+      `- Protected path: [\`src/auth/keys.ts:20\`](${PR_142.html_url}/files#diff-`,
+    );
+    expect(body).toContain("- New dependency `ioredis`");
+    expect(body).toContain(`[events on the team server](${SERVER}/v1/events?session=${SESSION})`);
+    expect(body).not.toContain("0199f2a4");
+
+    const [run] = h.github.checkRuns;
+    expect(run?.output.summary).toBe(
+      [
+        "Agent: `claude_code`. 2 commits, 8 files, +37 -14, 1 agent session. 6 lines to look at. 2 test runs. The last run passed. 2 blocked actions.",
+        "Risk is low.",
+        "Review requested from @bob.",
+      ].join("\n\n"),
+    );
+    expect(run?.output.text).toContain("### Trace");
+
+    // One paginated call for the files and one for the commits; contents for the manifest only.
+    expect(gets(h, /\/pulls\/142\/files$/)).toBe(1);
+    expect(gets(h, /\/pulls\/142\/commits$/)).toBe(1);
+    expect(
+      h.github.requests
+        .filter((r) => r.path.includes("/contents/"))
+        .map((r) => `${r.path}@${r.query.ref}`)
+        .sort(),
+    ).toEqual(
+      [PR_142.base.sha, PR_142.head.sha]
+        .map((sha) => `/repos/acme/acme-api/contents/package.json@${sha}`)
+        .sort(),
+    );
+    expect(h.github.unknown).toEqual([]);
+  });
+
+  it("reads the files and manifests once when the risk score and the brief both need them", async () => {
+    const h = await reviewHarness({ providers: { risk: eeRisk() } });
+    await h.deliver(opened142());
+    expect(h.github.pull(REPO, 142).labels.some((l) => l.startsWith("selfhost:risk-"))).toBe(true);
+    expect(h.github.pull(REPO, 142).comments).toHaveLength(1);
+    expect(gets(h, /\/pulls\/142\/files$/)).toBe(1);
+    expect(gets(h, /\/contents\//)).toBe(2);
+  });
+
+  it("edits the same comment on a later delivery and writes nothing else", async () => {
+    const h = await reviewHarness();
+    await h.server.ledger.append(runEvents());
+    await h.deliver(opened142());
+    const pull = h.github.pull(REPO, 142);
+    const [posted] = pull.comments;
+    if (!posted) throw new Error("Expected the brief comment");
+    const brief = posted.body;
+
+    posted.body = `${MARKER}\nAn older brief`;
+    const before = h.github.writes.length;
+    const res = await h.deliver(opened142());
+    expect(res.json).toMatchObject({ handled: true, writes: 1 });
+    expect(h.github.writes.slice(before).map((w) => `${w.method} ${w.path}`)).toEqual([
+      `PATCH /repos/acme/acme-api/issues/comments/${posted.id}`,
+    ]);
+    expect(pull.comments.map((c) => c.body)).toEqual([brief]);
+    expect(pull.requestedUsers).toEqual(["bob"]);
+
+    // Nothing changed since, so the next delivery reads and writes nothing.
+    expect((await h.deliver(opened142())).json).toMatchObject({ handled: true, writes: 0 });
+  });
+
+  it("briefs a pull request with no ledger sessions, saying the run data is missing", async () => {
+    const h = await reviewHarness();
+    await h.deliver(opened142());
+    const pull = h.github.pull(REPO, 142);
+    const [comment] = pull.comments;
+    expect(comment?.body).toContain("No trace found: no session in the ledger made these commits.");
+    expect(comment?.body).toContain("No commands known: no agent run was found.");
+    expect(comment?.body).toContain("No cost known: no agent run was found.");
+    expect(h.github.checkRuns[0]?.output.summary).toContain(
+      "No trace found: no session in the ledger made these commits.",
+    );
+    // No session person either; the owner glob on the files still routes it.
+    expect(pull.requestedUsers).toEqual(["bob"]);
+
+    // The run arrives later: the same comment is rewritten with it, and the check follows.
+    await h.server.ledger.append(runEvents());
+    const before = h.github.writes.length;
+    await h.deliver(opened142());
+    expect(pull.comments.map((c) => c.id)).toEqual([comment?.id]);
+    expect(pull.comments[0]?.body).toContain(`${SERVER}/v1/events?session=${SESSION}`);
+    expect(h.github.writes.slice(before).map((w) => w.method)).toEqual(["PATCH", "PATCH"]);
+  });
+
+  it("asks the owner of the pull request's review item over fresh routing", async () => {
+    const h = await reviewHarness();
+    const { ledger } = h.server;
+    await ledger.append([prOpened("carol@example.com")]);
+    const list = openReviewList(ledger, { config: h.state.config });
+    await refreshReviewList(ledger, list);
+    // The item's own files match no [review.owners] glob, so it went to the session's person.
+    expect((await list.pullRequest(PR_142.html_url))?.owners).toEqual(["carol@example.com"]);
+
+    await h.deliver(opened142());
+    expect(h.github.pull(REPO, 142).requestedUsers).toEqual(["carol"]);
+    expect(h.github.checkRuns[0]?.output.summary).toContain("Review requested from @carol.");
+
+    // A team's delivery reads only that team's items; this one has no team, so routing decides.
+    const teamed = await reviewHarness({ route: { publicUrl: SERVER, team: "platform" } });
+    await teamed.server.ledger.append([prOpened("carol@example.com")]);
+    await refreshReviewList(
+      teamed.server.ledger,
+      openReviewList(teamed.server.ledger, { config: teamed.state.config }),
+    );
+    await teamed.deliver(opened142());
+    expect(teamed.github.pull(REPO, 142).requestedUsers).toEqual(["bob"]);
   });
 });
 

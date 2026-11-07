@@ -152,17 +152,25 @@ then it blocks a merge only when the team adds `selfhost/review` as a required s
 branch protection or a ruleset (Settings, Branches or Rules, "Require status checks to pass",
 search for `selfhost/review` once it has run on a pull request).
 
-Where each part comes from is a provider in `src/github-pull.ts`, so other parts of the review
-list plug in without touching the route:
+Where each part comes from is a provider in `src/github-pull.ts` (tests replace them):
 
-| Provider | Default                                                                                                                                                          |
-| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `risk`   | The ee/ risk score (`src/github-risk.ts`, loaded through `src/ee.ts` on first use) from the pull request's files and new dependencies; none when ee/ is left out |
-| `owner`  | None, so the request goes to `[review] github_team`; the review list's routing replaces it                                                                       |
-| `brief`  | None, so no comment and the check names the agent; the review brief renderer replaces it                                                                         |
+| Provider | Default                                                                                                                                                                                                                                                                              |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `risk`   | The ee/ risk score (`src/github-risk.ts`, loaded through `src/ee.ts` on first use) from the pull request's files and new dependencies; none when ee/ is left out                                                                                                                     |
+| `owner`  | `src/github-review.ts`: the first owner of the pull request's `pr` review item (by PR URL, in `SELFHOST_GITHUB_TEAM`'s items when set); before there is one, `routeItem` on its changed files, the person whose session made its commits, the team's members and `[review] fallback` |
+| `brief`  | `src/github-review.ts`: the [review brief](../../packages/brief/README.md) as one comment, its summary leading the check run                                                                                                                                                         |
 
-On the server the risk score reads the files, the manifests and the agent from GitHub; the agent
-run, tests and revert history are listed as missing inputs in the check.
+The server has no clone and no `gh`, so the brief reads the pull request through the App with
+`readPullRequest` from [`@selfhost/pr`](../../packages/pr/README.md): the files with their
+patches (hunks and line numbers), the manifests at the base and head commits, the title and
+description from the webhook, and the commits, whose `commit.created` events in the ledger join
+the sessions behind them. Per delivery that is one paginated call for the files, one for the
+commits, and one contents call per changed manifest at each side; the risk score, the owner and
+the brief share them (`src/github-reads.ts`), so each is made once. A pull request no session
+made still gets a brief, with every run section saying no run was found and why. Trace links
+point at `<SELFHOST_PUBLIC_URL>/v1/events?session=<id>`, or at the origin the delivery was sent
+to when that is unset. The risk score does not read the run yet: the agent run, tests and revert
+history are listed as missing inputs in the check.
 
 ### Registering the App
 
@@ -171,7 +179,7 @@ run, tests and revert history are listed as missing inputs in the check.
    `openssl rand -hex 32`.
 2. Repository permissions: Checks read and write, Pull requests read and write, Issues read and
    write (labels and comments on pull requests), Contents read-only (changed manifests for the
-   risk score), Metadata read-only.
+   risk score and the brief), Metadata read-only.
 3. Subscribe to the **Pull request** event.
 4. Generate a private key, and set `SELFHOST_GITHUB_APP_ID`, `SELFHOST_GITHUB_PRIVATE_KEY_FILE`
    (or `SELFHOST_GITHUB_PRIVATE_KEY`) and `SELFHOST_GITHUB_WEBHOOK_SECRET` on the server, plus
@@ -227,4 +235,5 @@ Environment:
 | `SELFHOST_GITHUB_PRIVATE_KEY`      | unset              | The App's private key (PEM, or one line with `\n` escapes).                                                |
 | `SELFHOST_GITHUB_PRIVATE_KEY_FILE` | unset              | Path to the App's .pem, instead of `SELFHOST_GITHUB_PRIVATE_KEY`.                                          |
 | `SELFHOST_GITHUB_WEBHOOK_SECRET`   | unset              | The App's webhook secret.                                                                                  |
-| `SELFHOST_GITHUB_TEAM`             | unset              | Team whose stored `selfhost.toml` sets `[review]` for GitHub. Unset uses `SELFHOST_CONFIG`.                |
+| `SELFHOST_GITHUB_TEAM`             | unset              | Team whose stored `selfhost.toml` sets `[review]` for GitHub, and whose review items pick the owner.       |
+| `SELFHOST_PUBLIC_URL`              | unset              | This server's URL as people reach it, for trace links in the brief. Unset uses the delivery's origin.      |

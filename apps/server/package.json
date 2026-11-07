@@ -22,6 +22,7 @@
     "@electric-sql/pglite": "catalog:",
     "@hono/node-server": "catalog:",
     "@selfhost/attribution": "workspace:*",
+    "@selfhost/brief": "workspace:*",
     "@selfhost/ee-risk": "workspace:*",
     "@selfhost/github": "workspace:*",
     "@selfhost/ledger": "workspace:*",

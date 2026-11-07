@@ -4,7 +4,9 @@ GitHub delivery for the review list. Through the selfhost GitHub App it keeps ea
 request showing what the review list knows: a risk label and an agent label, a check run that
 summarizes the review brief, a review request to the owner, and the brief as one comment.
 The server's `POST /v1/github/webhooks` calls it (see
-[`apps/server`](../../apps/server/README.md#github-app)).
+[`apps/server`](../../apps/server/README.md#github-app)) with `desired` built from the review
+list: the owner its routing picks, and the brief from `@selfhost/brief`, whose summary paragraph
+leads the check run and whose Markdown is the comment.
 
 ```ts
 import { createGitHubApp, githubAppEnv, syncPullRequest } from "@selfhost/github";
@@ -80,6 +82,6 @@ nothing. A delivery id the server has already handled does not reach this call a
 
 `@selfhost/github/testing` exports `FakeGitHub`, an in-memory GitHub REST API served through a
 `fetch` handed to Octokit. It keeps labels, check runs, review requests, reviews, comments, files
-and file contents per pull request, records every request, checks the App JWT against a public
-key when given one, and answers 404 (recorded in `unknown`) for any route it does not serve. No
-test reaches the network.
+(with patches), commits and file contents per pull request, records every request, checks the App
+JWT against a public key when given one, and answers 404 (recorded in `unknown`) for any route it
+does not serve. No test reaches the network.
