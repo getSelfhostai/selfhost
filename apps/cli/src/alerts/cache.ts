@@ -106,15 +106,17 @@ const WINDOW_SHORT: Record<LimitWindow, string> = { session: "5h", weekly: "week
 
 /**
  * One short line: a spike alarm from the last hour, else a limit about to run out, else the
- * person's spend today.
+ * person's spend today. `review` is the pending review count, like "3 to review": it leads the
+ * line, after an alarm.
  */
-export function renderStatusline(cache: StatuslineCache, now: Date): string {
+export function renderStatusline(cache: StatuslineCache, now: Date, review?: string): string {
   const ms = now.getTime();
   const alarm = cache.alarms
     .filter((candidate) => Date.parse(candidate.slot_end) + ALARM_SHOWN_MS > ms)
     .sort((a, b) => b.usd - a.usd)[0];
   if (alarm) {
-    return `selfhost: possible stolen key, ${usd(alarm.usd)} in 15 min on ${alarm.on}`;
+    const line = `selfhost: possible stolen key, ${usd(alarm.usd)} in 15 min on ${alarm.on}`;
+    return review ? `${line} · ${review}` : line;
   }
   const warning = cache.warnings
     .filter((candidate) => candidate.window_end !== null && Date.parse(candidate.window_end) > ms)
@@ -126,8 +128,8 @@ export function renderStatusline(cache: StatuslineCache, now: Date): string {
       warning.status === "reached" || (runOut !== undefined && runOut <= ms)
         ? `${name} reached, resets in ${duration(Date.parse(warning.window_end ?? "") - ms)}`
         : `${name} in ~${duration((runOut ?? ms) - ms)}`;
-    return warning.fix ? `${when} · ${warning.fix}` : when;
+    return [review, when, warning.fix].filter(Boolean).join(" · ");
   }
   const today = cache.today.day === now.toISOString().slice(0, 10) ? cache.today.usd : 0;
-  return `selfhost: ${usd(today)} today`;
+  return review ? `${review} · ${usd(today)} today` : `selfhost: ${usd(today)} today`;
 }

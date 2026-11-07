@@ -10,6 +10,7 @@ pnpm --filter @selfhost/cli dev ledger prune --days 30
 pnpm --filter @selfhost/cli dev spend forecast
 pnpm --filter @selfhost/cli dev spend alarms --since 1h
 pnpm --filter @selfhost/cli dev statusline
+pnpm --filter @selfhost/cli dev inbox
 pnpm --filter @selfhost/cli dev policy check
 pnpm --filter @selfhost/cli dev policy test --tool Bash --command "git push --force"
 pnpm --filter @selfhost/cli dev policy observe --since 30d
@@ -75,9 +76,16 @@ the review list and the Slack app.
 
 `selfhost statusline` prints one short line: a possible stolen key alarm from the last hour,
 else a plan limit about to run out (`Claude 5h limit in ~1h40m · overflow to team-overflow`),
-else your spend today (`selfhost: $12.34 today`). It reads `~/.selfhost/statusline.json`
-(`--cache` or `SELFHOST_STATUSLINE_CACHE` to move it), which `import --watch` keeps fresh, and
-takes about 50 ms. It opens the ledger only when no watcher is running and the cache is more
+else your spend today (`selfhost: $12.34 today`). When review items wait on you, their count
+leads the line (after an alarm): `3 to review · $12.34 today`, or `3 to review, 1 blocking ·
+Claude 5h limit in ~1h40m · overflow to team-overflow`. The count comes from the copy of your
+review list that `selfhost inbox` saves in `~/.selfhost/inbox.json` and `import --watch`
+refreshes (at start, after batches and every minute), less the actions you queued since; a copy
+more than a day old with no watcher running is left off. No render calls the network.
+
+The rest of the line comes from `~/.selfhost/statusline.json` (`--cache` or
+`SELFHOST_STATUSLINE_CACHE` to move it), which `import --watch` keeps fresh, and a render takes
+about 50 ms. It opens the ledger only when no watcher is running and the cache is more
 than 5 minutes old (about 1.2 s on 35 days of a heavy user's history), then keeps the result in
 the cache. It never opens the embedded ledger while a watcher holds it, and with no data it
 prints `selfhost: no data yet, run selfhost import` instead of failing.
@@ -92,6 +100,13 @@ stdin, which selfhost ignores):
 ```
 
 Keep `selfhost import --watch` running so the line stays current.
+
+Codex cannot show it: its status line (`[tui] status_line` in `~/.codex/config.toml`, or
+`/statusline` in Codex) takes only built-in items and runs no command, as of Codex 0.163
+([openai/codex#17827](https://github.com/openai/codex/issues/17827) asks for one). Its
+`five-hour-limit` and `weekly-limit` items show the plan left on their own. For the review count
+next to Codex, run `selfhost statusline` from a terminal status bar instead, for example in tmux:
+`set -g status-right '#(selfhost statusline)'`.
 
 `selfhost scan [--since 30d] [--repo <dir>] [--json] [--report <file>] [--share <file>]` is a
 one-command audit of the local Claude Code and Codex logs. It needs no account, no ledger and no
@@ -183,6 +198,43 @@ ledger (`--database` / `--data-dir` as for `spend`).
   who, the question and reason, files and links, and which later decisions replaced it.
   `--path` matches the file, files inside a folder, and folders that hold the file; `--topic`
   needs every word in the question or reason. `--limit` and `--cursor` page through.
+
+## Inbox
+
+`selfhost inbox [--all] [--json]` lists the review items waiting on you, ranked like the review
+list (blocking first, then by risk, then oldest), each with the shortest id prefix that tells it
+apart. `--all` lists every open item, other people's and the ones you snoozed included. Act on
+one by its id, or any unique start of it:
+
+- `selfhost inbox approve <id> [--reason <text>]` and `selfhost inbox deny <id> [--reason
+  <text>]` answer the item. The review list records each answer as one `decision.recorded`
+  event in the decision log: the team server in team mode, the local ledger in solo mode. The
+  inbox writes no event of its own, so nothing is recorded twice. An item someone else already
+  answered is reported (`... was already answered by bob@example.com: deny. Nothing changed.`)
+  and exits 1.
+- `selfhost inbox snooze <id> [--for 2h | --until <time>]` hides an item from your list until
+  then (default 1h; `--for` takes m, h, d or w).
+- `selfhost inbox open <id> [--no-open]` prints the item with its risk reasons and brief, and
+  opens its link with the OS opener (`open`, `xdg-open`) when stdout is a terminal. `--no-open`
+  and `--json` never open it, and only http and https links are opened.
+- `selfhost inbox sync` sends the actions queued offline, then refreshes the saved copy. It
+  exits 1 while actions stay queued.
+
+Team mode calls the server's `/v1/review-items` API with the person token from `selfhost join`;
+solo mode reads the review list in the local ledger (`--database` / `--data-dir` as for `spend`).
+
+Offline, the inbox keeps working. Every list saves your open items to `~/.selfhost/inbox.json`.
+When the team server does not answer (or a proxy answers 502, 503 or 504), `selfhost inbox` and
+`open` read that copy and say how old it is, and approve, deny and snooze append the action to
+`~/.selfhost/inbox-queue.jsonl` (mode 0600) instead (`outcome: "queued"`). Queued answers leave
+the list and the statusline count right away. The next inbox command that reaches the server,
+`selfhost inbox sync`, or a running `import --watch` sends the queue first, in the order the
+actions were taken. An item someone else answered in the meantime is reported (`Not applied:
+approve 019a5b01, already answered by bob@example.com: deny.`, `outcome: "conflict"` with
+`--json`) and dropped, never applied. A missing item or an action the server refuses is dropped
+with the reason; a refused token or a server error stops the replay and keeps the rest queued.
+In solo mode, while `import --watch` holds the embedded ledger, the inbox reads the copy the
+watcher saves and queues actions for the watcher to apply within a minute.
 
 ## Risk score
 
@@ -309,6 +361,8 @@ Every command takes `--json` and prints one object with a `schema` tag: `selfhos
 `selfhost.policy_check/v1`, `selfhost.policy_test/v1`, `selfhost.policy_observe/v1`,
 `selfhost.policy_promote/v1`, `selfhost.review_item/v1` (from `policy report`),
 `selfhost.decide/v1`, `selfhost.review_risk/v1`, `selfhost.decisions/v1`,
+`selfhost.inbox/v1`, `selfhost.inbox_action/v1`, `selfhost.inbox_item/v1`,
+`selfhost.inbox_sync/v1`,
 `selfhost.limit_forecast/v1`, `selfhost.plan_tiers/v1`, `selfhost.spend_alarms/v1`,
 `selfhost.team_init/v1`, `selfhost.team_invite/v1`, `selfhost.team_revoke/v1`,
 `selfhost.join/v1`, `selfhost.status/v1` and `selfhost.team_leave/v1`. Errors print `selfhost.error/v1` and exit 1. In solo mode no command

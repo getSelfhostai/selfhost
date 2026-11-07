@@ -13,6 +13,8 @@ import { registerDecisions } from "./decisions.js";
 import { doctor } from "./doctor.js";
 import { readStdin, runHook } from "./hooks/receive.js";
 import { type ImportCommandOptions, type ImportIo, runImport, runWatch } from "./import.js";
+import { registerInbox } from "./inbox/commands.js";
+import type { OpenLocalReviewList } from "./inbox/sync.js";
 import { registerInit } from "./init/commands.js";
 import { registerLedger } from "./ledger.js";
 import { registerPolicy } from "./policy/commands.js";
@@ -50,6 +52,8 @@ export interface CliDeps {
   retry?: ImportIo["retry"];
   /** Sends the opt-in anonymous agent count. Default: a JSON POST. */
   sendTelemetry?: SendPing;
+  /** Solo mode's review list over the local ledger, for `selfhost inbox` and `import --watch`. */
+  localReviewList?: OpenLocalReviewList;
 }
 
 /** `--json` errors: printed on stdout so a script always gets JSON back. */
@@ -140,6 +144,7 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
         configPath: deps.configPath,
         fetch: deps.fetch,
         retry: deps.retry,
+        localReviewList: deps.localReviewList,
       };
       try {
         if (options.watch) await runWatch(options, importIo);
@@ -322,6 +327,21 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       write: deps.write,
       configPath: deps.configPath ?? defaultConfigPath(),
       fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
+    }),
+    fail,
+  );
+
+  registerInbox(
+    program,
+    () => ({
+      env: deps.env,
+      platform: deps.platform,
+      write: deps.write,
+      setExitCode: deps.setExitCode,
+      now: deps.now,
+      configPath: deps.configPath ?? defaultConfigPath(),
+      fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
+      localReviewList: deps.localReviewList,
     }),
     fail,
   );

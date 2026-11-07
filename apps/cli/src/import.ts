@@ -12,6 +12,7 @@ import { startMonitor } from "./alerts/monitor.js";
 import { defaultConfigPath } from "./config-file.js";
 import { drainSpool, type SpoolReport, watchSpool } from "./hooks/drain.js";
 import { spoolDir } from "./hooks/receive.js";
+import { type OpenLocalReviewList, watchInbox } from "./inbox/sync.js";
 import type { Fetch } from "./team/client.js";
 import { type Membership, readMembership, readSyncState } from "./team/config.js";
 import type { RemoteWriterOptions } from "./team/remote-writer.js";
@@ -63,6 +64,8 @@ export interface ImportIo {
   fetch?: Fetch;
   /** Retry timing for sends to the team server. */
   retry?: Omit<RemoteWriterOptions, "person">;
+  /** Solo mode's review list, which `--watch` keeps the saved inbox copy from. */
+  localReviewList?: OpenLocalReviewList;
 }
 
 const VENDORS: Record<string, Vendor> = {
@@ -250,9 +253,20 @@ export async function runWatch(options: ImportCommandOptions, io: ImportIo): Pro
     configPath: configPathOf(io),
   });
   writer = monitor.tap(writer);
+  // The saved inbox copy the statusline counts from, and the inbox queue sent on reconnect.
+  const inbox = await watchInbox(ledger, {
+    membership,
+    person: opts.actorId ?? defaultPerson(io.env),
+    configPath: configPathOf(io),
+    fetch: io.fetch ?? globalFetch,
+    localReviewList: io.localReviewList,
+    write: io.write,
+    json: options.json,
+  });
   const onBatch = (n: number) => {
     synced();
     monitor.check();
+    inbox?.refresh();
     if (n === 0) return;
     const batch: ImportBatchReport = { schema: "selfhost.import_batch/v1", accepted: n };
     io.write(options.json ? JSON.stringify(batch) : `+${n} events`);
@@ -272,5 +286,6 @@ export async function runWatch(options: ImportCommandOptions, io: ImportIo): Pro
   await watcher.close();
   await hookWatcher.close();
   await monitor.close();
+  await inbox?.close();
   await ledger.close();
 }

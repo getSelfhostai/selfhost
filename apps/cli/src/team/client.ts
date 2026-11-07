@@ -3,11 +3,16 @@ import type {
   CreateInviteRequest,
   CreateInviteResponse,
   CreateTeamResponse,
+  DecisionRequest,
+  DecisionResponse,
   IngestEventsResponse,
   Invite,
   JoinResponse,
   LedgerEvent,
   PolicyResponse,
+  ReviewItem,
+  ReviewItemQuery,
+  ReviewItemsPage,
   RevokeTokensResponse,
 } from "@selfhost/schema";
 
@@ -25,6 +30,8 @@ export class TeamApiError extends Error {
     message: string,
     /** Seconds from a Retry-After header. */
     readonly retryAfter?: number,
+    /** The answer's JSON body, when it had one. */
+    readonly body?: unknown,
   ) {
     super(message);
   }
@@ -101,6 +108,27 @@ export class TeamClient {
     return this.call("POST", "/v1/events", { events });
   }
 
+  /** One page of review items. */
+  reviewItems(query: ReviewItemQuery): Promise<ReviewItemsPage> {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined) params.set(key, String(value));
+    }
+    const search = params.toString();
+    return this.call("GET", `/v1/review-items${search ? `?${search}` : ""}`);
+  }
+
+  /** Answers a review item; 409 when it is no longer open. */
+  decideReviewItem(id: string, request: DecisionRequest): Promise<DecisionResponse> {
+    return this.call("POST", `/v1/review-items/${encodeURIComponent(id)}/decision`, request);
+  }
+
+  /** Hides an open review item until `until`; 409 when it is no longer open. */
+  async snoozeReviewItem(id: string, until: string): Promise<ReviewItem> {
+    const path = `/v1/review-items/${encodeURIComponent(id)}/snooze`;
+    return (await this.call<{ item: ReviewItem }>("POST", path, { until })).item;
+  }
+
   private async call<T>(method: string, path: string, body?: unknown): Promise<T> {
     const headers: Record<string, string> = { accept: "application/json" };
     if (this.token) headers.authorization = `Bearer ${this.token}`;
@@ -132,6 +160,7 @@ export class TeamClient {
         error?.code ?? "http_error",
         `${this.server} answered ${response.status}: ${error?.message ?? (text.slice(0, 200) || "no message")}`,
         Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined,
+        json,
       );
     }
     if (json === undefined) {
