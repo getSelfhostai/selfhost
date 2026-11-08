@@ -1,0 +1,27 @@
+{
+  "mcpServers": {
+    "docs": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@acme/docs-mcp"
+      ],
+      "env": {
+        "DOCS_TOKEN": "${env:DOCS_TOKEN}",
+        "DOCS_REGION": "eu"
+      }
+    },
+    "github": {
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": {
+        "Authorization": "Bearer ${env:GITHUB_TOKEN}"
+      }
+    },
+    "tickets": {
+      "url": "https://tickets.example.com/sse",
+      "headers": {
+        "X-Team": "${env:TEAM_ID}"
+      }
+    }
+  }
+}

@@ -1,0 +1,117 @@
+{
+  "schema": "selfhost.context_lock/v1",
+  "agents": [
+    "claude_code"
+  ],
+  "skills": {
+    "db-migrate": {
+      "version": "0.3.0",
+      "sha256": "d46c3f2990085cde8101c72b273751a0a3b141956673ccaa8f2b8884c6e872ad",
+      "agents": {
+        "claude_code": {
+          "status": "compiled",
+          "version": "0.3.0",
+          "files": [
+            ".claude/skills/db-migrate/SKILL.md"
+          ]
+        }
+      }
+    },
+    "release-notes": {
+      "version": "1.2.0",
+      "sha256": "feb41bc69907b82d6fe9f0e091a2a0e989950e99332ee81fcfa372371f115da9",
+      "agents": {
+        "claude_code": {
+          "status": "compiled",
+          "version": "1.2.0",
+          "files": [
+            ".claude/skills/release-notes/SKILL.md",
+            ".claude/skills/release-notes/references/template.md",
+            ".claude/skills/release-notes/scripts/collect.sh"
+          ]
+        }
+      }
+    }
+  },
+  "files": {
+    ".claude/agents/migrator.md": {
+      "sources": [
+        ".selfhost/context/agents/migrator.md"
+      ],
+      "header": "front_matter",
+      "sha256": "d3c354731dc84f52d003678634578d02e366c5274013d8c526793d25aa9f488b"
+    },
+    ".claude/agents/reviewer.md": {
+      "sources": [
+        ".selfhost/context/agents/reviewer.md"
+      ],
+      "header": "front_matter",
+      "sha256": "79dbf3e94c509dd977a2f59c844edae1d21e0410e0f6c9dea1d8a193278ae9e2"
+    },
+    ".claude/commands/fix-issue.md": {
+      "sources": [
+        ".selfhost/context/commands/fix-issue.md"
+      ],
+      "header": "front_matter",
+      "sha256": "73dce472e64d067c416539a4b5ffd861ce0370e5fcb52929540af7513ef8104c"
+    },
+    ".claude/commands/standup.md": {
+      "sources": [
+        ".selfhost/context/commands/standup.md"
+      ],
+      "header": "front_matter",
+      "sha256": "95c4b5ec3b755a77ccfd168d49ee507a36dc2a889d2120527b8ae7189b2b4dd0"
+    },
+    ".claude/rules/api.md": {
+      "sources": [
+        ".selfhost/context/rules/api.md"
+      ],
+      "header": "front_matter",
+      "sha256": "d2a0494e4c69a7a0eaad7e71e16486987d67a155cfc8bb2ed24537c1e86d9df5"
+    },
+    ".claude/skills/db-migrate/SKILL.md": {
+      "sources": [
+        ".selfhost/context/skills/db-migrate/SKILL.md"
+      ],
+      "header": "front_matter",
+      "sha256": "3b370f61e012cabbea1e0a03f2862a14e48a8d4f3c8a2c2a95e22cd52d886565"
+    },
+    ".claude/skills/release-notes/SKILL.md": {
+      "sources": [
+        ".selfhost/context/skills/release-notes/SKILL.md"
+      ],
+      "header": "front_matter",
+      "sha256": "9d6681f300ac6dfa31b73e068e7b523c9ea26d343c0fc3994e5cdb8bc08b100d"
+    },
+    ".claude/skills/release-notes/references/template.md": {
+      "sources": [
+        ".selfhost/context/skills/release-notes/references/template.md"
+      ],
+      "header": "lock",
+      "sha256": "fe17f2e230643068727e855a21f59130c9b2a917332f89fcd6608b51f16ae7c6"
+    },
+    ".claude/skills/release-notes/scripts/collect.sh": {
+      "sources": [
+        ".selfhost/context/skills/release-notes/scripts/collect.sh"
+      ],
+      "header": "lock",
+      "sha256": "a3f37f6d9fcb3ceb21fadc935c001001c57a35d540d2cbc9879e584566ce6006"
+    },
+    ".mcp.json": {
+      "sources": [
+        ".selfhost/context/mcp.json"
+      ],
+      "header": "lock",
+      "sha256": "f5386a3323f84ca4d0a05c056693663a6d3f94294a96f31612413518f2bbc5d8"
+    },
+    "CLAUDE.md": {
+      "sources": [
+        ".ruler/team.md",
+        ".selfhost/context/rules/claude-memory.md",
+        ".selfhost/context/rules/style.md"
+      ],
+      "header": "comment",
+      "sha256": "98c2a78d4c28badf9736b0ab8d474cd1c9e2b9e5dbfcde75a402e55a9abc59c2"
+    }
+  }
+}

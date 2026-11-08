@@ -1,0 +1,1165 @@
+{
+  "schema": "selfhost.context_coverage/v1",
+  "agents": [
+    {
+      "agent": "claude_code",
+      "docs": [
+        "https://code.claude.com/docs/en/memory",
+        "https://code.claude.com/docs/en/skills",
+        "https://code.claude.com/docs/en/sub-agents",
+        "https://code.claude.com/docs/en/mcp"
+      ],
+      "notes": [
+        "Claude Code asks once before it starts each server in .mcp.json."
+      ]
+    },
+    {
+      "agent": "codex",
+      "docs": [
+        "https://learn.chatgpt.com/docs/agent-configuration/agents-md",
+        "https://learn.chatgpt.com/docs/build-skills",
+        "https://learn.chatgpt.com/docs/custom-prompts",
+        "https://learn.chatgpt.com/docs/agent-configuration/subagents",
+        "https://learn.chatgpt.com/docs/extend/mcp"
+      ],
+      "notes": [
+        "Codex loads .codex/config.toml, and its MCP servers, only in projects you trust."
+      ]
+    },
+    {
+      "agent": "cursor",
+      "docs": [
+        "https://cursor.com/docs/context/rules",
+        "https://cursor.com/docs/context/skills",
+        "https://cursor.com/docs/context/subagents",
+        "https://cursor.com/docs/context/mcp"
+      ],
+      "notes": [
+        "Cursor also loads .claude/skills/, .claude/agents/, .codex/agents/ and CLAUDE.md, written for other agents, so it sees those items there too."
+      ]
+    },
+    {
+      "agent": "copilot",
+      "docs": [
+        "https://docs.github.com/en/copilot/how-tos/configure-custom-instructions/add-repository-instructions",
+        "https://docs.github.com/en/copilot/reference/custom-instructions-support",
+        "https://docs.github.com/en/copilot/concepts/agents/about-agent-skills",
+        "https://code.visualstudio.com/docs/agent-customization/prompt-files",
+        "https://docs.github.com/en/copilot/reference/custom-agents-configuration",
+        "https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-mcp-servers"
+      ],
+      "notes": [
+        "Copilot also loads .claude/rules/, .claude/skills/, .claude/commands/, .claude/agents/, CLAUDE.md and GEMINI.md, written for other agents, so it sees those items there too."
+      ]
+    },
+    {
+      "agent": "gemini",
+      "docs": [
+        "https://geminicli.com/docs/cli/gemini-md/",
+        "https://geminicli.com/docs/cli/skills/",
+        "https://geminicli.com/docs/cli/custom-commands/",
+        "https://geminicli.com/docs/core/subagents/",
+        "https://geminicli.com/docs/tools/mcp-server/"
+      ],
+      "notes": []
+    },
+    {
+      "agent": "opencode",
+      "docs": [
+        "https://opencode.ai/docs/instructions/",
+        "https://opencode.ai/docs/skills/",
+        "https://opencode.ai/docs/commands/",
+        "https://opencode.ai/docs/agents/",
+        "https://opencode.ai/docs/mcp-servers/",
+        "https://opencode.ai/docs/migrate-v1/"
+      ],
+      "notes": [
+        "MCP servers and subagent tools use OpenCode's 1.x layout (mcp.<name>, tools), which OpenCode 2 also reads.",
+        "OpenCode also loads .claude/skills/, written for other agents, so it sees those items there too."
+      ]
+    },
+    {
+      "agent": "goose",
+      "docs": [
+        "https://goose-docs.ai/docs/guides/context-engineering/using-goosehints/",
+        "https://goose-docs.ai/docs/guides/context-engineering/using-skills/",
+        "https://goose-docs.ai/docs/guides/context-engineering/custom-agents/",
+        "https://goose-docs.ai/docs/guides/context-engineering/slash-commands/",
+        "https://goose-docs.ai/docs/guides/config-files/"
+      ],
+      "notes": [
+        "Goose loads AGENTS.md and .goosehints only with its Developer extension on.",
+        "Goose also loads .claude/skills/ and .claude/agents/, written for other agents, so it sees those items there too."
+      ]
+    }
+  ],
+  "items": [
+    {
+      "item": "rule:api",
+      "kind": "rule",
+      "agent": "claude_code",
+      "status": "compiled",
+      "files": [
+        ".claude/rules/api.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "rule:api",
+      "kind": "rule",
+      "agent": "codex",
+      "status": "partial",
+      "files": [
+        "AGENTS.md"
+      ],
+      "detail": "Codex has no path-scoped instructions, so AGENTS.md carries the rule for every file, with its globs written out."
+    },
+    {
+      "item": "rule:api",
+      "kind": "rule",
+      "agent": "cursor",
+      "status": "compiled",
+      "files": [
+        ".cursor/rules/api.mdc"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "rule:api",
+      "kind": "rule",
+      "agent": "copilot",
+      "status": "compiled",
+      "files": [
+        ".github/instructions/api.instructions.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "rule:api",
+      "kind": "rule",
+      "agent": "gemini",
+      "status": "partial",
+      "files": [
+        "GEMINI.md"
+      ],
+      "detail": "Gemini CLI has no path-scoped instructions, so GEMINI.md carries the rule for every file, with its globs written out."
+    },
+    {
+      "item": "rule:api",
+      "kind": "rule",
+      "agent": "opencode",
+      "status": "partial",
+      "files": [
+        "AGENTS.md"
+      ],
+      "detail": "OpenCode has no path-scoped instructions, so AGENTS.md carries the rule for every file, with its globs written out."
+    },
+    {
+      "item": "rule:api",
+      "kind": "rule",
+      "agent": "goose",
+      "status": "partial",
+      "files": [
+        "AGENTS.md"
+      ],
+      "detail": "Goose has no path-scoped instructions, so AGENTS.md carries the rule for every file, with its globs written out."
+    },
+    {
+      "item": "rule:claude-memory",
+      "kind": "rule",
+      "agent": "claude_code",
+      "status": "compiled",
+      "files": [
+        "CLAUDE.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "rule:claude-memory",
+      "kind": "rule",
+      "agent": "codex",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Claude Code."
+    },
+    {
+      "item": "rule:claude-memory",
+      "kind": "rule",
+      "agent": "cursor",
+      "status": "not_applicable",
+      "files": [
+        "CLAUDE.md"
+      ],
+      "detail": "Only for Claude Code, but Cursor reads it in CLAUDE.md."
+    },
+    {
+      "item": "rule:claude-memory",
+      "kind": "rule",
+      "agent": "copilot",
+      "status": "not_applicable",
+      "files": [
+        "CLAUDE.md"
+      ],
+      "detail": "Only for Claude Code, but Copilot reads it in CLAUDE.md."
+    },
+    {
+      "item": "rule:claude-memory",
+      "kind": "rule",
+      "agent": "gemini",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Claude Code."
+    },
+    {
+      "item": "rule:claude-memory",
+      "kind": "rule",
+      "agent": "opencode",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Claude Code."
+    },
+    {
+      "item": "rule:claude-memory",
+      "kind": "rule",
+      "agent": "goose",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Claude Code."
+    },
+    {
+      "item": "rule:codex-sandbox",
+      "kind": "rule",
+      "agent": "claude_code",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Codex."
+    },
+    {
+      "item": "rule:codex-sandbox",
+      "kind": "rule",
+      "agent": "codex",
+      "status": "compiled",
+      "files": [
+        "AGENTS.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "rule:codex-sandbox",
+      "kind": "rule",
+      "agent": "cursor",
+      "status": "not_applicable",
+      "files": [
+        "AGENTS.md"
+      ],
+      "detail": "Only for Codex, but Cursor reads it in AGENTS.md."
+    },
+    {
+      "item": "rule:codex-sandbox",
+      "kind": "rule",
+      "agent": "copilot",
+      "status": "not_applicable",
+      "files": [
+        "AGENTS.md"
+      ],
+      "detail": "Only for Codex, but Copilot reads it in AGENTS.md."
+    },
+    {
+      "item": "rule:codex-sandbox",
+      "kind": "rule",
+      "agent": "gemini",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Codex."
+    },
+    {
+      "item": "rule:codex-sandbox",
+      "kind": "rule",
+      "agent": "opencode",
+      "status": "not_applicable",
+      "files": [
+        "AGENTS.md"
+      ],
+      "detail": "Only for Codex, but OpenCode reads it in AGENTS.md."
+    },
+    {
+      "item": "rule:codex-sandbox",
+      "kind": "rule",
+      "agent": "goose",
+      "status": "not_applicable",
+      "files": [
+        "AGENTS.md"
+      ],
+      "detail": "Only for Codex, but Goose reads it in AGENTS.md."
+    },
+    {
+      "item": "rule:copilot-review",
+      "kind": "rule",
+      "agent": "claude_code",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Copilot."
+    },
+    {
+      "item": "rule:copilot-review",
+      "kind": "rule",
+      "agent": "codex",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Copilot."
+    },
+    {
+      "item": "rule:copilot-review",
+      "kind": "rule",
+      "agent": "cursor",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Copilot."
+    },
+    {
+      "item": "rule:copilot-review",
+      "kind": "rule",
+      "agent": "copilot",
+      "status": "compiled",
+      "files": [
+        ".github/copilot-instructions.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "rule:copilot-review",
+      "kind": "rule",
+      "agent": "gemini",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Copilot."
+    },
+    {
+      "item": "rule:copilot-review",
+      "kind": "rule",
+      "agent": "opencode",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Copilot."
+    },
+    {
+      "item": "rule:copilot-review",
+      "kind": "rule",
+      "agent": "goose",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Copilot."
+    },
+    {
+      "item": "rule:cursor-tabs",
+      "kind": "rule",
+      "agent": "claude_code",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Cursor."
+    },
+    {
+      "item": "rule:cursor-tabs",
+      "kind": "rule",
+      "agent": "codex",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Cursor."
+    },
+    {
+      "item": "rule:cursor-tabs",
+      "kind": "rule",
+      "agent": "cursor",
+      "status": "compiled",
+      "files": [
+        ".cursor/rules/cursor-tabs.mdc"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "rule:cursor-tabs",
+      "kind": "rule",
+      "agent": "copilot",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Cursor."
+    },
+    {
+      "item": "rule:cursor-tabs",
+      "kind": "rule",
+      "agent": "gemini",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Cursor."
+    },
+    {
+      "item": "rule:cursor-tabs",
+      "kind": "rule",
+      "agent": "opencode",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Cursor."
+    },
+    {
+      "item": "rule:cursor-tabs",
+      "kind": "rule",
+      "agent": "goose",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Cursor."
+    },
+    {
+      "item": "rule:goose-hints",
+      "kind": "rule",
+      "agent": "claude_code",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Goose."
+    },
+    {
+      "item": "rule:goose-hints",
+      "kind": "rule",
+      "agent": "codex",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Goose."
+    },
+    {
+      "item": "rule:goose-hints",
+      "kind": "rule",
+      "agent": "cursor",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Goose."
+    },
+    {
+      "item": "rule:goose-hints",
+      "kind": "rule",
+      "agent": "copilot",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Goose."
+    },
+    {
+      "item": "rule:goose-hints",
+      "kind": "rule",
+      "agent": "gemini",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Goose."
+    },
+    {
+      "item": "rule:goose-hints",
+      "kind": "rule",
+      "agent": "opencode",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Goose."
+    },
+    {
+      "item": "rule:goose-hints",
+      "kind": "rule",
+      "agent": "goose",
+      "status": "compiled",
+      "files": [
+        ".goosehints"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "rule:style",
+      "kind": "rule",
+      "agent": "claude_code",
+      "status": "compiled",
+      "files": [
+        "CLAUDE.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "rule:style",
+      "kind": "rule",
+      "agent": "codex",
+      "status": "compiled",
+      "files": [
+        "AGENTS.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "rule:style",
+      "kind": "rule",
+      "agent": "cursor",
+      "status": "compiled",
+      "files": [
+        "AGENTS.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "rule:style",
+      "kind": "rule",
+      "agent": "copilot",
+      "status": "compiled",
+      "files": [
+        "AGENTS.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "rule:style",
+      "kind": "rule",
+      "agent": "gemini",
+      "status": "compiled",
+      "files": [
+        "GEMINI.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "rule:style",
+      "kind": "rule",
+      "agent": "opencode",
+      "status": "compiled",
+      "files": [
+        "AGENTS.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "rule:style",
+      "kind": "rule",
+      "agent": "goose",
+      "status": "compiled",
+      "files": [
+        "AGENTS.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "skill:db-migrate",
+      "kind": "skill",
+      "agent": "claude_code",
+      "status": "compiled",
+      "files": [
+        ".claude/skills/db-migrate/SKILL.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "skill:db-migrate",
+      "kind": "skill",
+      "agent": "codex",
+      "status": "partial",
+      "files": [
+        ".agents/skills/db-migrate/SKILL.md"
+      ],
+      "detail": "Codex does not read allowed-tools and disable-model-invocation, so the skill runs without them."
+    },
+    {
+      "item": "skill:db-migrate",
+      "kind": "skill",
+      "agent": "cursor",
+      "status": "partial",
+      "files": [
+        ".agents/skills/db-migrate/SKILL.md"
+      ],
+      "detail": "Cursor does not read allowed-tools, so the skill runs without it."
+    },
+    {
+      "item": "skill:db-migrate",
+      "kind": "skill",
+      "agent": "copilot",
+      "status": "partial",
+      "files": [
+        ".agents/skills/db-migrate/SKILL.md"
+      ],
+      "detail": "VS Code sessions on the Copilot harness read skills only from .github/skills; the cloud agent, the CLI and local VS Code sessions read .agents/skills."
+    },
+    {
+      "item": "skill:db-migrate",
+      "kind": "skill",
+      "agent": "gemini",
+      "status": "partial",
+      "files": [
+        ".agents/skills/db-migrate/SKILL.md"
+      ],
+      "detail": "Gemini CLI does not read allowed-tools and disable-model-invocation, so the skill runs without them."
+    },
+    {
+      "item": "skill:db-migrate",
+      "kind": "skill",
+      "agent": "opencode",
+      "status": "partial",
+      "files": [
+        ".agents/skills/db-migrate/SKILL.md"
+      ],
+      "detail": "OpenCode does not read allowed-tools, so the skill runs without it."
+    },
+    {
+      "item": "skill:db-migrate",
+      "kind": "skill",
+      "agent": "goose",
+      "status": "partial",
+      "files": [
+        ".agents/skills/db-migrate/SKILL.md"
+      ],
+      "detail": "Goose does not read allowed-tools and disable-model-invocation, so the skill runs without them."
+    },
+    {
+      "item": "skill:release-notes",
+      "kind": "skill",
+      "agent": "claude_code",
+      "status": "compiled",
+      "files": [
+        ".claude/skills/release-notes/SKILL.md",
+        ".claude/skills/release-notes/references/template.md",
+        ".claude/skills/release-notes/scripts/collect.sh"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "skill:release-notes",
+      "kind": "skill",
+      "agent": "codex",
+      "status": "compiled",
+      "files": [
+        ".agents/skills/release-notes/SKILL.md",
+        ".agents/skills/release-notes/references/template.md",
+        ".agents/skills/release-notes/scripts/collect.sh"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "skill:release-notes",
+      "kind": "skill",
+      "agent": "cursor",
+      "status": "compiled",
+      "files": [
+        ".agents/skills/release-notes/SKILL.md",
+        ".agents/skills/release-notes/references/template.md",
+        ".agents/skills/release-notes/scripts/collect.sh"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "skill:release-notes",
+      "kind": "skill",
+      "agent": "copilot",
+      "status": "partial",
+      "files": [
+        ".agents/skills/release-notes/SKILL.md",
+        ".agents/skills/release-notes/references/template.md",
+        ".agents/skills/release-notes/scripts/collect.sh"
+      ],
+      "detail": "VS Code sessions on the Copilot harness read skills only from .github/skills; the cloud agent, the CLI and local VS Code sessions read .agents/skills."
+    },
+    {
+      "item": "skill:release-notes",
+      "kind": "skill",
+      "agent": "gemini",
+      "status": "compiled",
+      "files": [
+        ".agents/skills/release-notes/SKILL.md",
+        ".agents/skills/release-notes/references/template.md",
+        ".agents/skills/release-notes/scripts/collect.sh"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "skill:release-notes",
+      "kind": "skill",
+      "agent": "opencode",
+      "status": "compiled",
+      "files": [
+        ".agents/skills/release-notes/SKILL.md",
+        ".agents/skills/release-notes/references/template.md",
+        ".agents/skills/release-notes/scripts/collect.sh"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "skill:release-notes",
+      "kind": "skill",
+      "agent": "goose",
+      "status": "compiled",
+      "files": [
+        ".agents/skills/release-notes/SKILL.md",
+        ".agents/skills/release-notes/references/template.md",
+        ".agents/skills/release-notes/scripts/collect.sh"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "command:fix-issue",
+      "kind": "command",
+      "agent": "claude_code",
+      "status": "compiled",
+      "files": [
+        ".claude/commands/fix-issue.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "command:fix-issue",
+      "kind": "command",
+      "agent": "codex",
+      "status": "not_expressible",
+      "files": [],
+      "detail": "Codex reads custom prompts only from ~/.codex/prompts, and they are deprecated in favor of skills; it has no project commands."
+    },
+    {
+      "item": "command:fix-issue",
+      "kind": "command",
+      "agent": "cursor",
+      "status": "partial",
+      "files": [
+        ".cursor/skills/fix-issue/SKILL.md"
+      ],
+      "detail": "Cursor runs commands as skills, which have no documented argument placeholder: $ARGUMENTS reaches the model as written."
+    },
+    {
+      "item": "command:fix-issue",
+      "kind": "command",
+      "agent": "copilot",
+      "status": "partial",
+      "files": [
+        ".github/prompts/fix-issue.prompt.md"
+      ],
+      "detail": "Prompt files run in VS Code only; the Copilot CLI runs it from .claude/commands; the cloud agent has no slash commands."
+    },
+    {
+      "item": "command:fix-issue",
+      "kind": "command",
+      "agent": "gemini",
+      "status": "compiled",
+      "files": [
+        ".gemini/commands/fix-issue.toml"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "command:fix-issue",
+      "kind": "command",
+      "agent": "opencode",
+      "status": "compiled",
+      "files": [
+        ".opencode/commands/fix-issue.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "command:fix-issue",
+      "kind": "command",
+      "agent": "goose",
+      "status": "not_expressible",
+      "files": [],
+      "detail": "Goose maps slash commands to recipes only in each person's config.yaml; it has no project commands."
+    },
+    {
+      "item": "command:standup",
+      "kind": "command",
+      "agent": "claude_code",
+      "status": "compiled",
+      "files": [
+        ".claude/commands/standup.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "command:standup",
+      "kind": "command",
+      "agent": "codex",
+      "status": "not_expressible",
+      "files": [],
+      "detail": "Codex reads custom prompts only from ~/.codex/prompts, and they are deprecated in favor of skills; it has no project commands."
+    },
+    {
+      "item": "command:standup",
+      "kind": "command",
+      "agent": "cursor",
+      "status": "compiled",
+      "files": [
+        ".cursor/skills/standup/SKILL.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "command:standup",
+      "kind": "command",
+      "agent": "copilot",
+      "status": "partial",
+      "files": [
+        ".github/prompts/standup.prompt.md"
+      ],
+      "detail": "Prompt files run in VS Code only; the Copilot CLI runs it from .claude/commands; the cloud agent has no slash commands."
+    },
+    {
+      "item": "command:standup",
+      "kind": "command",
+      "agent": "gemini",
+      "status": "compiled",
+      "files": [
+        ".gemini/commands/standup.toml"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "command:standup",
+      "kind": "command",
+      "agent": "opencode",
+      "status": "compiled",
+      "files": [
+        ".opencode/commands/standup.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "command:standup",
+      "kind": "command",
+      "agent": "goose",
+      "status": "not_expressible",
+      "files": [],
+      "detail": "Goose maps slash commands to recipes only in each person's config.yaml; it has no project commands."
+    },
+    {
+      "item": "agent:migrator",
+      "kind": "agent",
+      "agent": "claude_code",
+      "status": "compiled",
+      "files": [
+        ".claude/agents/migrator.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "agent:migrator",
+      "kind": "agent",
+      "agent": "codex",
+      "status": "partial",
+      "files": [
+        ".codex/agents/migrator.toml"
+      ],
+      "detail": "Codex subagents take their tools and sandbox from the parent session, so tools is not compiled."
+    },
+    {
+      "item": "agent:migrator",
+      "kind": "agent",
+      "agent": "cursor",
+      "status": "not_applicable",
+      "files": [
+        ".claude/agents/migrator.md",
+        ".codex/agents/migrator.toml"
+      ],
+      "detail": "Only for Claude Code, Codex, Copilot and OpenCode, but Cursor reads it in .claude/agents/migrator.md and .codex/agents/migrator.toml."
+    },
+    {
+      "item": "agent:migrator",
+      "kind": "agent",
+      "agent": "copilot",
+      "status": "partial",
+      "files": [
+        ".github/agents/migrator.agent.md"
+      ],
+      "detail": "Copilot grants tools by alias (read, edit, execute and github/create_pull_request), which can cover more tools than the list names."
+    },
+    {
+      "item": "agent:migrator",
+      "kind": "agent",
+      "agent": "gemini",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Claude Code, Codex, Copilot and OpenCode."
+    },
+    {
+      "item": "agent:migrator",
+      "kind": "agent",
+      "agent": "opencode",
+      "status": "partial",
+      "files": [
+        ".opencode/agents/migrator.md"
+      ],
+      "detail": "OpenCode turns off the read, write, edit, patch, bash, grep, glob, list, webfetch, todowrite and todoread tools the list leaves out; its other tools stay on."
+    },
+    {
+      "item": "agent:migrator",
+      "kind": "agent",
+      "agent": "goose",
+      "status": "not_applicable",
+      "files": [
+        ".claude/agents/migrator.md"
+      ],
+      "detail": "Only for Claude Code, Codex, Copilot and OpenCode, but Goose reads it in .claude/agents/migrator.md."
+    },
+    {
+      "item": "agent:reviewer",
+      "kind": "agent",
+      "agent": "claude_code",
+      "status": "compiled",
+      "files": [
+        ".claude/agents/reviewer.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "agent:reviewer",
+      "kind": "agent",
+      "agent": "codex",
+      "status": "partial",
+      "files": [
+        ".codex/agents/reviewer.toml"
+      ],
+      "detail": "Codex subagents take their tools and sandbox from the parent session, so tools is not compiled."
+    },
+    {
+      "item": "agent:reviewer",
+      "kind": "agent",
+      "agent": "cursor",
+      "status": "partial",
+      "files": [
+        ".cursor/agents/reviewer.md"
+      ],
+      "detail": "Cursor subagents have no tool list: readonly: true keeps it to reading, with every read tool."
+    },
+    {
+      "item": "agent:reviewer",
+      "kind": "agent",
+      "agent": "copilot",
+      "status": "partial",
+      "files": [
+        ".github/agents/reviewer.agent.md"
+      ],
+      "detail": "Copilot grants tools by alias (read and search), which can cover more tools than the list names."
+    },
+    {
+      "item": "agent:reviewer",
+      "kind": "agent",
+      "agent": "gemini",
+      "status": "partial",
+      "files": [
+        ".gemini/agents/reviewer.md"
+      ],
+      "detail": "selfhost does not map tool names to Gemini CLI's, so the subagent gets every tool."
+    },
+    {
+      "item": "agent:reviewer",
+      "kind": "agent",
+      "agent": "opencode",
+      "status": "partial",
+      "files": [
+        ".opencode/agents/reviewer.md"
+      ],
+      "detail": "OpenCode turns off the read, write, edit, patch, bash, grep, glob, list, webfetch, todowrite and todoread tools the list leaves out; its other tools stay on."
+    },
+    {
+      "item": "agent:reviewer",
+      "kind": "agent",
+      "agent": "goose",
+      "status": "partial",
+      "files": [
+        ".agents/agents/reviewer.md"
+      ],
+      "detail": "Goose subagents have no tool list, so it gets every tool."
+    },
+    {
+      "item": "mcp:docs",
+      "kind": "mcp",
+      "agent": "claude_code",
+      "status": "compiled",
+      "files": [
+        ".mcp.json"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "mcp:docs",
+      "kind": "mcp",
+      "agent": "codex",
+      "status": "compiled",
+      "files": [
+        ".codex/config.toml"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "mcp:docs",
+      "kind": "mcp",
+      "agent": "cursor",
+      "status": "compiled",
+      "files": [
+        ".cursor/mcp.json"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "mcp:docs",
+      "kind": "mcp",
+      "agent": "copilot",
+      "status": "partial",
+      "files": [
+        ".mcp.json"
+      ],
+      "detail": "The Copilot CLI and VS Code read .mcp.json; the cloud agent takes MCP servers only from the repository's Copilot settings on GitHub."
+    },
+    {
+      "item": "mcp:docs",
+      "kind": "mcp",
+      "agent": "gemini",
+      "status": "compiled",
+      "files": [
+        ".gemini/settings.json"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "mcp:docs",
+      "kind": "mcp",
+      "agent": "opencode",
+      "status": "compiled",
+      "files": [
+        "opencode.json"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "mcp:docs",
+      "kind": "mcp",
+      "agent": "goose",
+      "status": "not_expressible",
+      "files": [],
+      "detail": "Goose reads MCP extensions only from each person's ~/.config/goose/config.yaml; selfhost agents configure --agent goose --mcp <name>=<command> writes it there."
+    },
+    {
+      "item": "mcp:github",
+      "kind": "mcp",
+      "agent": "claude_code",
+      "status": "compiled",
+      "files": [
+        ".mcp.json"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "mcp:github",
+      "kind": "mcp",
+      "agent": "codex",
+      "status": "compiled",
+      "files": [
+        ".codex/config.toml"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "mcp:github",
+      "kind": "mcp",
+      "agent": "cursor",
+      "status": "compiled",
+      "files": [
+        ".cursor/mcp.json"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "mcp:github",
+      "kind": "mcp",
+      "agent": "copilot",
+      "status": "partial",
+      "files": [
+        ".mcp.json"
+      ],
+      "detail": "The Copilot CLI and VS Code read .mcp.json; the cloud agent takes MCP servers only from the repository's Copilot settings on GitHub."
+    },
+    {
+      "item": "mcp:github",
+      "kind": "mcp",
+      "agent": "gemini",
+      "status": "compiled",
+      "files": [
+        ".gemini/settings.json"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "mcp:github",
+      "kind": "mcp",
+      "agent": "opencode",
+      "status": "compiled",
+      "files": [
+        "opencode.json"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "mcp:github",
+      "kind": "mcp",
+      "agent": "goose",
+      "status": "not_expressible",
+      "files": [],
+      "detail": "Goose reads MCP extensions only from each person's ~/.config/goose/config.yaml; selfhost agents configure --agent goose --mcp <name>=<command> writes it there."
+    },
+    {
+      "item": "mcp:tickets",
+      "kind": "mcp",
+      "agent": "claude_code",
+      "status": "compiled",
+      "files": [
+        ".mcp.json"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "mcp:tickets",
+      "kind": "mcp",
+      "agent": "codex",
+      "status": "not_expressible",
+      "files": [],
+      "detail": "Codex connects to stdio and streamable HTTP servers only, not SSE."
+    },
+    {
+      "item": "mcp:tickets",
+      "kind": "mcp",
+      "agent": "cursor",
+      "status": "partial",
+      "files": [
+        ".cursor/mcp.json"
+      ],
+      "detail": "Cursor has no default values for environment variables, so the :- defaults are left out."
+    },
+    {
+      "item": "mcp:tickets",
+      "kind": "mcp",
+      "agent": "copilot",
+      "status": "not_applicable",
+      "files": [
+        ".mcp.json"
+      ],
+      "detail": "Only for Claude Code, Codex, Cursor, Gemini CLI and OpenCode, but Copilot reads it in .mcp.json."
+    },
+    {
+      "item": "mcp:tickets",
+      "kind": "mcp",
+      "agent": "gemini",
+      "status": "compiled",
+      "files": [
+        ".gemini/settings.json"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "mcp:tickets",
+      "kind": "mcp",
+      "agent": "opencode",
+      "status": "not_expressible",
+      "files": [],
+      "detail": "OpenCode connects to stdio and streamable HTTP servers only, not SSE."
+    },
+    {
+      "item": "mcp:tickets",
+      "kind": "mcp",
+      "agent": "goose",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Claude Code, Codex, Cursor, Gemini CLI and OpenCode."
+    }
+  ]
+}

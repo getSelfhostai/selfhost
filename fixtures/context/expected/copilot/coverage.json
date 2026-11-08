@@ -1,0 +1,171 @@
+{
+  "schema": "selfhost.context_coverage/v1",
+  "agents": [
+    {
+      "agent": "copilot",
+      "docs": [
+        "https://docs.github.com/en/copilot/how-tos/configure-custom-instructions/add-repository-instructions",
+        "https://docs.github.com/en/copilot/reference/custom-instructions-support",
+        "https://docs.github.com/en/copilot/concepts/agents/about-agent-skills",
+        "https://code.visualstudio.com/docs/agent-customization/prompt-files",
+        "https://docs.github.com/en/copilot/reference/custom-agents-configuration",
+        "https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-mcp-servers"
+      ],
+      "notes": []
+    }
+  ],
+  "items": [
+    {
+      "item": "rule:api",
+      "kind": "rule",
+      "agent": "copilot",
+      "status": "compiled",
+      "files": [
+        ".github/instructions/api.instructions.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "rule:claude-memory",
+      "kind": "rule",
+      "agent": "copilot",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Claude Code."
+    },
+    {
+      "item": "rule:codex-sandbox",
+      "kind": "rule",
+      "agent": "copilot",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Codex."
+    },
+    {
+      "item": "rule:copilot-review",
+      "kind": "rule",
+      "agent": "copilot",
+      "status": "compiled",
+      "files": [
+        "AGENTS.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "rule:cursor-tabs",
+      "kind": "rule",
+      "agent": "copilot",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Cursor."
+    },
+    {
+      "item": "rule:goose-hints",
+      "kind": "rule",
+      "agent": "copilot",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Goose."
+    },
+    {
+      "item": "rule:style",
+      "kind": "rule",
+      "agent": "copilot",
+      "status": "compiled",
+      "files": [
+        "AGENTS.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "skill:db-migrate",
+      "kind": "skill",
+      "agent": "copilot",
+      "status": "partial",
+      "files": [
+        ".agents/skills/db-migrate/SKILL.md"
+      ],
+      "detail": "VS Code sessions on the Copilot harness read skills only from .github/skills; the cloud agent, the CLI and local VS Code sessions read .agents/skills."
+    },
+    {
+      "item": "skill:release-notes",
+      "kind": "skill",
+      "agent": "copilot",
+      "status": "partial",
+      "files": [
+        ".agents/skills/release-notes/SKILL.md",
+        ".agents/skills/release-notes/references/template.md",
+        ".agents/skills/release-notes/scripts/collect.sh"
+      ],
+      "detail": "VS Code sessions on the Copilot harness read skills only from .github/skills; the cloud agent, the CLI and local VS Code sessions read .agents/skills."
+    },
+    {
+      "item": "command:fix-issue",
+      "kind": "command",
+      "agent": "copilot",
+      "status": "partial",
+      "files": [
+        ".github/prompts/fix-issue.prompt.md"
+      ],
+      "detail": "Prompt files run in VS Code only; the Copilot CLI reads commands only from .claude/commands, which this compile does not write; the cloud agent has no slash commands."
+    },
+    {
+      "item": "command:standup",
+      "kind": "command",
+      "agent": "copilot",
+      "status": "partial",
+      "files": [
+        ".github/prompts/standup.prompt.md"
+      ],
+      "detail": "Prompt files run in VS Code only; the Copilot CLI reads commands only from .claude/commands, which this compile does not write; the cloud agent has no slash commands."
+    },
+    {
+      "item": "agent:migrator",
+      "kind": "agent",
+      "agent": "copilot",
+      "status": "partial",
+      "files": [
+        ".github/agents/migrator.agent.md"
+      ],
+      "detail": "Copilot grants tools by alias (read, edit, execute and github/create_pull_request), which can cover more tools than the list names."
+    },
+    {
+      "item": "agent:reviewer",
+      "kind": "agent",
+      "agent": "copilot",
+      "status": "partial",
+      "files": [
+        ".github/agents/reviewer.agent.md"
+      ],
+      "detail": "Copilot grants tools by alias (read and search), which can cover more tools than the list names."
+    },
+    {
+      "item": "mcp:docs",
+      "kind": "mcp",
+      "agent": "copilot",
+      "status": "partial",
+      "files": [
+        ".mcp.json"
+      ],
+      "detail": "The Copilot CLI and VS Code read .mcp.json; the cloud agent takes MCP servers only from the repository's Copilot settings on GitHub."
+    },
+    {
+      "item": "mcp:github",
+      "kind": "mcp",
+      "agent": "copilot",
+      "status": "partial",
+      "files": [
+        ".mcp.json"
+      ],
+      "detail": "The Copilot CLI and VS Code read .mcp.json; the cloud agent takes MCP servers only from the repository's Copilot settings on GitHub."
+    },
+    {
+      "item": "mcp:tickets",
+      "kind": "mcp",
+      "agent": "copilot",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Claude Code, Codex, Cursor, Gemini CLI and OpenCode."
+    }
+  ]
+}

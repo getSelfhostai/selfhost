@@ -59,6 +59,22 @@ export async function runRuler(
   vendors: readonly CompileVendor[],
   options: RulerOptions = {},
 ): Promise<string[]> {
+  return runRulerAgents(
+    root,
+    vendors.map((vendor) => RULER_AGENTS[vendor]),
+    options,
+  );
+}
+
+/**
+ * runRuler for Ruler's own agent ids (claude, codex, copilot, cursor, gemini-cli, goose,
+ * opencode, ...), for callers that write rules files for agents beyond the policy vendors.
+ */
+export async function runRulerAgents(
+  root: string,
+  agents: readonly string[],
+  options: RulerOptions = {},
+): Promise<string[]> {
   const ruler = await import("@intellectronica/ruler");
   // Ruler is CommonJS: a bundled CLI gets it back as the default export.
   const { applyAllAgentConfigs } =
@@ -79,7 +95,7 @@ export async function runRuler(
   try {
     await applyAllAgentConfigs(
       root,
-      vendors.map((vendor) => RULER_AGENTS[vendor]),
+      [...agents],
       undefined, // config path: root/.ruler/ruler.toml
       false, // MCP
       undefined, // MCP strategy

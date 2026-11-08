@@ -80,3 +80,66 @@ export const PolicyCoverageSchema = Type.Object(
 export type RuleCoverage = Static<typeof RuleCoverageSchema>;
 export type VendorCoverage = Static<typeof VendorCoverageSchema>;
 export type PolicyCoverage = Static<typeof PolicyCoverageSchema>;
+
+/**
+ * Agents `selfhost context compile` writes repository context files for: rules, skills,
+ * commands, subagents and MCP servers from .selfhost/context.
+ */
+export const CONTEXT_AGENTS = [
+  "claude_code",
+  "codex",
+  "cursor",
+  "copilot",
+  "gemini",
+  "opencode",
+  "goose",
+] as const;
+
+/** What a .selfhost/context item is: a rule, a skill, a slash command, a subagent or an MCP server. */
+export const CONTEXT_ITEM_KINDS = ["rule", "skill", "command", "agent", "mcp"] as const;
+
+export type ContextAgent = (typeof CONTEXT_AGENTS)[number];
+export type ContextItemKind = (typeof CONTEXT_ITEM_KINDS)[number];
+
+export const ContextItemCoverageSchema = Type.Object(
+  {
+    item: Type.String({ description: "Item id: kind and name, like rule:style or skill:review." }),
+    kind: StringEnum(CONTEXT_ITEM_KINDS),
+    agent: StringEnum(CONTEXT_AGENTS),
+    status: StringEnum(COVERAGE_STATUSES, {
+      description:
+        "compiled: the agent loads the item as written. partial: some of it. not_expressible: the agent has no place for it. not_applicable: the item is not for this agent.",
+    }),
+    files: Type.Array(Type.String(), {
+      description: "Repository files that carry the item for this agent.",
+    }),
+    detail: Type.String({ description: "Why, and what is left out." }),
+  },
+  { additionalProperties: false, title: "ContextItemCoverage" },
+);
+
+export const ContextAgentCoverageSchema = Type.Object(
+  {
+    agent: StringEnum(CONTEXT_AGENTS),
+    docs: Type.Array(Type.String(), { description: "Vendor docs the mapping follows." }),
+    notes: Type.Array(Type.String(), {
+      description: "What else the agent reads, and conditions for loading the files.",
+    }),
+  },
+  { additionalProperties: false, title: "ContextAgentCoverage" },
+);
+
+export const ContextCoverageSchema = Type.Object(
+  {
+    schema: Type.Literal("selfhost.context_coverage/v1"),
+    agents: Type.Array(ContextAgentCoverageSchema),
+    items: Type.Array(ContextItemCoverageSchema, {
+      description: "One entry per item and agent, in item order then agent order.",
+    }),
+  },
+  { additionalProperties: false, title: "ContextCoverage" },
+);
+
+export type ContextItemCoverage = Static<typeof ContextItemCoverageSchema>;
+export type ContextAgentCoverage = Static<typeof ContextAgentCoverageSchema>;
+export type ContextCoverage = Static<typeof ContextCoverageSchema>;

@@ -10,6 +10,7 @@ import {
 import { registerAlerts } from "./alerts/commands.js";
 import { registerBrief } from "./brief.js";
 import { defaultConfigPath } from "./config-file.js";
+import { registerContext } from "./context/commands.js";
 import { registerDecisions } from "./decisions.js";
 import { doctor } from "./doctor.js";
 import { registerGuard } from "./guard/commands.js";
@@ -347,6 +348,12 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       configPath: deps.configPath ?? defaultConfigPath(),
       fetch: deps.fetch,
     }),
+    fail,
+  );
+
+  registerContext(
+    program,
+    () => ({ env: deps.env, cwd: deps.cwd, write: deps.write, setExitCode: deps.setExitCode }),
     fail,
   );
 

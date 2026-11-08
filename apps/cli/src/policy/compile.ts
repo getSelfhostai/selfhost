@@ -9,6 +9,7 @@ import {
   RULER_SOURCE,
 } from "@selfhost/compile";
 import { handWrittenRulesFiles, runRuler } from "@selfhost/compile/ruler";
+import { applyContextPlan, buildContext, CONTEXT_DIR } from "@selfhost/context";
 import {
   COMPILE_VENDORS,
   type CompileVendor,
@@ -305,6 +306,7 @@ async function writeRules(
       message: "Not in a git repository, so no rules files were written.",
     };
   }
+  if (existsSync(join(root, CONTEXT_DIR))) return writeRulesWithContext(root, result.rules.content);
   const handWritten = handWrittenRulesFiles(root);
   if (handWritten.length > 0) {
     return {
@@ -324,6 +326,41 @@ async function writeRules(
     root,
     written: true,
     message: `Wrote ${RULER_SOURCE}; Ruler then wrote ${changed.length > 0 ? changed.join(", ") : "nothing new"}.`,
+  };
+}
+
+/**
+ * In a repository with .selfhost/context, `selfhost context compile` owns the rules files and
+ * puts .ruler/ in them: the policy text goes to .ruler/ and the context compile writes the
+ * files, so neither compile undoes the other.
+ */
+async function writeRulesWithContext(root: string, text: string): Promise<ApplyReport["rules"]> {
+  const source = join(root, RULER_SOURCE);
+  mkdirSync(dirname(source), { recursive: true });
+  writeFileSync(source, text);
+  const built = await buildContext(root);
+  if (!built.ok) {
+    return {
+      root,
+      written: false,
+      message: `Wrote ${RULER_SOURCE}, but ${CONTEXT_DIR} has problems, so no rules file was written. Run selfhost context compile to see them.`,
+    };
+  }
+  if (built.plan.conflicts.length > 0) {
+    return {
+      root,
+      written: false,
+      message: `Wrote ${RULER_SOURCE}; selfhost context compile would replace files it did not write, so nothing else was written. Run it to see which.`,
+    };
+  }
+  applyContextPlan(root, built.plan);
+  const changed = built.plan.files
+    .filter((file) => file.action !== "unchanged")
+    .map((file) => file.path);
+  return {
+    root,
+    written: true,
+    message: `Wrote ${RULER_SOURCE}; selfhost context compile then wrote ${changed.length > 0 ? changed.join(", ") : "nothing new"}.`,
   };
 }
 

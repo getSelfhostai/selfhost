@@ -1,0 +1,169 @@
+{
+  "schema": "selfhost.context_coverage/v1",
+  "agents": [
+    {
+      "agent": "cursor",
+      "docs": [
+        "https://cursor.com/docs/context/rules",
+        "https://cursor.com/docs/context/skills",
+        "https://cursor.com/docs/context/subagents",
+        "https://cursor.com/docs/context/mcp"
+      ],
+      "notes": []
+    }
+  ],
+  "items": [
+    {
+      "item": "rule:api",
+      "kind": "rule",
+      "agent": "cursor",
+      "status": "compiled",
+      "files": [
+        ".cursor/rules/api.mdc"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "rule:claude-memory",
+      "kind": "rule",
+      "agent": "cursor",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Claude Code."
+    },
+    {
+      "item": "rule:codex-sandbox",
+      "kind": "rule",
+      "agent": "cursor",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Codex."
+    },
+    {
+      "item": "rule:copilot-review",
+      "kind": "rule",
+      "agent": "cursor",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Copilot."
+    },
+    {
+      "item": "rule:cursor-tabs",
+      "kind": "rule",
+      "agent": "cursor",
+      "status": "compiled",
+      "files": [
+        "AGENTS.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "rule:goose-hints",
+      "kind": "rule",
+      "agent": "cursor",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Goose."
+    },
+    {
+      "item": "rule:style",
+      "kind": "rule",
+      "agent": "cursor",
+      "status": "compiled",
+      "files": [
+        "AGENTS.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "skill:db-migrate",
+      "kind": "skill",
+      "agent": "cursor",
+      "status": "partial",
+      "files": [
+        ".agents/skills/db-migrate/SKILL.md"
+      ],
+      "detail": "Cursor does not read allowed-tools, so the skill runs without it."
+    },
+    {
+      "item": "skill:release-notes",
+      "kind": "skill",
+      "agent": "cursor",
+      "status": "compiled",
+      "files": [
+        ".agents/skills/release-notes/SKILL.md",
+        ".agents/skills/release-notes/references/template.md",
+        ".agents/skills/release-notes/scripts/collect.sh"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "command:fix-issue",
+      "kind": "command",
+      "agent": "cursor",
+      "status": "partial",
+      "files": [
+        ".cursor/skills/fix-issue/SKILL.md"
+      ],
+      "detail": "Cursor runs commands as skills, which have no documented argument placeholder: $ARGUMENTS reaches the model as written."
+    },
+    {
+      "item": "command:standup",
+      "kind": "command",
+      "agent": "cursor",
+      "status": "compiled",
+      "files": [
+        ".cursor/skills/standup/SKILL.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "agent:migrator",
+      "kind": "agent",
+      "agent": "cursor",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Claude Code, Codex, Copilot and OpenCode."
+    },
+    {
+      "item": "agent:reviewer",
+      "kind": "agent",
+      "agent": "cursor",
+      "status": "partial",
+      "files": [
+        ".cursor/agents/reviewer.md"
+      ],
+      "detail": "Cursor subagents have no tool list: readonly: true keeps it to reading, with every read tool."
+    },
+    {
+      "item": "mcp:docs",
+      "kind": "mcp",
+      "agent": "cursor",
+      "status": "compiled",
+      "files": [
+        ".cursor/mcp.json"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "mcp:github",
+      "kind": "mcp",
+      "agent": "cursor",
+      "status": "compiled",
+      "files": [
+        ".cursor/mcp.json"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "mcp:tickets",
+      "kind": "mcp",
+      "agent": "cursor",
+      "status": "partial",
+      "files": [
+        ".cursor/mcp.json"
+      ],
+      "detail": "Cursor has no default values for environment variables, so the :- defaults are left out."
+    }
+  ]
+}

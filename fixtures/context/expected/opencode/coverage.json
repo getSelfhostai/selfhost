@@ -1,0 +1,171 @@
+{
+  "schema": "selfhost.context_coverage/v1",
+  "agents": [
+    {
+      "agent": "opencode",
+      "docs": [
+        "https://opencode.ai/docs/instructions/",
+        "https://opencode.ai/docs/skills/",
+        "https://opencode.ai/docs/commands/",
+        "https://opencode.ai/docs/agents/",
+        "https://opencode.ai/docs/mcp-servers/",
+        "https://opencode.ai/docs/migrate-v1/"
+      ],
+      "notes": [
+        "MCP servers and subagent tools use OpenCode's 1.x layout (mcp.<name>, tools), which OpenCode 2 also reads."
+      ]
+    }
+  ],
+  "items": [
+    {
+      "item": "rule:api",
+      "kind": "rule",
+      "agent": "opencode",
+      "status": "partial",
+      "files": [
+        "AGENTS.md"
+      ],
+      "detail": "OpenCode has no path-scoped instructions, so AGENTS.md carries the rule for every file, with its globs written out."
+    },
+    {
+      "item": "rule:claude-memory",
+      "kind": "rule",
+      "agent": "opencode",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Claude Code."
+    },
+    {
+      "item": "rule:codex-sandbox",
+      "kind": "rule",
+      "agent": "opencode",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Codex."
+    },
+    {
+      "item": "rule:copilot-review",
+      "kind": "rule",
+      "agent": "opencode",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Copilot."
+    },
+    {
+      "item": "rule:cursor-tabs",
+      "kind": "rule",
+      "agent": "opencode",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Cursor."
+    },
+    {
+      "item": "rule:goose-hints",
+      "kind": "rule",
+      "agent": "opencode",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Goose."
+    },
+    {
+      "item": "rule:style",
+      "kind": "rule",
+      "agent": "opencode",
+      "status": "compiled",
+      "files": [
+        "AGENTS.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "skill:db-migrate",
+      "kind": "skill",
+      "agent": "opencode",
+      "status": "partial",
+      "files": [
+        ".agents/skills/db-migrate/SKILL.md"
+      ],
+      "detail": "OpenCode does not read allowed-tools, so the skill runs without it."
+    },
+    {
+      "item": "skill:release-notes",
+      "kind": "skill",
+      "agent": "opencode",
+      "status": "compiled",
+      "files": [
+        ".agents/skills/release-notes/SKILL.md",
+        ".agents/skills/release-notes/references/template.md",
+        ".agents/skills/release-notes/scripts/collect.sh"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "command:fix-issue",
+      "kind": "command",
+      "agent": "opencode",
+      "status": "compiled",
+      "files": [
+        ".opencode/commands/fix-issue.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "command:standup",
+      "kind": "command",
+      "agent": "opencode",
+      "status": "compiled",
+      "files": [
+        ".opencode/commands/standup.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "agent:migrator",
+      "kind": "agent",
+      "agent": "opencode",
+      "status": "partial",
+      "files": [
+        ".opencode/agents/migrator.md"
+      ],
+      "detail": "OpenCode turns off the read, write, edit, patch, bash, grep, glob, list, webfetch, todowrite and todoread tools the list leaves out; its other tools stay on."
+    },
+    {
+      "item": "agent:reviewer",
+      "kind": "agent",
+      "agent": "opencode",
+      "status": "partial",
+      "files": [
+        ".opencode/agents/reviewer.md"
+      ],
+      "detail": "OpenCode turns off the read, write, edit, patch, bash, grep, glob, list, webfetch, todowrite and todoread tools the list leaves out; its other tools stay on."
+    },
+    {
+      "item": "mcp:docs",
+      "kind": "mcp",
+      "agent": "opencode",
+      "status": "compiled",
+      "files": [
+        "opencode.json"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "mcp:github",
+      "kind": "mcp",
+      "agent": "opencode",
+      "status": "compiled",
+      "files": [
+        "opencode.json"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "mcp:tickets",
+      "kind": "mcp",
+      "agent": "opencode",
+      "status": "not_expressible",
+      "files": [],
+      "detail": "OpenCode connects to stdio and streamable HTTP servers only, not SSE."
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "name": "@selfhost/context",
+  "version": "0.0.0",
+  "private": true,
+  "description": "One repository context source (rules, skills, commands, subagents, MCP servers) in .selfhost/context, compiled into each coding agent's own files with honest coverage.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@selfhost/agents": "workspace:*",
+    "@selfhost/compile": "workspace:*",
+    "@selfhost/schema": "workspace:*",
+    "@sinclair/typebox": "catalog:",
+    "semver": "catalog:",
+    "smol-toml": "catalog:",
+    "yaml": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/semver": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

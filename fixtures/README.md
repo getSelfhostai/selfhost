@@ -16,6 +16,7 @@ Test inputs for the session importers, hook ingest, ledger source mappers and re
 | `redaction/` | Planted fake secrets and an example.com email. The files hold `{{kind}}` placeholders and `manifest.json` keeps each value in parts; `planted.ts` joins them at test time, so the repository carries no key-shaped string. |
 | `markers/` | One Claude Code session and one Codex rollout with marker strings planted in prompts, replies, reasoning, code, commands, tool output and commit messages. `selfhost scan` must print none of them. `manifest.json` lists every marker. |
 | `compile/` | `selfhost.toml` with one rule for each way a rule compiles, and per vendor config version (`<vendor>/<version>/`) the files `packages/compile` writes from it plus `coverage.json` and `install.json`. `rules/<ruler version>/` holds the `AGENTS.md` and `CLAUDE.md` Ruler writes from the policy text, saved as `.out` files. |
+| `context/` | `repo/`: a `.selfhost/context` source with every kind of item (rules for all agents, scoped and limited to one agent, two skills with a script and a template, two commands, two subagents, stdio, HTTP and SSE MCP servers) and a `.ruler/` rule. `expected/<agent>/` and `expected/all/` hold what `packages/context` compiles it to for one agent and for all of them, plus `coverage.json`; files git often ignores locally keep a `.out` suffix (`CLAUDE.md.out`, `.claude.out/`). |
 | `guardrails/` | `selfhost.toml` and `cases.json`: tool calls (shell commands, file reads and writes, MCP calls) with the verdict and rule each must get from the pre-tool check. Tests in `packages/policy` replay them as agent-neutral calls and tests in `apps/cli` through every agent's own pre-tool payload and `selfhost hook`, so each agent reaches the same decision. `{workspace}` and `{home}` are filled with temporary folders. |
 | `expected/` | ccusage daily totals for the session fixtures. |
 | `cloud/` | Hetzner Cloud and DigitalOcean API responses for `selfhost up`, from the examples in each provider's published OpenAPI document. `manifest.json` names the source of each file. |
@@ -61,6 +62,9 @@ git diff fixtures/compile
 Bumping the pinned Ruler in `pnpm-workspace.yaml` needs `RULER_VERSION` changed to match; the
 same command writes `compile/rules/<new version>/`, and the old folder is deleted by hand. A
 vendor version dropped from `VENDOR_VERSIONS` loses its folder the same way.
+
+Context golden files work the same way: `UPDATE_GOLDEN=1 pnpm --filter @selfhost/context test`
+rewrites `context/expected/`, then review `git diff fixtures/context`.
 
 ## Capture real sessions
 

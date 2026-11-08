@@ -1,0 +1,12 @@
+# >>> selfhost context >>>
+# Compiled by selfhost from .selfhost/context/mcp.json. Edits inside this block are replaced: change the source, then run selfhost context compile.
+[mcp_servers.docs]
+command = "npx"
+args = ["-y", "@acme/docs-mcp"]
+env = { DOCS_REGION = "eu" }
+env_vars = ["DOCS_TOKEN"]
+
+[mcp_servers.github]
+url = "https://api.githubcopilot.com/mcp/"
+bearer_token_env_var = "GITHUB_TOKEN"
+# <<< selfhost context <<<

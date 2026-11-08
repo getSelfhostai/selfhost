@@ -1,0 +1,226 @@
+import {
+  CONTEXT_AGENTS,
+  type ContextAgent,
+  ContextCoverageSchema,
+  createValidator,
+} from "@selfhost/schema";
+import { describe, expect, it } from "vitest";
+import {
+  buildLock,
+  type CompileResult,
+  ContextLockSchema,
+  compileContext,
+  HEADER_MARK,
+  itemsOf,
+  readContextSource,
+  readersOf,
+  writeContextItem,
+} from "../src/index.js";
+import type { ContextSource, RulerFile } from "../src/types.js";
+import { FIXTURE_REPO, temp } from "./helpers.js";
+
+function fixture(): { source: ContextSource; ruler: RulerFile[] } {
+  const read = readContextSource(FIXTURE_REPO);
+  if (!read.ok) throw new Error(JSON.stringify(read.errors));
+  return read;
+}
+
+async function compileAll(agents?: readonly ContextAgent[]): Promise<CompileResult> {
+  const { source, ruler } = fixture();
+  return compileContext(source, { agents, ruler });
+}
+
+function entry(result: CompileResult, item: string, agent: ContextAgent) {
+  const found = result.coverage.items.find(
+    (candidate) => candidate.item === item && candidate.agent === agent,
+  );
+  if (!found) throw new Error(`no coverage for ${item} on ${agent}`);
+  return found;
+}
+
+function text(result: CompileResult, path: string): string {
+  const file = result.files.find((candidate) => candidate.path === path);
+  if (file?.content.kind !== "text") throw new Error(`no text file ${path}`);
+  return file.content.text;
+}
+
+describe("compileContext coverage", () => {
+  it("has one entry per item and agent, and validates against the schema", async () => {
+    const result = await compileAll();
+    const items = itemsOf(fixture().source);
+    expect(result.coverage.items).toHaveLength(items.length * CONTEXT_AGENTS.length);
+    expect(createValidator(ContextCoverageSchema).validate(result.coverage).ok).toBe(true);
+    const lock = buildLock(fixture().source, result);
+    expect(createValidator(ContextLockSchema).validate(lock).ok).toBe(true);
+  });
+
+  it("never reports an item compiled unless the agent loads a file that carries it", async () => {
+    const result = await compileAll();
+    const paths = new Set(result.files.map((file) => file.path));
+    for (const entry of result.coverage.items) {
+      const where = `${entry.item} on ${entry.agent}`;
+      if (entry.status === "compiled" || entry.status === "partial") {
+        expect(entry.files.length, where).toBeGreaterThan(0);
+        for (const file of entry.files) {
+          expect(paths.has(file), `${where}: ${file}`).toBe(true);
+          expect(readersOf(file), `${where}: ${file}`).toContain(entry.agent);
+        }
+      }
+      if (entry.status === "not_expressible") expect(entry.files, where).toEqual([]);
+      if (entry.status === "partial" || entry.status === "not_expressible") {
+        expect(entry.detail, where).not.toBe("");
+      }
+    }
+  });
+
+  it("lists what an agent can't express instead of compiling it", async () => {
+    const result = await compileAll();
+    expect(entry(result, "command:fix-issue", "codex")).toMatchObject({
+      status: "not_expressible",
+      detail: expect.stringContaining("no project commands"),
+    });
+    expect(entry(result, "command:fix-issue", "goose").status).toBe("not_expressible");
+    expect(entry(result, "mcp:docs", "goose").status).toBe("not_expressible");
+    expect(entry(result, "mcp:tickets", "codex").detail).toContain("not SSE");
+    expect(entry(result, "mcp:tickets", "opencode").status).toBe("not_expressible");
+    // A skill whose keys an agent ignores is partial, with the keys named.
+    expect(entry(result, "skill:db-migrate", "codex")).toMatchObject({
+      status: "partial",
+      detail: expect.stringContaining("allowed-tools and disable-model-invocation"),
+    });
+    expect(entry(result, "skill:db-migrate", "claude_code").status).toBe("compiled");
+    // A subagent's tool list an agent can't hold is partial.
+    expect(entry(result, "agent:reviewer", "goose").status).toBe("partial");
+    expect(entry(result, "agent:reviewer", "claude_code").status).toBe("compiled");
+  });
+
+  it("says which agents read an item that is not for them", async () => {
+    const result = await compileAll();
+    expect(entry(result, "rule:codex-sandbox", "cursor")).toMatchObject({
+      status: "not_applicable",
+      files: ["AGENTS.md"],
+      detail: "Only for Codex, but Cursor reads it in AGENTS.md.",
+    });
+    expect(entry(result, "rule:codex-sandbox", "gemini")).toMatchObject({
+      status: "not_applicable",
+      files: [],
+    });
+    expect(entry(result, "rule:claude-memory", "copilot").files).toEqual(["CLAUDE.md"]);
+  });
+});
+
+describe("rules", () => {
+  it("writes rules files through Ruler with the real sources named", async () => {
+    const result = await compileAll();
+    const agents = text(result, "AGENTS.md");
+    expect(agents.split("\n").slice(0, 2)).toEqual([
+      `<!-- ${HEADER_MARK} .ruler and .selfhost/context/rules. Do not edit this file. Change the sources, then run selfhost context compile. -->`,
+      "<!-- Generated by Ruler -->",
+    ]);
+    expect(agents).toContain("<!-- Source: .ruler/team.md -->");
+    expect(agents).toContain("<!-- Source: .selfhost/context/rules/style.md -->");
+    expect(agents).not.toContain(".ruler/s0");
+    // Scoped rules carry their globs in files that can't scope them.
+    expect(agents).toContain("Applies only to files matching `src/api/**/*.ts`, `**/*.sql`.");
+    expect(text(result, "CLAUDE.md")).not.toContain("src/api");
+    expect(text(result, "GEMINI.md")).toContain("Applies only to files matching");
+  });
+
+  it("puts a rule each agent reads in AGENTS.md once, and agent-only rules in own files", async () => {
+    const result = await compileAll();
+    const paths = result.files.map((file) => file.path);
+    expect(text(result, "AGENTS.md")).not.toContain("Accept a completion");
+    expect(text(result, ".cursor/rules/cursor-tabs.mdc")).toContain("alwaysApply: true");
+    expect(text(result, ".github/copilot-instructions.md")).toContain("comment on tests");
+    expect(text(result, ".goosehints")).toContain("Developer extension");
+    expect(text(result, ".cursor/rules/api.mdc")).toContain("globs: src/api/**/*.ts, **/*.sql");
+    expect(text(result, ".github/instructions/api.instructions.md")).toContain(
+      "applyTo: src/api/**/*.ts,**/*.sql",
+    );
+    expect(text(result, ".claude/rules/api.md")).toMatch(/paths:\n {2}- src\/api\/\*\*\/\*\.ts/);
+    expect(paths).not.toContain(".cursor/rules/style.mdc");
+  });
+
+  it("uses AGENTS.md for an agent-only rule when that agent is the only reader compiled", async () => {
+    const result = await compileAll(["cursor"]);
+    expect(text(result, "AGENTS.md")).toContain("Accept a completion");
+    expect(result.files.map((file) => file.path)).not.toContain(".cursor/rules/cursor-tabs.mdc");
+    // A scoped rule still gets Cursor's own scoped file, and AGENTS.md stays without it.
+    expect(text(result, "AGENTS.md")).not.toContain("src/api");
+  });
+});
+
+describe("skills, commands, subagents and MCP", () => {
+  it("moves the skill version into metadata and keeps its files", async () => {
+    const result = await compileAll(["claude_code", "codex"]);
+    const skill = text(result, ".claude/skills/release-notes/SKILL.md");
+    expect(skill.split("\n")[1]).toContain(
+      `${HEADER_MARK} .selfhost/context/skills/release-notes/SKILL.md`,
+    );
+    expect(skill).toContain("metadata:\n  version: 1.2.0\n");
+    expect(skill).not.toMatch(/^version:/m);
+    const script = result.files.find(
+      (file) => file.path === ".agents/skills/release-notes/scripts/collect.sh",
+    );
+    expect(script?.content).toMatchObject({ kind: "bytes", executable: true });
+    expect(script?.header).toBe("lock");
+  });
+
+  it("maps $ARGUMENTS to each agent's placeholder", async () => {
+    const result = await compileAll();
+    expect(text(result, ".claude/commands/fix-issue.md")).toContain("Read issue $ARGUMENTS");
+    expect(text(result, ".gemini/commands/fix-issue.toml")).toContain("Read issue {{args}}");
+    expect(text(result, ".github/prompts/fix-issue.prompt.md")).toContain(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: Copilot's input variable.
+      "Read issue ${input:arguments}",
+    );
+    expect(text(result, ".opencode/commands/fix-issue.md")).toContain("Read issue $ARGUMENTS");
+  });
+
+  it("writes models per agent and inherit only where an agent has it", async () => {
+    const result = await compileAll();
+    expect(text(result, ".claude/agents/reviewer.md")).toContain("model: sonnet");
+    expect(text(result, ".cursor/agents/reviewer.md")).toContain("model: inherit");
+    expect(text(result, ".cursor/agents/reviewer.md")).toContain("readonly: true");
+    expect(text(result, ".codex/agents/reviewer.toml")).not.toContain("model");
+    expect(text(result, ".claude/agents/migrator.md")).toContain("model: inherit");
+    expect(text(result, ".opencode/agents/migrator.md")).not.toContain("model");
+    expect(text(result, ".github/agents/migrator.agent.md")).toContain(
+      "- github/create_pull_request",
+    );
+  });
+
+  it("turns environment variables into each agent's own syntax", async () => {
+    const result = await compileAll();
+    const cursor = text(result, ".cursor/mcp.json");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: Cursor's variable syntax.
+    expect(cursor).toContain('"Authorization": "Bearer ${env:GITHUB_TOKEN}"');
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: Cursor's variable syntax.
+    expect(cursor).toContain('"X-Team": "${env:TEAM_ID}"');
+    const codex = result.files.find((file) => file.path === ".codex/config.toml");
+    expect(codex?.content).toMatchObject({ kind: "toml_block" });
+    const body = codex?.content.kind === "toml_block" ? codex.content.body : "";
+    expect(body).toContain('env_vars = ["DOCS_TOKEN"]');
+    expect(body).toContain('bearer_token_env_var = "GITHUB_TOKEN"');
+    expect(body).not.toContain("${");
+    const opencode = result.files.find((file) => file.path === "opencode.json");
+    expect(JSON.stringify(opencode?.content)).toContain("Bearer {env:GITHUB_TOKEN}");
+  });
+
+  it("reports Codex variables it can't pass through", async () => {
+    const dir = temp();
+    writeContextItem(dir.root, {
+      kind: "mcp",
+      name: "x",
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: the source's variable syntax.
+      server: { command: "x", env: { TOKEN: "${OTHER}", MIXED: "a-${B}" } },
+    });
+    const read = readContextSource(dir.root);
+    if (!read.ok) throw new Error("invalid");
+    const result = await compileContext(read.source, { agents: ["codex"] });
+    expect(entry(result, "mcp:x", "codex")).toMatchObject({
+      status: "partial",
+      detail: expect.stringContaining("TOKEN and MIXED are left out"),
+    });
+  });
+});
