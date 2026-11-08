@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { CLAUDE_CODE_HOOK_EVENTS, CODEX_HOOK_EVENTS } from "@selfhost/schema";
 import type { AgentLocations } from "../locations.js";
 import type { AgentId } from "../types.js";
@@ -11,6 +12,7 @@ import type {
   OtelSpec,
   PlanItem,
   Target,
+  TomlBlock,
   TomlItem,
 } from "./types.js";
 
@@ -25,9 +27,23 @@ export const CURSOR_HOOK_EVENTS = [
   "afterShellExecution",
   "beforeMCPExecution",
   "afterMCPExecution",
+  "beforeReadFile",
   "afterFileEdit",
   "stop",
 ] as const;
+
+/**
+ * The events whose answer can stop a tool call, by agent: what `events: "pre_tool"` hooks.
+ * Cursor sends Shell, Read and MCP calls to preToolUse and then to their own event.
+ */
+export const PRE_TOOL_HOOK_EVENTS = {
+  claude_code: ["PreToolUse"],
+  codex: ["PreToolUse"],
+  cursor: ["preToolUse", "beforeShellExecution", "beforeReadFile", "beforeMCPExecution"],
+} as const;
+
+/** Where selfhost puts its OpenCode plugin, inside OpenCode's config folder. */
+export const OPENCODE_PLUGIN_FILE = join("plugins", "selfhost.js");
 
 export interface VendorTargets {
   targets: Target[];
@@ -111,9 +127,13 @@ function claudeCode(input: AgentConfigInput, loc: AgentLocations): VendorTargets
   if (input.otel) settings.push({ item: "otel", edits: envEdits(claudeOtelEnv(input.otel)) });
   if (input.hooks) {
     const command = hookCommand(input.hooks.command, "claude_code");
+    const events =
+      input.hooks.events === "pre_tool"
+        ? PRE_TOOL_HOOK_EVENTS.claude_code
+        : CLAUDE_CODE_HOOK_EVENTS;
     settings.push({
       item: "hooks",
-      edits: CLAUDE_CODE_HOOK_EVENTS.map((event) => ({
+      edits: events.map((event) => ({
         kind: "hook",
         path: ["hooks", event],
         style: "claude",
@@ -188,7 +208,7 @@ function tomlTableItem(item: string, path: string[], table: Plain, note?: string
   };
 }
 
-function codexHooksItem(command: string): TomlItem {
+function codexHooksItem(command: string, events: readonly string[]): TomlItem {
   const hooksOf = (doc: Plain) => (isPlainObject(doc.hooks) ? doc.hooks : {});
   const hasCommand = (list: unknown) =>
     Array.isArray(list) &&
@@ -204,7 +224,7 @@ function codexHooksItem(command: string): TomlItem {
     conflict(base) {
       if (base.hooks !== undefined && !isPlainObject(base.hooks)) return "hooks is not a table";
       const hooks = hooksOf(base);
-      const bad = CODEX_HOOK_EVENTS.find(
+      const bad = events.find(
         (event) => hooks[event] !== undefined && !Array.isArray(hooks[event]),
       );
       if (bad) return `hooks.${bad} is not a list of tables`;
@@ -215,7 +235,8 @@ function codexHooksItem(command: string): TomlItem {
     },
     snippet(base) {
       const hooks = hooksOf(base);
-      return CODEX_HOOK_EVENTS.filter((event) => !hasCommand(hooks[event]))
+      return events
+        .filter((event) => !hasCommand(hooks[event]))
         .map(
           (event) =>
             `[[hooks.${event}]]\n[[hooks.${event}.hooks]]\ntype = "command"\ncommand = ${JSON.stringify(command)}`,
@@ -229,6 +250,7 @@ function codexHooksItem(command: string): TomlItem {
 function codex(
   input: AgentConfigInput,
   loc: AgentLocations,
+  block: TomlBlock,
   exists: (path: string) => boolean,
 ): VendorTargets {
   const paths = loc.codex;
@@ -246,6 +268,8 @@ function codex(
   if (input.otel) items.push(tomlTableItem("otel", ["otel"], codexOtelTable(input.otel)));
   if (input.hooks) {
     const command = hookCommand(input.hooks.command, "codex");
+    const events =
+      input.hooks.events === "pre_tool" ? PRE_TOOL_HOOK_EVENTS.codex : CODEX_HOOK_EVENTS;
     // Codex warns when one layer has both hooks.json and [hooks]; follow the user's choice.
     if (exists(paths.hooks)) {
       targets.push({
@@ -256,7 +280,7 @@ function codex(
           {
             item: "hooks",
             note: "Codex asks you to review new hooks with /hooks before they run",
-            edits: CODEX_HOOK_EVENTS.map((event) => ({
+            edits: events.map((event) => ({
               kind: "hook",
               path: ["hooks", event],
               style: "claude",
@@ -266,7 +290,7 @@ function codex(
         ],
       });
     } else {
-      items.push(codexHooksItem(command));
+      items.push(codexHooksItem(command, events));
     }
   }
   for (const [name, spec] of mcpEntries(input, other)) {
@@ -283,7 +307,7 @@ function codex(
       : undefined;
     items.push(tomlTableItem(`mcp:${name}`, ["mcp_servers", name], table, note));
   }
-  targets.unshift({ kind: "toml", path: paths.config, items });
+  targets.unshift({ kind: "toml", path: paths.config, items, block });
   return { targets, other };
 }
 
@@ -314,7 +338,14 @@ function opencode(
       ),
     );
   }
-  if (input.hooks) {
+  const targets: Target[] = [];
+  if (input.hooks?.opencodePlugin !== undefined) {
+    targets.push({
+      kind: "file",
+      path: join(paths.configDir, OPENCODE_PLUGIN_FILE),
+      items: [{ item: "hooks", content: input.hooks.opencodePlugin }],
+    });
+  } else if (input.hooks) {
     other.push(
       unsupported("hooks", "OpenCode has no hook settings; it runs JavaScript plugins instead"),
     );
@@ -340,7 +371,8 @@ function opencode(
       ],
     };
   });
-  return { targets: [{ kind: "tree", path: paths.config, format: "json", items }], other };
+  targets.unshift({ kind: "tree", path: paths.config, format: "json", items });
+  return { targets, other };
 }
 
 function goose(input: AgentConfigInput, loc: AgentLocations): VendorTargets {
@@ -411,6 +443,8 @@ function cursor(input: AgentConfigInput, loc: AgentLocations): VendorTargets {
   const targets: Target[] = [];
   if (input.hooks) {
     const command = hookCommand(input.hooks.command, "cursor");
+    const events =
+      input.hooks.events === "pre_tool" ? PRE_TOOL_HOOK_EVENTS.cursor : CURSOR_HOOK_EVENTS;
     targets.push({
       kind: "tree",
       path: paths.hooks,
@@ -420,7 +454,7 @@ function cursor(input: AgentConfigInput, loc: AgentLocations): VendorTargets {
           item: "hooks",
           edits: [
             { kind: "key", path: ["version"], value: 1 },
-            ...CURSOR_HOOK_EVENTS.map(
+            ...events.map(
               (event): Edit => ({ kind: "hook", path: ["hooks", event], style: "cursor", command }),
             ),
           ],
@@ -455,13 +489,14 @@ export function vendorTargets(
   agent: AgentId,
   input: AgentConfigInput,
   loc: AgentLocations,
+  block: TomlBlock,
   io: VendorIo,
 ): VendorTargets {
   switch (agent) {
     case "claude_code":
       return claudeCode(input, loc);
     case "codex":
-      return codex(input, loc, io.exists);
+      return codex(input, loc, block, io.exists);
     case "opencode":
       return opencode(input, loc, io.readJson);
     case "goose":

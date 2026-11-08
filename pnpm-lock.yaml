@@ -164,7 +164,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.12(@types/node@20.19.43)(vite@8.3.6(@types/node@20.19.43)(esbuild@0.27.7)(tsx@4.23.15)(yaml@2.9.1))
+        version: 4.1.12(@types/node@20.19.43)(vite@8.3.6(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
 
   apps/server:
     dependencies:
@@ -225,7 +225,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.12(@types/node@20.19.43)(vite@8.3.6(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
+        version: 4.1.12(@types/node@20.19.43)(vite@8.3.6(@types/node@20.19.43)(esbuild@0.27.7)(tsx@4.23.15)(yaml@2.9.1))
 
   deploy:
     devDependencies:
@@ -468,6 +468,9 @@ importers:
       picomatch:
         specifier: 'catalog:'
         version: 4.0.7
+      shell-quote:
+        specifier: 'catalog:'
+        version: 1.12.0
     devDependencies:
       '@selfhost/importers':
         specifier: workspace:*

@@ -576,9 +576,9 @@ rules = ["sudo"]
 [[cases]]
 name = "git reset --hard"
 command = "git reset --hard HEAD~3"
-decision = "ask"
+decision = "block"
 mode = "enforce"
-rules = ["git-discard-work"]
+rules = ["git-discard-work", "guard.reset_hard"]
 
 [[cases]]
 name = "git clean -fdx"

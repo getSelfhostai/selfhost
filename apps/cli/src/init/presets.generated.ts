@@ -16,7 +16,16 @@ export const PRESETS: Readonly<Record<PresetName, string>> = {
 # Tests for this file: presets/irreversible.test.toml. Run them with \`selfhost policy test\`.
 version = 1
 
-# [guardrails]: built-in guardrails for force pushes, rm -rf and .env reads go here.
+# Built-in guardrails, enforced in every agent's pre-tool hook: force pushes, rm -rf outside the
+# workspace and reads of .env and key files all reach outside the repository. git reset --hard
+# stays inside it, so it is left to the git-discard-work rule below, in observe. List production
+# database hosts, URLs or variables in prod_connections and production credentials in
+# prod_credentials to block DROP and TRUNCATE on them and any use of them.
+[guardrails]
+mode = "enforce"
+disable = ["guard.reset_hard"]
+prod_connections = []
+prod_credentials = []
 
 # Payments
 
@@ -273,7 +282,15 @@ high_risk_paths = [
 # Tests for this file: presets/oss.test.toml. Run them with \`selfhost policy test\`.
 version = 1
 
-# [guardrails]: built-in guardrails for force pushes, rm -rf and .env reads go here.
+# Built-in guardrails, enforced in every agent's pre-tool hook: force pushes, git reset --hard,
+# rm -rf outside the workspace and reads of .env and key files. List production database hosts,
+# URLs or variables in prod_connections and production credentials (variables, profiles, files)
+# in prod_credentials to block DROP and TRUNCATE on them and any use of them, for example
+# prod_connections = ["*.prod.example.internal", "PROD_DATABASE_URL"].
+[guardrails]
+mode = "enforce"
+prod_connections = []
+prod_credentials = []
 
 # Publishes
 
@@ -445,7 +462,15 @@ high_risk_paths = [
 # Tests for this file: presets/startup.test.toml. Run them with \`selfhost policy test\`.
 version = 1
 
-# [guardrails]: built-in guardrails for force pushes, rm -rf and .env reads go here.
+# Built-in guardrails, enforced in every agent's pre-tool hook: force pushes, git reset --hard,
+# rm -rf outside the workspace and reads of .env and key files. List production database hosts,
+# URLs or variables in prod_connections and production credentials (variables, profiles, files)
+# in prod_credentials to block DROP and TRUNCATE on them and any use of them, for example
+# prod_connections = ["*.prod.example.internal", "PROD_DATABASE_URL"].
+[guardrails]
+mode = "enforce"
+prod_connections = []
+prod_credentials = []
 
 # Payments
 
@@ -672,7 +697,15 @@ min_age_days = 3
 # Tests for this file: presets/strict.test.toml. Run them with \`selfhost policy test\`.
 version = 1
 
-# [guardrails]: built-in guardrails for force pushes, rm -rf and .env reads go here.
+# Built-in guardrails, enforced in every agent's pre-tool hook: force pushes, git reset --hard,
+# rm -rf outside the workspace and reads of .env and key files. List production database hosts,
+# URLs or variables in prod_connections and production credentials (variables, profiles, files)
+# in prod_credentials to block DROP and TRUNCATE on them and any use of them, for example
+# prod_connections = ["*.prod.example.internal", "PROD_DATABASE_URL"].
+[guardrails]
+mode = "enforce"
+prod_connections = []
+prod_credentials = []
 
 [ledger]
 retention_days = 365

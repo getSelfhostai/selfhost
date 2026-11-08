@@ -11,12 +11,24 @@ export interface ToolCall {
    * masked, at most 120 characters.
    */
   command?: string;
-  /** File path relative to the repository root, with `/` separators. */
+  /**
+   * File path relative to the repository root, with `/` separators. A pre-tool hook keeps a file
+   * outside the root as an absolute path.
+   */
   path?: string;
+  /** What a file tool does with `path`. Guardrails read it; rules match on `tool`. */
+  access?: "read" | "write";
   url?: string;
   /** Server part of an MCP tool name. */
   mcpServer?: string;
   model?: string;
+  /**
+   * Absolute folder the call runs in. Pre-tool hooks know it; a call read from the ledger has the
+   * folder its session started in at most.
+   */
+  cwd?: string;
+  /** Absolute workspace root: the repository root, else cwd. `path` is relative to it. */
+  root?: string;
 }
 
 const MCP_PREFIX = "mcp__";

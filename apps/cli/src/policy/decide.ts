@@ -1,17 +1,20 @@
-import { evaluate, type PolicyHit, type ToolCall } from "@selfhost/policy";
+import { checkToolCall, type PolicyHit, type ToolCall } from "@selfhost/policy";
 import type { DecisionMode, PolicyDecision, ResolvedSelfhostConfig } from "@selfhost/schema";
 
 /**
  * The one check `selfhost policy test` runs on a tool call, for single calls, test files and
- * replays alike. It is where a combined check (built-in guardrails and extra checkers next to
- * the rules) plugs in.
+ * replays alike: the rules and allow lists, then the built-in guardrails, as the pre-tool hook
+ * runs them. The extra checkers (the package guard) are left out: they ask registries over the
+ * network, so a test would not give the same answer twice. The environment is empty, so a test
+ * gives the same answer on every machine.
  */
 export async function checkCall(
   config: ResolvedSelfhostConfig,
   call: ToolCall,
   opts: { team?: string } = {},
 ): Promise<PolicyHit[]> {
-  return evaluate(config, call, opts);
+  const { hits } = await checkToolCall(config, call, { ...opts, env: {} });
+  return hits;
 }
 
 /** What selfhost decides on one call, from the hits of its check. */

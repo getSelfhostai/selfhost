@@ -400,15 +400,80 @@ for byte from its backup (recorded in `~/.selfhost/init.json`), unless it was ed
 `agents configure --remove` takes the same settings out but writes the file in its own layout.
 The ledger, `selfhost.toml` and a team membership are kept.
 
-`selfhost hook <agent>` (`claude`, `codex` or `codex-notify`) is what the agents run on each hook
-event. It reads the payload from stdin (the last argument for `codex-notify`), appends one line
-`{agent, received_at, payload}` to `~/.selfhost/spool/hooks-<UTC day>.jsonl` with a single
-append, and exits 0 even when that fails, printing nothing on stdout. Tool output
-(`tool_response`) is dropped. It never opens the ledger, since the embedded database takes one
-process at a time and agents run hooks concurrently. `selfhost import` (and `--watch`, every
-poll) maps the spool into the ledger with the hook mappers: ids come from the receive time and
-the payload, so a line read twice is a duplicate, a malformed line is skipped and counted, and a
-finished day's file is deleted once imported.
+`selfhost hook <agent>` (`claude`, `codex`, `codex-notify`, `cursor` or `opencode`) is what the
+agents run on each hook event. It reads the payload from stdin (the last argument for
+`codex-notify`), appends one line `{agent, received_at, payload}` to
+`~/.selfhost/spool/hooks-<UTC day>.jsonl` with a single append, and exits 0 even when that fails.
+Tool output and file contents (`tool_response`, and Cursor's `output` and `content`) are
+dropped. It never opens the ledger, since the embedded database takes one process at a time and
+agents run hooks concurrently. Pre-tool events also get an answer on stdout (see
+[Guardrails](#guardrails-selfhost-guard)); every other event prints nothing, except Cursor's
+`beforeSubmitPrompt`, which gets `{"continue":true}` because Cursor reads a silent hook as a
+block. `selfhost import` (and `--watch`, every poll) maps the spool into the ledger with the hook
+mappers: ids come from the receive time and the payload, so a line read twice is a duplicate, a
+malformed line is skipped and counted, and a finished day's file is deleted once imported.
+
+## Guardrails: `selfhost guard`
+
+The guardrails pack blocks destructive and secret-leaking tool calls in every agent with a
+pre-tool hook, with no account or server:
+
+```sh
+selfhost guard install     # add the pre-tool hook to each agent found (--agent, --dry-run, --json)
+selfhost guard status      # which agents are covered and which guardrails are on
+selfhost guard uninstall   # take out what install added
+```
+
+`guard install` adds `selfhost hook <agent>` to the events that can stop a tool call, through
+`agents configure`'s planner under its own profile (`~/.selfhost/agents/<agent>.guard.json`, and
+its own `# >>> selfhost guard >>>` block in Codex's `config.toml`), with a backup of each file.
+So it installs and uninstalls apart from `selfhost init`; a hook init already added counts as
+installed and is left in place by `guard uninstall`.
+
+| Agent       | Hook                                                                                                   | Block       | Ask                                                   |
+| ----------- | ------------------------------------------------------------------------------------------------------ | ----------- | ----------------------------------------------------- |
+| Claude Code | `PreToolUse` in `~/.claude/settings.json`                                                              | yes         | yes                                                   |
+| Codex       | `PreToolUse` in `config.toml` (or `hooks.json`); approve it with `/hooks`                              | yes         | answered as a block: Codex hooks cannot ask           |
+| Cursor      | `preToolUse`, `beforeShellExecution`, `beforeReadFile`, `beforeMCPExecution` in `~/.cursor/hooks.json` | yes         | on shell and MCP calls; elsewhere answered as a block |
+| OpenCode    | plugin `~/.config/opencode/plugins/selfhost.js` (`tool.execute.before`)                                | yes         | answered as a block                                   |
+| Goose       | none: Goose has no hooks                                                                               | not covered | not covered                                           |
+
+On a pre-tool event the hook finds `selfhost.toml` from the call's folder (the nearest one up to
+the repository root, else the team policy pulled by the last sync, else the built-in defaults),
+checks the call against its rules, `[mcp]` and `[models]`, the built-in guardrails and any extra
+checkers, and answers in the agent's own format: deny with the rule's message and id, ask, or
+nothing at all for allow on Claude Code and Codex, so selfhost never approves a call the agent
+would otherwise ask about (Cursor gets `{"permission":"allow"}`, since a silent permission hook
+blocks there). Rules and guardrails in observe mode are recorded and never applied. Cursor sends
+shell, read and MCP calls to `preToolUse` and then to their own event: `preToolUse` blocks them
+but leaves allow and ask, and the record, to the dedicated event.
+
+The built-in guardrails, each with a stable rule id, block by default (`[guardrails]` in
+[`selfhost.toml`](../../packages/schema/README.md#guardrails)): `guard.force_push` (including
+`-f` and `+refspec`; `--force-with-lease` asks), `guard.reset_hard`, `guard.rm_outside_workspace`
+(recursive rm of a path outside the repository root and the temp folders, or of the workspace
+or home folder itself; a path that cannot be resolved before it runs asks), `guard.secret_read`
+(`.env` files, private keys and credential files, through file tools and shell readers),
+`guard.prod_sql` (DROP or TRUNCATE in a command that names a connection marked in
+`prod_connections`) and `guard.prod_credentials` (variables, profiles and files marked in
+`prod_credentials`). What each one matches, and the known ways around them, are in
+[`packages/policy`](../../packages/policy/README.md#guardrails).
+
+Every pre-tool decision, allow included, goes on the event's spool line and becomes one
+`policy.evaluated` event on the next `selfhost import`: `decision` (`verdict`, `rule_id`, `mode`,
+`reason`, `policy_hash`), the agent, session, tool and target (masked like every ledger write),
+and `data` with `answer` (`allow`, `deny` or `ask`, what the agent was told), every hit,
+`tool_event_id` when the payload also maps to a `tool.called` event, the policy file's path and
+the time the check took. An allowed call with an observe hit records that hit's verdict in
+observe mode, as `policy observe` does.
+
+A broken setup never stops the agent. The rules of a `selfhost.toml` that does not parse or
+validate are skipped and the built-in guardrails run with their defaults, so the baseline still
+holds; an extra checker that throws or runs past its 2 second budget is skipped; any other error
+answers allow. Each case is printed on stderr and recorded on the decision (`data.failures`,
+`data.fail_open`). The check adds about 20 ms to a pre-tool hook (about 40 ms in all, measured
+cold with the bundled `node dist/main.js`); other events are not slowed, as only pre-tool events
+load it.
 
 ## Solo and team modes
 

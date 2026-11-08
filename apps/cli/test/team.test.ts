@@ -763,7 +763,10 @@ message = "No rm -rf in this repository."
     const hits = parse((await run(forcePush, deps)).out);
     expect(hits).toMatchObject({
       config: teamFile,
-      hits: [{ rule_id: "team-no-force-push", mode: "enforce", verdict: "block" }],
+      hits: [
+        { rule_id: "team-no-force-push", mode: "enforce", verdict: "block" },
+        { rule_id: "guard.force_push", mode: "enforce", verdict: "block" },
+      ],
     });
   });
 
@@ -808,7 +811,11 @@ message = "No rm -rf in this repository."
     expect(check.out).toMatch(
       /^Using selfhost\.toml; the policy of team platform pulled from http:\/\/team\.test \(\S+team-policy\.toml\) is not used while it exists\./,
     );
-    expect(parse((await run(forcePush, deps)).out)).toMatchObject({ config: repoFile, hits: [] });
+    // The repository's file has no force push rule, so only the built-in guardrail fires.
+    expect(parse((await run(forcePush, deps)).out)).toMatchObject({
+      config: repoFile,
+      hits: [{ rule_id: "guard.force_push" }],
+    });
     const promote = await run(["policy", "promote", "repo-no-rm", "--json"], deps);
     expect(parse(promote.out)).toMatchObject({ config: repoFile, changed: true, to: "enforce" });
     expect(readFileSync(teamFile, "utf8")).toBe(TEAM_POLICY);

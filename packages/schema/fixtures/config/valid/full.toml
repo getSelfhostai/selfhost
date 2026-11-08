@@ -59,6 +59,12 @@ install_scripts = "block"
 [alerts]
 spike_factor = 5
 
+[guardrails]
+mode = "enforce"
+disable = ["guard.reset_hard"]
+prod_connections = ["*.prod.acme.internal", "PROD_DATABASE_URL"]
+prod_credentials = ["PROD_*", "prod", "~/.config/acme/prod-*.json"]
+
 [teams.platform]
 members = ["alice@example.com", "bob@example.com"]
 

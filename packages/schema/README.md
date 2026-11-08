@@ -91,6 +91,27 @@ blocked_registries = ["*.example.com", "registry.npmjs.cf"]   # hosts, URLs or g
 install_scripts = "ask"         # ask (default), block or allow
 ```
 
+## Guardrails
+
+`[guardrails]` sets the built-in guardrails that pre-tool hooks apply on top of `[[rules]]`
+(`GUARDRAIL_IDS`; what each matches is in
+[`packages/policy`](../policy/README.md#guardrails)). They block by default; their ids are
+reserved, so no rule may use one.
+
+```toml
+[guardrails]
+mode = "enforce"                                    # enforce (default), observe or off
+disable = ["guard.reset_hard"]                      # turn single guardrails off
+prod_connections = ["*.prod.acme.internal", "PROD_DATABASE_URL"]   # DROP and TRUNCATE are blocked on these
+prod_credentials = ["PROD_*", "prod", "~/.config/acme/prod-*.json"] # variables, profiles and files
+```
+
+`prod_connections` globs are matched, ignoring case, against the hosts, connection URLs, database
+names and variable names in a command; `prod_credentials` globs against the variable names a
+command reads or sets, `--profile`, `--context` and similar values, and (for globs starting with
+`/` or `~/`) the paths of files a tool reads. Both are empty by default, which leaves
+`guard.prod_sql` and `guard.prod_credentials` with nothing to match.
+
 ## Redaction
 
 `redactEvent(event, settings)` (`src/redact.ts`) returns the event as it may be stored: prompt

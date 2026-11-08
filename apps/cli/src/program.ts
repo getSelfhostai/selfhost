@@ -12,6 +12,7 @@ import { registerBrief } from "./brief.js";
 import { defaultConfigPath } from "./config-file.js";
 import { registerDecisions } from "./decisions.js";
 import { doctor } from "./doctor.js";
+import { registerGuard } from "./guard/commands.js";
 import { readStdin, runHook } from "./hooks/receive.js";
 import { type ImportCommandOptions, type ImportIo, runImport, runWatch } from "./import.js";
 import { registerInbox } from "./inbox/commands.js";
@@ -244,14 +245,17 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
   program
     .command("hook")
     .description(
-      "receive one agent hook event and add it to ~/.selfhost/spool (agents run this, not people)",
+      "receive one agent hook event, answer pre-tool events and add it to ~/.selfhost/spool (agents run this, not people)",
     )
-    .argument("<agent>", "claude, codex or codex-notify")
+    .argument("<agent>", "claude, codex, codex-notify, cursor or opencode")
     .argument("[payload]", "the event JSON, for codex-notify; others read it from stdin")
     .action(async (agent: string, payload: string | undefined) => {
       await runHook(payload === undefined ? [agent] : [agent, payload], {
         env: deps.env,
         readStdin,
+        writeOutput: (text) => {
+          if (text !== "") deps.write(text);
+        },
         writeError: deps.writeError,
         now: deps.now,
       });
@@ -265,6 +269,16 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       configPath: deps.configPath,
       fetch: deps.fetch,
       retry: deps.retry,
+    }),
+    fail,
+  );
+
+  registerGuard(
+    program,
+    () => ({
+      ...io(),
+      setExitCode: deps.setExitCode,
+      configPath: deps.configPath ?? defaultConfigPath(),
     }),
     fail,
   );

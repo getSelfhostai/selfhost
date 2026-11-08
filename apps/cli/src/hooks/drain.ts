@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readdir, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { LedgerWriter } from "@selfhost/importers";
@@ -7,9 +8,19 @@ import {
   mapCodexHook,
   mapCodexNotify,
   type SourceContext,
+  stableEventId,
+  toolDetails,
 } from "@selfhost/ledger";
-import { type LedgerEvent, MAX_EVENT_BATCH, validateEvent } from "@selfhost/schema";
-import { type HookAgent, SPOOL_FILE_PATTERN, type SpoolLine } from "./receive.js";
+import { POLICY_ACTOR_ID } from "@selfhost/policy";
+import {
+  type Decision,
+  EVENT_SCHEMA,
+  type LedgerEvent,
+  MAX_EVENT_BATCH,
+  validateEvent,
+} from "@selfhost/schema";
+import { type GuardRecord, type HookAgent, SPOOL_FILE_PATTERN, type SpoolLine } from "./receive.js";
+import { type PreToolCall, preToolCall } from "./vendors.js";
 
 /** What one pass over the hook spool did; part of `selfhost import --json`. */
 export interface SpoolReport {
@@ -38,11 +49,97 @@ export interface DrainOptions {
 /** A past day's file left untouched this long gets no more lines: hooks write today's file. */
 const SETTLED_MS = 60_000;
 
+/**
+ * Ledger events for each agent's payloads. Cursor and OpenCode payloads map to no events of
+ * their own yet; their pre-tool decisions are still recorded, from the guard record.
+ */
 const MAPPERS: Record<HookAgent, (payload: unknown, ctx: SourceContext) => LedgerEvent[]> = {
   claude: mapClaudeCodeHook,
   codex: mapCodexHook,
   "codex-notify": mapCodexNotify,
+  cursor: () => [],
+  opencode: () => [],
 };
+
+/** The tool input as toolDetails reads it, from the agent-neutral call. */
+function inputOf(call: PreToolCall): Record<string, unknown> {
+  if (call.command !== undefined) return { command: call.command };
+  if (call.file !== undefined) return { file_path: call.file };
+  if (call.url !== undefined) return { url: call.url };
+  return {};
+}
+
+/** The verdict a decision records: what was applied, or for observe what enforcing would do. */
+function verdictOf(guard: GuardRecord): Decision["verdict"] {
+  const hit = guard.hit;
+  if (!hit) return "allow";
+  if (hit.mode === "observe") return hit.verdict;
+  return guard.answer === "ask" ? "ask" : "block";
+}
+
+/**
+ * The policy.evaluated event for a pre-tool decision: one per call the hook checked, allow
+ * included. It copies agent, session, model, tool and target from the call's tool.called event
+ * when the line has one, so the ledger masks secrets in them the same way. decision.mode is
+ * enforce when an enforce hit decided, observe when only observe hits fired (the verdict then
+ * says what enforcing would do, and the call went ahead), and absent for a plain allow.
+ */
+export function guardEvent(
+  agent: HookAgent,
+  payload: unknown,
+  guard: GuardRecord,
+  toolEvent: LedgerEvent | undefined,
+  ts: string,
+): LedgerEvent {
+  const call =
+    typeof payload === "object" && payload !== null && !Array.isArray(payload)
+      ? preToolCall(agent, payload as Record<string, unknown>)
+      : undefined;
+  const details = toolEvent
+    ? { tool: toolEvent.tool, target: toolEvent.target }
+    : call
+      ? toolDetails(call.tool, inputOf(call), call.cwd)
+      : {};
+  const hit = guard.hit;
+  const decision: Decision = {
+    verdict: verdictOf(guard),
+    by: POLICY_ACTOR_ID,
+    ...(hit ? { reason: hit.message, rule_id: hit.rule_id, mode: hit.mode } : {}),
+    ...(guard.policy ? { policy_hash: guard.policy.hash } : {}),
+  };
+  const key = toolEvent?.id ?? createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+  const agentRef = toolEvent?.agent ?? (call ? { vendor: call.vendor } : undefined);
+  const sessionId = toolEvent?.session_id ?? call?.sessionId;
+  const model = toolEvent?.model ?? call?.model;
+  const data: Record<string, unknown> = {
+    hook_event: call?.event,
+    answer: guard.answer,
+    hits: guard.hits,
+    ...(toolEvent ? { tool_event_id: toolEvent.id } : {}),
+    ...(call?.toolUseId ? { tool_use_id: call.toolUseId } : {}),
+    ...(hit?.irreversible ? { irreversible: true } : {}),
+    ...(guard.policy ? { policy_path: guard.policy.path } : {}),
+    ...(guard.failures?.length ? { failures: guard.failures } : {}),
+    ...(guard.fail_open ? { fail_open: true } : {}),
+    check_ms: guard.ms,
+  };
+  return {
+    id: stableEventId(ts, `policy.evaluated\nhook\n${key}`),
+    schema: EVENT_SCHEMA,
+    ts,
+    source: "hook",
+    kind: "policy.evaluated",
+    actor: { kind: "system", id: POLICY_ACTOR_ID },
+    ...(agentRef ? { agent: agentRef } : {}),
+    ...(model ? { model } : {}),
+    ...(sessionId ? { session_id: sessionId } : {}),
+    ...(details.tool ? { tool: details.tool } : {}),
+    ...(details.target ? { target: details.target } : {}),
+    decision,
+    data: Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined)),
+    ...(toolEvent?.redacted ? { redacted: toolEvent.redacted } : {}),
+  };
+}
 
 /**
  * The events for one spool line, or undefined when it is malformed. The event time is the time
@@ -56,7 +153,12 @@ function mapLine(text: string, ctx: SourceContext): LedgerEvent[] | undefined {
     if (typeof agent !== "string" || !Object.hasOwn(MAPPERS, agent) || Number.isNaN(ms)) {
       return undefined;
     }
-    const events = MAPPERS[agent](line.payload, { ...ctx, ts: new Date(ms).toISOString() });
+    const ts = new Date(ms).toISOString();
+    const events = MAPPERS[agent](line.payload, { ...ctx, ts });
+    if (line.guard) {
+      const toolEvent = events.find((event) => event.kind === "tool.called");
+      events.push(guardEvent(agent, line.payload, line.guard, toolEvent, ts));
+    }
     return events.every((event) => validateEvent(event).ok) ? events : undefined;
   } catch {
     return undefined;

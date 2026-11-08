@@ -406,6 +406,81 @@ describe("Cursor", () => {
   });
 });
 
+describe("profiles", () => {
+  const GUARD = {
+    hooks: { command: "selfhost hook {agent}", events: "pre_tool" as const },
+    profile: "guard",
+  };
+
+  it("keeps a profile's settings and record apart from the main setup's", () => {
+    const fx = fixtureHome();
+    const original = 'model = "o3"\n';
+    const config = fx.write(".codex/config.toml", original);
+    configure(fx.home, "codex", { otel: INPUT.otel });
+    const withMain = read(config);
+    const guard = planAgentConfig("codex", { home: fx.home, platform: "linux", ...GUARD });
+    expect(statuses(guard)).toEqual({ hooks: "create" });
+    applyAgentConfig(guard, { now: NOW });
+    const both = read(config);
+    expect(both.startsWith(withMain)).toBe(true);
+    expect(both).toContain("# >>> selfhost guard >>>");
+    expect(Object.keys((parseToml(both) as { hooks: object }).hooks)).toEqual(["PreToolUse"]);
+    expect(existsSync(manifestPath(fx.home, "codex", "guard"))).toBe(true);
+    expect(manifestPath(fx.home, "codex", "guard")).not.toBe(manifestPath(fx.home, "codex"));
+
+    // Removing the guard profile leaves the main block; removing the main one restores the file.
+    applyAgentConfig(
+      removeAgentConfig("codex", { home: fx.home, platform: "linux", profile: "guard" }),
+    );
+    expect(read(config)).toBe(withMain);
+    applyAgentConfig(removeAgentConfig("codex", { home: fx.home, platform: "linux" }));
+    expect(read(config)).toBe(original);
+  });
+
+  it("hooks only the pre-tool events and reuses a hook another setup added", () => {
+    const fx = fixtureHome();
+    configure(fx.home, "claude_code", { hooks: { command: "selfhost hook {agent}" } });
+    const guard = planAgentConfig("claude_code", { home: fx.home, platform: "linux", ...GUARD });
+    expect(guard.items).toEqual([
+      expect.objectContaining({ item: "hooks", status: "unchanged", message: "already set" }),
+    ]);
+    expect(guard.changes).toEqual([]);
+
+    const cursor = planAgentConfig("cursor", { home: fx.home, platform: "linux", ...GUARD });
+    applyAgentConfig(cursor, { now: NOW });
+    expect(Object.keys(readJson(fx.path(".cursor/hooks.json")).hooks as object)).toEqual([
+      "preToolUse",
+      "beforeShellExecution",
+      "beforeReadFile",
+      "beforeMCPExecution",
+    ]);
+  });
+
+  it("writes the OpenCode plugin file, and never replaces a file it did not write", () => {
+    const fx = fixtureHome();
+    const input = { ...GUARD, hooks: { ...GUARD.hooks, opencodePlugin: "export default {};\n" } };
+    const plugin = fx.path(".config/opencode/plugins/selfhost.js");
+    applyAgentConfig(planAgentConfig("opencode", { home: fx.home, platform: "linux", ...input }));
+    expect(read(plugin)).toBe("export default {};\n");
+    const update = planAgentConfig("opencode", {
+      home: fx.home,
+      platform: "linux",
+      ...input,
+      hooks: { ...input.hooks, opencodePlugin: "export default { id: 'x' };\n" },
+    });
+    expect(statuses(update)).toEqual({ hooks: "update" });
+    applyAgentConfig(
+      removeAgentConfig("opencode", { home: fx.home, platform: "linux", profile: "guard" }),
+    );
+    expect(existsSync(plugin)).toBe(false);
+
+    fx.write(".config/opencode/plugins/selfhost.js", "// mine\n");
+    const blocked = planAgentConfig("opencode", { home: fx.home, platform: "linux", ...input });
+    expect(blocked.items).toEqual([expect.objectContaining({ item: "hooks", status: "conflict" })]);
+    expect(blocked.changes).toEqual([]);
+  });
+});
+
 describe("every agent", () => {
   it("writes only inside the agents' own config folders and selfhost's state, never a shell profile", () => {
     const fx = fixtureHome();

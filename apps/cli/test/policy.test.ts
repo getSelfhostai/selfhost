@@ -25,6 +25,11 @@ const CATEGORIES = readFileSync(
   ),
   "utf8",
 );
+/**
+ * The same policy with the built-in guardrails off, so these tests see only its rules. The
+ * guardrails have their own test below and in guardrails.test.ts.
+ */
+const RULES_ONLY = `${CATEGORIES}\n[guardrails]\nmode = "off"\n`;
 
 function repo(files: Record<string, string>) {
   const dir = tempDir("policy");
@@ -66,7 +71,7 @@ describe("selfhost policy", () => {
 
 describe("selfhost policy check", () => {
   it("lists every check with its mode when the file is valid", async () => {
-    const dir = repo({ "selfhost.toml": CATEGORIES, "src/.keep": "" });
+    const dir = repo({ "selfhost.toml": RULES_ONLY, "src/.keep": "" });
     const result = await run(["policy", "check"], { cwd: dir.path("src") });
     expect(result.code).toBe(0);
     expect(result.out).toContain("valid, 8 checks (1 enforce, 6 observe, 1 off)");
@@ -113,7 +118,7 @@ describe("selfhost policy check", () => {
 
 describe("selfhost policy test", () => {
   it("prints the rules that fire on one call", async () => {
-    const dir = repo({ "selfhost.toml": CATEGORIES });
+    const dir = repo({ "selfhost.toml": RULES_ONLY });
     const args = ["policy", "test", "--tool", "Bash", "--command", "git push --force"];
     const result = await run([...args, "--model", "o3", "--agent", "claude"], { cwd: dir.root });
     expect(result.code).toBe(0);
@@ -127,8 +132,22 @@ describe("selfhost policy test", () => {
     expect(none.out).toBe("No rule fires.");
   });
 
-  it("applies a team's overrides and reads the MCP server from the tool name", async () => {
+  it("includes the built-in guardrails, which are enforced unless [guardrails] says otherwise", async () => {
     const dir = repo({ "selfhost.toml": CATEGORIES });
+    const args = ["policy", "test", "--tool", "Bash", "--command", "git push --force"];
+    const result = await run([...args, "--json"], { cwd: dir.root });
+    expect(JSON.parse(result.out)).toMatchObject({
+      decision: "block",
+      mode: "enforce",
+      hits: expect.arrayContaining([
+        expect.objectContaining({ rule_id: "no-force-push", mode: "observe" }),
+        expect.objectContaining({ rule_id: "guard.force_push", mode: "enforce" }),
+      ]),
+    });
+  });
+
+  it("applies a team's overrides and reads the MCP server from the tool name", async () => {
+    const dir = repo({ "selfhost.toml": RULES_ONLY });
     const result = await run(
       ["policy", "test", "--tool", "mcp__slack__post_message", "--team", "platform", "--json"],
       { cwd: dir.root },
@@ -153,7 +172,7 @@ describe("selfhost policy test", () => {
   });
 
   it("normalizes the path and rejects unknown agents and teams", async () => {
-    const dir = repo({ "selfhost.toml": CATEGORIES });
+    const dir = repo({ "selfhost.toml": RULES_ONLY });
     const path = await run(
       ["policy", "test", "--tool", "Edit", "--path", "./db/migrations/001.sql", "--json"],
       { cwd: dir.root },
@@ -213,7 +232,7 @@ rules = []
 
   it("runs selfhost.test.toml next to selfhost.toml when given no paths", async () => {
     const dir = repo({
-      "selfhost.toml": CATEGORIES,
+      "selfhost.toml": RULES_ONLY,
       "selfhost.test.toml": CASES,
       "src/.keep": "",
     });
@@ -228,7 +247,7 @@ rules = []
 
   it("exits 1 and shows expected and actual for each mismatch", async () => {
     const dir = repo({
-      "selfhost.toml": CATEGORIES,
+      "selfhost.toml": RULES_ONLY,
       "policy/edge.test.toml": `config = "../selfhost.toml"
 
 [[cases]]
@@ -292,7 +311,7 @@ decision = "allow"
 
   it("names the file, line and field when a test file or its policy is invalid", async () => {
     const dir = repo({
-      "selfhost.toml": CATEGORIES,
+      "selfhost.toml": RULES_ONLY,
       "bad.test.toml": '[[cases]]\nname = "x"\ndecision = "maybe"\n',
       "broken.toml": 'version = 1\n[mcp]\nmode = "strict"\n',
       "broken.test.toml": '[[cases]]\nname = "x"\ndecision = "allow"\n',
@@ -312,7 +331,7 @@ decision = "allow"
 
   it("runs every file in a folder against the policy each one names, or --config", async () => {
     const dir = repo({
-      "selfhost.toml": CATEGORIES,
+      "selfhost.toml": RULES_ONLY,
       "tests/a.test.toml": `config = "../selfhost.toml"\n${CASES}`,
       "tests/b.test.toml": CASES,
       "tests/notes.toml": "not a test file",
@@ -334,7 +353,7 @@ decision = "allow"
   });
 
   it("explains what is missing or contradictory", async () => {
-    const dir = repo({ "selfhost.toml": CATEGORIES, "a.test.toml": CASES });
+    const dir = repo({ "selfhost.toml": RULES_ONLY, "a.test.toml": CASES });
     const cases: [string[], RegExp][] = [
       [[], /No test files given and no selfhost\.test\.toml/],
       [["missing.test.toml"], /missing\.test\.toml does not exist/],
@@ -353,7 +372,7 @@ decision = "allow"
 
 describe("selfhost policy test --replay", () => {
   it("runs recorded calls from JSON Lines and JSON, ledger events included", async () => {
-    const dir = repo({ "selfhost.toml": CATEGORIES });
+    const dir = repo({ "selfhost.toml": RULES_ONLY });
     const lines = [
       { tool: "Bash", command: "git push --force origin main" },
       { tool: "Read", path: "src/app.ts" },
@@ -404,7 +423,7 @@ describe("selfhost policy test --replay", () => {
   });
 
   it("refuses entries that are not tool calls", async () => {
-    const dir = repo({ "selfhost.toml": CATEGORIES, "calls.json": '[{"command": "ls"}]' });
+    const dir = repo({ "selfhost.toml": RULES_ONLY, "calls.json": '[{"command": "ls"}]' });
     const result = await run(["policy", "test", "--replay", "calls.json"], { cwd: dir.root });
     expect(result.code).toBe(1);
     expect(result.err).toMatch(/entry 1: expected a tool call with a tool name/);
@@ -560,14 +579,16 @@ allow = ["claude-opus-*"]
       calls: 2,
       skipped: 0,
       rules: [
+        { rule_id: "guard.force_push", calls: 1 },
         { rule_id: "models.allow", calls: 1 },
         { rule_id: "no-force-push", calls: 1 },
       ],
     });
-    // Newest first, as the ledger returns them.
+    // Newest first, as the ledger returns them. The force push also trips the built-in guardrail,
+    // which is enforced by default.
     expect(report.results.map((r) => [r.ts, r.decision, r.mode, r.rules])).toEqual([
       ["2026-11-01T09:02:00.000Z", "block", "observe", ["models.allow"]],
-      ["2026-11-01T09:01:00.000Z", "block", "observe", ["no-force-push"]],
+      ["2026-11-01T09:01:00.000Z", "block", "enforce", ["no-force-push", "guard.force_push"]],
     ]);
     expect(lines[0]).toMatch(/^Replayed 2 tool calls from the ledger \(.+ since 2026-11-01\)/);
     expect(await ledger.query({ kind: "policy.evaluated" })).toMatchObject({ events: [] });

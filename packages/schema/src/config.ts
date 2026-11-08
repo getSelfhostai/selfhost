@@ -59,6 +59,18 @@ export const PACKAGE_RULE_IDS = {
 export const INSTALL_SCRIPT_ACTIONS = ["ask", "block", "allow"] as const;
 export type InstallScriptAction = (typeof INSTALL_SCRIPT_ACTIONS)[number];
 
+/** Rule ids of the built-in guardrails that pre-tool hooks apply, in the order they are checked. */
+export const GUARDRAIL_IDS = [
+  "guard.force_push",
+  "guard.reset_hard",
+  "guard.rm_outside_workspace",
+  "guard.secret_read",
+  "guard.prod_sql",
+  "guard.prod_credentials",
+] as const;
+
+export type GuardrailId = (typeof GUARDRAIL_IDS)[number];
+
 const RULE_ID_PATTERN = "^[A-Za-z0-9][A-Za-z0-9_.-]*$";
 /** GitHub logins: letters, digits and single hyphens, at most 39 characters. */
 const GITHUB_LOGIN_PATTERN = "^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$";
@@ -499,6 +511,44 @@ export const SelfhostConfigSchema = Type.Object(
         },
       ),
     ),
+    guardrails: Type.Optional(
+      Type.Object(
+        {
+          mode: Type.Optional(
+            StringEnum(RULE_MODES, {
+              default: "enforce",
+              description:
+                "enforce blocks what the guardrails catch, observe records it and blocks nothing, off turns them all off.",
+            }),
+          ),
+          disable: Type.Optional(
+            Type.Array(StringEnum(GUARDRAIL_IDS), {
+              default: [],
+              description: "Guardrails to turn off, by rule id.",
+            }),
+          ),
+          prod_connections: Type.Optional(
+            Type.Array(NonEmpty(), {
+              default: [],
+              description:
+                "Globs that mark production databases, matched against the hosts, connection URLs, database names and environment variable names in a command. DROP or TRUNCATE in a command that names one is blocked under guard.prod_sql.",
+            }),
+          ),
+          prod_credentials: Type.Optional(
+            Type.Array(NonEmpty(), {
+              default: [],
+              description:
+                "Globs that mark production credentials, matched against the environment variable names a command reads or sets, the values of --profile, --context and similar flags, and the paths of files a tool reads (~/ is the home folder). A match is blocked under guard.prod_credentials.",
+            }),
+          ),
+        },
+        {
+          additionalProperties: false,
+          default: {},
+          description: `Built-in guardrails the pre-tool hooks apply on top of [[rules]]: force push, git reset --hard, rm -rf outside the workspace, reading .env and key files, DROP or TRUNCATE on production databases and use of production credentials. They block by default. Rule ids: ${GUARDRAIL_IDS.join(", ")}.`,
+        },
+      ),
+    ),
     teams: Type.Optional(
       Type.Record(Type.String(), TeamSchema, { default: {}, description: "Teams by name." }),
     ),
@@ -527,7 +577,16 @@ export type ResolvedTeam = Required<Team>;
 /** A config after defaults are applied: every section is present. */
 export type ResolvedSelfhostConfig = Omit<
   SelfhostConfig,
-  "ledger" | "redaction" | "rules" | "review" | "packages" | "mcp" | "models" | "alerts" | "teams"
+  | "ledger"
+  | "redaction"
+  | "rules"
+  | "review"
+  | "packages"
+  | "mcp"
+  | "models"
+  | "alerts"
+  | "guardrails"
+  | "teams"
 > & {
   ledger: Required<Present<SelfhostConfig["ledger"]>>;
   redaction: Present<SelfhostConfig["redaction"]>;
@@ -545,6 +604,7 @@ export type ResolvedSelfhostConfig = Omit<
   models: Required<Present<SelfhostConfig["models"]>>;
   alerts: Present<SelfhostConfig["alerts"]> &
     Required<Omit<Present<SelfhostConfig["alerts"]>, "runbook_url">>;
+  guardrails: Required<Present<SelfhostConfig["guardrails"]>>;
   teams: Record<string, ResolvedTeam>;
 };
 
@@ -589,6 +649,11 @@ function semanticErrors(config: ResolvedSelfhostConfig): SegmentError[] {
       errors.push({
         segments: ["rules", index, "id"],
         message: `Rule id "${rule.id}" is reserved: ids that start with "${PACKAGE_RULE_PREFIX}" belong to [packages]`,
+      });
+    } else if ((GUARDRAIL_IDS as readonly string[]).includes(rule.id)) {
+      errors.push({
+        segments: ["rules", index, "id"],
+        message: `Rule id "${rule.id}" is reserved for the built-in guardrail; set it in [guardrails]`,
       });
     } else {
       ruleIds.set(rule.id, index);

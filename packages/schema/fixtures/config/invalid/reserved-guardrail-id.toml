@@ -1,0 +1,7 @@
+version = 1
+
+[[rules]]
+id = "guard.force_push"
+match = { command = "git push --force" }
+action = "block"
+message = "No force pushes."

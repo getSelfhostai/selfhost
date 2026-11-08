@@ -1,6 +1,6 @@
 export { type AppliedChange, applyAgentConfig } from "./config/apply.js";
 export { manifestPath, planAgentConfig, removeAgentConfig } from "./config/plan.js";
-export { BLOCK_END, BLOCK_START } from "./config/toml.js";
+export { BLOCK_END, BLOCK_START, tomlBlock } from "./config/toml.js";
 export type {
   AgentConfigInput,
   AgentConfigPlan,
@@ -13,7 +13,11 @@ export type {
   PlanItem,
   PlanOptions,
 } from "./config/types.js";
-export { CURSOR_HOOK_EVENTS } from "./config/vendors.js";
+export {
+  CURSOR_HOOK_EVENTS,
+  OPENCODE_PLUGIN_FILE,
+  PRE_TOOL_HOOK_EVENTS,
+} from "./config/vendors.js";
 export {
   CONTEXT_KIND_LABELS,
   type ContextFile,

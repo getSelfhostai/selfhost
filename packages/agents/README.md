@@ -46,7 +46,7 @@ so those logins report `unknown`.
 | ----------- | ----------------------------------------- | --------------------- | ----------------------------- | ------------------------------ |
 | Claude Code | `settings.json` `hooks`                   | `settings.json` `env` | `~/.claude.json` `mcpServers` | `env` (`OTEL_*`)               |
 | Codex       | `[[hooks.*]]`, or `hooks.json` if present | unsupported           | `[mcp_servers.<name>]`        | `[otel]`                       |
-| OpenCode    | unsupported (JavaScript plugins)          | unsupported           | `mcp.servers.<name>`          | unsupported (process env only) |
+| OpenCode    | `plugins/selfhost.js` when given one      | unsupported           | `mcp.servers.<name>`          | unsupported (process env only) |
 | Goose       | unsupported                               | unsupported           | `extensions.<name>`           | `otel_exporter_otlp_endpoint`  |
 | Cursor CLI  | `~/.cursor/hooks.json`                    | unsupported           | `~/.cursor/mcp.json`          | unsupported                    |
 
@@ -58,6 +58,16 @@ so a re-run plans no changes and `removeAgentConfig` takes out exactly that, res
 user's keys. `applyAgentConfig` refuses a plan whose files changed since it was made, writes
 each file through a temporary file and a rename, keeps its permissions, writes through
 symlinks, and saves a timestamped `.selfhost-backup-*` copy next to each changed file.
+
+`hooks.events: "pre_tool"` hooks only the events whose answer can stop a tool call
+(`PRE_TOOL_HOOK_EVENTS`: Claude Code and Codex `PreToolUse`; Cursor `preToolUse`,
+`beforeShellExecution`, `beforeReadFile` and `beforeMCPExecution`). OpenCode has no hook
+settings, so `hooks.opencodePlugin` (JavaScript source) is written whole to
+`plugins/selfhost.js` in its config folder; a file there that selfhost did not write is a
+conflict. A `profile` keeps a separate record (`~/.selfhost/agents/<agent>.<profile>.json`) and
+its own TOML block (`# >>> selfhost <profile> >>>`), so `selfhost guard install` (profile
+`guard`) and `agents configure` are added and removed apart. A hook another profile already
+added counts as already set and is left to that profile.
 
 ## Context files
 

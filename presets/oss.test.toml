@@ -207,9 +207,9 @@ rules = []
 [[cases]]
 name = "git reset --hard"
 command = "git reset --hard HEAD~3"
-decision = "ask"
-mode = "observe"
-rules = ["git-discard-work"]
+decision = "block"
+mode = "enforce"
+rules = ["git-discard-work", "guard.reset_hard"]
 
 [[cases]]
 name = "git clean -fdx"

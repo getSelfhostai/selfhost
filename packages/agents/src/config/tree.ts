@@ -131,7 +131,7 @@ function applyEdit(doc: TreeDoc, item: string, edit: Edit, owned: Owned[]) {
 /** A comparable record of an item's owned values, to tell create, update and unchanged apart. */
 function signature(doc: TreeDoc, owned: Owned[], item: string): string {
   const parts = owned.flatMap((entry) => {
-    if (entry.kind === "container" || entry.item !== item) return [];
+    if (entry.kind === "container" || entry.kind === "file" || entry.item !== item) return [];
     return entry.kind === "key"
       ? [JSON.stringify(["key", entry.path, doc.get(entry.path) ?? null])]
       : [JSON.stringify(["hook", entry.path, entry.command])];

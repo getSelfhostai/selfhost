@@ -492,6 +492,58 @@
         }
       }
     },
+    "guardrails": {
+      "additionalProperties": false,
+      "default": {},
+      "description": "Built-in guardrails the pre-tool hooks apply on top of [[rules]]: force push, git reset --hard, rm -rf outside the workspace, reading .env and key files, DROP or TRUNCATE on production databases and use of production credentials. They block by default. Rule ids: guard.force_push, guard.reset_hard, guard.rm_outside_workspace, guard.secret_read, guard.prod_sql, guard.prod_credentials.",
+      "type": "object",
+      "properties": {
+        "mode": {
+          "default": "enforce",
+          "description": "enforce blocks what the guardrails catch, observe records it and blocks nothing, off turns them all off.",
+          "type": "string",
+          "enum": [
+            "observe",
+            "enforce",
+            "off"
+          ]
+        },
+        "disable": {
+          "default": [],
+          "description": "Guardrails to turn off, by rule id.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "guard.force_push",
+              "guard.reset_hard",
+              "guard.rm_outside_workspace",
+              "guard.secret_read",
+              "guard.prod_sql",
+              "guard.prod_credentials"
+            ]
+          }
+        },
+        "prod_connections": {
+          "default": [],
+          "description": "Globs that mark production databases, matched against the hosts, connection URLs, database names and environment variable names in a command. DROP or TRUNCATE in a command that names one is blocked under guard.prod_sql.",
+          "type": "array",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "prod_credentials": {
+          "default": [],
+          "description": "Globs that mark production credentials, matched against the environment variable names a command reads or sets, the values of --profile, --context and similar flags, and the paths of files a tool reads (~/ is the home folder). A match is blocked under guard.prod_credentials.",
+          "type": "array",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          }
+        }
+      }
+    },
     "teams": {
       "default": {},
       "description": "Teams by name.",

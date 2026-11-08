@@ -1,12 +1,24 @@
 import { parse as parseToml } from "smol-toml";
 import { isPlainObject, type Plain } from "./docs.js";
 import type { FilePlan } from "./tree.js";
-import type { ManifestFile, PlanItem, TomlTarget } from "./types.js";
+import type { ManifestFile, PlanItem, TomlBlock, TomlTarget } from "./types.js";
 
 export const BLOCK_START = "# >>> selfhost >>>";
 export const BLOCK_END = "# <<< selfhost <<<";
 const BLOCK_NOTE =
   "# Written by `selfhost agents configure`. Edits inside this block are replaced.";
+
+const MAIN_BLOCK: TomlBlock = { start: BLOCK_START, end: BLOCK_END, note: BLOCK_NOTE };
+
+/** The block markers for a profile: the main setup's, or ones named after the profile. */
+export function tomlBlock(profile: string | undefined, writer?: string): TomlBlock {
+  if (profile === undefined) return MAIN_BLOCK;
+  return {
+    start: `# >>> selfhost ${profile} >>>`,
+    end: `# <<< selfhost ${profile} <<<`,
+    note: `# Written by \`${writer ?? `selfhost ${profile}`}\`. Edits inside this block are replaced.`,
+  };
+}
 
 const BARE_KEY = /^[A-Za-z0-9_-]+$/;
 
@@ -37,11 +49,15 @@ export function tomlTable(header: string, body: Plain): string {
 type Extracted = { ok: true; base: string; block: string | null } | { ok: false; error: string };
 
 /** Splits a file into the user's part and selfhost's block (with the blank line before it). */
-export function extractBlock(text: string, path: string): Extracted {
+export function extractBlock(
+  text: string,
+  path: string,
+  markers: TomlBlock = MAIN_BLOCK,
+): Extracted {
   const lines = text.split("\n");
-  const start = lines.indexOf(BLOCK_START);
+  const start = lines.indexOf(markers.start);
   if (start === -1) return { ok: true, base: text, block: null };
-  const end = lines.indexOf(BLOCK_END, start);
+  const end = lines.indexOf(markers.end, start);
   if (end === -1) {
     return { ok: false, error: `${path} has a selfhost block with no end marker; fix it by hand` };
   }
@@ -51,8 +67,8 @@ export function extractBlock(text: string, path: string): Extracted {
   return { ok: true, base, block };
 }
 
-export function insertBlock(base: string, body: string): string {
-  const block = `${BLOCK_START}\n${BLOCK_NOTE}\n${body}\n${BLOCK_END}\n`;
+export function insertBlock(base: string, body: string, markers: TomlBlock = MAIN_BLOCK): string {
+  const block = `${markers.start}\n${markers.note}\n${body}\n${markers.end}\n`;
   if (base.trim() === "") return block;
   return `${base.endsWith("\n") ? base : `${base}\n`}\n${block}`;
 }
@@ -93,7 +109,8 @@ export function planToml(
     after: before,
     manifest: previous,
   });
-  const extracted = extractBlock(before ?? "", target.path);
+  const markers = target.block ?? MAIN_BLOCK;
+  const extracted = extractBlock(before ?? "", target.path, markers);
   if (!extracted.ok) return fail(extracted.error);
   const base = parse(extracted.base);
   if (!base.ok) return fail(`${target.path} is not valid TOML: ${base.error}`);
@@ -138,7 +155,9 @@ export function planToml(
   }
 
   let after: string | null =
-    snippets.length > 0 ? insertBlock(extracted.base, snippets.join("\n\n")) : extracted.base;
+    snippets.length > 0
+      ? insertBlock(extracted.base, snippets.join("\n\n"), markers)
+      : extracted.base;
   if (snippets.length > 0) {
     const check = parse(after);
     if (!check.ok) {

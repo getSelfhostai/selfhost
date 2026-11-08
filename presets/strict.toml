@@ -11,7 +11,15 @@
 # Tests for this file: presets/strict.test.toml. Run them with `selfhost policy test`.
 version = 1
 
-# [guardrails]: built-in guardrails for force pushes, rm -rf and .env reads go here.
+# Built-in guardrails, enforced in every agent's pre-tool hook: force pushes, git reset --hard,
+# rm -rf outside the workspace and reads of .env and key files. List production database hosts,
+# URLs or variables in prod_connections and production credentials (variables, profiles, files)
+# in prod_credentials to block DROP and TRUNCATE on them and any use of them, for example
+# prod_connections = ["*.prod.example.internal", "PROD_DATABASE_URL"].
+[guardrails]
+mode = "enforce"
+prod_connections = []
+prod_credentials = []
 
 [ledger]
 retention_days = 365

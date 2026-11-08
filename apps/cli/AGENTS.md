@@ -32,7 +32,10 @@ starter rules; use it only when the person asks for one, since presets enforce s
 - `~/.selfhost/`: the ledger (`data/`), hook events waiting for import (`spool/`), the list of
   files init changed (`init.json`) and, with `--team`, the membership (`config.json`).
 - `selfhost.toml` at the git repository root, only when none exists: four starter rules, all in
-  observe mode, so nothing is blocked, or the preset given with `--preset`.
+  observe mode, or the preset given with `--preset`. The hooks still apply the built-in guardrails
+  before each tool call: force pushes, `git reset --hard`, `rm -rf` outside the workspace and reads
+  of `.env` and key files are blocked unless `[guardrails] mode` in `selfhost.toml` is `observe`
+  or `off`.
 - Nothing else: no shell profile, no API key, no sign-in.
 
 ## Undo
