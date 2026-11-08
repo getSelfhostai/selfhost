@@ -7,13 +7,15 @@ import {
   readChange,
 } from "@selfhost/pr";
 import { buildBrief } from "./build.js";
-import type { Brief, BriefInputs } from "./types.js";
+import type { Brief, BriefInputs, BriefTracer } from "./types.js";
 
 export interface BriefSettings {
   /** `[review] high_risk_paths` from selfhost.toml. */
   highRiskPaths: string[];
   /** The team server's base URL, for trace links. */
   server?: string;
+  /** `[integrations.tracer]`, for links to each run in the team's tracer. */
+  tracer?: BriefTracer;
 }
 
 /** The brief's inputs from a change read by `@selfhost/pr`. */
@@ -38,6 +40,7 @@ export function briefInputs(change: Change, settings: BriefSettings): BriefInput
     ...(change.runMissing ? { runMissing: change.runMissing } : {}),
     highRiskPaths: settings.highRiskPaths,
     ...(settings.server ? { server: settings.server } : {}),
+    ...(settings.tracer ? { tracer: settings.tracer } : {}),
   };
 }
 

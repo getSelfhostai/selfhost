@@ -34,7 +34,8 @@
     "@selfhost/policy": "workspace:*",
     "@selfhost/pr": "workspace:*",
     "@selfhost/schema": "workspace:*",
-    "@selfhost/spend": "workspace:*"
+    "@selfhost/spend": "workspace:*",
+    "@selfhost/traces": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

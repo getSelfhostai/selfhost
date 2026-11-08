@@ -59,7 +59,11 @@ export function createApp({
   receipts = {},
 }: AppOptions): Hono {
   const app = new Hono();
-  const review = { ...(config ? { config } : {}), ...(now ? { now } : {}) };
+  const review = {
+    ...(config ? { config } : {}),
+    ...(now ? { now } : {}),
+    ...(github.publicUrl ? { publicUrl: github.publicUrl } : {}),
+  };
 
   // Signed by GitHub instead of a bearer token, so they go before both token checks.
   const pulls = githubRoutes(app, ledger, { ...(clones ? { clones } : {}), ...github });
@@ -76,6 +80,7 @@ export function createApp({
     ...(now ? { now } : {}),
     ...(signin ? { signin } : {}),
     provenance: { ...(clones ? { clones } : {}), ...(config ? { config } : {}) },
+    runs: config ? { config } : {},
     personRoutes: (person) => {
       reviewRoutes(person, ledger, {
         ...review,

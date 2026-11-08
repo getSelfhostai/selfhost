@@ -1249,6 +1249,60 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /v1/runs/{run_id}:
+    get:
+      operationId: getRun
+      summary: One agent run for the console's run view, with links to it in the team's tracer.
+      description: "The admin token, or a person token of anyone in the team. A run is one agent session: run_id is the session_id its events carry, and it belongs to the team most of its events were written to. The answer has the run's summary, its ledger events oldest first (limit and cursor page through them), the pull requests they link to and trace_url, the run in the team's tracer from [integrations.tracer] run_url once the server has sent it there. Events are redacted under the team's current [ledger] and [[redaction]] settings. The full trace lives in the tracer; this is the summary and the way out to it."
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          description: "Run id: the agent's session id."
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of events.
+          schema:
+            minimum: 1
+            maximum: 1000
+            default: 200
+            type: integer
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque cursor from next_cursor of the previous page.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The run.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunResponse"
+        "400":
+          description: Invalid limit or cursor.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: A person token whose teams do not include the run's team. The same answer whether or not the run exists, so it shows nothing of it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such run (admin token).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /v1/budget:
     get:
       operationId: getBudget
@@ -5590,3 +5644,242 @@ components:
                 minimum: 1
                 description: Across every repo of the team; 1 holds the most agent-written lines.
                 type: integer
+    RunSummary:
+      additionalProperties: false
+      title: RunSummary
+      type: object
+      required:
+        - id
+        - agent
+        - model
+        - person
+        - team
+        - repo
+        - started_at
+        - ended_at
+        - cost_usd
+        - tokens
+      properties:
+        id:
+          description: "Run id: the agent's session id."
+          type: string
+        agent:
+          description: The coding agent, or null when no event named one.
+          anyOf:
+            - additionalProperties: false
+              description: Which coding agent was involved.
+              type: object
+              required:
+                - vendor
+              properties:
+                vendor:
+                  description: Agent product.
+                  type: string
+                  enum:
+                    - claude_code
+                    - codex
+                    - opencode
+                    - goose
+                    - cursor
+                    - copilot
+                    - other
+                version:
+                  description: Agent CLI or app version, for example 2.1.0.
+                  type: string
+                name:
+                  description: Agent or subagent name when the vendor reports one, for example a Claude Code subagent type.
+                  type: string
+            - type: "null"
+        model:
+          description: The model most of the run's requests went to, or null.
+          anyOf:
+            - type: string
+            - type: "null"
+        person:
+          description: The person the run worked for, or null when not known.
+          anyOf:
+            - type: string
+            - type: "null"
+        team:
+          description: The team the run belongs to, or null on a laptop ledger.
+          anyOf:
+            - type: string
+            - type: "null"
+        repo:
+          description: Repository as owner/name, or null when not known.
+          anyOf:
+            - type: string
+            - type: "null"
+        started_at:
+          format: date-time
+          description: The run's first event.
+          type: string
+        ended_at:
+          description: When the session ended, else its last event once it has been idle for 30 minutes. null while it is still going.
+          anyOf:
+            - format: date-time
+              type: string
+            - type: "null"
+        cost_usd:
+          minimum: 0
+          description: Spend of the run's model requests, counting one source when several reported the same session.
+          type: number
+        tokens:
+          minimum: 0
+          description: Input, output, cache read and cache write tokens of those requests.
+          type: integer
+    RunPullRequest:
+      additionalProperties: false
+      title: RunPullRequest
+      type: object
+      required:
+        - url
+        - state
+      properties:
+        url:
+          format: uri
+          description: Pull request URL.
+          type: string
+        state:
+          description: From the newest pr.opened, pr.merged or pr.closed event for it.
+          type: string
+          enum:
+            - open
+            - merged
+            - closed
+    RunResponse:
+      additionalProperties: false
+      title: RunResponse
+      type: object
+      required:
+        - schema
+        - run
+        - events
+        - next_cursor
+        - prs
+        - trace_url
+      properties:
+        schema:
+          const: selfhost.run/v1
+          type: string
+        run:
+          additionalProperties: false
+          title: RunSummary
+          type: object
+          required:
+            - id
+            - agent
+            - model
+            - person
+            - team
+            - repo
+            - started_at
+            - ended_at
+            - cost_usd
+            - tokens
+          properties:
+            id:
+              description: "Run id: the agent's session id."
+              type: string
+            agent:
+              description: The coding agent, or null when no event named one.
+              anyOf:
+                - additionalProperties: false
+                  description: Which coding agent was involved.
+                  type: object
+                  required:
+                    - vendor
+                  properties:
+                    vendor:
+                      description: Agent product.
+                      type: string
+                      enum:
+                        - claude_code
+                        - codex
+                        - opencode
+                        - goose
+                        - cursor
+                        - copilot
+                        - other
+                    version:
+                      description: Agent CLI or app version, for example 2.1.0.
+                      type: string
+                    name:
+                      description: Agent or subagent name when the vendor reports one, for example a Claude Code subagent type.
+                      type: string
+                - type: "null"
+            model:
+              description: The model most of the run's requests went to, or null.
+              anyOf:
+                - type: string
+                - type: "null"
+            person:
+              description: The person the run worked for, or null when not known.
+              anyOf:
+                - type: string
+                - type: "null"
+            team:
+              description: The team the run belongs to, or null on a laptop ledger.
+              anyOf:
+                - type: string
+                - type: "null"
+            repo:
+              description: Repository as owner/name, or null when not known.
+              anyOf:
+                - type: string
+                - type: "null"
+            started_at:
+              format: date-time
+              description: The run's first event.
+              type: string
+            ended_at:
+              description: When the session ended, else its last event once it has been idle for 30 minutes. null while it is still going.
+              anyOf:
+                - format: date-time
+                  type: string
+                - type: "null"
+            cost_usd:
+              minimum: 0
+              description: Spend of the run's model requests, counting one source when several reported the same session.
+              type: number
+            tokens:
+              minimum: 0
+              description: Input, output, cache read and cache write tokens of those requests.
+              type: integer
+        events:
+          description: The run's ledger events, oldest first, at most limit of them. Redacted under the team's current [ledger] and [[redaction]] settings, so prompt text appears only when log_prompts is on.
+          type: array
+          items:
+            $ref: "#/components/schemas/LedgerEvent"
+        next_cursor:
+          description: Pass as cursor to get the next events. null on the last page.
+          anyOf:
+            - type: string
+            - type: "null"
+        prs:
+          description: Pull requests the run's events link to, in the order they first appear.
+          type: array
+          items:
+            additionalProperties: false
+            title: RunPullRequest
+            type: object
+            required:
+              - url
+              - state
+            properties:
+              url:
+                format: uri
+                description: Pull request URL.
+                type: string
+              state:
+                description: From the newest pr.opened, pr.merged or pr.closed event for it.
+                type: string
+                enum:
+                  - open
+                  - merged
+                  - closed
+        trace_url:
+          description: "The run in the team's tracer: [integrations.tracer] run_url with {run_id} and {trace_id} filled in. null when no tracer is set up, it has no run_url, or the run has not been sent yet."
+          anyOf:
+            - type: string
+            - type: "null"

@@ -47,6 +47,13 @@ retention from the ledger (the one `selfhost import` writes, or `--database` / `
 `selfhost import` keeps prompt text only with `--prompts`, and masks secrets and emails either
 way; the ledger drops prompt text from any import without it.
 
+`selfhost traces export [--since <date>] [--dry-run] [--json]` sends the ledger's finished runs
+to the tracer in `[integrations.tracer]` of `selfhost.toml` (Langfuse, Phoenix, Datadog or any
+OTLP endpoint), each agent session as one OpenTelemetry trace with GenAI attributes, the same
+spans the team server sends. Header values come from the variables `headers_env` names. Runs
+already sent are skipped, runs still going wait for the next export, and prompt text goes only
+with `[ledger] log_prompts` on. `--dry-run` prints the spans and sends nothing.
+
 ### Plan limits and spend alarms
 
 `selfhost spend plan [claude=<tier>] [codex=<tier>]` sets your own plan tiers (`pro`,

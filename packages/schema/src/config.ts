@@ -506,7 +506,9 @@ export const IntegrationsSchema = Type.Object(
             description:
               "Where selfhost sends agent traces: langfuse, phoenix, datadog, or otlp for any OpenTelemetry endpoint.",
           }),
-          endpoint: HttpUrl("The tracer's OTLP over HTTP endpoint."),
+          endpoint: HttpUrl(
+            "The tracer's OTLP over HTTP endpoint. Spans go to <endpoint>/v1/traces as protobuf, unless it already ends in /v1/traces.",
+          ),
           headers_env: Type.Optional(
             Type.Record(
               Type.String(),
@@ -520,7 +522,7 @@ export const IntegrationsSchema = Type.Object(
           run_url: Type.Optional(
             Type.String({
               description:
-                "Link template to one run in the tracer's own UI, with {run_id} replaced, for the console's run view.",
+                "Link template to one run in the tracer's own UI, for the console's run view and pull request briefs. {run_id} is replaced with the run (session) id and {trace_id} with the 32-hex OpenTelemetry trace id selfhost sends it under.",
             }),
           ),
         },

@@ -36,17 +36,17 @@ Every section is always there. When the run has nothing for one, the section say
 "No tests ran in this run.", "No trace found: no ledger.", "Protected paths not checked:
 selfhost.toml has no [review] high_risk_paths."
 
-| Section          | From                                                                                                                                                                    |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Task             | The pull request title and the first paragraph of its description (the first commit subject for local commits), and the run's first prompt only when prompts are stored |
-| Plan             | List items under a Plan heading in the description, and the run's plan updates (`TodoWrite`, `update_plan`, `ExitPlanMode`)                                             |
-| Lines to look at | Changes under `[review] high_risk_paths`, new dependencies, deleted test files, deleted tests and skipped or focused tests, each linked to its line in the diff         |
-| Files touched    | Every changed file with its status and line counts                                                                                                                      |
-| Commands run     | Shell commands from the run's `tool.called` events, one source per session, identical ones on one line                                                                  |
-| Tests run        | Commands that run a test runner (vitest, jest, pytest, go test, cargo test, npm/pnpm/yarn/bun test, and others), with the result from the matching `tool.result`        |
-| Blocked actions  | `policy.evaluated` block and ask verdicts with their rule ids, enforced or observed; package guard verdicts (`packages.*`) read as blocked or flagged installs          |
-| Cost             | `cost.recorded` events, one source per session, as `selfhost spend` counts them                                                                                         |
-| Trace            | Each session's events on the team server (`<server>/v1/events?session=<id>`), or the local command `selfhost review trace <id>`                                         |
+| Section          | From                                                                                                                                                                                            |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Task             | The pull request title and the first paragraph of its description (the first commit subject for local commits), and the run's first prompt only when prompts are stored                         |
+| Plan             | List items under a Plan heading in the description, and the run's plan updates (`TodoWrite`, `update_plan`, `ExitPlanMode`)                                                                     |
+| Lines to look at | Changes under `[review] high_risk_paths`, new dependencies, deleted test files, deleted tests and skipped or focused tests, each linked to its line in the diff                                 |
+| Files touched    | Every changed file with its status and line counts                                                                                                                                              |
+| Commands run     | Shell commands from the run's `tool.called` events, one source per session, identical ones on one line                                                                                          |
+| Tests run        | Commands that run a test runner (vitest, jest, pytest, go test, cargo test, npm/pnpm/yarn/bun test, and others), with the result from the matching `tool.result`                                |
+| Blocked actions  | `policy.evaluated` block and ask verdicts with their rule ids, enforced or observed; package guard verdicts (`packages.*`) read as blocked or flagged installs                                  |
+| Cost             | `cost.recorded` events, one source per session, as `selfhost spend` counts them                                                                                                                 |
+| Trace            | Each session's run view in the team server's console (`<server>/runs/<id>`) and, with `[integrations.tracer] run_url`, the run in the tracer; or the local command `selfhost review trace <id>` |
 
 Package installs the package guard could not check in time (`packages.unchecked`, recorded in
 observe mode because the install went ahead) are not listed as blocks: the Blocked actions

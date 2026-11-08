@@ -59,6 +59,10 @@ import {
   RoiBaselineSchema,
   RoiQuerySchema,
   RoiResponseSchema,
+  RunPullRequestSchema,
+  RunQuerySchema,
+  RunResponseSchema,
+  RunSummarySchema,
   SelfhostConfigSchema,
   SetPolicyRequestSchema,
   SetRoleRequestSchema,
@@ -201,6 +205,9 @@ const COMPONENT_SCHEMAS: ReadonlyArray<readonly [name: string, schema: TSchema]>
   ["ProvenanceReport", ProvenanceReportSchema],
   ["TeamProvenance", TeamProvenanceSchema],
   ["TeamProvenanceModules", TeamProvenanceModulesSchema],
+  ["RunSummary", RunSummarySchema],
+  ["RunPullRequest", RunPullRequestSchema],
+  ["RunResponse", RunResponseSchema],
 ];
 
 const ENTITY_REFS = new Map<string, string>([
@@ -689,6 +696,27 @@ function openApiDocument(): Json {
             ...authErrors,
             "403": forbiddenResponse,
             "404": errorResponse("No such team, or the team does not own the repo."),
+          },
+        },
+      },
+      "/v1/runs/{run_id}": {
+        get: {
+          operationId: "getRun",
+          summary:
+            "One agent run for the console's run view, with links to it in the team's tracer.",
+          description: `${ROLE_NOTE.read} A run is one agent session: run_id is the session_id its events carry, and it belongs to the team most of its events were written to. The answer has the run's summary, its ledger events oldest first (limit and cursor page through them), the pull requests they link to and trace_url, the run in the team's tracer from [integrations.tracer] run_url once the server has sent it there. Events are redacted under the team's current [ledger] and [[redaction]] settings. The full trace lives in the tracer; this is the summary and the way out to it.`,
+          parameters: [
+            pathParameter("run_id", "Run id: the agent's session id."),
+            ...queryParameters(RunQuerySchema),
+          ],
+          responses: {
+            "200": { description: "The run.", content: jsonContent("RunResponse") },
+            "400": errorResponse("Invalid limit or cursor."),
+            ...authErrors,
+            "403": errorResponse(
+              "A person token whose teams do not include the run's team. The same answer whether or not the run exists, so it shows nothing of it.",
+            ),
+            "404": errorResponse("No such run (admin token)."),
           },
         },
       },

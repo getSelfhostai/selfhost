@@ -7,7 +7,7 @@ tool = "bifrost"
 tool = "langfuse"
 endpoint = "https://cloud.langfuse.com/api/public/otel"
 headers_env = { Authorization = "LANGFUSE_OTLP_AUTH" }
-run_url = "https://cloud.langfuse.com/trace/{run_id}"
+run_url = "https://cloud.langfuse.com/trace/{trace_id}"
 
 [integrations.runtime]
 tool = "e2b"

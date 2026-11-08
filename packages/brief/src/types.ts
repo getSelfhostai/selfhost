@@ -1,6 +1,6 @@
 import type { AgentRef } from "@selfhost/attribution";
 import type { ChangedFile, FileStatus, NewDependency } from "@selfhost/pr";
-import type { LedgerEvent } from "@selfhost/schema";
+import type { LedgerEvent, TracerTool } from "@selfhost/schema";
 
 export const BRIEF_SCHEMA = "selfhost.review_brief/v1";
 
@@ -54,8 +54,15 @@ export interface BriefInputs {
   runMissing?: string;
   /** `[review] high_risk_paths` from selfhost.toml. */
   highRiskPaths: string[];
-  /** The team server's base URL. Trace links point at its events API when set. */
+  /** The team server's base URL. Trace links open each run in its console when set. */
   server?: string;
+  /** `[integrations.tracer]`: with a run_url, each run also links to the team's tracer. */
+  tracer?: BriefTracer;
+}
+
+export interface BriefTracer {
+  tool: TracerTool;
+  run_url?: string;
 }
 
 export interface BriefTask {
@@ -165,8 +172,12 @@ export interface BriefTraceSession {
   start: string;
   end: string;
   events: number;
-  /** The team server's events for the session. */
+  /** The run in the team server's console (`<server>/runs/<id>`). */
   url?: string;
+  /** The run in the team's tracer, from `[integrations.tracer] run_url`. */
+  tracerUrl?: string;
+  /** Which tracer tracerUrl opens. */
+  tracer?: TracerTool;
   /** The local command that prints them, when there is no team server. */
   command?: string;
 }

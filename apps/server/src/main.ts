@@ -8,6 +8,7 @@ import { githubAppFromEnv, githubConfig } from "./github.js";
 import { clonesUnder } from "./provenance.js";
 import { serverConfig, startRetentionJob } from "./retention.js";
 import { startReviewRefreshJob } from "./review.js";
+import { startTraceExportJob } from "./runs.js";
 import { signinFromEnv } from "./signin.js";
 import { loadApiToken } from "./token.js";
 
@@ -81,10 +82,16 @@ const reviews =
     ? undefined
     : startReviewRefreshJob(ledger, { config });
 
+// SELFHOST_TRACE_EXPORT=off stops sending finished runs to each team's [integrations.tracer],
+// for installs where another server sends them from the same database.
+const traces =
+  process.env.SELFHOST_TRACE_EXPORT === "off" ? undefined : startTraceExportJob(ledger, { config });
+
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
     retention?.stop();
     reviews?.stop();
+    traces?.stop();
     server.close(() => {
       ledger.close().finally(() => process.exit(0));
     });

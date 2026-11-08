@@ -294,8 +294,9 @@ the sessions behind them. Per delivery that is one paginated call for the files,
 commits, and one contents call per changed manifest at each side; the risk score, the owner and
 the brief share them (`src/github-reads.ts`), so each is made once. A pull request no session
 made still gets a brief, with every run section saying no run was found and why. Trace links
-point at `<SELFHOST_PUBLIC_URL>/v1/events?session=<id>`, or at the origin the delivery was sent
-to when that is unset. The risk score does not read the run yet: the agent run, tests and revert
+point at the console's run view, `<SELFHOST_PUBLIC_URL>/runs/<id>` (or the origin the delivery
+was sent to when that is unset), and at the run in the team's tracer when `[integrations.tracer]`
+has a `run_url`. The risk score does not read the run yet: the agent run, tests and revert
 history are listed as missing inputs in the check.
 
 ### Proof receipts
@@ -343,6 +344,27 @@ capped by the action); bodies over 2 MB are refused. On GitHub Enterprise Server
 5. Install the App on the repositories, and add `[review] github_logins` and `github_team` to
    `selfhost.toml`. The team to request must have access to the repository.
 
+## Traces and the run view
+
+selfhost does not keep a trace UI of its own: it sends each agent run to the tracer the team
+already uses, named in `[integrations.tracer]` of the team's `selfhost.toml` (else
+`SELFHOST_CONFIG`), through [`@selfhost/traces`](../../packages/traces/src/index.ts). Every
+minute the server sends the runs that ended (a `session.ended`, or 30 minutes with no event) as
+OpenTelemetry spans over OTLP/HTTP protobuf, one trace per run, and marks each run with how far
+it was sent, so nothing goes twice and events that arrive later join the same trace. A pass the
+tracer refused waits twice as long before the next, up to 30 minutes, and sends those runs again.
+Spans carry only what the ledger kept, redacted again under the team's current settings, and
+prompt text only with `[ledger] log_prompts` on. `SELFHOST_TRACE_EXPORT=off` turns the job off,
+for a second server on the same database.
+
+- `GET /v1/runs/{run_id}?limit&cursor` (anyone in the run's team): `selfhost.run/v1`, the run's
+  summary (agent, model, person, team, repo, start and end, cost and tokens), its ledger events
+  oldest first, the pull requests they link to and `trace_url`, the run in the tracer from
+  `run_url` (`{run_id}` and `{trace_id}` filled in) once it has been sent. Anyone else gets 403,
+  whether or not the run exists. The console's `/runs/<id>` page reads it.
+- Review items that name a session carry `run_url` (the console's run view) and, once the run is
+  in the tracer, `trace_url`.
+
 ## Privacy and retention
 
 Every event is redacted in the ledger's write path before it is stored, whichever route it came
@@ -365,7 +387,8 @@ team's stored `selfhost.toml`, others `SELFHOST_CONFIG`. `SELFHOST_REVIEW_REFRES
 that off, for a second server on the same database.
 
 With default settings the server opens no outbound connection and sends no telemetry (a
-configured GitHub App calls the GitHub API, and only while handling a signed delivery);
+configured GitHub App calls the GitHub API, and only while handling a signed delivery, and a
+configured `[integrations.tracer]` receives the team's runs);
 `test/privacy.test.ts` ingests fixture events, OTLP and team writes with every outbound path
 stubbed to fail, then reads every table to check that no planted secret was stored.
 
@@ -387,6 +410,7 @@ Environment:
 | `SELFHOST_CONFIG`                  | unset              | `selfhost.toml` with the defaults for events with no team policy: `[ledger]`, `[[redaction]]`, `[review]`.          |
 | `SELFHOST_RETENTION_SWEEP`         | `daily`            | `off` keeps every event instead of deleting expired ones daily.                                                     |
 | `SELFHOST_REVIEW_REFRESH`          | `15s`              | `off` stops building review items and timing out approvals on this server.                                          |
+| `SELFHOST_TRACE_EXPORT`            | `1m`               | `off` stops sending finished runs to each team's `[integrations.tracer]` from this server.                          |
 | `SELFHOST_GITHUB_APP_ID`           | unset              | GitHub App id. With the key and secret, turns on `POST /v1/github/webhooks`.                                        |
 | `SELFHOST_GITHUB_PRIVATE_KEY`      | unset              | The App's private key (PEM, or one line with `\n` escapes).                                                         |
 | `SELFHOST_GITHUB_PRIVATE_KEY_FILE` | unset              | Path to the App's .pem, instead of `SELFHOST_GITHUB_PRIVATE_KEY`.                                                   |
