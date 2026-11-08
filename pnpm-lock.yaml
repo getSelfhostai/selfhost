@@ -116,6 +116,9 @@ importers:
       '@selfhost/brief':
         specifier: workspace:*
         version: link:../../packages/brief
+      '@selfhost/deploy':
+        specifier: workspace:*
+        version: link:../../deploy
       '@selfhost/ee-risk':
         specifier: workspace:*
         version: link:../../ee/risk
@@ -232,6 +235,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 20.19.43
+      tsx:
+        specifier: 'catalog:'
+        version: 4.23.15
       typescript:
         specifier: 'catalog:'
         version: 5.9.3

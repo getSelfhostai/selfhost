@@ -490,7 +490,8 @@ selfhost team revoke bob@example.com                                       # adm
 selfhost team leave
 ```
 
-- `selfhost team init [--invite-ttl 7d]` creates a team with the server's admin token and
+- `selfhost team init [--invite-ttl 7d]` creates a team with the server's admin token (`--token`,
+  else `SELFHOST_TOKEN`, else the one `selfhost up` saved for that server) and
   prints the `selfhost join` command to share. The invite expires after `--invite-ttl` (30m,
   12h, 7d and so on, up to 365d; default 7d). It does not join the machine it runs on.
 - `selfhost team invite [--email <email>] [--ttl 7d]` creates another invite. With `--email`
@@ -540,8 +541,44 @@ Every command takes `--json` and prints one object with a `schema` tag: `selfhos
 `selfhost.inbox_sync/v1`,
 `selfhost.limit_forecast/v1`, `selfhost.plan_tiers/v1`, `selfhost.spend_alarms/v1`,
 `selfhost.team_init/v1`, `selfhost.team_invite/v1`, `selfhost.team_revoke/v1`,
-`selfhost.join/v1`, `selfhost.status/v1` and `selfhost.team_leave/v1`. Errors print `selfhost.error/v1` and exit 1. In solo mode no command
+`selfhost.join/v1`, `selfhost.status/v1`, `selfhost.team_leave/v1` and `selfhost.up/v1`. Errors print `selfhost.error/v1` and exit 1. In solo mode no command
 needs a network connection.
+
+## Team server: `selfhost up`
+
+```sh
+selfhost up --provider hetzner --people 8 --dry-run   # the plan and the cloud-init user-data
+selfhost up --provider hetzner                        # HCLOUD_TOKEN
+selfhost up --provider digitalocean                   # DIGITALOCEAN_TOKEN
+selfhost up --provider aws --region eu-central-1      # the aws CLI v2, signed in
+selfhost up --provider ssh --host ubuntu@203.0.113.10 [-i key] [--port 22]
+```
+
+Sets up the team server (the ledger API, the review list and the console) with the Docker Compose
+stack in [`deploy/docker`](../../deploy/docker/README.md#selfhost-up): HTTPS through Caddy, only
+ports 22, 80 and 443 open, a daily backup kept `--backup-keep-days` (14) on the server, and with
+`--signin github|google` console sign-in through oauth2-proxy (`SELFHOST_SIGNIN_CLIENT_ID`,
+`SELFHOST_SIGNIN_CLIENT_SECRET`, and `--allow-email`, `--allow-domain` or `--github-org`). Agents
+keep running where they are and no model traffic goes through the server.
+
+- Size: `--people` and `--events-per-day` pick a server: 2 vCPU and 4 GB up to 15 people and
+  50,000 events a day (Hetzner `cx23`, else `cpx22`; DigitalOcean `s-2vcpu-4gb`; AWS
+  `t3.medium`), 4 vCPU and 8 GB up to 60 people, 8 vCPU and 16 GB beyond. `--size` overrides it.
+- HTTPS name: `--domain`, else `<ip>.sslip.io` (sslip.io resolves it to the IP, so there is no
+  DNS to set up), or the SSH host when it is a DNS name.
+- Clouds go through their APIs with `fetch` (Hetzner, DigitalOcean) or the `aws` CLI (AWS, so the
+  binaries carry no AWS SDK and profiles and SSO work). SSH uses the system `ssh` with
+  `BatchMode`, so a key that needs a password prompt fails fast.
+- No secret goes in user-data: `install.sh` generates the tokens and passwords on the server.
+  When the server answers `/v1/health`, `selfhost up` connects over SSH, writes the OAuth client
+  secret to `.env` (mode 0600) when sign-in is asked for, and reads back the admin and agent
+  tokens. It then creates team `--team` (default `default`; `--no-team` skips it), prints the
+  `selfhost join` line, and with `--join` joins this machine. The server, what was created and
+  the admin token are saved under `deployments` in `~/.selfhost/config.json` (mode 0600), where
+  `selfhost team init|invite|revoke` find the token.
+- On any failure it exits 1 and lists every resource created so far with the command that
+  deletes it (`resources` in the `selfhost.error/v1` object with `--json`). Missing credentials
+  and failed SSH connections stop before anything is created.
 
 ## Binaries
 

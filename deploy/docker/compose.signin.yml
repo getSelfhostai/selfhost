@@ -1,0 +1,38 @@
+# GitHub or Google sign-in for the console: oauth2-proxy checks the login before Caddy serves
+# anything outside /v1 and /otlp, which keep their bearer tokens so CLIs, hooks and agents work
+# as before. Use it with compose.tls.yml:
+#   COMPOSE_FILE=compose.yml:compose.tls.yml:compose.signin.yml
+# The OAuth app's callback URL is https://<SELFHOST_DOMAIN>/oauth2/callback.
+services:
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.6
+    restart: unless-stopped
+    environment:
+      OAUTH2_PROXY_PROVIDER: ${SELFHOST_SIGNIN_PROVIDER:?Set SELFHOST_SIGNIN_PROVIDER to github or google in .env}
+      OAUTH2_PROXY_CLIENT_ID: ${SELFHOST_SIGNIN_CLIENT_ID:?Set SELFHOST_SIGNIN_CLIENT_ID in .env}
+      OAUTH2_PROXY_CLIENT_SECRET: ${SELFHOST_SIGNIN_CLIENT_SECRET:?Set SELFHOST_SIGNIN_CLIENT_SECRET in .env}
+      OAUTH2_PROXY_COOKIE_SECRET: ${SELFHOST_SIGNIN_COOKIE_SECRET:?Set SELFHOST_SIGNIN_COOKIE_SECRET in .env}
+      OAUTH2_PROXY_REDIRECT_URL: https://${SELFHOST_DOMAIN:?Set SELFHOST_DOMAIN in .env}/oauth2/callback
+      OAUTH2_PROXY_WHITELIST_DOMAINS: ${SELFHOST_DOMAIN}
+      # Who may sign in: an email in one of these domains (comma separated) or listed in
+      # signin-emails.txt, one per line. With SELFHOST_SIGNIN_GITHUB_ORG set, they must also be
+      # in that GitHub organization.
+      OAUTH2_PROXY_EMAIL_DOMAINS: ${SELFHOST_SIGNIN_EMAIL_DOMAINS:-}
+      OAUTH2_PROXY_AUTHENTICATED_EMAILS_FILE: /etc/oauth2-proxy/emails.txt
+      OAUTH2_PROXY_GITHUB_ORG: ${SELFHOST_SIGNIN_GITHUB_ORG:-}
+      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
+      OAUTH2_PROXY_REVERSE_PROXY: "true"
+      # Caddy asks /oauth2/auth before serving the console, so oauth2-proxy proxies nothing.
+      OAUTH2_PROXY_UPSTREAMS: static://202
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
+    volumes:
+      - ./signin-emails.txt:/etc/oauth2-proxy/emails.txt:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+
+  caddy:
+    environment:
+      SELFHOST_CONSOLE_ACCESS: signin

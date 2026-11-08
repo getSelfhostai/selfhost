@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -258,11 +259,139 @@ describe("Dockerfile", () => {
   });
 });
 
-describe("backup and restore scripts", () => {
-  it.skipIf(process.platform === "win32").each(["backup.sh", "restore.sh"])(
-    "%s is executable",
+describe("backup, restore and install scripts", () => {
+  const scripts = ["backup.sh", "restore.sh", "install.sh"];
+
+  it.skipIf(process.platform === "win32").each(scripts)("%s is executable", (file) => {
+    expect(statSync(join(DIR, file)).mode & 0o111).toBe(0o111);
+  });
+
+  it.skipIf(process.platform === "win32").each(scripts)("%s parses with sh -n", (file) => {
+    expect(() => execFileSync("sh", ["-n", join(DIR, file)])).not.toThrow();
+  });
+
+  it.each(scripts)(
+    "%s runs docker compose from its folder, so COMPOSE_FILE in .env applies",
     (file) => {
-      expect(statSync(join(DIR, file)).mode & 0o111).toBe(0o111);
+      const text = read(file);
+      expect(text).not.toMatch(/docker compose -f/);
+      if (file !== "install.sh") {
+        expect(text).toContain('compose() { (cd "$here" && docker compose "$@"); }');
+      }
     },
   );
+
+  it("install.sh generates every secret .env.example leaves empty, and keeps the ones .env has", () => {
+    const text = read("install.sh");
+    const generated = /^SECRETS="([^"]+)"$/m.exec(text)?.[1]?.split(" ") ?? [];
+    const empty = Object.entries(envExample.values)
+      .filter(([, value]) => value === "")
+      .map(([name]) => name);
+    for (const name of empty) expect(generated, name).toContain(name);
+    expect(generated).toContain("SELFHOST_SIGNIN_COOKIE_SECRET");
+    expect(text).toContain('put "$key" "$old" .env.next');
+  });
+});
+
+describe("install.sh installing Docker", () => {
+  const text = read("install.sh");
+
+  it("uses Docker's apt repository on Debian and Ubuntu, and get.docker.com only elsewhere", () => {
+    const install = text.slice(
+      text.indexOf("install_docker() {"),
+      text.indexOf("\n}\n", text.indexOf("install_docker() {")),
+    );
+    expect(install).toMatch(/\n {4}debian \| ubuntu\)\n/);
+    expect(install).toContain(
+      'curl -fsSL "https://download.docker.com/linux/$os/gpg" -o /etc/apt/keyrings/docker.asc',
+    );
+    expect(install).toContain(
+      "signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/$os $codename stable",
+    );
+    expect(install).toContain(
+      "apt-get install -yq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
+    );
+    const fallback = install.slice(install.indexOf("\n    *)"));
+    expect(fallback).toContain("curl -fsSL https://get.docker.com | sh");
+    expect(install.indexOf("get.docker.com")).toBeGreaterThan(install.indexOf("debian | ubuntu)"));
+    // Each path says which one it took.
+    expect(install.match(/say "installing Docker/g)).toHaveLength(2);
+  });
+});
+
+describe("HTTPS and sign-in overlays", () => {
+  const overlay = (file: string) =>
+    parse(read(file)) as { services: Record<string, Service>; volumes?: Record<string, unknown> };
+  const tls = overlay("compose.tls.yml");
+  const signin = overlay("compose.signin.yml");
+  const caddy = tls.services.caddy;
+  const proxy = signin.services["oauth2-proxy"];
+  const caddyfile = read("Caddyfile");
+
+  it("pins their images", () => {
+    for (const [name, svc] of [
+      ["caddy", caddy],
+      ["oauth2-proxy", proxy],
+    ] as const) {
+      expect(svc?.image, name).toBeDefined();
+      expect(unpinned(svc?.image ?? ""), name).toBeUndefined();
+      expect(svc?.image, name).not.toContain("$");
+    }
+  });
+
+  it("documents in .env.example every variable they read", () => {
+    const names = ["compose.tls.yml", "compose.signin.yml"].flatMap((file) =>
+      [...read(file).matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)/g)].map((m) => m[1] ?? ""),
+    );
+    expect(names.filter((name) => !envExample.documented.has(name))).toEqual([]);
+    expect(envExample.documented).toContain("COMPOSE_FILE");
+  });
+
+  it("opens only 80 and 443 to the internet, and keeps the certificates in a volume", () => {
+    expect(caddy?.ports).toEqual(["80:80", "443:443", "443:443/udp"]);
+    expect(proxy?.ports).toBeUndefined();
+    expect(caddy?.volumes).toContain("caddy-data:/data");
+    expect(Object.keys(tls.volumes ?? {})).toContain("caddy-data");
+    expect(caddy?.restart).toBe("unless-stopped");
+    expect(proxy?.restart).toBe("unless-stopped");
+  });
+
+  it("starts Caddy once the server is healthy", () => {
+    expect(caddy?.depends_on).toEqual({ selfhost: { condition: "service_healthy" } });
+  });
+
+  it("sends /v1 to the API and /otlp to the collector's OTLP HTTP port", () => {
+    const port = /^\s+PORT=(\d+)/m.exec(read("Dockerfile"))?.[1];
+    expect(caddyfile).toMatch(
+      new RegExp(`handle /v1/\\* \\{\\n\\s+reverse_proxy selfhost:${port}\\n`),
+    );
+    expect(caddyfile).toMatch(/handle_path \/otlp\/\* \{\n\s+reverse_proxy otel-collector:4318\n/);
+    const collector = service("otel-collector").ports ?? [];
+    expect(collector.some((p) => p.endsWith(":4318"))).toBe(true);
+  });
+
+  it("puts the console behind sign-in only when compose.signin.yml is in use", () => {
+    const access = (svc: Service | undefined) =>
+      (svc?.environment as Record<string, string> | undefined)?.SELFHOST_CONSOLE_ACCESS;
+    expect(access(caddy)).toBe("closed");
+    expect(access(signin.services.caddy)).toBe("signin");
+    expect(caddyfile).toContain("import console-{$SELFHOST_CONSOLE_ACCESS:closed}");
+    // Snippets are defined before the site block that imports them.
+    const site = caddyfile.indexOf("{$SELFHOST_DOMAIN} {");
+    for (const name of ["closed", "signin"]) {
+      const at = caddyfile.indexOf(`(console-${name}) {`);
+      expect(at, name).toBeGreaterThan(-1);
+      expect(at, name).toBeLessThan(site);
+    }
+    expect(caddyfile).toMatch(/forward_auth oauth2-proxy:4180 \{\n\s+uri \/oauth2\/auth\n/);
+  });
+
+  it("asks oauth2-proxy for the callback on the served domain", () => {
+    const env = proxy?.environment ?? {};
+    expect(env.OAUTH2_PROXY_REDIRECT_URL).toMatch(
+      /^https:\/\/\$\{SELFHOST_DOMAIN:\?Set SELFHOST_DOMAIN in \.env\}\/oauth2\/callback$/,
+    );
+    expect(env.OAUTH2_PROXY_HTTP_ADDRESS).toBe("0.0.0.0:4180");
+    expect(proxy?.volumes).toEqual(["./signin-emails.txt:/etc/oauth2-proxy/emails.txt:ro"]);
+  });
 });

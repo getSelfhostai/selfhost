@@ -1,5 +1,6 @@
 # selfhost on one server: Postgres, the OpenTelemetry collector and the selfhost API.
 # Copy .env.example to .env and fill it in, then run `docker compose up -d`. See README.md.
+# compose.tls.yml adds HTTPS with Caddy and compose.signin.yml adds console sign-in.
 # Third-party images are pinned to exact versions; a test fails on `latest` or a missing tag.
 name: selfhost
 
@@ -43,6 +44,8 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-selfhost}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-selfhost}
       SELFHOST_TOKEN: ${SELFHOST_TOKEN:?Set SELFHOST_TOKEN in .env}
       SELFHOST_RETENTION_SWEEP: ${SELFHOST_RETENTION_SWEEP:-daily}
+      # The URL people reach the server at, for links the server writes (brief traces).
+      SELFHOST_PUBLIC_URL: ${SELFHOST_PUBLIC_URL:-}
       # GitHub App, optional: POST /v1/github/webhooks answers 404 until the first three are set.
       SELFHOST_GITHUB_APP_ID: ${SELFHOST_GITHUB_APP_ID:-}
       SELFHOST_GITHUB_PRIVATE_KEY: ${SELFHOST_GITHUB_PRIVATE_KEY:-}

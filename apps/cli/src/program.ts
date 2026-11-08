@@ -31,6 +31,8 @@ import { type Ask, askOnTerminal, type SendPing } from "./scan/telemetry.js";
 import { registerSpend } from "./spend.js";
 import type { Fetch } from "./team/client.js";
 import { registerTeam } from "./team/commands.js";
+import { registerUp } from "./up/commands.js";
+import { type Exec, systemExec } from "./up/resources.js";
 
 export const VERSION = pkg.version;
 
@@ -58,6 +60,10 @@ export interface CliDeps {
   sendTelemetry?: SendPing;
   /** Solo mode's review list over the local ledger, for `selfhost inbox` and `import --watch`. */
   localReviewList?: OpenLocalReviewList;
+  /** Runs ssh and the aws CLI for `selfhost up`. Default: the programs on PATH. */
+  exec?: Exec;
+  /** Waits between polls in `selfhost up`. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 /** `--json` errors: printed on stdout so a script always gets JSON back. */
@@ -387,6 +393,21 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       write: deps.write,
       configPath: deps.configPath ?? defaultConfigPath(),
       fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
+    }),
+    fail,
+  );
+
+  registerUp(
+    program,
+    () => ({
+      env: deps.env,
+      write: deps.write,
+      setExitCode: deps.setExitCode,
+      now: deps.now,
+      configPath: deps.configPath ?? defaultConfigPath(),
+      fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
+      exec: deps.exec ?? systemExec,
+      sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
     }),
     fail,
   );

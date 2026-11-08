@@ -8,7 +8,9 @@
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
-compose() { docker compose -f "$here/compose.yml" "$@"; }
+# Run from this folder so .env applies, with the files its COMPOSE_FILE lists (compose.yml alone
+# when unset), as for docker compose run by hand here.
+compose() { (cd "$here" && docker compose "$@"); }
 pg() { compose exec -T postgres sh -c "$1"; }
 
 force=false

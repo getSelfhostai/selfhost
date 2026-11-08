@@ -12,7 +12,8 @@
       "!fixtures",
       "!packages/schema/json",
       "!packages/schema/compat",
-      "!packages/schema/mcp-tools.json"
+      "!packages/schema/mcp-tools.json",
+      "!deploy/src/stack.generated.ts"
     ]
   },
   "formatter": {
