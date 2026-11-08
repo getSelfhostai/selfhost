@@ -104,7 +104,9 @@ steps; the first that names anyone wins, and the item records which in `route`:
 3. Fallback: `[review] fallback`.
 
 When none names anyone, `owners` is empty and `route.step` is `none`. Items built from a team's
-events use that team's stored `selfhost.toml` on a team server, else the list's config.
+events use the policy in use for that team on a team server (its stored `selfhost.toml` on top
+of its org's floor), else the list's config. Since events go to the team that owns their run's
+repo, a run in another team's repo is reviewed in that team's list, under its routing.
 
 ## Delivery and timeout
 

@@ -51,8 +51,9 @@ local log importer), so it is where redaction happens: nothing reaches the datab
   `decision.by` are kept: they say who did it.
 - Each dropped or masked field path is added to `redacted`.
 
-Settings come from the event's `team`: a team with a stored `selfhost.toml` (`ledger.teams`) gets
-its own `[ledger] log_prompts` and `[[redaction]]`. Every other event gets the `redaction` option
+Settings come from the team the event goes to (see Orgs below), else the event's `team`: a team
+with a policy gets the `[ledger] log_prompts` and `[[redaction]]` of the policy in use, its
+stored `selfhost.toml` on top of its org's, so the org's redaction patterns apply to every team. Every other event gets the `redaction` option
 of `openLedger` (`{ logPrompts, patterns }`), which defaults to no prompt text and the built-in
 patterns only.
 
@@ -146,6 +147,41 @@ adds `events.team`, indexed with `(ts, id)`: `append(events, { team })` sets it 
 written with a person token, from the token's team and never from the event body, and
 `query({ team })` reads one team's events. The column is added without touching stored rows, so
 events written before it have no team.
+
+`0006_roles.sql` records who last changed a person's role and when (`role_changed_by`,
+`role_changed_at`) and adds a trigger that refuses an update leaving a team with people and no
+owner. `teams.setRole` checks the same under a lock on the team row, so two owners demoting
+each other at once leave one. `teams.listPeople`, `getPerson`, `renameTeam`, `getInvite` and
+`addPerson` (someone already in another team of the org, under the id and name they have there)
+serve the role and people routes of the server.
+
+## Orgs
+
+`ledger.orgs` holds the org, team and repo hierarchy, from `0007_orgs.sql`:
+
+- `orgs`: id, name and the org's `selfhost.toml`, the floor of every team and repo policy in it.
+  The migration creates the org `default` and puts every existing team in it (`teams.org_id`),
+  so a single-team install changes nothing.
+- `team_repos`: the team that owns each repo, one per org, keyed by `owner/name` in lower case
+  (what events carry as `repo`), with the remote as `host/owner/name` and optional rules of the
+  repo's own. Repos are keyed by `owner/name`, so two hosts with the same path are one repo.
+- `run_repos`: the repo each run (agent session) worked in, from the first event of the session
+  that named one, written on every append.
+
+A person is identified by their id across the org: one `people` row per team they are in, each
+with its own role, and their tokens act in every team of the org they are in. So a team-wide
+invite only adds ids new to the org; a person already in the org joins another team with an
+invite for their email or `teams.addPerson`.
+
+`append(events, { team })` stores each event with the team that owns its run: the team owning
+the event's `repo`, else the team owning the repo its session named earlier (`run_repos`), else
+the writer's team, considering only teams of the writer's org. With a writer team the event's
+`team` field is set to the same. Without one (the admin token) a repo counts when exactly one
+org maps it, and the body is kept. `orgs.teamCosts(org, teams, from, to)` reads `cost.recorded`
+events by the same rule at read time, so a Claude Code run whose cost events carried no repo
+moves to the repo's team once a later event of the session (a commit from `selfhost scan`)
+names the repo. `orgs.effectivePolicy(team, repo?)` composes the org floor, the team's file and
+the repo's (`composePolicy` in [`@selfhost/schema`](../schema/README.md#org-team-and-repo-policy)).
 
 ## Review list
 

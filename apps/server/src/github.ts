@@ -269,8 +269,9 @@ export function githubAppFromEnv(
 }
 
 /**
- * The selfhost.toml the GitHub delivery reads: the stored policy of SELFHOST_GITHUB_TEAM when
- * that is set and the team has one, else the server's defaults (SELFHOST_CONFIG).
+ * The selfhost.toml the GitHub delivery reads: the policy in use for SELFHOST_GITHUB_TEAM (its
+ * stored selfhost.toml on top of its org's) when that is set and it has one, else the server's
+ * defaults (SELFHOST_CONFIG).
  */
 export function githubConfig(
   ledger: Ledger,
@@ -279,10 +280,6 @@ export function githubConfig(
 ): () => Promise<ResolvedSelfhostConfig> {
   return async () => {
     if (!team) return defaults;
-    const policy = await ledger.teams.getPolicy(team);
-    if (!policy) return defaults;
-    const parsed = parseConfig(policy.text);
-    if (!parsed.ok) throw new Error(`The stored selfhost.toml of team ${team} is invalid`);
-    return parsed.config;
+    return (await ledger.orgs.effectivePolicy(team))?.config ?? defaults;
   };
 }

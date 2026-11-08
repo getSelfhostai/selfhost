@@ -80,20 +80,21 @@ describe.each(BACKENDS)("team store on $name", (backend) => {
   it.skipIf(backend.skip)("adds only new people with a team-wide invite", async () => {
     const created = await teams.createTeam({ id: "claims", name: "Claims" });
     const invite = created?.invite ?? "";
-    const owner = joined(await teams.join(invite, { id: "owner@example.com" }));
-    const member = joined(await teams.join(invite, { id: "member@example.com" }));
+    const owner = joined(await teams.join(invite, { id: "claim-owner@example.com" }));
+    const member = joined(await teams.join(invite, { id: "claim-member@example.com" }));
     expect(member.person.role).toBe("member");
 
-    // Not the owner, and not anyone else who joined, whatever the case of the id.
-    expect(await teams.join(invite, { id: "owner@example.com" })).toEqual({
+    // Not the owner, and not anyone else who joined, whatever the case of the id. Ids are
+    // compared across the org: the teams of these tests share the default org.
+    expect(await teams.join(invite, { id: "claim-owner@example.com" })).toEqual({
       refused: "existing_person",
     });
-    expect(await teams.join(invite, { id: "Member@Example.com" })).toEqual({
+    expect(await teams.join(invite, { id: "Claim-Member@Example.com" })).toEqual({
       refused: "existing_person",
     });
     // Revoked people are still in the team.
-    await teams.revokePerson("claims", "member@example.com");
-    expect(await teams.join(invite, { id: "member@example.com" })).toEqual({
+    await teams.revokePerson("claims", "claim-member@example.com");
+    expect(await teams.join(invite, { id: "claim-member@example.com" })).toEqual({
       refused: "existing_person",
     });
     const tokens = await store.db.query(
@@ -103,10 +104,16 @@ describe.each(BACKENDS)("team store on $name", (backend) => {
     expect(await teams.personForToken(owner.token)).toEqual(owner.person);
 
     // An invite for the person brings them back with their role.
-    const back = await teams.createInvite("claims", { email: "member@example.com" });
-    const rejoined = joined(await teams.join(back?.invite ?? "", { id: "member@example.com" }));
+    const back = await teams.createInvite("claims", { email: "claim-member@example.com" });
+    const rejoined = joined(
+      await teams.join(back?.invite ?? "", { id: "claim-member@example.com" }),
+    );
     expect(rejoined.person).toEqual(member.person);
-    joined(await teams.join(invite, { id: "new@example.com" }));
+    joined(await teams.join(invite, { id: "claim-new@example.com" }));
+    // Someone in another team of the org is refused too: their tokens act in every team of it.
+    expect(await teams.join(invite, { id: "owner@example.com" })).toEqual({
+      refused: "existing_person",
+    });
   });
 
   it.skipIf(backend.skip)("refuses unknown and revoked invites and tokens", async () => {
@@ -229,7 +236,7 @@ describe.each(BACKENDS)("team store on $name", (backend) => {
   });
 
   it.skipIf(backend.skip)(
-    "stores the writer's team with each event and filters on it",
+    "stores the writer's team with each event, in its body too, and filters on it",
     async () => {
       const { ledger } = store;
       const red = makeEvent(9001, { team: "blue" });
@@ -244,8 +251,9 @@ describe.each(BACKENDS)("team store on $name", (backend) => {
         duplicates: [red.id],
       });
 
-      expect((await ledger.query({ team: "red" })).events).toEqual([red]);
-      expect((await ledger.query({ team: "blue" })).events).toEqual([blue]);
+      // The writer's team replaces whatever team the event named; a laptop's events keep theirs.
+      expect((await ledger.query({ team: "red" })).events).toEqual([{ ...red, team: "red" }]);
+      expect((await ledger.query({ team: "blue" })).events).toEqual([{ ...blue, team: "blue" }]);
       const rows = await store.db.query<{ id: string; team: string | null }>(
         "SELECT id::text AS id, team FROM events WHERE id IN ($1::uuid, $2::uuid, $3::uuid) ORDER BY id",
         [red.id, blue.id, local.id],

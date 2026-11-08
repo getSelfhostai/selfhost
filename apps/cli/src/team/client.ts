@@ -9,11 +9,17 @@ import type {
   Invite,
   JoinResponse,
   LedgerEvent,
+  MeResponse,
+  Person,
+  PersonRole,
   PolicyResponse,
   ReviewItem,
   ReviewItemQuery,
   ReviewItemsPage,
   RevokeTokensResponse,
+  TeamPeopleResponse,
+  TeamRepo,
+  TeamReposResponse,
 } from "@selfhost/schema";
 
 export type Fetch = (url: string, init: RequestInit) => Promise<Response>;
@@ -89,6 +95,43 @@ export class TeamClient {
     return this.call("DELETE", "/v1/me/token");
   }
 
+  me(): Promise<MeResponse> {
+    return this.call("GET", "/v1/me");
+  }
+
+  people(team: string): Promise<TeamPeopleResponse> {
+    return this.call("GET", `/v1/teams/${encodeURIComponent(team)}/people`);
+  }
+
+  /** Changes a person's role; only the team's owners can. */
+  setRole(team: string, person: string, role: PersonRole): Promise<Person> {
+    const path = `/v1/teams/${encodeURIComponent(team)}/people/${encodeURIComponent(person)}/role`;
+    return this.call("PUT", path, { role });
+  }
+
+  /** Adds someone already in another team of the org. */
+  addPerson(team: string, person: string, role?: PersonRole): Promise<Person> {
+    return this.call("POST", `/v1/teams/${encodeURIComponent(team)}/people`, {
+      person,
+      ...(role ? { role } : {}),
+    });
+  }
+
+  repos(team: string): Promise<TeamReposResponse> {
+    return this.call("GET", `/v1/teams/${encodeURIComponent(team)}/repos`);
+  }
+
+  addRepo(team: string, remote: string): Promise<TeamRepo> {
+    return this.call("POST", `/v1/teams/${encodeURIComponent(team)}/repos`, { remote });
+  }
+
+  /** `repo` is owner/name. */
+  removeRepo(team: string, repo: string): Promise<TeamReposResponse> {
+    const [owner = "", name = ""] = repo.split("/");
+    const path = `/v1/teams/${encodeURIComponent(team)}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
+    return this.call("DELETE", path);
+  }
+
   join(invite: string, person: string, name?: string): Promise<JoinResponse> {
     return this.call("POST", "/v1/join", { invite, person, ...(name ? { name } : {}) });
   }
@@ -155,10 +198,14 @@ export class TeamClient {
     if (!response.ok) {
       const error = (json as { error?: { code?: string; message?: string } } | undefined)?.error;
       const retryAfter = Number(response.headers.get("retry-after"));
+      const message = error?.message ?? (text.slice(0, 200) || "no message");
       throw new TeamApiError(
         response.status,
         error?.code ?? "http_error",
-        `${this.server} answered ${response.status}: ${error?.message ?? (text.slice(0, 200) || "no message")}`,
+        // The server's permission errors name the role needed and the caller's own.
+        response.status === 403
+          ? `Permission denied: ${message} (${this.server} answered 403)`
+          : `${this.server} answered ${response.status}: ${message}`,
         Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined,
         json,
       );

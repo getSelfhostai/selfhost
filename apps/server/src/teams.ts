@@ -1,31 +1,35 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { JoinRefusal, Ledger } from "@selfhost/ledger";
 import {
-  type ApiError,
-  CreateInviteRequestSchema,
-  type CreateInviteResponse,
+  allowedActions,
   CreateTeamRequestSchema,
   type CreateTeamResponse,
   createValidator,
+  DEFAULT_ORG_ID,
   type IngestEventsError,
-  type InvalidPolicyError,
-  type Invite,
   JoinRequestSchema,
   type JoinResponse,
   type MeResponse,
   type Person,
-  PolicyCoverageQuerySchema,
-  PolicyQuerySchema,
-  parseConfig,
   type RevokeTokensResponse,
-  SetPolicyRequestSchema,
-  type ValidationResult,
+  TEAM_ACTIONS,
 } from "@selfhost/schema";
 import { type Context, Hono } from "hono";
-import { bodyLimit } from "hono/body-limit";
+import {
+  apiError,
+  authorize,
+  type Caller,
+  type PersonCaller,
+  personCaller,
+  type Router,
+} from "./access.js";
 import { requireBearerToken } from "./auth.js";
 import { eventRoutes, MAX_BODY_BYTES } from "./events.js";
-import { policyCoverageResponse, policyResponse } from "./policy.js";
+import { limit, readBody, rethrow, SMALL_BODY_BYTES } from "./http.js";
+import { teamId } from "./ids.js";
+import { createOrgRoute, orgRoutes } from "./orgs.js";
+import { peopleRoutes } from "./people.js";
+import { policyRoutes } from "./policy.js";
 
 export interface TeamRouteOptions {
   ledger: Ledger;
@@ -33,27 +37,20 @@ export interface TeamRouteOptions {
   token: string;
   /** Adds more routes a person token may call; the person is in `c.env.person`. */
   personRoutes?: (person: Hono<PersonEnv>) => void;
+  /** Clock for budgets and overviews. */
+  now?: () => Date;
 }
 
-export type PersonEnv = { Bindings: { person: Person } };
+export type PersonEnv = { Bindings: { person: Person; caller: PersonCaller } };
 type EventsEnv = { team: string };
 type BatchError = IngestEventsError["errors"][number];
 
 /** Routes that need no bearer token: /v1/join takes the invite code in the body instead. */
 const PUBLIC_PATHS = new Set(["/v1/health", "/v1/join"]);
-const SMALL_BODY_BYTES = 64 * 1024;
-/** selfhost.toml text is capped at 1,000,000 characters; JSON escaping can grow it. */
-const POLICY_BODY_BYTES = 8 * 1024 * 1024;
-const OWNER_ROLES = new Set(["owner", "admin"]);
+const ADMIN: Caller = { kind: "admin" };
 
 const createTeamBody = createValidator(CreateTeamRequestSchema);
-const createInviteBody = createValidator(CreateInviteRequestSchema);
 const joinBody = createValidator(JoinRequestSchema);
-const setPolicyBody = createValidator(SetPolicyRequestSchema);
-const policyQuery = createValidator(PolicyQuerySchema);
-const coverageQuery = createValidator(PolicyCoverageQuerySchema);
-
-const apiError = (code: string, message: string): ApiError => ({ error: { code, message } });
 
 const REFUSED_INVITE: Record<JoinRefusal, string> = {
   unknown: "Unknown invite code",
@@ -61,44 +58,34 @@ const REFUSED_INVITE: Record<JoinRefusal, string> = {
   revoked: "This invite code was revoked. Ask a team admin for a new one.",
   wrong_person: "This invite is for someone else. Join with the email it was sent to.",
   existing_person:
-    "This person is already in the team, and a team-wide invite only adds new people. Ask a team admin for an invite for this person (selfhost team invite --email <person>), or to revoke them and invite them again.",
+    "This person is already in the team or another team of its org, and a team-wide invite only adds new people. Ask a team admin to add them (selfhost team add <person>), for an invite for this person (selfhost team invite --email <person>), or to revoke them and invite them again.",
 };
 
-const limit = (maxSize: number) =>
-  bodyLimit({
-    maxSize,
-    onError: (c) =>
-      c.json(apiError("payload_too_large", `Request body over ${maxSize} bytes`), 413),
-  });
-
-/** Team id from a team name: lower case words joined by dashes, at most 64 characters. */
-export function teamId(name: string): string | undefined {
-  const id = name
-    .normalize("NFKD")
-    .replace(/\p{M}+/gu, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .slice(0, 64)
-    .replace(/^-+|-+$/g, "");
-  return id === "" ? undefined : id;
-}
+export { teamId } from "./ids.js";
 
 /**
- * Teams, invites and person tokens. Call it before the admin token check: it serves /v1/join,
- * whose credential is the invite in the body, and answers every request that carries a person
- * token itself, so a person token reaches only the person routes below. Requests with the
- * admin token or no valid token go on to the rest of the app unchanged.
+ * Teams, orgs, invites and person tokens. Call it before the admin token check: it serves
+ * /v1/join, whose credential is the invite in the body, and answers every request that carries
+ * a person token itself, so a person token reaches only the person routes below. Requests with
+ * the admin token or no valid token go on to the rest of the app unchanged.
+ *
+ * Routes both kinds of token share (policy, people, roles, repos, overviews) check the caller's
+ * role in the team against the permission table in @selfhost/schema; the admin token can do
+ * everything.
  *
  * There is no route that forwards anything to a model provider: agents keep talking to their
  * vendors directly, and this server only stores events and the team policy.
  */
-export function teamRoutes(app: Hono, { ledger, token, personRoutes }: TeamRouteOptions): void {
+export function teamRoutes(
+  app: Hono,
+  { ledger, token, personRoutes, now }: TeamRouteOptions,
+): void {
   const { teams } = ledger;
   const isAdminToken = sameAs(token);
   const adminOnly = requireBearerToken(token);
 
-  // The ordinary events routes, limited to the person's team. Writes reach them only after
-  // their events are stamped.
+  // The ordinary events routes, limited to one team. Writes reach them only after their events
+  // are stamped.
   const events = new Hono();
   eventRoutes(events, ledger, { team: (c) => (c.env as EventsEnv).team });
   events.onError(rethrow);
@@ -109,7 +96,7 @@ export function teamRoutes(app: Hono, { ledger, token, personRoutes }: TeamRoute
     c.json(
       apiError(
         "forbidden",
-        "A person token can write and read its team's events, read and act on its team's review items, read /v1/me and its team's policy and its coverage, and revoke itself. This route needs the admin token.",
+        "A person token works in the teams of its org it belongs to: their events, review items, people, repos, policy, budget and overviews, and what its role allows there. This route needs the admin token.",
       ),
       403,
     ),
@@ -134,9 +121,13 @@ export function teamRoutes(app: Hono, { ledger, token, personRoutes }: TeamRoute
     );
   });
 
-  person.get("/v1/events", (c) =>
-    events.fetch(c.req.raw, { team: c.env.person.team } satisfies EventsEnv),
-  );
+  // A person reads the events of any team of the org they are in; their own by default.
+  person.get("/v1/events", async (c) => {
+    const team = c.req.query("team") ?? c.env.person.team;
+    const refused = await authorize(c, c.env.caller, team, "read");
+    if (refused) return refused;
+    return events.fetch(c.req.raw, { team } satisfies EventsEnv);
+  });
 
   // selfhost team leave: the token making the request stops working.
   person.delete("/v1/me/token", async (c) => {
@@ -146,47 +137,27 @@ export function teamRoutes(app: Hono, { ledger, token, personRoutes }: TeamRoute
   });
 
   person.get("/v1/me", async (c) => {
-    const team = await teams.getTeam(c.env.person.team);
-    return c.json({ kind: "person", person: c.env.person, team } satisfies MeResponse);
-  });
-
-  person.get("/v1/policy", async (c) => {
-    const query = policyQuery.validate(c.req.query());
-    if (!query.ok) return invalidQuery(c, query.errors);
     const own = c.env.person;
-    if (query.value.team !== undefined && query.value.team !== own.team) {
-      return c.json(apiError("forbidden", "A person token reads only its own team's policy"), 403);
-    }
-    const policy = await teams.getPolicy(own.team);
-    if (!policy) return noPolicy(c, own.team);
-    const { person: who = own.id, agent } = query.value;
-    return c.json(policyResponse(policy, { team: own.team, person: who, agent }));
+    const team = await teams.getTeam(own.team);
+    const { memberships } = await c.env.caller.scope();
+    return c.json({
+      kind: "person",
+      person: own,
+      ...(team ? { team } : {}),
+      role: own.role,
+      allowed: allowedActions(own.role),
+      memberships,
+    } satisfies MeResponse);
   });
 
-  person.get("/v1/policy/coverage", async (c) => {
-    const query = coverageQuery.validate(c.req.query());
-    if (!query.ok) return invalidQuery(c, query.errors);
-    const own = c.env.person;
-    if (query.value.team !== undefined && query.value.team !== own.team) {
-      return c.json(apiError("forbidden", "A person token reads only its own team's policy"), 403);
-    }
-    const policy = await teams.getPolicy(own.team);
-    if (!policy) return noPolicy(c, own.team);
-    return c.json(policyCoverageResponse(policy, query.value.vendor));
-  });
-
-  person.put("/v1/policy", limit(POLICY_BODY_BYTES), async (c) => {
-    const own = c.env.person;
-    const team = c.req.query("team") ?? own.team;
-    if (team !== own.team || !OWNER_ROLES.has(own.role)) {
-      return c.json(
-        apiError("forbidden", "Only the team's owners and admins can change its policy"),
-        403,
-      );
-    }
-    return setPolicy(c, team);
-  });
-
+  const asPerson: Router = {
+    on(method, path, handler, bodyLimit) {
+      const run = (c: Context<PersonEnv>) => handler(c, c.env.caller);
+      if (bodyLimit) person.on(method, path, bodyLimit, run);
+      else person.on(method, path, run);
+    },
+  };
+  sharedRoutes(asPerson, ledger, now);
   personRoutes?.(person);
 
   app.use("*", async (c, next) => {
@@ -196,7 +167,7 @@ export function teamRoutes(app: Hono, { ledger, token, personRoutes }: TeamRoute
     const found = await teams.personForToken(bearer);
     // An unknown token goes on to the admin check, which answers 401.
     if (!found) return next();
-    return person.fetch(c.req.raw, { person: found });
+    return person.fetch(c.req.raw, { person: found, caller: personCaller(teams, found) });
   });
 
   app.post("/v1/join", limit(SMALL_BODY_BYTES), async (c) => {
@@ -222,41 +193,25 @@ export function teamRoutes(app: Hono, { ledger, token, personRoutes }: TeamRoute
         400,
       );
     }
-    const created = await teams.createTeam({ id, name }, { ttlSeconds: body.invite_ttl_seconds });
+    const org = body.org ?? DEFAULT_ORG_ID;
+    if (!(await ledger.orgs.getOrg(org))) {
+      return c.json(apiError("not_found", `No org ${org}`), 404);
+    }
+    const created = await teams.createTeam(
+      { id, name, org },
+      { ttlSeconds: body.invite_ttl_seconds },
+    );
     if (!created) {
       return c.json(apiError("team_exists", `A team with id ${id} already exists`), 409);
     }
     return c.json(created satisfies CreateTeamResponse, 201);
   });
 
-  app.post("/v1/teams/:team/invites", adminOnly, limit(SMALL_BODY_BYTES), async (c) => {
-    const body = await readBody(c, createInviteBody);
-    if (body instanceof Response) return body;
-    const team = c.req.param("team");
-    const invite = await teams.createInvite(team, {
-      ttlSeconds: body.ttl_seconds,
-      email: body.email?.trim(),
-    });
-    if (!invite) return c.json(apiError("not_found", `No team ${team}`), 404);
-    return c.json(invite satisfies CreateInviteResponse, 201);
-  });
+  createOrgRoute(app, ledger, adminOnly);
 
-  app.delete("/v1/invites/:id", adminOnly, async (c) => {
-    const id = c.req.param("id");
-    const revoked = await teams.revokeInvite(id);
-    if (!revoked) return c.json(apiError("not_found", `No invite ${id}`), 404);
-    return c.json(revoked satisfies Invite);
-  });
-
-  app.delete("/v1/teams/:team/people/:person/tokens", adminOnly, async (c) => {
-    const team = c.req.param("team");
-    const who = c.req.param("person");
-    const revoked = await teams.revokePerson(team, who);
-    if (!revoked) return c.json(apiError("not_found", `No person ${who} in team ${team}`), 404);
-    return c.json(revoked satisfies RevokeTokensResponse);
-  });
-
-  app.get("/v1/me", adminOnly, (c) => c.json({ kind: "admin" } satisfies MeResponse));
+  app.get("/v1/me", adminOnly, (c) =>
+    c.json({ kind: "admin", allowed: [...TEAM_ACTIONS] } satisfies MeResponse),
+  );
 
   app.delete("/v1/me/token", adminOnly, (c) =>
     c.json(
@@ -268,74 +223,29 @@ export function teamRoutes(app: Hono, { ledger, token, personRoutes }: TeamRoute
     ),
   );
 
-  app.get("/v1/policy", adminOnly, async (c) => {
-    const query = policyQuery.validate(c.req.query());
-    if (!query.ok) return invalidQuery(c, query.errors);
-    const { team, person: who, agent } = query.value;
-    if (team === undefined) {
-      return c.json(apiError("invalid_query", "team: Required with the admin token"), 400);
-    }
-    const policy = await teams.getPolicy(team);
-    if (!policy) return noPolicy(c, team);
-    return c.json(policyResponse(policy, { team, person: who, agent }));
-  });
+  const asAdmin: Router = {
+    on(method, path, handler, bodyLimit) {
+      const run = (c: Context) => handler(c, ADMIN);
+      if (bodyLimit) app.on(method, path, adminOnly, bodyLimit, run);
+      else app.on(method, path, adminOnly, run);
+    },
+  };
+  sharedRoutes(asAdmin, ledger, now);
+}
 
-  app.get("/v1/policy/coverage", adminOnly, async (c) => {
-    const query = coverageQuery.validate(c.req.query());
-    if (!query.ok) return invalidQuery(c, query.errors);
-    const { team, vendor } = query.value;
-    if (team === undefined) {
-      return c.json(apiError("invalid_query", "team: Required with the admin token"), 400);
-    }
-    const policy = await teams.getPolicy(team);
-    if (!policy) return noPolicy(c, team);
-    return c.json(policyCoverageResponse(policy, vendor));
-  });
-
-  app.put("/v1/policy", adminOnly, limit(POLICY_BODY_BYTES), async (c) => {
-    const team = c.req.query("team");
-    if (team === undefined) {
-      return c.json(apiError("invalid_query", "team: Required with the admin token"), 400);
-    }
-    return setPolicy(c, team);
-  });
-
-  async function setPolicy(c: Context, team: string) {
-    const unexpected = Object.keys(c.req.query()).find((key) => key !== "team");
-    if (unexpected) {
-      return c.json(apiError("invalid_query", `${unexpected}: Unknown query parameter`), 400);
-    }
-    const body = await readBody(c, setPolicyBody);
-    if (body instanceof Response) return body;
-    const parsed = parseConfig(body.text);
-    if (!parsed.ok) {
-      const error: InvalidPolicyError = {
-        error: { code: "invalid_policy", message: "selfhost.toml is invalid, nothing was stored" },
-        errors: parsed.errors,
-      };
-      return c.json(error, 400);
-    }
-    if (!(await teams.getTeam(team))) {
-      return c.json(apiError("not_found", `No team ${team}`), 404);
-    }
-    const policy = await teams.setPolicy(team, body.text);
-    return c.json(policyResponse(policy, { team }));
-  }
-
-  async function noPolicy(c: Context, team: string) {
-    if (!(await teams.getTeam(team))) return c.json(apiError("not_found", `No team ${team}`), 404);
-    return c.json(
-      apiError("no_policy", `Team ${team} has no selfhost.toml yet. Set one with PUT /v1/policy.`),
-      404,
-    );
-  }
+/** The routes both kinds of token reach, each checking the caller's role. */
+function sharedRoutes(router: Router, ledger: Ledger, now: (() => Date) | undefined): void {
+  policyRoutes(router, ledger);
+  peopleRoutes(router, ledger);
+  orgRoutes(router, ledger, now ? { now } : {});
 }
 
 /**
  * Checks a person token's events before they are written: an event with no actor is filled in
  * as the person, a person actor must be that person, system actors are refused, and team is
- * set to the person's team. A body that is not a JSON object with an events array is passed on
- * as it is, for the events route to report.
+ * set to the person's team. The ledger then moves each event to the team that owns its run's
+ * repo, if another team of the org does. A body that is not a JSON object with an events array
+ * is passed on as it is, for the events route to report.
  */
 export function stampEvents(
   text: string,
@@ -391,30 +301,4 @@ function sameAs(token: string): (candidate: string) => boolean {
   const digest = (value: string) => createHash("sha256").update(value).digest();
   const expected = digest(token);
   return (candidate) => timingSafeEqual(digest(candidate), expected);
-}
-
-/** Lets errors in a nested app reach the outer app's error handler, so every 500 looks the same. */
-function rethrow(error: Error): never {
-  throw error;
-}
-
-async function readBody<T>(
-  c: Context,
-  validator: { validate(value: unknown): ValidationResult<T> },
-): Promise<T | Response> {
-  let body: unknown;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json(apiError("invalid_request", "Expected a JSON body"), 400);
-  }
-  const result = validator.validate(body);
-  if (result.ok) return result.value;
-  const [first] = result.errors;
-  return c.json(apiError("invalid_request", `${first?.field}: ${first?.message}`), 400);
-}
-
-function invalidQuery(c: Context, errors: { field: string; message: string }[]) {
-  const [first] = errors;
-  return c.json(apiError("invalid_query", `${first?.field}: ${first?.message}`), 400);
 }

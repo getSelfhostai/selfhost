@@ -9,7 +9,6 @@ import {
 import {
   type LedgerEvent,
   PERSON_VERDICTS,
-  parseConfig,
   type ResolvedSelfhostConfig,
   type ReviewAnswer,
   type ReviewItem,
@@ -103,17 +102,24 @@ WHERE e.session_id = $1 AND coalesce(e.team, '') = $2 AND e.ts > $3::timestamptz
 ORDER BY e.ts, e.id
 LIMIT 1`;
 
+/** Each team's policy in use: its stored selfhost.toml on top of its org's floor. */
 async function teamConfigs(
+  ledger: Ledger,
   db: Queryable,
   defaults: ResolvedSelfhostConfig,
 ): Promise<(team: string | null) => ResolvedSelfhostConfig> {
-  const rows = await db.query<{ id: string; policy_text: string }>(
-    "SELECT id, policy_text FROM teams WHERE policy_text IS NOT NULL",
+  const rows = await db.query<{ id: string }>(
+    `SELECT t.id FROM teams t JOIN orgs o ON o.id = t.org_id
+     WHERE t.policy_text IS NOT NULL OR o.policy_text IS NOT NULL`,
   );
   const configs = new Map<string, ResolvedSelfhostConfig>();
   for (const row of rows) {
-    const parsed = parseConfig(row.policy_text);
-    if (parsed.ok) configs.set(row.id, parsed.config);
+    try {
+      const policy = await ledger.orgs.effectivePolicy(row.id);
+      if (policy) configs.set(row.id, policy.config);
+    } catch {
+      // Only valid text is stored, so this means the schema changed under it: use the defaults.
+    }
   }
   return (team) => (team === null ? defaults : (configs.get(team) ?? defaults));
 }
@@ -457,7 +463,7 @@ export async function refreshReviewList(
   const db = databaseOf(ledger);
   const run: Run = {
     now: (options.now ?? internals.now)(),
-    configFor: await teamConfigs(db, options.config ?? internals.config),
+    configFor: await teamConfigs(ledger, db, options.config ?? internals.config),
     result: { created: 0, updated: 0 },
     persons: new Map(),
   };

@@ -38,13 +38,23 @@ export {
   type OpenLedgerOptions,
   openLedger,
 } from "./ledger.js";
+export type {
+  EffectivePolicy,
+  OrgPolicy,
+  OrgStore,
+  ReviewCounts,
+  StoredLayer,
+  TeamCost,
+} from "./orgs.js";
 export { type RetentionResult, retentionSweep } from "./retention.js";
 export * from "./sources/index.js";
 export {
+  type AddPersonRefusal,
   hashToken,
   type InviteOptions,
   type JoinRefusal,
   type JoinResult,
+  type RoleRefusal,
   type TeamPolicy,
   type TeamStore,
 } from "./teams.js";

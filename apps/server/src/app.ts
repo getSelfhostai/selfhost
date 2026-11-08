@@ -31,10 +31,16 @@ export function createApp({ version, ledger, token, config, now, github = {} }: 
   teamRoutes(app, {
     ledger,
     token,
+    ...(now ? { now } : {}),
     personRoutes: (person) =>
       reviewRoutes(person, ledger, {
         ...review,
         person: (c) => (c.env as PersonEnv["Bindings"]).person,
+        teams: async (c) => {
+          const { person: own, caller } = c.env as PersonEnv["Bindings"];
+          const { memberships } = await caller.scope();
+          return [own.team, ...memberships.map((m) => m.team).filter((t) => t !== own.team)];
+        },
       }),
   });
   app.use("*", requireBearerToken(token));

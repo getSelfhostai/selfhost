@@ -509,28 +509,105 @@ describe("admin commands", () => {
     expect(second).toMatchObject({ person: "owner@example.com", role: "owner" });
   });
 
-  it("team invite and revoke default to this machine's team and need the admin token", async () => {
+  it("team invite and revoke default to this machine's team, with the admin token or an owner's", async () => {
     const { server, deps, init } = await adminSetup();
     const noTeam = await run(["team", "invite", "--server", SERVER, "--json"], deps);
     expect(parse(noTeam.out).error).toMatch(/--team/);
     const noServer = await run(["team", "invite", "--team", "platform", "--json"], deps);
     expect(parse(noServer.out).error).toMatch(/--server/);
+    const nothing = await run(["team", "invite", "--server", SERVER, "--json"], {
+      ...deps,
+      env: {},
+    });
+    expect(parse(nothing.out).error).toMatch(/admin token.*owner or admin/);
 
-    // A machine that joined the team, with the admin token in its environment.
+    // The first to join owns the team; the next one is a member.
+    const owner = laptop();
+    const ownerDeps = { configPath: owner.configPath, fetch: server.fetch, env: {} };
+    await run(["join", SERVER, init.invite, "--person", "owner@example.com"], ownerDeps);
     const member = laptop();
     const memberDeps = { configPath: member.configPath, fetch: server.fetch, env: {} };
     await run(["join", SERVER, init.invite, "--person", PERSON], memberDeps);
-    const noToken = await run(["team", "invite", "--json"], memberDeps);
-    expect(parse(noToken.out).error).toMatch(/admin token/);
+
+    const byOwner = await run(["team", "invite", "--json"], ownerDeps);
+    expect(parse(byOwner.out)).toMatchObject({ server: SERVER, team: "platform", email: null });
+    const byMember = await run(["team", "invite", "--json"], memberDeps);
+    expect(byMember.code).toBe(1);
+    expect(parse(byMember.out).error).toBe(
+      `Permission denied: Creating and revoking invites needs the owner or admin role in team platform; you are a member there. (${SERVER} answered 403)`,
+    );
     const invited = await run(["team", "invite", "--json"], {
       ...memberDeps,
       env: { SELFHOST_TOKEN: ADMIN },
     });
     expect(parse(invited.out)).toMatchObject({ server: SERVER, team: "platform", email: null });
-    // A person token is not the admin token.
+    // A person token passed as --token is checked by its role too.
     const { token } = JSON.parse(readFileSync(member.configPath, "utf8"));
-    const asPerson = await run(["team", "invite", "--token", token, "--json"], memberDeps);
-    expect(parse(asPerson.out).error).toMatch(/403/);
+    const asPerson = await run(
+      ["team", "invite", "--server", SERVER, "--team", "platform", "--token", token, "--json"],
+      deps,
+    );
+    expect(parse(asPerson.out).error).toMatch(/Permission denied.*403/);
+  });
+
+  it("team role, add, people and repo manage the team with the role checks of the server", async () => {
+    const { server, deps, init } = await adminSetup();
+    const machine = async (person: string) => {
+      const { configPath } = laptop();
+      const machineDeps = { configPath, fetch: server.fetch, env: {} };
+      expect((await run(["join", SERVER, init.invite, "--person", person], machineDeps)).code).toBe(
+        0,
+      );
+      return machineDeps;
+    };
+    const owner = await machine("owner@example.com");
+    const member = await machine(PERSON);
+
+    const promoted = await run(["team", "role", PERSON, "admin", "--json"], owner);
+    expect(parse(promoted.out)).toEqual({
+      schema: "selfhost.team_role/v1",
+      server: SERVER,
+      team: "platform",
+      person: PERSON,
+      role: "admin",
+    });
+    const text = await run(["team", "role", PERSON, "member"], owner);
+    expect(text.out).toBe(`${PERSON} is now a member of team platform on ${SERVER}.`);
+    const byMember = await run(["team", "role", "owner@example.com", "member", "--json"], member);
+    expect(parse(byMember.out).error).toMatch(
+      /^Permission denied: Changing roles needs the owner role in team platform; you are a member there\./,
+    );
+    const last = await run(["team", "role", "owner@example.com", "admin", "--json"], owner);
+    expect(parse(last.out).error).toMatch(/409.*last owner of team platform/);
+    const bad = await run(["team", "role", PERSON, "boss", "--json"], owner);
+    expect(parse(bad.out).error).toMatch(/expected one of owner, admin, member/);
+
+    const people = parse((await run(["team", "people", "--json"], member)).out);
+    expect(people).toMatchObject({ schema: "selfhost.team_people/v1", team: "platform" });
+    expect(people.people.map((p: { id: string; role: string }) => [p.id, p.role])).toEqual([
+      ["owner@example.com", "owner"],
+      [PERSON, "member"],
+    ]);
+
+    const added = await run(
+      ["team", "repo", "add", "git@github.com:acme/api.git", "--json"],
+      owner,
+    );
+    expect(parse(added.out)).toMatchObject({
+      schema: "selfhost.team_repos/v1",
+      repos: [{ repo: "acme/api", remote: "github.com/acme/api", team: "platform" }],
+    });
+    const notMine = await run(["team", "repo", "add", "acme/web", "--json"], member);
+    expect(parse(notMine.out).error).toMatch(/^Permission denied: Changing team settings/);
+    const listed = await run(["team", "repo", "list"], member);
+    expect(listed.out).toBe(`Team platform on ${SERVER} owns acme/api.`);
+    const removed = parse((await run(["team", "repo", "remove", "acme/api", "--json"], owner)).out);
+    expect(removed.repos).toEqual([]);
+
+    // Someone from another team of the org is added, not invited again.
+    await run(["team", "init", "--server", SERVER, "--name", "Data", "--json"], deps);
+    const stranger = await run(["team", "add", "nobody@example.com", "--json"], owner);
+    expect(parse(stranger.out).error).toMatch(/404.*in no other team of this org/);
   });
 
   it("team revoke stops an invite from working", async () => {

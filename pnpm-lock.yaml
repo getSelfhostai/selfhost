@@ -216,6 +216,9 @@ importers:
       '@selfhost/schema':
         specifier: workspace:*
         version: link:../../packages/schema
+      '@selfhost/spend':
+        specifier: workspace:*
+        version: link:../../packages/spend
       hono:
         specifier: 'catalog:'
         version: 4.13.17

@@ -2,8 +2,10 @@ import { createHash, randomBytes } from "node:crypto";
 import {
   type CreateInviteResponse,
   type CreateTeamResponse,
+  DEFAULT_ORG_ID,
   INVITE_TTL_DEFAULT_SECONDS,
   type Invite,
+  type Membership,
   type Person,
   type PersonRole,
   type RevokeTokensResponse,
@@ -31,6 +33,18 @@ export interface JoinResult {
  */
 export type JoinRefusal = "unknown" | "expired" | "revoked" | "wrong_person" | "existing_person";
 
+/**
+ * Why a role change was refused: no such person in the team, or it would leave the team
+ * with no owner.
+ */
+export type RoleRefusal = "not_found" | "last_owner";
+
+/**
+ * Why adding someone to a team was refused: no such team, they are in no other team of its
+ * org (new people join with an invite), or they are in the team already.
+ */
+export type AddPersonRefusal = "no_team" | "not_in_org" | "existing_person";
+
 export interface InviteOptions {
   /** Seconds the invite works for. Default 7 days. */
   ttlSeconds?: number;
@@ -40,23 +54,61 @@ export interface InviteOptions {
 
 /** Teams, people and tokens on a team server, in the same database as the events. */
 export interface TeamStore {
-  /** Creates a team and an invite for it. undefined when the id is taken. */
+  /**
+   * Creates a team in an org (default: the default org) and an invite for it. undefined when
+   * the id is taken or the org does not exist.
+   */
   createTeam(
-    team: { id: string; name: string },
+    team: { id: string; name: string; org?: string },
     invite?: Omit<InviteOptions, "email">,
   ): Promise<CreateTeamResponse | undefined>;
   getTeam(id: string): Promise<TeamInfo | undefined>;
+  /** Renames a team; its id stays. undefined when there is no such team. */
+  renameTeam(id: string, name: string): Promise<TeamInfo | undefined>;
+  /** The teams of an org, by id. */
+  listTeams(org: string): Promise<TeamInfo[]>;
+  /** Everyone in a team, owners first, then admins, then members, each by when they joined. */
+  listPeople(team: string): Promise<Person[]>;
+  getPerson(team: string, person: string): Promise<Person | undefined>;
+  /**
+   * Every team of `org` this person is in (ids compared ignoring case), with their role in
+   * each, by team id.
+   */
+  memberships(org: string, person: string): Promise<Membership[]>;
+  /**
+   * Changes a person's role in a team, recording who changed it. Refused when it would leave
+   * the team with no owner. Changes to the same team run one at a time.
+   */
+  setRole(
+    team: string,
+    person: string,
+    role: PersonRole,
+    by: string,
+  ): Promise<{ person: Person } | { refused: RoleRefusal }>;
+  /**
+   * Adds someone already in another team of the same org, under the id and name they have
+   * there. They keep the tokens they hold; with one they can read and act in this team too.
+   */
+  addPerson(
+    team: string,
+    person: string,
+    role: PersonRole,
+    by: string,
+  ): Promise<{ person: Person } | { refused: AddPersonRefusal }>;
   /** Another invite for a team. undefined when there is no such team. */
   createInvite(team: string, options?: InviteOptions): Promise<CreateInviteResponse | undefined>;
+  /** An invite by its id, the sha256 of the code. */
+  getInvite(id: string): Promise<Invite | undefined>;
   /** Revokes an invite by its id, the sha256 of the code. undefined when there is no such invite. */
   revokeInvite(id: string): Promise<Invite | undefined>;
   /**
    * Exchanges an invite for a person token. The first person in a team becomes its owner,
-   * everyone after a member. A team-wide invite only adds new people: it is refused for a
-   * person id already in the team, so holding it never gives someone else's identity or role.
-   * An invite for an email joins only that person, under that email, and also works for a
-   * person already in the team, adding another token. Refused too when the invite is unknown,
-   * expired or revoked, or names someone else.
+   * everyone after a member. A team-wide invite only adds people new to the org: it is refused
+   * for a person id already in any team of the team's org, so holding it never gives someone
+   * else's identity or role, there or in another team of the org (a person's tokens act in
+   * every team of the org they are in). An invite for an email joins only that person, under
+   * that email, and also works for a person already in the team or the org, adding another
+   * token. Refused too when the invite is unknown, expired or revoked, or names someone else.
    */
   join(
     invite: string,
@@ -91,6 +143,7 @@ const iso = (value: unknown) => new Date(value as string | Date).toISOString();
 interface TeamRow {
   id: string;
   name: string;
+  org_id: string;
   created_at: unknown;
 }
 
@@ -114,8 +167,11 @@ interface PersonRow {
 const toTeam = (row: TeamRow): TeamInfo => ({
   id: row.id,
   name: row.name,
+  org: row.org_id,
   created_at: iso(row.created_at),
 });
+
+const TEAM_COLUMNS = "id, name, org_id, created_at";
 
 const toPerson = (row: PersonRow): Person => ({
   id: row.id,
@@ -135,6 +191,7 @@ const toInvite = (row: InviteRow): Invite => ({
 });
 
 const PERSON_COLUMNS = "p.team_id, p.id, p.name, p.role, p.created_at";
+const ROLE_ORDER = "CASE p.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END";
 const INVITE_COLUMNS = "hash, team_id, email, created_at, expires_at, revoked_at";
 
 /** Adds an invite for a team that exists; undefined when it does not. */
@@ -166,12 +223,13 @@ const sameEmail = (a: string, b: string) => a.trim().toLowerCase() === b.trim().
 
 export function createTeamStore(db: Database): TeamStore {
   return {
-    async createTeam({ id, name }, options = {}) {
+    async createTeam({ id, name, org = DEFAULT_ORG_ID }, options = {}) {
       return db.transaction(async (tx) => {
         const [row] = await tx.query<TeamRow>(
-          `INSERT INTO teams (id, name) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING
-           RETURNING id, name, created_at`,
-          [id, name],
+          `INSERT INTO teams (id, name, org_id) SELECT $1::text, $2::text, id FROM orgs WHERE id = $3
+           ON CONFLICT (id) DO NOTHING
+           RETURNING ${TEAM_COLUMNS}`,
+          [id, name, org],
         );
         if (!row) return undefined;
         const invite = await insertInvite(tx, id, { ttlSeconds: options.ttlSeconds });
@@ -181,15 +239,123 @@ export function createTeamStore(db: Database): TeamStore {
     },
 
     async getTeam(id) {
+      const [row] = await db.query<TeamRow>(`SELECT ${TEAM_COLUMNS} FROM teams WHERE id = $1`, [
+        id,
+      ]);
+      return row ? toTeam(row) : undefined;
+    },
+
+    async renameTeam(id, name) {
       const [row] = await db.query<TeamRow>(
-        "SELECT id, name, created_at FROM teams WHERE id = $1",
-        [id],
+        `UPDATE teams SET name = $2 WHERE id = $1 RETURNING ${TEAM_COLUMNS}`,
+        [id, name],
       );
       return row ? toTeam(row) : undefined;
     },
 
+    async listTeams(org) {
+      const rows = await db.query<TeamRow>(
+        `SELECT ${TEAM_COLUMNS} FROM teams WHERE org_id = $1 ORDER BY id`,
+        [org],
+      );
+      return rows.map(toTeam);
+    },
+
+    async listPeople(team) {
+      const rows = await db.query<PersonRow>(
+        `SELECT ${PERSON_COLUMNS} FROM people p WHERE p.team_id = $1
+         ORDER BY ${ROLE_ORDER}, p.created_at, p.id`,
+        [team],
+      );
+      return rows.map(toPerson);
+    },
+
+    async getPerson(team, person) {
+      const [row] = await db.query<PersonRow>(
+        `SELECT ${PERSON_COLUMNS} FROM people p WHERE p.team_id = $1 AND p.id = $2`,
+        [team, person],
+      );
+      return row ? toPerson(row) : undefined;
+    },
+
+    async memberships(org, person) {
+      return db.query<Membership>(
+        `SELECT p.team_id AS team, p.role FROM people p JOIN teams t ON t.id = p.team_id
+         WHERE t.org_id = $1 AND lower(p.id) = lower($2::text)
+         ORDER BY p.team_id`,
+        [org, person],
+      );
+    },
+
+    async setRole(team, person, role, by) {
+      return db.transaction(async (tx) => {
+        // Locking the team row serializes role changes, so two owners demoting each other at
+        // the same time cannot leave the team with none.
+        await tx.query("SELECT id FROM teams WHERE id = $1 FOR UPDATE", [team]);
+        const [current] = await tx.query<PersonRow>(
+          `SELECT ${PERSON_COLUMNS} FROM people p WHERE p.team_id = $1 AND p.id = $2`,
+          [team, person],
+        );
+        if (!current) return { refused: "not_found" as const };
+        if (current.role === "owner" && role !== "owner") {
+          const owners = await tx.query(
+            "SELECT 1 FROM people WHERE team_id = $1 AND role = 'owner'",
+            [team],
+          );
+          if (owners.length <= 1) return { refused: "last_owner" as const };
+        }
+        if (current.role === role) return { person: toPerson(current) };
+        const [row] = await tx.query<PersonRow>(
+          `UPDATE people p SET role = $3, role_changed_at = now(), role_changed_by = $4
+           WHERE p.team_id = $1 AND p.id = $2
+           RETURNING ${PERSON_COLUMNS}`,
+          [team, person, role, by],
+        );
+        if (!row) throw new Error(`person ${person} missing right after the check`);
+        return { person: toPerson(row) };
+      });
+    },
+
+    async addPerson(team, person, role, by) {
+      return db.transaction(async (tx) => {
+        const [found] = await tx.query<{ org_id: string }>(
+          "SELECT org_id FROM teams WHERE id = $1 FOR UPDATE",
+          [team],
+        );
+        if (!found) return { refused: "no_team" as const };
+        const [existing] = await tx.query(
+          "SELECT 1 FROM people WHERE team_id = $1 AND lower(id) = lower($2::text)",
+          [team, person],
+        );
+        if (existing) return { refused: "existing_person" as const };
+        const [elsewhere] = await tx.query<{ id: string; name: string | null }>(
+          `SELECT p.id, p.name FROM people p JOIN teams t ON t.id = p.team_id
+           WHERE t.org_id = $1 AND lower(p.id) = lower($2::text)
+           ORDER BY p.created_at LIMIT 1`,
+          [found.org_id, person],
+        );
+        if (!elsewhere) return { refused: "not_in_org" as const };
+        const [row] = await tx.query<PersonRow>(
+          `INSERT INTO people AS p (team_id, id, name, role, role_changed_at, role_changed_by)
+           VALUES ($1, $2, $3, $4, now(), $5)
+           RETURNING ${PERSON_COLUMNS}`,
+          [team, elsewhere.id, elsewhere.name, role, by],
+        );
+        if (!row) throw new Error(`person ${person} missing right after insert`);
+        return { person: toPerson(row) };
+      });
+    },
+
     async createInvite(team, options = {}) {
       return insertInvite(db, team, options);
+    },
+
+    async getInvite(id) {
+      const [row] = await db.query<InviteRow>(
+        `SELECT ${INVITE_COLUMNS} FROM tokens WHERE hash = $1 AND kind = 'invite'`,
+        [id],
+      );
+      return row ? toInvite(row) : undefined;
     },
 
     async revokeInvite(id) {
@@ -208,7 +374,7 @@ export function createTeamStore(db: Database): TeamStore {
         const [team] = await tx.query<
           TeamRow & { email: string | null; revoked: boolean; expired: boolean }
         >(
-          `SELECT t.id, t.name, t.created_at, k.email, k.revoked_at IS NOT NULL AS revoked,
+          `SELECT t.id, t.name, t.org_id, t.created_at, k.email, k.revoked_at IS NOT NULL AS revoked,
              k.expires_at <= now() AS expired
            FROM tokens k JOIN teams t ON t.id = k.team_id
            WHERE k.hash = $1 AND k.kind = 'invite'
@@ -225,8 +391,9 @@ export function createTeamStore(db: Database): TeamStore {
         if (team.email === null) {
           // Ids that differ only in case count as the same person, as emails do.
           const [existing] = await tx.query(
-            "SELECT 1 FROM people WHERE team_id = $1 AND lower(id) = lower($2::text)",
-            [team.id, person.id],
+            `SELECT 1 FROM people p JOIN teams t ON t.id = p.team_id
+             WHERE t.org_id = $1 AND lower(p.id) = lower($2::text)`,
+            [team.org_id, person.id],
           );
           if (existing) return { refused: "existing_person" };
         }
