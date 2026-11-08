@@ -167,15 +167,16 @@ export async function finishOverSsh(
   signin: SigninSettings | null,
   io: UpIo,
   log: (line: string) => void,
+  gateway = false,
 ): Promise<ReturnType<typeof parseReadBack>> {
   const login = `${deployed.target.user}@${deployed.target.host}`;
   log(
-    signin
-      ? `Turning on sign-in over SSH on ${login}, and reading the tokens it generated`
+    signin || gateway
+      ? `Turning on ${[signin ? "sign-in" : "", gateway ? "the AI gateway" : ""].filter(Boolean).join(" and ")} over SSH on ${login}, and reading the tokens it generated`
       : `Reading the tokens the server generated, over SSH on ${login}`,
   );
   const result = await io.exec("ssh", [...sshArgs(deployed.target), rootShell(deployed.sudo)], {
-    input: finishScript(signin),
+    input: finishScript(signin, gateway),
     onLine: (line) => {
       if (line.startsWith("selfhost: ")) log(`  ${line.slice("selfhost: ".length)}`);
     },

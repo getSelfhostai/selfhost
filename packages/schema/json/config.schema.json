@@ -600,7 +600,7 @@
     "budget": {
       "additionalProperties": false,
       "minProperties": 1,
-      "description": "Spend budget of the team whose selfhost.toml this is; in the org policy, of the whole org. Spend is shown against it. Nothing is charged back and nothing is stopped.",
+      "description": "Spend budget of the team whose selfhost.toml this is; in the org policy, of the whole org. Spend is shown against it and nothing is charged back. With mode = hard, the AI gateway refuses requests once a budget is spent.",
       "type": "object",
       "properties": {
         "daily_usd": {
@@ -616,6 +616,42 @@
         "monthly_usd": {
           "exclusiveMinimum": 0,
           "description": "Spend allowed per calendar month (UTC), in API-equivalent USD.",
+          "type": "number"
+        },
+        "mode": {
+          "description": "alert (the default) shows spend against the budget and raises an alert when it is spent; requests go on. hard also sets the budget on the AI gateway in [integrations.router], which refuses requests through it once the budget is spent. Subscription logins do not go through the gateway and cannot be stopped from outside.",
+          "type": "string",
+          "enum": [
+            "alert",
+            "hard"
+          ]
+        },
+        "person": {
+          "additionalProperties": false,
+          "minProperties": 1,
+          "description": "Budget of each person in the team, on their own gateway key. With mode = hard the gateway stops that person alone once theirs is spent.",
+          "type": "object",
+          "properties": {
+            "daily_usd": {
+              "exclusiveMinimum": 0,
+              "description": "Spend allowed per day (UTC), in API-equivalent USD.",
+              "type": "number"
+            },
+            "weekly_usd": {
+              "exclusiveMinimum": 0,
+              "description": "Spend allowed per week, from Monday (UTC), in API-equivalent USD.",
+              "type": "number"
+            },
+            "monthly_usd": {
+              "exclusiveMinimum": 0,
+              "description": "Spend allowed per calendar month (UTC), in API-equivalent USD.",
+              "type": "number"
+            }
+          }
+        },
+        "run_usd": {
+          "exclusiveMinimum": 0,
+          "description": "Spend allowed per background run, in USD, on the gateway key issued for that run. The key stops working once it is spent (with mode = hard) or after 24 hours.",
           "type": "number"
         }
       }
@@ -886,8 +922,22 @@
             },
             "admin_key_env": {
               "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-              "description": "Environment variable on the server that holds the gateway's admin key.",
+              "description": "Environment variable on the server that holds the gateway's admin key: LiteLLM's master key, or the Bifrost admin password. Default: SELFHOST_GATEWAY_ADMIN_KEY.",
               "type": "string"
+            },
+            "public_url": {
+              "pattern": "^https?://",
+              "description": "The address agents send model traffic to, when it is not url. Unset: https://<the server>/llm for the bundled Bifrost, url for LiteLLM.",
+              "type": "string"
+            },
+            "providers": {
+              "uniqueItems": true,
+              "description": "Providers the team's gateway keys may use, as the gateway names them (anthropic, openai, bedrock, vertex, azure, fireworks), in fallback order: the first takes the traffic and the others are tried in turn when it fails. Unset allows every provider the gateway has a key for. Bifrost only; on LiteLLM, fallbacks are set in its own config.",
+              "type": "array",
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              }
             }
           }
         },

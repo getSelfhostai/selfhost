@@ -220,6 +220,7 @@ export interface EventParts {
   agent?: AgentRef;
   model?: string;
   session_id?: string;
+  run_id?: string;
   team?: string;
   tool?: LedgerEvent["tool"];
   target?: LedgerEvent["target"];

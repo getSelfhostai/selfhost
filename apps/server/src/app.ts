@@ -10,6 +10,7 @@ import { requireBearerToken } from "./auth.js";
 import { consoleRoutes } from "./console.js";
 import { decisionRoutes } from "./decisions.js";
 import { eventRoutes } from "./events.js";
+import { type Gateway, gatewayAdminRoutes } from "./gateway.js";
 import { type GitHubRouteOptions, githubRoutes } from "./github.js";
 import { githubRepos, type IntegrationRouteOptions } from "./integrations.js";
 import { adminMcpRoute, mcpRoutes } from "./mcp.js";
@@ -50,6 +51,8 @@ export interface AppOptions {
    * through the GitHub App above unless repos is given.
    */
   integrations?: IntegrationRouteOptions;
+  /** The AI gateway selfhost configures (see gateway.ts). */
+  gateway?: Gateway;
 }
 
 export function createApp({
@@ -64,6 +67,7 @@ export function createApp({
   clones,
   receipts = {},
   integrations = {},
+  gateway,
 }: AppOptions): Hono {
   const app = new Hono();
   const review = {
@@ -93,6 +97,7 @@ export function createApp({
       ...(now ? { now } : {}),
       ...integrations,
     },
+    ...(gateway ? { gateway } : {}),
     personRoutes: (person) => {
       reviewRoutes(person, ledger, {
         ...review,
@@ -120,6 +125,7 @@ export function createApp({
   otlpRoutes(app, ledger);
   adminMcpRoute(app);
   receiptReadRoutes(app, ledger);
+  gatewayAdminRoutes(app, ledger, gateway);
 
   app.notFound((c) =>
     c.json(

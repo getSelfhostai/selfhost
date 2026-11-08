@@ -4,6 +4,7 @@ import { redactionSettings } from "@selfhost/schema";
 import pkg from "../package.json" with { type: "json" };
 import { createApp } from "./app.js";
 import { findConsoleDir } from "./console.js";
+import { gatewayFromEnv, startGatewayJob } from "./gateway.js";
 import { githubAppFromEnv, githubConfig } from "./github.js";
 import { clonesUnder } from "./provenance.js";
 import { serverConfig, startRetentionJob } from "./retention.js";
@@ -45,6 +46,9 @@ const signin = signinFromEnv();
 const clonesDir = process.env.SELFHOST_GIT_CLONES?.trim() || undefined;
 const clones = clonesDir ? clonesUnder(clonesDir) : undefined;
 
+// The AI gateway from [integrations.router], or the bundled Bifrost (compose.gateway.yml).
+const gateway = gatewayFromEnv(config);
+
 const server = serve(
   {
     fetch: createApp({
@@ -56,6 +60,7 @@ const server = serve(
       ...(web ? { console: web } : {}),
       ...(signin ? { signin } : {}),
       ...(clones ? { clones } : {}),
+      ...(gateway ? { gateway } : {}),
     }).fetch,
     port,
     hostname,
@@ -66,6 +71,8 @@ const server = serve(
       console.log(web.dir ? `console at http://${hostname}:${info.port}/` : "console not built");
     }
     if (signin) console.log("console sign-in through the proxy is on");
+    if (gateway)
+      console.log(`AI gateway: ${gateway.client.tool}, agents reach it at ${gateway.baseUrl}`);
   },
 );
 
@@ -87,9 +94,17 @@ const reviews =
 const traces =
   process.env.SELFHOST_TRACE_EXPORT === "off" ? undefined : startTraceExportJob(ledger, { config });
 
+// SELFHOST_GATEWAY_SYNC=off stops writing the gateway's settings and reading its usage, for
+// installs where another server does it.
+const gatewayJob =
+  gateway && process.env.SELFHOST_GATEWAY_SYNC !== "off"
+    ? startGatewayJob(ledger, gateway)
+    : undefined;
+
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
     retention?.stop();
+    gatewayJob?.stop();
     reviews?.stop();
     traces?.stop();
     server.close(() => {

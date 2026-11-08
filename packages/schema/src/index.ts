@@ -4,6 +4,7 @@ export * from "./compile.js";
 export * from "./config.js";
 export * from "./event.js";
 export * from "./event-versions.js";
+export * from "./gateway.js";
 export * from "./hooks/claude-code.js";
 export * from "./hooks/codex.js";
 export * from "./layers.js";

@@ -304,8 +304,8 @@ jobs:
         if: always()
         run: docker compose down --volumes
 
-  # install.sh with the HTTPS and sign-in overlays, the way selfhost up runs it on a server: first
-  # with no secret in .env, then again with sign-in. SELFHOST_DOMAIN=localhost, so Caddy serves
+  # install.sh with the HTTPS, sign-in and gateway overlays, the way selfhost up runs it on a
+  # server: first with no secret in .env, then again with sign-in, then with the AI gateway. SELFHOST_DOMAIN=localhost, so Caddy serves
   # HTTPS from its own local CA and no DNS or Let's Encrypt is involved.
   install:
     runs-on: ubuntu-latest
@@ -426,6 +426,62 @@ jobs:
               *) echo "::error::$image has no tag"; exit 1 ;;
             esac
           done
+
+      - name: Turn on the AI gateway with a third run, and check Bifrost behind Caddy
+        run: |
+          . "$RUNNER_TEMP/install-ci.sh"
+          before=$(secrets)
+          # No provider keys: nothing here may reach a model provider.
+          cat > .env.next <<'EOF'
+          COMPOSE_FILE=compose.yml:compose.tls.yml:compose.signin.yml:compose.gateway.yml
+          EOF
+          sudo ./install.sh
+          [ "$(secrets)" = "$before" ]
+          [ "$(sudo grep -cE '^SELFHOST_GATEWAY_(ADMIN|ENCRYPTION)_KEY=.{32,}$' .env)" = 2 ]
+          # bifrost.json names every secret by reference only.
+          if sudo grep -qF "$(sudo sed -n 's/^SELFHOST_GATEWAY_ADMIN_KEY=//p' .env)" bifrost.json; then
+            echo "::error::bifrost.json holds the admin key"; exit 1
+          fi
+          wait_https
+          # Bifrost answers its health check behind Caddy, and only on 127.0.0.1 itself.
+          https -f https://localhost/llm/health | jq -e '.status == "ok"'
+          [ "$(sudo docker compose port bifrost 8080)" = 127.0.0.1:8080 ]
+          ip=$(hostname -I | awk '{print $1}')
+          if curl -s --max-time 3 -o /dev/null "http://$ip:8080/health"; then
+            echo "::error::Bifrost answers on $ip"; exit 1
+          fi
+          # Its management API and UI are not routed; model routes refuse requests without a
+          # virtual key or with one it does not know.
+          [ "$(status https://localhost/llm/api/governance/virtual-keys)" = 404 ]
+          code=$(status -X POST -H 'Content-Type: application/json' -d '{"model":"anthropic/claude-haiku-5-5","messages":[]}' \
+            https://localhost/llm/v1/chat/completions)
+          case "$code" in 401|403) ;; *) echo "::error::no virtual key answered $code"; exit 1 ;; esac
+          code=$(status -X POST -H 'Authorization: Bearer sk-bf-not-a-key' -H 'Content-Type: application/json' \
+            -d '{"model":"anthropic/claude-haiku-5-5","messages":[]}' https://localhost/llm/v1/chat/completions)
+          case "$code" in 401|403) ;; *) echo "::error::an unknown virtual key answered $code"; exit 1 ;; esac
+
+          # The server writes a team and a person's key with its budget, and syncs again cleanly.
+          admin=$(sudo sed -n 's/^SELFHOST_TOKEN=//p' .env)
+          api() { https -f -H "Authorization: Bearer $1" -H 'Content-Type: application/json' "${@:2}"; }
+          invite=$(api "$admin" -X POST -d '{"name":"CI"}' https://localhost/v1/teams | jq -r .invite)
+          person=$(https -f -H 'Content-Type: application/json' -X POST \
+            -d "{\"invite\":\"$invite\",\"person\":\"ci@example.com\"}" https://localhost/v1/join | jq -r .token)
+          api "$person" -X PUT -d '{"text":"version = 1\n[budget]\nmode = \"hard\"\nmonthly_usd = 10\n[budget.person]\ndaily_usd = 1\n"}' \
+            https://localhost/v1/policy >/dev/null
+          api "$person" -X POST -d '{}' https://localhost/v1/gateway/keys > "$RUNNER_TEMP/key.json"
+          jq -e '(.value | startswith("sk-bf-")) and ([.key.budgets[] | {period, limit_usd}] == [{"period":"day","limit_usd":1}])' "$RUNNER_TEMP/key.json"
+          [ "$(status -X POST -H "Authorization: Bearer $person" -H 'Content-Type: application/json' -d '{}' \
+            https://localhost/v1/gateway/keys)" = 409 ]
+          api "$admin" -X POST https://localhost/v1/gateway/sync | jq -e '.errors == []'
+          # Safe to rerun: a second sync finds nothing to change.
+          api "$admin" -X POST https://localhost/v1/gateway/sync | jq -e '.errors == [] and .created == 0 and .updated == 0'
+          api "$person" https://localhost/v1/gateway | jq -e '.healthy and .mode == "hard" and .key.person == "ci@example.com"'
+          # The key's value is never listed again.
+          api "$admin" "https://localhost/v1/gateway/keys?team=ci" > "$RUNNER_TEMP/keys.json"
+          jq -e '.keys | length == 1' "$RUNNER_TEMP/keys.json"
+          if grep -qF "$(jq -r .value "$RUNNER_TEMP/key.json")" "$RUNNER_TEMP/keys.json"; then
+            echo "::error::the key list holds a key's value"; exit 1
+          fi
 
       - name: Run the daily backup once
         run: |

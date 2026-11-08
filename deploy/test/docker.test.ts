@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
@@ -196,7 +197,7 @@ describe(".env.example", () => {
     const secrets = Object.entries(envExample.values).filter(([name]) =>
       /PASSWORD|TOKEN|SECRET|KEY/.test(name),
     );
-    expect(secrets.length).toBe(4);
+    expect(secrets.length).toBe(6);
     for (const [name, value] of secrets) expect(value, name).toBe("");
   });
 });
@@ -261,6 +262,11 @@ describe("Dockerfile", () => {
 
 describe("backup, restore and install scripts", () => {
   const scripts = ["backup.sh", "restore.sh", "install.sh"];
+
+  it.skipIf(process.platform === "win32")("gateway-config.sh is executable and parses", () => {
+    expect(statSync(join(DIR, "gateway-config.sh")).mode & 0o111).toBe(0o111);
+    expect(() => execFileSync("sh", ["-n", join(DIR, "gateway-config.sh")])).not.toThrow();
+  });
 
   it.skipIf(process.platform === "win32").each(scripts)("%s is executable", (file) => {
     expect(statSync(join(DIR, file)).mode & 0o111).toBe(0o111);
@@ -340,7 +346,7 @@ describe("HTTPS and sign-in overlays", () => {
   });
 
   it("documents in .env.example every variable they read", () => {
-    const names = ["compose.tls.yml", "compose.signin.yml"].flatMap((file) =>
+    const names = ["compose.tls.yml", "compose.signin.yml", "compose.gateway.yml"].flatMap((file) =>
       [...read(file).matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)/g)].map((m) => m[1] ?? ""),
     );
     expect(names.filter((name) => !envExample.documented.has(name))).toEqual([]);
@@ -416,5 +422,135 @@ describe("HTTPS and sign-in overlays", () => {
     );
     expect(env.OAUTH2_PROXY_HTTP_ADDRESS).toBe("0.0.0.0:4180");
     expect(proxy?.volumes).toEqual(["./signin-emails.txt:/etc/oauth2-proxy/emails.txt:ro"]);
+  });
+});
+
+describe("AI gateway overlay", () => {
+  const gateway = parse(read("compose.gateway.yml")) as {
+    services: Record<string, Service & { command?: string[] }>;
+    volumes?: Record<string, unknown>;
+  };
+  const bifrost = gateway.services.bifrost;
+  const caddyfile = read("Caddyfile");
+  const tmp = mkdtempSync(join(tmpdir(), "selfhost-gateway-"));
+  const config = (env: string) => {
+    const file = join(tmp, `${Math.random().toString(36).slice(2)}.env`);
+    writeFileSync(file, env);
+    return JSON.parse(
+      execFileSync("sh", [join(DIR, "gateway-config.sh"), file], { encoding: "utf8" }),
+    ) as {
+      client: Record<string, unknown>;
+      governance: { auth_config: Record<string, unknown> };
+      config_store: { type: string; config: Record<string, string> };
+      logs_store: { type: string; config: Record<string, string> };
+      providers: Record<string, { keys: Record<string, unknown>[] }>;
+    };
+  };
+
+  it("pins Bifrost and keeps it off the internet", () => {
+    expect(bifrost?.image).toBe("maximhq/bifrost:v2.4.0");
+    expect(unpinned(bifrost?.image ?? "")).toBeUndefined();
+    expect(unpinned(gateway.services["gateway-db"]?.image ?? "")).toBeUndefined();
+    expect(bifrost?.restart).toBe("unless-stopped");
+    expect(bifrost?.ports).toEqual([`\${GATEWAY_BIND:-127.0.0.1}:\${GATEWAY_PORT:-8080}:8080`]);
+    expect(bifrost?.depends_on).toEqual({
+      "gateway-db": { condition: "service_completed_successfully" },
+    });
+    expect(bifrost?.volumes).toEqual([
+      "bifrost-data:/app/data",
+      "./bifrost.json:/app/data/config.json:ro",
+    ]);
+  });
+
+  it("gives provider keys to Bifrost alone, and the admin key to the server too", () => {
+    const selfhost = gateway.services.selfhost?.environment ?? {};
+    expect(Object.keys(selfhost).sort()).toEqual([
+      "SELFHOST_GATEWAY_ADMIN_KEY",
+      "SELFHOST_GATEWAY_TOOL",
+      "SELFHOST_GATEWAY_URL",
+    ]);
+    for (const name of ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "AWS_SECRET_ACCESS_KEY"]) {
+      expect(bifrost?.environment?.[name], name).toBe(`\${${name}:-}`);
+      expect(selfhost[name], name).toBeUndefined();
+    }
+    expect(gateway.services.caddy?.environment).toEqual({ SELFHOST_GATEWAY: "on" });
+  });
+
+  it("serves only Bifrost's model routes and health at /llm/, and nothing without the overlay", () => {
+    expect(caddyfile).toContain("import gateway-{$SELFHOST_GATEWAY:off}");
+    expect(caddyfile).toMatch(/\(gateway-off\) \{\n\}/);
+    const on = caddyfile.slice(caddyfile.indexOf("(gateway-on) {"));
+    expect(on).toMatch(
+      /handle_path \/llm\/\* \{\n\s+@model path \/anthropic\/\* \/openai\/\* \/v1\/\* \/health\n\s+handle @model \{\n\s+reverse_proxy bifrost:8080\n/,
+    );
+    expect(on).toMatch(/handle \{\n\s+respond 404\n/);
+    // Its management API and web UI are never routed.
+    expect(caddyfile).not.toMatch(/bifrost:8080[^\n]*\/api/);
+  });
+
+  it("creates the bifrost database only when it is missing", () => {
+    const command = gateway.services["gateway-db"]?.command?.join(" ") ?? "";
+    expect(command).toContain("SELECT 1 FROM pg_database WHERE datname = 'bifrost'");
+    expect(command).toContain('|| psql -c "CREATE DATABASE bifrost"');
+  });
+
+  it("writes a Bifrost config with no secret, Postgres stores and governance on", () => {
+    const written = config("POSTGRES_PASSWORD=pw\nSELFHOST_GATEWAY_ADMIN_KEY=admin\n");
+    expect(written.client).toMatchObject({
+      enforce_auth_on_inference: true,
+      allow_direct_keys: false,
+      disable_content_logging: true,
+      logging_headers: ["user-agent"],
+    });
+    expect(written.governance.auth_config).toEqual({
+      is_enabled: true,
+      admin_username: "selfhost",
+      admin_password: "env.SELFHOST_GATEWAY_ADMIN_KEY",
+    });
+    for (const store of [written.config_store, written.logs_store]) {
+      expect(store.type).toBe("postgres");
+      expect(store.config).toMatchObject({ host: "postgres", db_name: "bifrost" });
+      expect(store.config.password).toBe("env.BIFROST_DB_PASSWORD");
+    }
+    expect(written.providers).toEqual({});
+    const text = JSON.stringify(written);
+    expect(text).not.toContain('admin"');
+    expect(text).not.toContain("pw");
+  });
+
+  it("lists a provider only when its keys are set, by reference, with its region pinned", () => {
+    const written = config(
+      [
+        "ANTHROPIC_API_KEY=sk-ant-real",
+        "OPENAI_API_KEY=",
+        "AWS_ACCESS_KEY_ID=AKIA",
+        "AWS_SECRET_ACCESS_KEY=secret",
+        "AWS_REGION=eu-central-1",
+      ].join("\n"),
+    );
+    expect(Object.keys(written.providers)).toEqual(["anthropic", "bedrock"]);
+    expect(written.providers.anthropic?.keys[0]).toMatchObject({ value: "env.ANTHROPIC_API_KEY" });
+    expect(written.providers.bedrock?.keys[0]).toMatchObject({
+      bedrock_key_config: {
+        access_key: "env.AWS_ACCESS_KEY_ID",
+        secret_key: "env.AWS_SECRET_ACCESS_KEY",
+        region: "eu-central-1",
+      },
+    });
+    expect(JSON.stringify(written)).not.toMatch(/sk-ant-real|AKIA|secret"/);
+  });
+
+  it("refuses a region that is not one", () => {
+    expect(() =>
+      config('AWS_ACCESS_KEY_ID=a\nAWS_SECRET_ACCESS_KEY=b\nAWS_REGION=us-east-1" }\n'),
+    ).toThrow();
+  });
+
+  it("is written by install.sh, which waits for it when the overlay is on", () => {
+    const text = read("install.sh");
+    expect(text).toContain("sh ./gateway-config.sh .env >bifrost.json.tmp");
+    expect(text).toContain("*:compose.gateway.yml:*) gateway=on ;;");
+    expect(text).toContain("docker compose ps -q bifrost");
+    expect(read(".gitignore")).toContain("bifrost.json");
   });
 });

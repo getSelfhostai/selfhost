@@ -6,8 +6,8 @@
 #
 # Usage: sudo ./install.sh
 #
-# Secrets left empty in .env (database password, API and agent tokens, sign-in secrets)
-# are generated here: selfhost up never sends one in user-data. When .env.next is present
+# Secrets left empty in .env (database password, API and agent tokens, sign-in and gateway
+# secrets) are generated here: selfhost up never sends one in user-data. When .env.next is present
 # (selfhost up writes it), it replaces .env, keeping the secrets .env already holds (a database
 # volume keeps the password it was created with) and any setting .env.next leaves out.
 set -eu
@@ -23,7 +23,7 @@ die() {
 
 [ "$(id -u)" = 0 ] || die "run this as root: sudo $0"
 
-SECRETS="POSTGRES_PASSWORD SELFHOST_TOKEN SELFHOST_OTLP_TOKEN SELFHOST_SIGNIN_COOKIE_SECRET SELFHOST_SIGNIN_PROXY_SECRET"
+SECRETS="POSTGRES_PASSWORD SELFHOST_TOKEN SELFHOST_OTLP_TOKEN SELFHOST_SIGNIN_COOKIE_SECRET SELFHOST_SIGNIN_PROXY_SECRET SELFHOST_GATEWAY_ADMIN_KEY SELFHOST_GATEWAY_ENCRYPTION_KEY"
 
 # value KEY FILE: the last KEY=value line of FILE, empty when there is none.
 value() { sed -n "s/^$1=//p" "$2" | tail -n 1; }
@@ -68,6 +68,16 @@ umask 022
 mkdir -p backups
 # compose.signin.yml mounts this file; an empty one lets nobody in by email.
 [ -f signin-emails.txt ] || : >signin-emails.txt
+case ":$(value COMPOSE_FILE .env):" in
+  *:compose.gateway.yml:*) gateway=on ;;
+  *) gateway="" ;;
+esac
+# compose.gateway.yml mounts this file: the bundled Bifrost's config, naming the providers whose
+# keys are in .env. It holds env.<NAME> references, never the keys.
+if [ -n "$gateway" ]; then
+  sh ./gateway-config.sh .env >bifrost.json.tmp || die "could not write bifrost.json"
+  mv bifrost.json.tmp bifrost.json
+fi
 
 # Docker Engine and the Compose plugin: from Docker's apt repository on Debian and Ubuntu, as
 # docs.docker.com/engine/install describes, else with the script from get.docker.com.
@@ -122,6 +132,22 @@ until [ "$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose ps -q 
   fi
   sleep 2
 done
+
+if [ -n "$gateway" ]; then
+  say "waiting for the AI gateway's health check"
+  tries=0
+  until [ "$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose ps -q bifrost)" 2>/dev/null)" = healthy ]; do
+    tries=$((tries + 1))
+    if [ "$tries" -gt 90 ]; then
+      docker compose ps -a
+      docker compose logs --no-color --tail 40 bifrost gateway-db
+      die "the AI gateway (Bifrost) did not become healthy within 3 minutes"
+    fi
+    sleep 2
+  done
+  providers=$(sed -n 's/^    "\([a-z]*\)": { "keys".*/\1/p' bifrost.json | tr '\n' ' ')
+  say "AI gateway ready at /llm/ with providers: ${providers:-none yet, add their keys to .env and run install.sh again}"
+fi
 
 at=$(value SELFHOST_BACKUP_TIME .env)
 at=${at:-03:00}

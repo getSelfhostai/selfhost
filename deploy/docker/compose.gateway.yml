@@ -1,0 +1,87 @@
+# The AI gateway: Bifrost (github.com/maximhq/bifrost, Apache 2.0) next to the server. It holds
+# the provider keys and answers agents at https://<SELFHOST_DOMAIN>/llm/ through Caddy, only with
+# a virtual key selfhost issued (selfhost gateway connect). Its keys, budgets and request logs
+# live in a database of their own on the same Postgres. The selfhost server writes teams, keys
+# and budgets to it from selfhost.toml and reads its request logs into the ledger.
+# Use it with compose.tls.yml:
+#   COMPOSE_FILE=compose.yml:compose.tls.yml:compose.gateway.yml
+# Provider keys go in .env (ANTHROPIC_API_KEY and the others in .env.example); install.sh writes
+# bifrost.json, which names only the providers whose keys are set, then starts it.
+services:
+  # Creates the bifrost database once; does nothing when it exists.
+  gateway-db:
+    image: postgres:16.15
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-selfhost}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      PGDATABASE: ${POSTGRES_DB:-selfhost}
+    command:
+      - sh
+      - -c
+      - >-
+        psql -tAc "SELECT 1 FROM pg_database WHERE datname = 'bifrost'" | grep -q 1 ||
+        psql -c "CREATE DATABASE bifrost"
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+
+  bifrost:
+    image: maximhq/bifrost:v2.4.0
+    restart: unless-stopped
+    depends_on:
+      gateway-db:
+        condition: service_completed_successfully
+    environment:
+      APP_PORT: "8080"
+      APP_HOST: 0.0.0.0
+      LOG_LEVEL: info
+      LOG_STYLE: json
+      # Read by bifrost.json as env.<NAME>; nothing secret is written in that file.
+      SELFHOST_GATEWAY_ADMIN_KEY: ${SELFHOST_GATEWAY_ADMIN_KEY:?Set SELFHOST_GATEWAY_ADMIN_KEY in .env}
+      SELFHOST_GATEWAY_ENCRYPTION_KEY: ${SELFHOST_GATEWAY_ENCRYPTION_KEY:?Set SELFHOST_GATEWAY_ENCRYPTION_KEY in .env}
+      BIFROST_DB_USER: ${POSTGRES_USER:-selfhost}
+      BIFROST_DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      # Provider keys stay in this container: the selfhost server never sees them.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      FIREWORKS_API_KEY: ${FIREWORKS_API_KEY:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AZURE_API_KEY: ${AZURE_API_KEY:-}
+      AZURE_ENDPOINT: ${AZURE_ENDPOINT:-}
+      VERTEX_PROJECT_ID: ${VERTEX_PROJECT_ID:-}
+      VERTEX_CREDENTIALS: ${VERTEX_CREDENTIALS:-}
+    volumes:
+      # The app directory; with Postgres for both stores it holds only Bifrost's own scratch files.
+      - bifrost-data:/app/data
+      - ./bifrost.json:/app/data/config.json:ro
+    # For Bifrost's own web UI over an SSH tunnel (ssh -L 8080:127.0.0.1:8080), never the internet.
+    ports:
+      - "${GATEWAY_BIND:-127.0.0.1}:${GATEWAY_PORT:-8080}:8080"
+    # Health check: HEALTHCHECK in the image, GET /health.
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+
+  selfhost:
+    environment:
+      SELFHOST_GATEWAY_TOOL: bifrost
+      SELFHOST_GATEWAY_URL: http://bifrost:8080
+      SELFHOST_GATEWAY_ADMIN_KEY: ${SELFHOST_GATEWAY_ADMIN_KEY:?Set SELFHOST_GATEWAY_ADMIN_KEY in .env}
+
+  # Caddy sends /llm/ to Bifrost. It does not wait for Bifrost, so the API and the console come
+  # up even when the gateway does not.
+  caddy:
+    environment:
+      SELFHOST_GATEWAY: "on"
+
+volumes:
+  bifrost-data:

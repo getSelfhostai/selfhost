@@ -6,7 +6,7 @@ export {
   type TokenCounts,
   toolDetails,
 } from "./common.js";
-export { mapGatewayLog } from "./gateway.js";
+export { mapBifrostLog, mapGatewayLog } from "./gateway.js";
 export { mapClaudeCodeHook, mapCodexHook, mapCodexNotify } from "./hooks.js";
 export { mapOtelLogs } from "./otel.js";
 export { mapVendorAudit } from "./vendor-audit.js";

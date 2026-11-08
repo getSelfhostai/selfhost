@@ -826,7 +826,8 @@ stack in [`deploy/docker`](../../deploy/docker/README.md#selfhost-up): HTTPS thr
 ports 22, 80 and 443 open, a daily backup kept `--backup-keep-days` (14) on the server, and with
 `--signin github|google` console sign-in through oauth2-proxy (`SELFHOST_SIGNIN_CLIENT_ID`,
 `SELFHOST_SIGNIN_CLIENT_SECRET`, and `--allow-email`, `--allow-domain` or `--github-org`). Agents
-keep running where they are and no model traffic goes through the server.
+keep running where they are and no model traffic goes through the server. `--gateway` also runs
+the AI gateway (Bifrost) next to it; see [AI gateway](#ai-gateway-selfhost-gateway).
 
 - Size: `--people` and `--events-per-day` pick a server: 2 vCPU and 4 GB up to 15 people and
   50,000 events a day (Hetzner `cx23`, else `cpx22`; DigitalOcean `s-2vcpu-4gb`; AWS
@@ -846,6 +847,41 @@ keep running where they are and no model traffic goes through the server.
 - On any failure it exits 1 and lists every resource created so far with the command that
   deletes it (`resources` in the `selfhost.error/v1` object with `--json`). Missing credentials
   and failed SSH connections stop before anything is created.
+
+## AI gateway: `selfhost gateway`
+
+```sh
+selfhost gateway                          # health, the team's hard limits, your key and what is left
+selfhost gateway keys                     # the team's keys and limits, never their values (owners, admins)
+selfhost gateway connect claude-code --write   # issue your key, write it into ~/.claude/settings.json
+selfhost gateway connect codex            # print the Codex provider block and the key to export
+selfhost gateway connect env --run run-42 # a key for one background run, for 24 hours
+```
+
+The team server configures an AI gateway: the bundled Bifrost (`selfhost up --gateway`, see
+[`deploy/docker`](../../deploy/docker/README.md#ai-gateway)) or a LiteLLM proxy the team already
+runs (`[integrations.router] tool = "litellm"` with `url` and `admin_key_env` in the server's
+`selfhost.toml`). The gateway holds the provider keys; people and runs get virtual keys, one per
+person, per team and per run, each named `selfhost:<kind>:<team>:<who>`.
+
+- Budgets: `[budget]` in the team's `selfhost.toml`. With `mode = "hard"` the team's
+  `daily_usd`, `weekly_usd` and `monthly_usd` go on the gateway's team, `[budget.person]` on each
+  person's key and `run_usd` on each run's key, and the gateway refuses requests once one is
+  spent. With `mode = "alert"` (the default) nothing is set on the gateway; spend is shown and
+  alerted. A spent budget is also written to the ledger as `alert.raised` (`budget_exceeded`,
+  which the review list shows), and each refused request as `gateway_budget_exceeded`.
+- Every five minutes the server writes teams, budgets, providers and on or off to the gateway
+  (only what differs) and reads its request logs into the ledger as `cost.recorded` events with
+  `source = "gateway"`, attributed to the key's person, team and run, so spend views and the
+  forecast include them. A person whose tokens are revoked has their key turned off.
+- A key's value is shown once, to the person it is for (`connect`), and kept nowhere. `connect
+  --rotate` gives a new one. Provider keys never leave the gateway.
+- Agents: `claude-code` (`ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN`), `codex` (a
+  `model_providers` block reading `SELFHOST_GATEWAY_KEY`), `opencode` (provider `baseURL` and
+  `apiKey`) and `env` for anything built on the Anthropic or OpenAI SDKs. Cursor and GitHub
+  Copilot send model traffic from their own servers and cannot use it.
+- Subscription logins (Claude Pro or Max, ChatGPT plans) go straight to the vendor, so they
+  cannot be capped from outside: for them selfhost keeps the forecast and the alerts.
 
 ## Binaries
 

@@ -1461,7 +1461,7 @@ paths:
     get:
       operationId: getBudget
       summary: Spend so far against a team's budget, with a forecast.
-      description: The admin token, or a person token of anyone in the team. The budget is [budget] in the team's selfhost.toml. Nothing is charged back or stopped. The MCP tool get_budget makes the same call.
+      description: The admin token, or a person token of anyone in the team. The budget is [budget] in the team's selfhost.toml. Nothing is charged back; with [budget] mode = hard the AI gateway also refuses requests once it is spent (GET /v1/gateway shows its limits). The MCP tool get_budget makes the same call.
       parameters:
         - name: person
           in: query
@@ -1509,6 +1509,153 @@ paths:
                 $ref: "#/components/schemas/ApiError"
         "404":
           description: No such team.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/gateway:
+    get:
+      operationId: getGateway
+      summary: "The AI gateway: health, the team's hard limits and the caller's own key."
+      description: The admin token, or a person token of anyone in the team. The gateway (Bifrost or LiteLLM, [integrations.router]) holds the provider keys and enforces the limits; selfhost sets them from [budget] and reads its request logs into the ledger. Key values are never returned here.
+      parameters:
+        - name: team
+          in: query
+          required: false
+          description: Team id. Needed with the admin token; a person token writes its own team by default, or another team it is in.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The gateway.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GatewayStatus"
+        "400":
+          description: No team given with the admin token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No gateway is configured on this server.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/gateway/keys:
+    get:
+      operationId: listGatewayKeys
+      summary: The team's gateway keys and their limits, never their values.
+      description: The admin token, or a person token whose role in the team is owner or admin.
+      parameters:
+        - name: team
+          in: query
+          required: false
+          description: Team id. Needed with the admin token; a person token writes its own team by default, or another team it is in.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The keys.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GatewayKeysResponse"
+        "400":
+          description: No team given with the admin token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No gateway is configured on this server.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    post:
+      operationId: issueGatewayKey
+      summary: Issue a gateway key and return its value, once.
+      description: A person key goes only to its person, with their person token. A team key needs the owner or admin role, or the admin token. A run key needs anyone in the team. The value is in this answer only; selfhost keeps no copy.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IssueGatewayKeyRequest"
+      responses:
+        "201":
+          description: Key issued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueGatewayKeyResponse"
+        "400":
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No gateway is configured on this server.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: The key exists; ask again with rotate to replace its value.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: The gateway refused or did not answer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/gateway/sync:
+    post:
+      operationId: syncGateway
+      summary: Write teams, budgets and key settings to the gateway now.
+      description: "Admin token only. The server also does this every few minutes. Safe to repeat: only what differs is changed."
+      responses:
+        "200":
+          description: What changed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GatewaySyncReport"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No gateway is configured on this server.
           content:
             application/json:
               schema:
@@ -4000,6 +4147,465 @@ components:
             - minimum: 0
               type: number
             - type: "null"
+    GatewayStatus:
+      additionalProperties: false
+      title: GatewayStatus
+      type: object
+      required:
+        - tool
+        - base_url
+        - healthy
+        - team
+        - mode
+        - team_budgets
+        - key
+        - last_sync
+        - last_usage
+        - notes
+      properties:
+        tool:
+          description: The gateway in use, or null when none is configured.
+          anyOf:
+            - type: string
+              enum:
+                - bifrost
+                - litellm
+            - type: "null"
+        base_url:
+          description: "Where agents send model traffic. Claude Code: <base_url>/anthropic on Bifrost; Codex and OpenAI SDKs: <base_url>/openai/v1 on Bifrost, <base_url>/v1 on LiteLLM."
+          anyOf:
+            - type: string
+            - type: "null"
+        healthy:
+          type: boolean
+        detail:
+          description: Why the gateway is not healthy.
+          type: string
+        team:
+          minLength: 1
+          type: string
+        mode:
+          description: "[budget] mode of the team."
+          type: string
+          enum:
+            - alert
+            - hard
+        team_budgets:
+          description: The team's hard limits on the gateway, with what it counted so far.
+          type: array
+          items:
+            additionalProperties: false
+            title: GatewayBudget
+            type: object
+            required:
+              - period
+              - limit_usd
+              - spent_usd
+            properties:
+              period:
+                type: string
+                enum:
+                  - day
+                  - week
+                  - month
+                  - run
+              limit_usd:
+                minimum: 0
+                type: number
+              spent_usd:
+                description: Spend the gateway counted in the current period, or null when it reports none.
+                anyOf:
+                  - minimum: 0
+                    type: number
+                  - type: "null"
+        key:
+          description: The caller's own person key, or null when they have none yet.
+          anyOf:
+            - additionalProperties: false
+              title: GatewayKey
+              type: object
+              required:
+                - id
+                - name
+                - kind
+                - team
+                - active
+                - budgets
+              properties:
+                id:
+                  minLength: 1
+                  description: The gateway's id for the key. Never the key itself.
+                  type: string
+                name:
+                  minLength: 1
+                  description: selfhost:<kind>:<team>[:<person or run>].
+                  type: string
+                kind:
+                  type: string
+                  enum:
+                    - person
+                    - team
+                    - run
+                team:
+                  minLength: 1
+                  description: Team the key's spend counts against.
+                  type: string
+                person:
+                  description: Owner of a person key.
+                  type: string
+                run_id:
+                  description: Run of a run key.
+                  type: string
+                active:
+                  description: false once its person left the team or it was revoked.
+                  type: boolean
+                budgets:
+                  description: Hard limits the gateway enforces on this key. Empty with [budget] mode alert.
+                  type: array
+                  items:
+                    additionalProperties: false
+                    title: GatewayBudget
+                    type: object
+                    required:
+                      - period
+                      - limit_usd
+                      - spent_usd
+                    properties:
+                      period:
+                        type: string
+                        enum:
+                          - day
+                          - week
+                          - month
+                          - run
+                      limit_usd:
+                        minimum: 0
+                        type: number
+                      spent_usd:
+                        description: Spend the gateway counted in the current period, or null when it reports none.
+                        anyOf:
+                          - minimum: 0
+                            type: number
+                          - type: "null"
+            - type: "null"
+        last_sync:
+          anyOf:
+            - additionalProperties: false
+              title: GatewaySyncReport
+              type: object
+              required:
+                - at
+                - teams
+                - created
+                - updated
+                - unchanged
+                - deactivated
+                - alerts
+                - errors
+              properties:
+                at:
+                  format: date-time
+                  type: string
+                teams:
+                  minimum: 0
+                  type: integer
+                created:
+                  minimum: 0
+                  description: Gateway teams created.
+                  type: integer
+                updated:
+                  minimum: 0
+                  description: Teams and keys whose settings changed.
+                  type: integer
+                unchanged:
+                  minimum: 0
+                  type: integer
+                deactivated:
+                  minimum: 0
+                  description: "Keys turned off: their person left the team."
+                  type: integer
+                alerts:
+                  minimum: 0
+                  description: New budget-spent alerts written.
+                  type: integer
+                errors:
+                  description: What failed, without secrets.
+                  type: array
+                  items:
+                    type: string
+            - type: "null"
+        last_usage:
+          anyOf:
+            - additionalProperties: false
+              title: GatewayUsageReport
+              type: object
+              required:
+                - at
+                - from
+                - events
+                - duplicates
+              properties:
+                at:
+                  format: date-time
+                  type: string
+                from:
+                  format: date-time
+                  description: Start of the window read from the gateway's request logs.
+                  type: string
+                events:
+                  minimum: 0
+                  description: New ledger events written.
+                  type: integer
+                duplicates:
+                  minimum: 0
+                  description: Requests already in the ledger.
+                  type: integer
+                error:
+                  type: string
+            - type: "null"
+        notes:
+          description: What the gateway cannot do here, such as stopping subscription logins, which never pass through it.
+          type: array
+          items:
+            type: string
+    GatewayKeysResponse:
+      additionalProperties: false
+      title: GatewayKeysResponse
+      type: object
+      required:
+        - team
+        - keys
+      properties:
+        team:
+          minLength: 1
+          type: string
+        keys:
+          description: The team's keys. Never their values.
+          type: array
+          items:
+            additionalProperties: false
+            title: GatewayKey
+            type: object
+            required:
+              - id
+              - name
+              - kind
+              - team
+              - active
+              - budgets
+            properties:
+              id:
+                minLength: 1
+                description: The gateway's id for the key. Never the key itself.
+                type: string
+              name:
+                minLength: 1
+                description: selfhost:<kind>:<team>[:<person or run>].
+                type: string
+              kind:
+                type: string
+                enum:
+                  - person
+                  - team
+                  - run
+              team:
+                minLength: 1
+                description: Team the key's spend counts against.
+                type: string
+              person:
+                description: Owner of a person key.
+                type: string
+              run_id:
+                description: Run of a run key.
+                type: string
+              active:
+                description: false once its person left the team or it was revoked.
+                type: boolean
+              budgets:
+                description: Hard limits the gateway enforces on this key. Empty with [budget] mode alert.
+                type: array
+                items:
+                  additionalProperties: false
+                  title: GatewayBudget
+                  type: object
+                  required:
+                    - period
+                    - limit_usd
+                    - spent_usd
+                  properties:
+                    period:
+                      type: string
+                      enum:
+                        - day
+                        - week
+                        - month
+                        - run
+                    limit_usd:
+                      minimum: 0
+                      type: number
+                    spent_usd:
+                      description: Spend the gateway counted in the current period, or null when it reports none.
+                      anyOf:
+                        - minimum: 0
+                          type: number
+                        - type: "null"
+    IssueGatewayKeyRequest:
+      additionalProperties: false
+      title: IssueGatewayKeyRequest
+      type: object
+      properties:
+        kind:
+          default: person
+          description: "person: the caller's own key (person tokens only). team: a shared key for the team (owner or admin). run: a key for one background run, which expires after 24 hours."
+          type: string
+          enum:
+            - person
+            - team
+            - run
+        team:
+          description: Team id. Needed with the admin token; a person token uses its own team.
+          type: string
+        run_id:
+          minLength: 1
+          maxLength: 200
+          description: The run, for kind run.
+          type: string
+        rotate:
+          description: Replace an existing person or team key with a new value. Without it, asking again for one that exists answers 409.
+          type: boolean
+    IssueGatewayKeyResponse:
+      additionalProperties: false
+      title: IssueGatewayKeyResponse
+      type: object
+      required:
+        - key
+        - value
+        - base_url
+        - tool
+      properties:
+        key:
+          additionalProperties: false
+          title: GatewayKey
+          type: object
+          required:
+            - id
+            - name
+            - kind
+            - team
+            - active
+            - budgets
+          properties:
+            id:
+              minLength: 1
+              description: The gateway's id for the key. Never the key itself.
+              type: string
+            name:
+              minLength: 1
+              description: selfhost:<kind>:<team>[:<person or run>].
+              type: string
+            kind:
+              type: string
+              enum:
+                - person
+                - team
+                - run
+            team:
+              minLength: 1
+              description: Team the key's spend counts against.
+              type: string
+            person:
+              description: Owner of a person key.
+              type: string
+            run_id:
+              description: Run of a run key.
+              type: string
+            active:
+              description: false once its person left the team or it was revoked.
+              type: boolean
+            budgets:
+              description: Hard limits the gateway enforces on this key. Empty with [budget] mode alert.
+              type: array
+              items:
+                additionalProperties: false
+                title: GatewayBudget
+                type: object
+                required:
+                  - period
+                  - limit_usd
+                  - spent_usd
+                properties:
+                  period:
+                    type: string
+                    enum:
+                      - day
+                      - week
+                      - month
+                      - run
+                  limit_usd:
+                    minimum: 0
+                    type: number
+                  spent_usd:
+                    description: Spend the gateway counted in the current period, or null when it reports none.
+                    anyOf:
+                      - minimum: 0
+                        type: number
+                      - type: "null"
+        value:
+          minLength: 1
+          description: "The virtual key. Shown once, to whoever asked for it; selfhost keeps no copy. It is not a provider key: those stay on the gateway."
+          type: string
+        base_url:
+          description: Where agents send model traffic with it.
+          type: string
+        tool:
+          type: string
+          enum:
+            - bifrost
+            - litellm
+    GatewaySyncReport:
+      additionalProperties: false
+      title: GatewaySyncReport
+      type: object
+      required:
+        - at
+        - teams
+        - created
+        - updated
+        - unchanged
+        - deactivated
+        - alerts
+        - errors
+      properties:
+        at:
+          format: date-time
+          type: string
+        teams:
+          minimum: 0
+          type: integer
+        created:
+          minimum: 0
+          description: Gateway teams created.
+          type: integer
+        updated:
+          minimum: 0
+          description: Teams and keys whose settings changed.
+          type: integer
+        unchanged:
+          minimum: 0
+          type: integer
+        deactivated:
+          minimum: 0
+          description: "Keys turned off: their person left the team."
+          type: integer
+        alerts:
+          minimum: 0
+          description: New budget-spent alerts written.
+          type: integer
+        errors:
+          description: What failed, without secrets.
+          type: array
+          items:
+            type: string
     TeamOverview:
       additionalProperties: false
       title: TeamOverview

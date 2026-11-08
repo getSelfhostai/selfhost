@@ -144,3 +144,117 @@ function userAgentOf(log: Json, metadata: Json): string | undefined {
 function versionOf(userAgent: string | undefined): string | undefined {
   return userAgent?.match(/\/(\d+\.\d+[\w.+-]*)/)?.[1];
 }
+
+/** Bifrost error types that mean the gateway itself refused the request under a limit. */
+const BIFROST_LIMIT_ALERTS: Record<string, string> = {
+  budget_exceeded: "gateway_budget_exceeded",
+  rate_limited: "gateway_rate_limited",
+  token_limited: "gateway_rate_limited",
+  request_limited: "gateway_rate_limited",
+};
+
+/**
+ * One request log from Bifrost's GET /api/logs (a LogEntry). A successful request maps to
+ * cost.recorded, a failed one to alert.raised: gateway_budget_exceeded or gateway_rate_limited
+ * when Bifrost refused it under a limit, model_request_failed otherwise. A request still in
+ * progress maps to nothing; it is read again once it finishes.
+ *
+ * Who and which team come from the metadata selfhost puts on each virtual key (selfhost_person,
+ * selfhost_team, selfhost_run), which Bifrost copies onto every log entry of the key; the agent
+ * from the user-agent header when Bifrost is set to log it. Message bodies are never read.
+ */
+export function mapBifrostLog(entry: unknown, ctx: SourceContext = {}): LedgerEvent[] {
+  if (!isObject(entry)) {
+    throw new SourcePayloadError("Bifrost log", [
+      { field: "(root)", message: "Expected an object" },
+    ]);
+  }
+  const requestId = str(entry.id);
+  const ts = toIso(Date.parse(str(entry.timestamp) ?? str(entry.created_at) ?? ""));
+  if (!requestId || !ts) {
+    throw new SourcePayloadError("Bifrost log", [
+      { field: requestId ? "timestamp" : "id", message: "Expected a request id and a timestamp" },
+    ]);
+  }
+  const status = str(entry.status);
+  if (status !== "success" && status !== "error") return [];
+  const metadata = isObject(entry.metadata) ? entry.metadata : {};
+  const userAgent = headerOf(metadata, "user-agent");
+  const vendor = detectVendor(userAgent);
+  const model = str(entry.model);
+  const person = str(metadata.selfhost_person) ?? str(entry.user_email) ?? ctx.person;
+  const keyName = str(entry.virtual_key_name);
+  const latency = num(entry.latency);
+  const base = {
+    source: "gateway" as const,
+    ts,
+    key: `bifrost:${requestId}`,
+    actor: person
+      ? { kind: "person" as const, id: person }
+      : { kind: "system" as const, id: `bifrost:${keyName ?? "unknown"}` },
+    agent: vendor ? agentRef(vendor, versionOf(userAgent)) : undefined,
+    model,
+    session_id: str(entry.session_id),
+    run_id: str(metadata.selfhost_run),
+    team: str(metadata.selfhost_team),
+  };
+  const data = {
+    gateway: "bifrost",
+    // The virtual key's name, never its value: what a spend alarm offers to turn off.
+    key_alias: keyName,
+    request_id: requestId,
+    provider: str(entry.provider),
+    call_type: str(entry.object),
+    status,
+    duration_ms: latency === undefined ? undefined : Math.round(latency),
+    fallback_index: count(entry.fallback_index) || undefined,
+    user_agent: userAgent,
+  };
+
+  if (status === "error") {
+    const details = isObject(entry.error_details) ? entry.error_details : {};
+    const inner = isObject(details.error) ? details.error : {};
+    const type = str(details.type) ?? str(inner.type);
+    const message = str(inner.message);
+    return [
+      buildEvent(ctx, {
+        ...base,
+        kind: "alert.raised",
+        data: {
+          ...data,
+          alert: (type && BIFROST_LIMIT_ALERTS[type]) ?? "model_request_failed",
+          error_type: type,
+          status_code: num(details.status_code),
+          error: message ? summarize(message) : undefined,
+        },
+      }),
+    ];
+  }
+
+  const usage = isObject(entry.token_usage) ? entry.token_usage : {};
+  const details = isObject(usage.prompt_tokens_details) ? usage.prompt_tokens_details : {};
+  const cacheRead = count(details.cached_read_tokens);
+  const cacheWrite = count(details.cached_write_tokens);
+  const tokens = {
+    input_tokens: Math.max(0, count(usage.prompt_tokens) - cacheRead - cacheWrite),
+    output_tokens: count(usage.completion_tokens),
+    cache_read_tokens: cacheRead,
+    cache_write_tokens: cacheWrite,
+  };
+  const usageCost = isObject(usage.cost) ? num(usage.cost.total_cost) : undefined;
+  const { cost, unpriced } = costFrom(ctx, model, tokens, num(entry.cost) ?? usageCost);
+  return [
+    buildEvent(ctx, {
+      ...base,
+      kind: "cost.recorded",
+      cost,
+      data: { ...data, request_type: "unknown", unpriced: unpriced || undefined },
+    }),
+  ];
+}
+
+/** A request header Bifrost logged into metadata (client.logging_headers), by any case. */
+function headerOf(metadata: Json, name: string): string | undefined {
+  const key = Object.keys(metadata).find((k) => k.toLowerCase() === name);
+  return key === undefined ? undefined : str(metadata[key]);
+}

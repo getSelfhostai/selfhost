@@ -35,6 +35,7 @@ from the same code.
 | `packages/ledger`        | Append-only ledger store on Postgres or PGlite, plus a mapper per event source              |
 | `packages/importers`     | Local session log importers for Claude Code and Codex (pricing ported from ccusage, MIT)    |
 | `packages/spend`         | Spend by request type, agent, model and person, and the waste detector                      |
+| `packages/gateway`       | Writes the AI gateway's keys and budgets (Bifrost or LiteLLM), reads its usage              |
 | `packages/policy`        | Evaluates `selfhost.toml` rules against tool calls and records would-block events           |
 | `packages/compile`       | Compiles `selfhost.toml` into each vendor's native controls, with coverage per rule         |
 | `packages/review`        | The review list: items from ledger signals, deduped, routed, ranked, with approval timeouts |
