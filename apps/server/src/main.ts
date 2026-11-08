@@ -5,6 +5,7 @@ import pkg from "../package.json" with { type: "json" };
 import { createApp } from "./app.js";
 import { findConsoleDir } from "./console.js";
 import { githubAppFromEnv, githubConfig } from "./github.js";
+import { clonesUnder } from "./provenance.js";
 import { serverConfig, startRetentionJob } from "./retention.js";
 import { startReviewRefreshJob } from "./review.js";
 import { signinFromEnv } from "./signin.js";
@@ -38,6 +39,10 @@ const github = {
 // SELFHOST_CONSOLE=off answers only /v1, for installs that serve the console some other way.
 const web = process.env.SELFHOST_CONSOLE === "off" ? undefined : { dir: findConsoleDir() };
 const signin = signinFromEnv();
+// Clones of the teams' repos at <dir>/<owner>/<name>, for line-level provenance and module
+// revert rates. The server only reads them; keep them current with git fetch.
+const clonesDir = process.env.SELFHOST_GIT_CLONES?.trim() || undefined;
+const clones = clonesDir ? clonesUnder(clonesDir) : undefined;
 
 const server = serve(
   {
@@ -49,6 +54,7 @@ const server = serve(
       github,
       ...(web ? { console: web } : {}),
       ...(signin ? { signin } : {}),
+      ...(clones ? { clones } : {}),
     }).fetch,
     port,
     hostname,

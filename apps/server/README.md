@@ -101,6 +101,17 @@ bootstrap admin; everything else is a token the server issues and keeps only as 
   and model), this month against `[budget] monthly_usd` of the team's file, people, repos and
   open review items. `GET /v1/budget?team&person&period` answers `BudgetResponse` for the day,
   week or month, as the MCP tool `get_budget` does.
+- `GET /v1/teams/{team}/provenance?from&to&repo` (anyone in the team): for each repo the team
+  owns, lines merged to the main branch by agent, model, person and module, and how many were
+  reverted or reworked within `[review] revert_window_days`, computed on read by
+  [`@selfhost/provenance`](../../packages/provenance/README.md) from the server's clone of the
+  repo (`SELFHOST_GIT_CLONES`, never fetched by the server: keep it current with `git fetch` on
+  a timer) and the team's `commit.created` and `pr.merged` events. A repo
+  with no clone is `ledger_only`: lines from its merged pull requests, no modules, no rates.
+  `GET /v1/teams/{team}/provenance/modules` ranks the team's modules across its repos by
+  agent-written lines and marks those above `[review] revert_rate_threshold`. The default range
+  is the 30 days up to the next full hour; reports are cached in memory by clone, range,
+  settings and ledger inputs.
 - `GET /v1/orgs/{org}/overview?from&to`: the cross-team view, one overview per team the caller
   leads (owner or admin), every team with the admin token, and the org's `[budget]` for
   whoever sees every team. Budgets are shown; nothing is charged back.
@@ -344,3 +355,4 @@ Environment:
 | `SELFHOST_CONSOLE`                 | on                 | `off` serves `/v1` only, no web console at `/`.                                                            |
 | `SELFHOST_CONSOLE_DIR`             | unset              | The built console to serve at `/`. Unset uses the one built into the server.                               |
 | `SELFHOST_SIGNIN_PROXY_SECRET`     | unset              | Turns on console sign-in through a proxy that sends it with the signed-in email. See [Console](#console).  |
+| `SELFHOST_GIT_CLONES`              | unset              | Folder of clones at `<owner>/<name>` (lower case), read for provenance and module revert rates.            |

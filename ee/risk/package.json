@@ -33,6 +33,7 @@
     "@selfhost/ledger": "workspace:*",
     "@selfhost/policy": "workspace:*",
     "@selfhost/pr": "workspace:*",
+    "@selfhost/provenance": "workspace:*",
     "@selfhost/schema": "workspace:*"
   },
   "devDependencies": {

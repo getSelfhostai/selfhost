@@ -1,0 +1,44 @@
+{
+  "name": "@selfhost/provenance",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Line-level provenance from git: lines of merged code by agent, model, person and module, and how much of it was reverted or reworked within days of merge.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@selfhost/attribution": "workspace:*",
+    "@selfhost/schema": "workspace:*",
+    "picomatch": "catalog:"
+  },
+  "devDependencies": {
+    "@selfhost/pr": "workspace:*",
+    "@types/node": "catalog:",
+    "@types/picomatch": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

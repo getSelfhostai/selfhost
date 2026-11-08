@@ -1070,6 +1070,126 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /v1/teams/{team}/provenance:
+    get:
+      operationId: getTeamProvenance
+      summary: Lines merged by agent, model, person and module in each repo of a team, with revert and rework rates.
+      description: "The admin token, or a person token of anyone in the team. Computed on read. For a repo the server has a clone of (SELFHOST_GIT_CLONES, as <owner>/<name>), every non-blank line merged to the main branch in the range is traced with git blame to the commit that wrote it, joined to the agent run the ledger recorded for that commit (else the commit's own attribution, else its merged pull request), and followed for [review] revert_window_days: lines a later commit changed or deleted are reworked (fix-forward edits count), lines a revert took out are reverted. A repo with no clone is ledger_only: lines from its pr.merged events, no modules, no rates. Modules and the threshold come from [review] in the team's policy."
+      parameters:
+        - name: team
+          in: path
+          required: true
+          description: Team id.
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: false
+          description: "Merges at or after this time. Default: 30 days before to."
+          schema:
+            format: date-time
+            type: string
+        - name: to
+          in: query
+          required: false
+          description: "Merges before this time. Default: now."
+          schema:
+            format: date-time
+            type: string
+        - name: repo
+          in: query
+          required: false
+          description: Only this repo of the team, as owner/name.
+          schema:
+            pattern: ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$
+            type: string
+      responses:
+        "200":
+          description: One report per repo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamProvenance"
+        "400":
+          description: Invalid time range.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such team, or the team does not own the repo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/teams/{team}/provenance/modules:
+    get:
+      operationId: getTeamProvenanceModules
+      summary: A team's modules ranked by agent-written lines, across its repos.
+      description: The admin token, or a person token of anyone in the team. The modules of every repo with a clone, from the same reports as /v1/teams/{team}/provenance. above_threshold marks the modules whose agent lines were reverted or reworked above [review] revert_rate_threshold; new pull requests that touch them score higher risk.
+      parameters:
+        - name: team
+          in: path
+          required: true
+          description: Team id.
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: false
+          description: "Merges at or after this time. Default: 30 days before to."
+          schema:
+            format: date-time
+            type: string
+        - name: to
+          in: query
+          required: false
+          description: "Merges before this time. Default: now."
+          schema:
+            format: date-time
+            type: string
+        - name: repo
+          in: query
+          required: false
+          description: Only this repo of the team, as owner/name.
+          schema:
+            pattern: ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$
+            type: string
+      responses:
+        "200":
+          description: The ranking.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamProvenanceModules"
+        "400":
+          description: Invalid time range.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such team, or the team does not own the repo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /v1/budget:
     get:
       operationId: getBudget
@@ -3919,3 +4039,1238 @@ components:
               minimum: 0
               description: Distinct pull requests with a pr.merged event in the range.
               type: integer
+    ProvenanceAgentRow:
+      additionalProperties: false
+      title: ProvenanceAgentRow
+      type: object
+      required:
+        - vendor
+        - model
+        - lines
+        - share
+        - landings
+        - runs
+        - reverted_lines
+        - reworked_lines
+        - open_lines
+        - revert_rate
+        - rework_rate
+        - revert_rework_rate
+      properties:
+        vendor:
+          description: Agent vendor, or unattributed when no signal names one.
+          type: string
+          enum:
+            - claude_code
+            - codex
+            - opencode
+            - goose
+            - cursor
+            - copilot
+            - other
+            - unattributed
+        model:
+          description: Model id, or null when not known.
+          anyOf:
+            - type: string
+            - type: "null"
+        lines:
+          minimum: 0
+          description: Non-blank lines this agent and model wrote that landed on the main branch in the window.
+          type: integer
+        share:
+          minimum: 0
+          maximum: 1
+          description: lines over every line that landed.
+          type: number
+        landings:
+          minimum: 0
+          description: Merged pull requests and direct commits that brought at least one line.
+          type: integer
+        runs:
+          minimum: 0
+          description: Agent sessions in the ledger behind the lines.
+          type: integer
+        reverted_lines:
+          description: "Lines taken out within the window by a revert: a commit that says it reverts the change, or one that removes every line of it that was left and adds back no more than a tenth as many. null when only the ledger was read."
+          anyOf:
+            - minimum: 0
+              type: integer
+            - type: "null"
+        reworked_lines:
+          description: Lines changed or deleted within the window by any other later commit. Fix-forward edits count here. null when only the ledger was read.
+          anyOf:
+            - minimum: 0
+              type: integer
+            - type: "null"
+        open_lines:
+          description: Lines merged less than the window ago, so their count can still grow. null when only the ledger was read.
+          anyOf:
+            - minimum: 0
+              type: integer
+            - type: "null"
+        revert_rate:
+          description: reverted_lines over lines. null with no lines to measure, or when only the ledger was read.
+          anyOf:
+            - minimum: 0
+              maximum: 1
+              type: number
+            - type: "null"
+        rework_rate:
+          description: reworked_lines over lines. null with no lines to measure, or when only the ledger was read.
+          anyOf:
+            - minimum: 0
+              maximum: 1
+              type: number
+            - type: "null"
+        revert_rework_rate:
+          description: "reverted_lines plus reworked_lines over lines: the rate [review] revert_rate_threshold is checked against. null with no lines to measure, or when only the ledger was read."
+          anyOf:
+            - minimum: 0
+              maximum: 1
+              type: number
+            - type: "null"
+    ProvenancePersonRow:
+      additionalProperties: false
+      title: ProvenancePersonRow
+      type: object
+      required:
+        - person
+        - lines
+        - agent_lines
+        - agent_share
+        - by_agent
+      properties:
+        person:
+          minLength: 1
+          description: Git author email for lines read from git, or the GitHub login or person id the ledger records for a merged pull request.
+          type: string
+        lines:
+          minimum: 0
+          description: Lines that landed under this person's name.
+          type: integer
+        agent_lines:
+          minimum: 0
+          description: Those an agent wrote.
+          type: integer
+        agent_share:
+          minimum: 0
+          maximum: 1
+          description: agent_lines over lines.
+          type: number
+        by_agent:
+          description: Lines by agent and model, most first.
+          type: array
+          items:
+            additionalProperties: false
+            type: object
+            required:
+              - vendor
+              - model
+              - lines
+            properties:
+              vendor:
+                description: Agent vendor, or unattributed when no signal names one.
+                type: string
+                enum:
+                  - claude_code
+                  - codex
+                  - opencode
+                  - goose
+                  - cursor
+                  - copilot
+                  - other
+                  - unattributed
+              model:
+                description: Model id, or null when not known.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              lines:
+                minimum: 0
+                type: integer
+    ProvenanceModuleRow:
+      additionalProperties: false
+      title: ProvenanceModuleRow
+      type: object
+      required:
+        - module
+        - lines
+        - agent_lines
+        - agent_share
+        - agent_reverted_lines
+        - agent_reworked_lines
+        - agent_revert_rework_rate
+        - above_threshold
+        - by_agent
+        - rank
+      properties:
+        module:
+          minLength: 1
+          description: A [review] modules name, else the file's top folder (module_depth deep), or (root).
+          type: string
+        lines:
+          minimum: 0
+          description: Lines that landed in the module.
+          type: integer
+        agent_lines:
+          minimum: 0
+          description: Those an agent wrote.
+          type: integer
+        agent_share:
+          minimum: 0
+          maximum: 1
+          description: agent_lines over lines.
+          type: number
+        agent_reverted_lines:
+          description: Agent-written lines reverted within the window. null when only the ledger was read.
+          anyOf:
+            - minimum: 0
+              type: integer
+            - type: "null"
+        agent_reworked_lines:
+          description: Agent-written lines reworked within the window. null when only the ledger was read.
+          anyOf:
+            - minimum: 0
+              type: integer
+            - type: "null"
+        agent_revert_rework_rate:
+          description: agent_reverted_lines plus agent_reworked_lines over agent_lines. null with no lines to measure, or when only the ledger was read.
+          anyOf:
+            - minimum: 0
+              maximum: 1
+              type: number
+            - type: "null"
+        above_threshold:
+          description: true when agent_revert_rework_rate is above [review] revert_rate_threshold with at least min_module_lines agent lines. New pull requests that touch the module score higher risk.
+          type: boolean
+        by_agent:
+          description: Lines by agent and model, most first.
+          type: array
+          items:
+            additionalProperties: false
+            type: object
+            required:
+              - vendor
+              - model
+              - lines
+              - revert_rework_rate
+            properties:
+              vendor:
+                description: Agent vendor, or unattributed when no signal names one.
+                type: string
+                enum:
+                  - claude_code
+                  - codex
+                  - opencode
+                  - goose
+                  - cursor
+                  - copilot
+                  - other
+                  - unattributed
+              model:
+                description: Model id, or null when not known.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              lines:
+                minimum: 0
+                type: integer
+              revert_rework_rate:
+                description: Reverted plus reworked over lines, for this agent here. null with no lines to measure, or when only the ledger was read.
+                anyOf:
+                  - minimum: 0
+                    maximum: 1
+                    type: number
+                  - type: "null"
+        rank:
+          minimum: 1
+          description: 1 holds the most agent-written lines.
+          type: integer
+    VendorReportedRow:
+      additionalProperties: false
+      title: VendorReportedRow
+      type: object
+      required:
+        - vendor
+        - lines_added
+        - lines_removed
+      properties:
+        vendor:
+          type: string
+          enum:
+            - claude_code
+            - codex
+            - opencode
+            - goose
+            - cursor
+            - copilot
+            - other
+        lines_added:
+          minimum: 0
+          description: What the vendor says its agent added in the window.
+          type: integer
+        lines_removed:
+          minimum: 0
+          type: integer
+    ProvenanceReport:
+      additionalProperties: false
+      title: ProvenanceReport
+      description: Lines of merged code by agent, model, person and module, and how much of it was reverted or reworked within the window after merge.
+      type: object
+      required:
+        - schema
+        - repo
+        - status
+        - note
+        - from
+        - to
+        - branch
+        - head
+        - window_days
+        - threshold
+        - min_module_lines
+        - totals
+        - by_agent
+        - by_person
+        - modules
+        - vendor_reported
+      properties:
+        schema:
+          const: selfhost.provenance/v1
+          type: string
+        repo:
+          description: owner/name, else the folder name.
+          anyOf:
+            - type: string
+            - type: "null"
+        status:
+          description: "computed: line by line from git and the ledger. ledger_only: no clone to read, so lines come from the ledger's merged pull requests, with no modules and no revert or rework rate."
+          type: string
+          enum:
+            - computed
+            - ledger_only
+        note:
+          description: Why the report is ledger_only, or what it could not read.
+          anyOf:
+            - type: string
+            - type: "null"
+        from:
+          format: date-time
+          description: Merges at or after this time.
+          type: string
+        to:
+          format: date-time
+          description: Merges before this time.
+          type: string
+        branch:
+          description: The main branch read, such as origin/main.
+          anyOf:
+            - type: string
+            - type: "null"
+        head:
+          description: Its commit.
+          anyOf:
+            - type: string
+            - type: "null"
+        window_days:
+          minimum: 1
+          description: "[review] revert_window_days."
+          type: integer
+        threshold:
+          minimum: 0
+          maximum: 1
+          description: "[review] revert_rate_threshold."
+          type: number
+        min_module_lines:
+          minimum: 0
+          description: Agent lines a module needs before its rate can flag it.
+          type: integer
+        totals:
+          additionalProperties: false
+          type: object
+          required:
+            - lines
+            - agent_lines
+            - agent_share
+            - landings
+            - agent_reverted_lines
+            - agent_reworked_lines
+            - agent_revert_rework_rate
+          properties:
+            lines:
+              minimum: 0
+              type: integer
+            agent_lines:
+              minimum: 0
+              type: integer
+            agent_share:
+              minimum: 0
+              maximum: 1
+              description: agent_lines over lines.
+              type: number
+            landings:
+              minimum: 0
+              type: integer
+            agent_reverted_lines:
+              description: Agent-written lines reverted. null when only the ledger was read.
+              anyOf:
+                - minimum: 0
+                  type: integer
+                - type: "null"
+            agent_reworked_lines:
+              description: Agent-written lines reworked. null when only the ledger was read.
+              anyOf:
+                - minimum: 0
+                  type: integer
+                - type: "null"
+            agent_revert_rework_rate:
+              description: Reverted plus reworked over agent_lines. null with no lines to measure, or when only the ledger was read.
+              anyOf:
+                - minimum: 0
+                  maximum: 1
+                  type: number
+                - type: "null"
+        by_agent:
+          description: By vendor, then model, unattributed last.
+          type: array
+          items:
+            additionalProperties: false
+            title: ProvenanceAgentRow
+            type: object
+            required:
+              - vendor
+              - model
+              - lines
+              - share
+              - landings
+              - runs
+              - reverted_lines
+              - reworked_lines
+              - open_lines
+              - revert_rate
+              - rework_rate
+              - revert_rework_rate
+            properties:
+              vendor:
+                description: Agent vendor, or unattributed when no signal names one.
+                type: string
+                enum:
+                  - claude_code
+                  - codex
+                  - opencode
+                  - goose
+                  - cursor
+                  - copilot
+                  - other
+                  - unattributed
+              model:
+                description: Model id, or null when not known.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              lines:
+                minimum: 0
+                description: Non-blank lines this agent and model wrote that landed on the main branch in the window.
+                type: integer
+              share:
+                minimum: 0
+                maximum: 1
+                description: lines over every line that landed.
+                type: number
+              landings:
+                minimum: 0
+                description: Merged pull requests and direct commits that brought at least one line.
+                type: integer
+              runs:
+                minimum: 0
+                description: Agent sessions in the ledger behind the lines.
+                type: integer
+              reverted_lines:
+                description: "Lines taken out within the window by a revert: a commit that says it reverts the change, or one that removes every line of it that was left and adds back no more than a tenth as many. null when only the ledger was read."
+                anyOf:
+                  - minimum: 0
+                    type: integer
+                  - type: "null"
+              reworked_lines:
+                description: Lines changed or deleted within the window by any other later commit. Fix-forward edits count here. null when only the ledger was read.
+                anyOf:
+                  - minimum: 0
+                    type: integer
+                  - type: "null"
+              open_lines:
+                description: Lines merged less than the window ago, so their count can still grow. null when only the ledger was read.
+                anyOf:
+                  - minimum: 0
+                    type: integer
+                  - type: "null"
+              revert_rate:
+                description: reverted_lines over lines. null with no lines to measure, or when only the ledger was read.
+                anyOf:
+                  - minimum: 0
+                    maximum: 1
+                    type: number
+                  - type: "null"
+              rework_rate:
+                description: reworked_lines over lines. null with no lines to measure, or when only the ledger was read.
+                anyOf:
+                  - minimum: 0
+                    maximum: 1
+                    type: number
+                  - type: "null"
+              revert_rework_rate:
+                description: "reverted_lines plus reworked_lines over lines: the rate [review] revert_rate_threshold is checked against. null with no lines to measure, or when only the ledger was read."
+                anyOf:
+                  - minimum: 0
+                    maximum: 1
+                    type: number
+                  - type: "null"
+        by_person:
+          description: Most lines first.
+          type: array
+          items:
+            additionalProperties: false
+            title: ProvenancePersonRow
+            type: object
+            required:
+              - person
+              - lines
+              - agent_lines
+              - agent_share
+              - by_agent
+            properties:
+              person:
+                minLength: 1
+                description: Git author email for lines read from git, or the GitHub login or person id the ledger records for a merged pull request.
+                type: string
+              lines:
+                minimum: 0
+                description: Lines that landed under this person's name.
+                type: integer
+              agent_lines:
+                minimum: 0
+                description: Those an agent wrote.
+                type: integer
+              agent_share:
+                minimum: 0
+                maximum: 1
+                description: agent_lines over lines.
+                type: number
+              by_agent:
+                description: Lines by agent and model, most first.
+                type: array
+                items:
+                  additionalProperties: false
+                  type: object
+                  required:
+                    - vendor
+                    - model
+                    - lines
+                  properties:
+                    vendor:
+                      description: Agent vendor, or unattributed when no signal names one.
+                      type: string
+                      enum:
+                        - claude_code
+                        - codex
+                        - opencode
+                        - goose
+                        - cursor
+                        - copilot
+                        - other
+                        - unattributed
+                    model:
+                      description: Model id, or null when not known.
+                      anyOf:
+                        - type: string
+                        - type: "null"
+                    lines:
+                      minimum: 0
+                      type: integer
+        modules:
+          description: Ranked by agent-written lines, most first.
+          type: array
+          items:
+            additionalProperties: false
+            title: ProvenanceModuleRow
+            type: object
+            required:
+              - module
+              - lines
+              - agent_lines
+              - agent_share
+              - agent_reverted_lines
+              - agent_reworked_lines
+              - agent_revert_rework_rate
+              - above_threshold
+              - by_agent
+              - rank
+            properties:
+              module:
+                minLength: 1
+                description: A [review] modules name, else the file's top folder (module_depth deep), or (root).
+                type: string
+              lines:
+                minimum: 0
+                description: Lines that landed in the module.
+                type: integer
+              agent_lines:
+                minimum: 0
+                description: Those an agent wrote.
+                type: integer
+              agent_share:
+                minimum: 0
+                maximum: 1
+                description: agent_lines over lines.
+                type: number
+              agent_reverted_lines:
+                description: Agent-written lines reverted within the window. null when only the ledger was read.
+                anyOf:
+                  - minimum: 0
+                    type: integer
+                  - type: "null"
+              agent_reworked_lines:
+                description: Agent-written lines reworked within the window. null when only the ledger was read.
+                anyOf:
+                  - minimum: 0
+                    type: integer
+                  - type: "null"
+              agent_revert_rework_rate:
+                description: agent_reverted_lines plus agent_reworked_lines over agent_lines. null with no lines to measure, or when only the ledger was read.
+                anyOf:
+                  - minimum: 0
+                    maximum: 1
+                    type: number
+                  - type: "null"
+              above_threshold:
+                description: true when agent_revert_rework_rate is above [review] revert_rate_threshold with at least min_module_lines agent lines. New pull requests that touch the module score higher risk.
+                type: boolean
+              by_agent:
+                description: Lines by agent and model, most first.
+                type: array
+                items:
+                  additionalProperties: false
+                  type: object
+                  required:
+                    - vendor
+                    - model
+                    - lines
+                    - revert_rework_rate
+                  properties:
+                    vendor:
+                      description: Agent vendor, or unattributed when no signal names one.
+                      type: string
+                      enum:
+                        - claude_code
+                        - codex
+                        - opencode
+                        - goose
+                        - cursor
+                        - copilot
+                        - other
+                        - unattributed
+                    model:
+                      description: Model id, or null when not known.
+                      anyOf:
+                        - type: string
+                        - type: "null"
+                    lines:
+                      minimum: 0
+                      type: integer
+                    revert_rework_rate:
+                      description: Reverted plus reworked over lines, for this agent here. null with no lines to measure, or when only the ledger was read.
+                      anyOf:
+                        - minimum: 0
+                          maximum: 1
+                          type: number
+                        - type: "null"
+              rank:
+                minimum: 1
+                description: 1 holds the most agent-written lines.
+                type: integer
+        vendor_reported:
+          description: Lines the vendors' own stats report for the window, when they were given. Shown next to the git numbers, never used in their place.
+          type: array
+          items:
+            additionalProperties: false
+            title: VendorReportedRow
+            type: object
+            required:
+              - vendor
+              - lines_added
+              - lines_removed
+            properties:
+              vendor:
+                type: string
+                enum:
+                  - claude_code
+                  - codex
+                  - opencode
+                  - goose
+                  - cursor
+                  - copilot
+                  - other
+              lines_added:
+                minimum: 0
+                description: What the vendor says its agent added in the window.
+                type: integer
+              lines_removed:
+                minimum: 0
+                type: integer
+    TeamProvenance:
+      additionalProperties: false
+      title: TeamProvenance
+      type: object
+      required:
+        - team
+        - from
+        - to
+        - repos
+      properties:
+        team:
+          pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+          description: Team id.
+          type: string
+        from:
+          format: date-time
+          type: string
+        to:
+          format: date-time
+          type: string
+        repos:
+          description: One report per repo, by repo.
+          type: array
+          items:
+            additionalProperties: false
+            title: ProvenanceReport
+            description: Lines of merged code by agent, model, person and module, and how much of it was reverted or reworked within the window after merge.
+            type: object
+            required:
+              - schema
+              - repo
+              - status
+              - note
+              - from
+              - to
+              - branch
+              - head
+              - window_days
+              - threshold
+              - min_module_lines
+              - totals
+              - by_agent
+              - by_person
+              - modules
+              - vendor_reported
+            properties:
+              schema:
+                const: selfhost.provenance/v1
+                type: string
+              repo:
+                description: owner/name, else the folder name.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              status:
+                description: "computed: line by line from git and the ledger. ledger_only: no clone to read, so lines come from the ledger's merged pull requests, with no modules and no revert or rework rate."
+                type: string
+                enum:
+                  - computed
+                  - ledger_only
+              note:
+                description: Why the report is ledger_only, or what it could not read.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              from:
+                format: date-time
+                description: Merges at or after this time.
+                type: string
+              to:
+                format: date-time
+                description: Merges before this time.
+                type: string
+              branch:
+                description: The main branch read, such as origin/main.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              head:
+                description: Its commit.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              window_days:
+                minimum: 1
+                description: "[review] revert_window_days."
+                type: integer
+              threshold:
+                minimum: 0
+                maximum: 1
+                description: "[review] revert_rate_threshold."
+                type: number
+              min_module_lines:
+                minimum: 0
+                description: Agent lines a module needs before its rate can flag it.
+                type: integer
+              totals:
+                additionalProperties: false
+                type: object
+                required:
+                  - lines
+                  - agent_lines
+                  - agent_share
+                  - landings
+                  - agent_reverted_lines
+                  - agent_reworked_lines
+                  - agent_revert_rework_rate
+                properties:
+                  lines:
+                    minimum: 0
+                    type: integer
+                  agent_lines:
+                    minimum: 0
+                    type: integer
+                  agent_share:
+                    minimum: 0
+                    maximum: 1
+                    description: agent_lines over lines.
+                    type: number
+                  landings:
+                    minimum: 0
+                    type: integer
+                  agent_reverted_lines:
+                    description: Agent-written lines reverted. null when only the ledger was read.
+                    anyOf:
+                      - minimum: 0
+                        type: integer
+                      - type: "null"
+                  agent_reworked_lines:
+                    description: Agent-written lines reworked. null when only the ledger was read.
+                    anyOf:
+                      - minimum: 0
+                        type: integer
+                      - type: "null"
+                  agent_revert_rework_rate:
+                    description: Reverted plus reworked over agent_lines. null with no lines to measure, or when only the ledger was read.
+                    anyOf:
+                      - minimum: 0
+                        maximum: 1
+                        type: number
+                      - type: "null"
+              by_agent:
+                description: By vendor, then model, unattributed last.
+                type: array
+                items:
+                  additionalProperties: false
+                  title: ProvenanceAgentRow
+                  type: object
+                  required:
+                    - vendor
+                    - model
+                    - lines
+                    - share
+                    - landings
+                    - runs
+                    - reverted_lines
+                    - reworked_lines
+                    - open_lines
+                    - revert_rate
+                    - rework_rate
+                    - revert_rework_rate
+                  properties:
+                    vendor:
+                      description: Agent vendor, or unattributed when no signal names one.
+                      type: string
+                      enum:
+                        - claude_code
+                        - codex
+                        - opencode
+                        - goose
+                        - cursor
+                        - copilot
+                        - other
+                        - unattributed
+                    model:
+                      description: Model id, or null when not known.
+                      anyOf:
+                        - type: string
+                        - type: "null"
+                    lines:
+                      minimum: 0
+                      description: Non-blank lines this agent and model wrote that landed on the main branch in the window.
+                      type: integer
+                    share:
+                      minimum: 0
+                      maximum: 1
+                      description: lines over every line that landed.
+                      type: number
+                    landings:
+                      minimum: 0
+                      description: Merged pull requests and direct commits that brought at least one line.
+                      type: integer
+                    runs:
+                      minimum: 0
+                      description: Agent sessions in the ledger behind the lines.
+                      type: integer
+                    reverted_lines:
+                      description: "Lines taken out within the window by a revert: a commit that says it reverts the change, or one that removes every line of it that was left and adds back no more than a tenth as many. null when only the ledger was read."
+                      anyOf:
+                        - minimum: 0
+                          type: integer
+                        - type: "null"
+                    reworked_lines:
+                      description: Lines changed or deleted within the window by any other later commit. Fix-forward edits count here. null when only the ledger was read.
+                      anyOf:
+                        - minimum: 0
+                          type: integer
+                        - type: "null"
+                    open_lines:
+                      description: Lines merged less than the window ago, so their count can still grow. null when only the ledger was read.
+                      anyOf:
+                        - minimum: 0
+                          type: integer
+                        - type: "null"
+                    revert_rate:
+                      description: reverted_lines over lines. null with no lines to measure, or when only the ledger was read.
+                      anyOf:
+                        - minimum: 0
+                          maximum: 1
+                          type: number
+                        - type: "null"
+                    rework_rate:
+                      description: reworked_lines over lines. null with no lines to measure, or when only the ledger was read.
+                      anyOf:
+                        - minimum: 0
+                          maximum: 1
+                          type: number
+                        - type: "null"
+                    revert_rework_rate:
+                      description: "reverted_lines plus reworked_lines over lines: the rate [review] revert_rate_threshold is checked against. null with no lines to measure, or when only the ledger was read."
+                      anyOf:
+                        - minimum: 0
+                          maximum: 1
+                          type: number
+                        - type: "null"
+              by_person:
+                description: Most lines first.
+                type: array
+                items:
+                  additionalProperties: false
+                  title: ProvenancePersonRow
+                  type: object
+                  required:
+                    - person
+                    - lines
+                    - agent_lines
+                    - agent_share
+                    - by_agent
+                  properties:
+                    person:
+                      minLength: 1
+                      description: Git author email for lines read from git, or the GitHub login or person id the ledger records for a merged pull request.
+                      type: string
+                    lines:
+                      minimum: 0
+                      description: Lines that landed under this person's name.
+                      type: integer
+                    agent_lines:
+                      minimum: 0
+                      description: Those an agent wrote.
+                      type: integer
+                    agent_share:
+                      minimum: 0
+                      maximum: 1
+                      description: agent_lines over lines.
+                      type: number
+                    by_agent:
+                      description: Lines by agent and model, most first.
+                      type: array
+                      items:
+                        additionalProperties: false
+                        type: object
+                        required:
+                          - vendor
+                          - model
+                          - lines
+                        properties:
+                          vendor:
+                            description: Agent vendor, or unattributed when no signal names one.
+                            type: string
+                            enum:
+                              - claude_code
+                              - codex
+                              - opencode
+                              - goose
+                              - cursor
+                              - copilot
+                              - other
+                              - unattributed
+                          model:
+                            description: Model id, or null when not known.
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                          lines:
+                            minimum: 0
+                            type: integer
+              modules:
+                description: Ranked by agent-written lines, most first.
+                type: array
+                items:
+                  additionalProperties: false
+                  title: ProvenanceModuleRow
+                  type: object
+                  required:
+                    - module
+                    - lines
+                    - agent_lines
+                    - agent_share
+                    - agent_reverted_lines
+                    - agent_reworked_lines
+                    - agent_revert_rework_rate
+                    - above_threshold
+                    - by_agent
+                    - rank
+                  properties:
+                    module:
+                      minLength: 1
+                      description: A [review] modules name, else the file's top folder (module_depth deep), or (root).
+                      type: string
+                    lines:
+                      minimum: 0
+                      description: Lines that landed in the module.
+                      type: integer
+                    agent_lines:
+                      minimum: 0
+                      description: Those an agent wrote.
+                      type: integer
+                    agent_share:
+                      minimum: 0
+                      maximum: 1
+                      description: agent_lines over lines.
+                      type: number
+                    agent_reverted_lines:
+                      description: Agent-written lines reverted within the window. null when only the ledger was read.
+                      anyOf:
+                        - minimum: 0
+                          type: integer
+                        - type: "null"
+                    agent_reworked_lines:
+                      description: Agent-written lines reworked within the window. null when only the ledger was read.
+                      anyOf:
+                        - minimum: 0
+                          type: integer
+                        - type: "null"
+                    agent_revert_rework_rate:
+                      description: agent_reverted_lines plus agent_reworked_lines over agent_lines. null with no lines to measure, or when only the ledger was read.
+                      anyOf:
+                        - minimum: 0
+                          maximum: 1
+                          type: number
+                        - type: "null"
+                    above_threshold:
+                      description: true when agent_revert_rework_rate is above [review] revert_rate_threshold with at least min_module_lines agent lines. New pull requests that touch the module score higher risk.
+                      type: boolean
+                    by_agent:
+                      description: Lines by agent and model, most first.
+                      type: array
+                      items:
+                        additionalProperties: false
+                        type: object
+                        required:
+                          - vendor
+                          - model
+                          - lines
+                          - revert_rework_rate
+                        properties:
+                          vendor:
+                            description: Agent vendor, or unattributed when no signal names one.
+                            type: string
+                            enum:
+                              - claude_code
+                              - codex
+                              - opencode
+                              - goose
+                              - cursor
+                              - copilot
+                              - other
+                              - unattributed
+                          model:
+                            description: Model id, or null when not known.
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                          lines:
+                            minimum: 0
+                            type: integer
+                          revert_rework_rate:
+                            description: Reverted plus reworked over lines, for this agent here. null with no lines to measure, or when only the ledger was read.
+                            anyOf:
+                              - minimum: 0
+                                maximum: 1
+                                type: number
+                              - type: "null"
+                    rank:
+                      minimum: 1
+                      description: 1 holds the most agent-written lines.
+                      type: integer
+              vendor_reported:
+                description: Lines the vendors' own stats report for the window, when they were given. Shown next to the git numbers, never used in their place.
+                type: array
+                items:
+                  additionalProperties: false
+                  title: VendorReportedRow
+                  type: object
+                  required:
+                    - vendor
+                    - lines_added
+                    - lines_removed
+                  properties:
+                    vendor:
+                      type: string
+                      enum:
+                        - claude_code
+                        - codex
+                        - opencode
+                        - goose
+                        - cursor
+                        - copilot
+                        - other
+                    lines_added:
+                      minimum: 0
+                      description: What the vendor says its agent added in the window.
+                      type: integer
+                    lines_removed:
+                      minimum: 0
+                      type: integer
+    TeamProvenanceModules:
+      additionalProperties: false
+      title: TeamProvenanceModules
+      type: object
+      required:
+        - team
+        - from
+        - to
+        - threshold
+        - modules
+      properties:
+        team:
+          pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+          description: Team id.
+          type: string
+        from:
+          format: date-time
+          type: string
+        to:
+          format: date-time
+          type: string
+        threshold:
+          minimum: 0
+          maximum: 1
+          description: "[review] revert_rate_threshold of the team's policy."
+          type: number
+        modules:
+          description: Every module of the team's computed repos, ranked by agent-written lines. Ledger-only repos have none.
+          type: array
+          items:
+            additionalProperties: false
+            type: object
+            required:
+              - repo
+              - module
+              - lines
+              - agent_lines
+              - agent_share
+              - agent_reverted_lines
+              - agent_reworked_lines
+              - agent_revert_rework_rate
+              - above_threshold
+              - by_agent
+              - rank
+            properties:
+              repo:
+                description: owner/name.
+                type: string
+              module:
+                minLength: 1
+                description: A [review] modules name, else the file's top folder (module_depth deep), or (root).
+                type: string
+              lines:
+                minimum: 0
+                description: Lines that landed in the module.
+                type: integer
+              agent_lines:
+                minimum: 0
+                description: Those an agent wrote.
+                type: integer
+              agent_share:
+                minimum: 0
+                maximum: 1
+                description: agent_lines over lines.
+                type: number
+              agent_reverted_lines:
+                description: Agent-written lines reverted within the window. null when only the ledger was read.
+                anyOf:
+                  - minimum: 0
+                    type: integer
+                  - type: "null"
+              agent_reworked_lines:
+                description: Agent-written lines reworked within the window. null when only the ledger was read.
+                anyOf:
+                  - minimum: 0
+                    type: integer
+                  - type: "null"
+              agent_revert_rework_rate:
+                description: agent_reverted_lines plus agent_reworked_lines over agent_lines. null with no lines to measure, or when only the ledger was read.
+                anyOf:
+                  - minimum: 0
+                    maximum: 1
+                    type: number
+                  - type: "null"
+              above_threshold:
+                description: true when agent_revert_rework_rate is above [review] revert_rate_threshold with at least min_module_lines agent lines. New pull requests that touch the module score higher risk.
+                type: boolean
+              by_agent:
+                description: Lines by agent and model, most first.
+                type: array
+                items:
+                  additionalProperties: false
+                  type: object
+                  required:
+                    - vendor
+                    - model
+                    - lines
+                    - revert_rework_rate
+                  properties:
+                    vendor:
+                      description: Agent vendor, or unattributed when no signal names one.
+                      type: string
+                      enum:
+                        - claude_code
+                        - codex
+                        - opencode
+                        - goose
+                        - cursor
+                        - copilot
+                        - other
+                        - unattributed
+                    model:
+                      description: Model id, or null when not known.
+                      anyOf:
+                        - type: string
+                        - type: "null"
+                    lines:
+                      minimum: 0
+                      type: integer
+                    revert_rework_rate:
+                      description: Reverted plus reworked over lines, for this agent here. null with no lines to measure, or when only the ledger was read.
+                      anyOf:
+                        - minimum: 0
+                          maximum: 1
+                          type: number
+                        - type: "null"
+              rank:
+                minimum: 1
+                description: Across every repo of the team; 1 holds the most agent-written lines.
+                type: integer

@@ -44,6 +44,11 @@ import {
   PolicyCoverageResponseSchema,
   PolicyQuerySchema,
   PolicyResponseSchema,
+  ProvenanceAgentRowSchema,
+  ProvenanceModuleRowSchema,
+  ProvenancePersonRowSchema,
+  ProvenanceQuerySchema,
+  ProvenanceReportSchema,
   ReviewItemConflictSchema,
   ReviewItemQuerySchema,
   ReviewItemSchema,
@@ -56,6 +61,8 @@ import {
   TeamInfoSchema,
   TeamOverviewSchema,
   TeamPeopleResponseSchema,
+  TeamProvenanceModulesSchema,
+  TeamProvenanceSchema,
   TeamRepoSchema,
   TeamReposResponseSchema,
   UpdateTeamRequestSchema,
@@ -63,6 +70,7 @@ import {
   UsageResponseSchema,
   UsageRowSchema,
   UsageTotalsSchema,
+  VendorReportedRowSchema,
 } from "../src/index.js";
 
 /** Files generated from the TypeBox sources. The drift test fails when they are stale. */
@@ -177,6 +185,13 @@ const COMPONENT_SCHEMAS: ReadonlyArray<readonly [name: string, schema: TSchema]>
   ["UsageTotals", UsageTotalsSchema],
   ["UsageRow", UsageRowSchema],
   ["UsageResponse", UsageResponseSchema],
+  ["ProvenanceAgentRow", ProvenanceAgentRowSchema],
+  ["ProvenancePersonRow", ProvenancePersonRowSchema],
+  ["ProvenanceModuleRow", ProvenanceModuleRowSchema],
+  ["VendorReportedRow", VendorReportedRowSchema],
+  ["ProvenanceReport", ProvenanceReportSchema],
+  ["TeamProvenance", TeamProvenanceSchema],
+  ["TeamProvenanceModules", TeamProvenanceModulesSchema],
 ];
 
 const ENTITY_REFS = new Map<string, string>([
@@ -610,6 +625,46 @@ function openApiDocument(): Json {
             ...authErrors,
             "403": forbiddenResponse,
             "404": errorResponse("No such team."),
+          },
+        },
+      },
+      "/v1/teams/{team}/provenance": {
+        get: {
+          operationId: "getTeamProvenance",
+          summary:
+            "Lines merged by agent, model, person and module in each repo of a team, with revert and rework rates.",
+          description: `${ROLE_NOTE.read} Computed on read. For a repo the server has a clone of (SELFHOST_GIT_CLONES, as <owner>/<name>), every non-blank line merged to the main branch in the range is traced with git blame to the commit that wrote it, joined to the agent run the ledger recorded for that commit (else the commit's own attribution, else its merged pull request), and followed for [review] revert_window_days: lines a later commit changed or deleted are reworked (fix-forward edits count), lines a revert took out are reverted. A repo with no clone is ledger_only: lines from its pr.merged events, no modules, no rates. Modules and the threshold come from [review] in the team's policy.`,
+          parameters: [
+            pathParameter("team", "Team id."),
+            ...queryParameters(ProvenanceQuerySchema),
+          ],
+          responses: {
+            "200": { description: "One report per repo.", content: jsonContent("TeamProvenance") },
+            "400": errorResponse("Invalid time range."),
+            ...authErrors,
+            "403": forbiddenResponse,
+            "404": errorResponse("No such team, or the team does not own the repo."),
+          },
+        },
+      },
+      "/v1/teams/{team}/provenance/modules": {
+        get: {
+          operationId: "getTeamProvenanceModules",
+          summary: "A team's modules ranked by agent-written lines, across its repos.",
+          description: `${ROLE_NOTE.read} The modules of every repo with a clone, from the same reports as /v1/teams/{team}/provenance. above_threshold marks the modules whose agent lines were reverted or reworked above [review] revert_rate_threshold; new pull requests that touch them score higher risk.`,
+          parameters: [
+            pathParameter("team", "Team id."),
+            ...queryParameters(ProvenanceQuerySchema),
+          ],
+          responses: {
+            "200": {
+              description: "The ranking.",
+              content: jsonContent("TeamProvenanceModules"),
+            },
+            "400": errorResponse("Invalid time range."),
+            ...authErrors,
+            "403": forbiddenResponse,
+            "404": errorResponse("No such team, or the team does not own the repo."),
           },
         },
       },

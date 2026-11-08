@@ -30,6 +30,7 @@
     "@selfhost/ledger": "workspace:*",
     "@selfhost/policy": "workspace:*",
     "@selfhost/pr": "workspace:*",
+    "@selfhost/provenance": "workspace:*",
     "@selfhost/review": "workspace:*",
     "@selfhost/schema": "workspace:*",
     "@selfhost/spend": "workspace:*",

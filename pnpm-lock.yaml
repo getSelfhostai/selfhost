@@ -200,6 +200,9 @@ importers:
       '@selfhost/pr':
         specifier: workspace:*
         version: link:../../packages/pr
+      '@selfhost/provenance':
+        specifier: workspace:*
+        version: link:../../packages/provenance
       '@selfhost/review':
         specifier: workspace:*
         version: link:../../packages/review
@@ -242,7 +245,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.12(@types/node@20.19.43)(vite@8.3.6(@types/node@20.19.43)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+        version: 4.1.12(@types/node@20.19.43)(vite@8.3.6(@types/node@20.19.43)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   apps/console:
     dependencies:
@@ -340,6 +343,9 @@ importers:
       '@selfhost/pr':
         specifier: workspace:*
         version: link:../../packages/pr
+      '@selfhost/provenance':
+        specifier: workspace:*
+        version: link:../../packages/provenance
       '@selfhost/review':
         specifier: workspace:*
         version: link:../../packages/review
@@ -410,6 +416,9 @@ importers:
       '@selfhost/pr':
         specifier: workspace:*
         version: link:../../packages/pr
+      '@selfhost/provenance':
+        specifier: workspace:*
+        version: link:../../packages/provenance
       '@selfhost/schema':
         specifier: workspace:*
         version: link:../../packages/schema
@@ -752,6 +761,37 @@ importers:
       vitest:
         specifier: 'catalog:'
         version: 4.1.12(@types/node@20.19.43)(vite@8.3.6(@types/node@20.19.43)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+
+  packages/provenance:
+    dependencies:
+      '@selfhost/attribution':
+        specifier: workspace:*
+        version: link:../attribution
+      '@selfhost/schema':
+        specifier: workspace:*
+        version: link:../schema
+      picomatch:
+        specifier: 'catalog:'
+        version: 4.0.7
+    devDependencies:
+      '@selfhost/pr':
+        specifier: workspace:*
+        version: link:../pr
+      '@types/node':
+        specifier: 'catalog:'
+        version: 20.19.43
+      '@types/picomatch':
+        specifier: 'catalog:'
+        version: 4.0.3
+      tsup:
+        specifier: 'catalog:'
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.32)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.12(@types/node@20.19.43)(vite@8.3.6(@types/node@20.19.43)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/review:
     dependencies:

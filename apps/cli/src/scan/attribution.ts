@@ -1,3 +1,5 @@
+import type { ProvenanceReport } from "@selfhost/schema";
+
 /**
  * The scan's side of the git and GitHub join. `packages/attribution` builds the result; these
  * types are the port it fills, so the scan works and is tested before that package lands.
@@ -66,12 +68,18 @@ export interface AttributionResult {
   stats: { byAgent: AgentStats[] };
   /** Ids of the sessions given that produced no commit. */
   sessionsWithoutCommits: string[];
+  /** Lines merged to the main branch by agent and module, with revert and rework rates. */
+  provenance?: ProvenanceReport;
 }
 
-/** Joins local sessions with the git history and pull requests of the repository at `repoDir`. */
+/**
+ * Joins local sessions with the git history and pull requests of the repository at `repoDir`;
+ * `window` is the scan's, for the merged lines.
+ */
 export type CollectAttribution = (
   repoDir: string,
   sessions: SessionHint[],
+  window?: { since: Date; until: Date },
 ) => Promise<AttributionResult | undefined>;
 
 /** No join yet: the scan says the git numbers need a repository. */

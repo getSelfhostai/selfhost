@@ -19,6 +19,7 @@ pnpm --filter @selfhost/cli dev policy observe --since 30d
 pnpm --filter @selfhost/cli dev packages check "npm i left-pad && pip install requests"
 pnpm --filter @selfhost/cli dev review risk --base main
 pnpm --filter @selfhost/cli dev review brief --base main
+pnpm --filter @selfhost/cli dev provenance --since 30d
 pnpm --filter @selfhost/cli dev scan --since 30d --report scan.html --share scan.svg
 pnpm --filter @selfhost/cli dev agents
 pnpm --filter @selfhost/cli dev agents configure --dry-run --otel-endpoint http://127.0.0.1:4318
@@ -417,9 +418,23 @@ summary of what set the level and what was missing, and a table of every input w
 A number reads the pull request through the developer's own `gh` login (read-only); `--base`
 scores the local commits since the merge base instead. The agent run, guardrail blocks and
 outside effects come from the ledger when there is one (`--database` / `--data-dir` as for
-`spend`), the revert rate from git, and `--tests` stands in for the sandbox result until sandbox
+`spend`), the revert rate and the touched modules' revert and rework rates from git, and `--tests` stands in for the sandbox result until sandbox
 runs exist. Nothing is posted to GitHub. The scoring is commercial code in
 [`ee/risk`](../../ee/risk/README.md), loaded only when this command runs.
+
+## Agent-written code: `selfhost provenance`
+
+`selfhost provenance [--since 30d] [--until <when>] [--branch <ref>] [--vendor-stats <file>]
+[--no-github] [--json]` prints the lines merged to the main branch in the window by agent and
+model (with the agent runs behind them), by module (ranked by agent-written lines, flagged above
+`[review] revert_rate_threshold`) and by person, and how many were reverted or reworked within
+`[review] revert_window_days` of merge. Fix-forward edits count as rework. Commits are joined
+to the runs the ledger recorded (`--database` / `--data-dir` as for `spend`), to their own
+attribution, and to merged pull requests from the ledger and, unless `--no-github`, the
+developer's own `gh`. `--vendor-stats` takes vendor-reported line counts (Cursor AI Code
+Tracking, Claude Code Analytics) as `VendorLineStat` JSON and shows them next to the git
+numbers. `selfhost scan` adds one line of the same numbers, and an HTML section with the
+module table. Definitions are in [`packages/provenance`](../../packages/provenance/README.md).
 
 ## Review brief
 

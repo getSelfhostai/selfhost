@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 import { CCUSAGE_VERSION } from "@selfhost/importers";
-import type { LedgerEvent } from "@selfhost/schema";
+import type { LedgerEvent, ProvenanceReport } from "@selfhost/schema";
 import {
   groupSpend,
   oneSourcePerSession,
@@ -127,6 +127,11 @@ export interface ScanReport {
   };
   agents: { vendor: AgentVendor; agent: string; sessions: number; usd: number }[];
   git: GitNumbers;
+  /**
+   * Lines merged to the main branch in the window by agent, model, person and module, and how
+   * many were reverted or reworked; null without a git join. `selfhost provenance` prints it all.
+   */
+  provenance: ProvenanceReport | null;
   cost: { by_agent: CostRow[]; by_model: CostRow[] };
   leaks: LeakFinding[];
   waste: WasteFlag[];
@@ -306,6 +311,7 @@ export function buildScanReport(input: ScanInput): ScanReport {
       .map(([vendor, entry]) => ({ vendor, agent: agentName(vendor), ...entry }))
       .sort((a, b) => b.usd - a.usd || a.vendor.localeCompare(b.vendor)),
     git,
+    provenance: input.attribution?.provenance ?? null,
     cost: {
       by_agent: costRows(costs, input, ["agent"]),
       by_model: costRows(costs, input, ["agent", "model"]),

@@ -34,6 +34,8 @@ export {
   type ChangedFile,
   type GuardrailHit,
   type MissingInput,
+  type ModuleRevertRate,
+  type ModuleReverts,
   type NewDependency,
   type RevertHistory,
   RISK_INPUTS,

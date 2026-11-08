@@ -12,6 +12,7 @@ import { decisionRoutes } from "./decisions.js";
 import { eventRoutes } from "./events.js";
 import { type GitHubRouteOptions, githubRoutes } from "./github.js";
 import { otlpRoutes } from "./otlp.js";
+import type { GitClones } from "./provenance.js";
 import { reviewRoutes } from "./review.js";
 import type { SigninOptions } from "./signin.js";
 import { type PersonEnv, teamRoutes } from "./teams.js";
@@ -34,6 +35,11 @@ export interface AppOptions {
   console?: { dir: string | undefined };
   /** Console sign-in through a proxy that forwards the person's email (see signin.ts). */
   signin?: SigninOptions;
+  /**
+   * Clones of the teams' repos (SELFHOST_GIT_CLONES), for line-level provenance and module
+   * revert rates. Without them, provenance comes from the ledger alone.
+   */
+  clones?: GitClones;
 }
 
 export function createApp({
@@ -45,17 +51,19 @@ export function createApp({
   github = {},
   console: web,
   signin,
+  clones,
 }: AppOptions): Hono {
   const app = new Hono();
   const review = { ...(config ? { config } : {}), ...(now ? { now } : {}) };
 
   // Signed by GitHub instead of a bearer token, so it goes before both token checks.
-  githubRoutes(app, ledger, github);
+  githubRoutes(app, ledger, { ...(clones ? { clones } : {}), ...github });
   teamRoutes(app, {
     ledger,
     token,
     ...(now ? { now } : {}),
     ...(signin ? { signin } : {}),
+    provenance: { ...(clones ? { clones } : {}), ...(config ? { config } : {}) },
     personRoutes: (person) =>
       reviewRoutes(person, ledger, {
         ...review,

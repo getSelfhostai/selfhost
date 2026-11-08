@@ -1,5 +1,6 @@
 import { CONTEXT_READER_NAMES, type ContextReader } from "@selfhost/agents";
 import { percent, plural, tokens, usd } from "../format.js";
+import { provenanceSummary } from "../provenance-text.js";
 import type {
   ContextConflict,
   ContextDuplicate,
@@ -58,6 +59,9 @@ function gitLines(report: ScanReport): string[] {
           "Spend on sessions with no commit",
           `${usd(idle?.usd ?? 0)}, ${percent(idle?.share ?? 0)} of spend, ${plural(idle?.sessions ?? 0, "session")}`,
         ],
+        ...(report.provenance
+          ? [["Merged lines", `${provenanceSummary(report.provenance)} (selfhost provenance)`]]
+          : []),
       ],
       new Set(),
     ).map((line) => `  ${line}`),

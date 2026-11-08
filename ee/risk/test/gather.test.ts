@@ -170,6 +170,76 @@ describe("gatherRiskInputs from local commits", () => {
     expect(result.missing).toEqual([{ input: "tests", reason: "no sandbox run yet" }]);
   });
 
+  it("reads the revert and rework rate of each module the change touches", async () => {
+    const repo = newRepo();
+    repo.commit({
+      message: "Initial",
+      at: "2026-09-01T10:00:00Z",
+      files: { "src/app.ts": lines(5, "app") },
+    });
+    const money = repo.commit({
+      message: "Add money helpers\n\nClaude-Session: https://claude.ai/code/session_01Money",
+      at: "2026-09-02T10:00:00Z",
+      files: { "lib/money.ts": lines(60, "money") },
+    });
+    repo.revert(money, "2026-09-04T10:00:00Z");
+    const recorded = repo.commit({
+      message: "Add app routes",
+      at: "2026-09-05T10:00:00Z",
+      files: { "src/routes.ts": lines(70, "route") },
+    });
+    // The run that made the routes commit recorded it, which is how it is an agent's.
+    await ledger.append([
+      sessionStarted("sess-routes", "2026-09-05T09:00:00Z", repo.dir),
+      commitCreated("sess-routes", "2026-09-05T10:00:05Z", recorded.slice(0, 8)),
+    ]);
+    repo.git("checkout", "-q", "-b", "topic");
+    repo.commit({
+      message: "Round totals",
+      at: "2026-10-05T10:00:00Z",
+      files: { "lib/round.ts": lines(3, "round"), "src/app.ts": lines(6, "app") },
+    });
+
+    const { inputs } = await gatherRiskInputs({
+      repoDir: repo.dir,
+      target: { base: "main" },
+      ledger,
+      tests: "passed",
+      now: NOW,
+    });
+    expect(inputs.modules).toEqual({
+      days: 90,
+      modules: [
+        { module: "lib", agentLines: 60, rate: 1 },
+        { module: "src", agentLines: 70, rate: 0 },
+      ],
+    });
+    const result = scoreRisk(inputs, policy);
+    expect(result.factors.find((f) => f.input === "module_reverts")).toMatchObject({
+      points: 10,
+      detail:
+        "1 touched module above [review] revert_rate_threshold (25%) in the last 90 days: lib 100% of 60 agent lines reverted or reworked",
+    });
+
+    const lenient = await gatherRiskInputs({
+      repoDir: repo.dir,
+      target: { base: "main" },
+      ledger,
+      now: NOW,
+      provenance: {
+        modules: { money: ["lib/**"] },
+        moduleDepth: 1,
+        windowDays: 1,
+        threshold: 0.25,
+      },
+    });
+    // A one-day window ends before the revert, so nothing counts against lib.
+    expect(lenient.inputs.modules?.modules).toEqual([
+      { module: "money", agentLines: 60, rate: 0 },
+      { module: "src", agentLines: 70, rate: 0 },
+    ]);
+  });
+
   it("names the run inputs as missing without a ledger or a matching session", async () => {
     const repo = newRepo();
     repo.commit({ message: "Initial", at: "2026-09-20T10:00:00Z", files: { "a.txt": "a\n" } });

@@ -15,6 +15,7 @@ import { type AgentPull, desiredState, type GitHubProviders } from "./github-pul
 import { pullReads } from "./github-reads.js";
 import { reviewBrief, reviewOwner } from "./github-review.js";
 import { eeRisk } from "./github-risk.js";
+import type { GitClones } from "./provenance.js";
 
 export const GITHUB_WEBHOOK_PATH = "/v1/github/webhooks";
 
@@ -46,6 +47,8 @@ export interface GitHubRouteOptions {
   publicUrl?: string;
   /** Replaces the default risk, owner and brief providers. */
   providers?: Partial<GitHubProviders>;
+  /** Clones of the repos, for the module revert rates in the risk score. */
+  clones?: GitClones;
   /** One line per handled delivery: ids, repository and counts, never payloads or secrets. */
   log?: (line: string) => void;
 }
@@ -152,7 +155,7 @@ export function githubRoutes(app: Hono, ledger: Ledger, options: GitHubRouteOpti
     return;
   }
   const providers: GitHubProviders = {
-    risk: eeRisk(),
+    risk: eeRisk(undefined, options.clones, ledger),
     owner: reviewOwner(ledger, options.team),
     brief: reviewBrief(),
     ...options.providers,

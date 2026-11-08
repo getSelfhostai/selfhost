@@ -1,5 +1,6 @@
 import { anyGlobMatches, effectiveRules, evaluate, globMatches } from "@selfhost/policy";
 import { compare, isLockfile } from "@selfhost/pr";
+import { MIN_MODULE_LINES } from "@selfhost/provenance";
 import type { ResolvedSelfhostConfig } from "@selfhost/schema";
 import { type OutsideEffect, outsideEffects } from "./effects.js";
 import {
@@ -53,6 +54,13 @@ export const WEIGHTS = {
     { from: 0.25, points: 20 },
     { from: 0.1, points: 10 },
   ],
+  /**
+   * A touched module whose agent-written lines were reverted or reworked above
+   * `[review] revert_rate_threshold`, with at least MIN_MODULE_LINES of them.
+   */
+  firstHotModule: 10,
+  eachMoreHotModule: 5,
+  hotModulesMax: 20,
 } as const;
 
 export const IRREVERSIBLE_FLOOR = 90;
@@ -70,6 +78,7 @@ const DEFAULT_MISSING: Record<MissableInput, string> = {
   tests: "no sandbox run yet",
   guardrails: "no agent run found in the ledger",
   reverts: "no revert history yet",
+  module_reverts: "no module revert rates: they need the repository's git history",
 };
 
 const MAX_LISTED = 5;
@@ -302,6 +311,32 @@ export function scoreRisk(inputs: RiskInputs, config: ResolvedSelfhostConfig): R
     });
   } else {
     isMissing("reverts");
+  }
+
+  const modules = inputs.modules;
+  if (modules) {
+    const threshold = config.review.revert_rate_threshold;
+    const touched = [...modules.modules].sort((a, b) => compare(a.module, b.module));
+    const hot = touched.filter(
+      (m) => m.agentLines >= MIN_MODULE_LINES && m.rate !== null && m.rate > threshold,
+    );
+    factors.push({
+      input: "module_reverts",
+      points:
+        hot.length === 0
+          ? 0
+          : Math.min(
+              WEIGHTS.firstHotModule + (hot.length - 1) * WEIGHTS.eachMoreHotModule,
+              WEIGHTS.hotModulesMax,
+            ),
+      forcesHigh: false,
+      detail:
+        hot.length > 0
+          ? `${plural(hot.length, "touched module")} above [review] revert_rate_threshold (${percent(threshold)}) in the last ${modules.days} days: ${list(hot.map((m) => `${m.module} ${percent(m.rate ?? 0)} of ${plural(m.agentLines, "agent line")} reverted or reworked`))}`
+          : `No touched module above [review] revert_rate_threshold (${percent(threshold)}) in the last ${modules.days} days (${list(touched.map((m) => m.module)) || "no modules"})`,
+    });
+  } else {
+    isMissing("module_reverts");
   }
 
   const order = (input: RiskInput) => RISK_INPUTS.indexOf(input);
