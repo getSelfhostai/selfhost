@@ -179,13 +179,53 @@ be a person id on the server whose tokens are not all revoked: invite people by 
 (`selfhost team invite --email`) and the ids match. Sign-in only reads; anything that writes
 still needs a token.
 
+## AI gateway
+
+`compose.gateway.yml` runs [Bifrost](https://github.com/maximhq/bifrost) (Apache 2.0, pinned to
+`maximhq/bifrost:v2.4.0`) next to the server. It holds the provider keys; agents reach it at
+`https://<domain>/llm/` with a virtual key the selfhost server issued, and a request without one
+is refused. Add it after `compose.tls.yml`, put the provider keys you have in `.env`, and run
+`install.sh` (or `selfhost up --gateway`):
+
+```sh
+COMPOSE_FILE=compose.yml:compose.tls.yml:compose.gateway.yml
+ANTHROPIC_API_KEY=...          # and any of OPENAI_API_KEY, FIREWORKS_API_KEY,
+AWS_ACCESS_KEY_ID=...          # AWS_ACCESS_KEY_ID with AWS_SECRET_ACCESS_KEY and AWS_REGION (Bedrock),
+AWS_SECRET_ACCESS_KEY=...      # AZURE_API_KEY with AZURE_ENDPOINT, VERTEX_PROJECT_ID with
+AWS_REGION=eu-central-1        # VERTEX_REGION and VERTEX_CREDENTIALS
+```
+
+- `install.sh` writes `bifrost.json` with [`gateway-config.sh`](./gateway-config.sh): Postgres
+  (a `bifrost` database on the same server, created by the one-shot `gateway-db` service) for
+  Bifrost's keys, budgets and request logs, admin auth with `SELFHOST_GATEWAY_ADMIN_KEY`, virtual
+  keys required on every model request, no direct provider keys, no prompt or response bodies in
+  its logs, and one provider for each set of keys in `.env`, with its region pinned. Every
+  secret in it is an `env.<NAME>` reference, so the file holds none, and provider keys reach the
+  Bifrost container only, never the selfhost server. `SELFHOST_GATEWAY_ADMIN_KEY` and
+  `SELFHOST_GATEWAY_ENCRYPTION_KEY` are generated like the other secrets.
+- Caddy serves only Bifrost's model routes (`/llm/anthropic/`, `/llm/openai/`, `/llm/v1/`) and
+  `/llm/health`. Its management API and web UI stay inside Docker; the UI is published on
+  `127.0.0.1:8080` for an SSH tunnel (`ssh -L 8080:127.0.0.1:8080 <server>`), signed in as
+  `selfhost` with `SELFHOST_GATEWAY_ADMIN_KEY`.
+- The selfhost server writes a Bifrost team per selfhost team, and keys per person, team and run,
+  with the budgets of each team's `selfhost.toml` (`[budget]` with `mode = "hard"`) and the
+  providers of `[integrations.router] providers`, every five minutes and only what differs. It
+  reads Bifrost's request logs into the ledger as `cost.recorded` events with `source =
+  "gateway"`. `selfhost gateway connect <agent>` gives a person their key and the agent's
+  settings; see [`apps/cli`](../../apps/cli/README.md#ai-gateway-selfhost-gateway).
+- A team that already runs LiteLLM leaves this overlay out and sets `SELFHOST_GATEWAY_TOOL=litellm`,
+  `SELFHOST_GATEWAY_URL` and `SELFHOST_GATEWAY_ADMIN_KEY` (its master key) in `.env`, or
+  `[integrations.router]` in the server's `selfhost.toml` (`SELFHOST_CONFIG`), which wins. The
+  same keys, budgets and usage work there, with one budget window per key and team (the
+  shortest is enforced, the others alert) and fallbacks left to LiteLLM's own router settings.
+
 ## install.sh
 
 `sudo ./install.sh` installs or updates the stack on the server it runs on: Docker when it is
 missing (from Docker's apt repository on Debian and Ubuntu, with the script from get.docker.com
 on other systems; it says which), the containers of the files in `COMPOSE_FILE`,
 and the daily backup timer. It generates any secret left empty in `.env` (the database password,
-both tokens, the sign-in cookie secret and proxy secret), so `cp .env.example .env && sudo ./install.sh` is a
+both tokens, the sign-in cookie secret and proxy secret, the gateway's admin and encryption keys), so `cp .env.example .env && sudo ./install.sh` is a
 complete install. Run again, it keeps the secrets already in `.env`.
 
 ## selfhost up
@@ -224,8 +264,14 @@ pull.
 If a step fails, it stops and lists every resource it created, with the command that deletes
 each one. Backups stay on the server's disk only: copy them elsewhere as well.
 
-The CI job `install` runs `install.sh` with both overlays on a GitHub runner, with
-`SELFHOST_DOMAIN=localhost` so Caddy serves HTTPS from its own local CA.
+`--gateway` adds the AI gateway: its two files go over SSH with the sign-in step, which keeps
+the user-data under Hetzner's 32 KB. Provider keys never travel through `selfhost up`: add them
+to `.env` on the server and run `install.sh` again.
+
+The CI job `install` runs `install.sh` with the HTTPS, sign-in and gateway overlays on a GitHub
+runner, with `SELFHOST_DOMAIN=localhost` so Caddy serves HTTPS from its own local CA, and checks
+that Bifrost answers behind Caddy, refuses requests without a virtual key, and takes the keys
+and budgets the server writes. No provider is called.
 
 ## Files
 
@@ -238,6 +284,8 @@ The CI job `install` runs `install.sh` with both overlays on a GitHub runner, wi
 | `backup.sh`, `restore.sh`      | `pg_dump` and `pg_restore` wrappers                                  |
 | `compose.tls.yml`, `Caddyfile` | Caddy with HTTPS in front of the API, the collector and the console  |
 | `compose.signin.yml`           | oauth2-proxy: GitHub or Google sign-in for the console               |
+| `compose.gateway.yml`          | Bifrost, the AI gateway, with its database on the same Postgres      |
+| `gateway-config.sh`            | Writes `bifrost.json` from `.env`, with references, never secrets    |
 | `install.sh`                   | Installs Docker, starts the stack, schedules the daily backup        |
 
 The CI job `compose` in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs all of

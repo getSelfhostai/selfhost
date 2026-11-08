@@ -4,6 +4,7 @@
 #
 #   /v1/*    the selfhost API, behind its bearer tokens (CLIs, hooks, the GitHub webhook)
 #   /otlp/*  agents' OpenTelemetry over HTTP, behind the agent token checked by the collector
+#   /llm/*   the AI gateway's model routes, behind its virtual keys (compose.gateway.yml)
 #   the rest the web console, which the selfhost server serves: each person signs in with their
 #            own token, or with GitHub or Google when compose.signin.yml is in use
 
@@ -55,6 +56,25 @@
 	request_header @browser X-Selfhost-Proxy-Secret {$SELFHOST_SIGNIN_PROXY_SECRET}
 }
 
+# Without compose.gateway.yml there is no gateway: /llm/ falls through to the console's 404.
+(gateway-off) {
+}
+
+# With compose.gateway.yml: agents' model traffic to Bifrost, which refuses any request without
+# a virtual key it knows. Only its model routes and /health are served; its management API and
+# web UI stay inside Docker.
+(gateway-on) {
+	handle_path /llm/* {
+		@model path /anthropic/* /openai/* /v1/* /health
+		handle @model {
+			reverse_proxy bifrost:8080
+		}
+		handle {
+			respond 404
+		}
+	}
+}
+
 {$SELFHOST_DOMAIN} {
 	encode zstd gzip
 
@@ -70,6 +90,8 @@
 	handle_path /otlp/* {
 		reverse_proxy otel-collector:4318
 	}
+
+	import gateway-{$SELFHOST_GATEWAY:off}
 
 	import console-{$SELFHOST_CONSOLE_ACCESS:token}
 }

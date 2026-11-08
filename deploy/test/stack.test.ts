@@ -23,14 +23,19 @@ describe("stack.generated.ts", () => {
     const left = readdirSync(DOCKER_DIR, { recursive: true, withFileTypes: true })
       .filter((entry) => entry.isFile())
       .map((entry) => join(entry.parentPath, entry.name).slice(DOCKER_DIR.length + 1))
-      .filter((path) => !shipped.has(path) && path !== ".env" && !path.startsWith("backups/"))
+      .filter(
+        (path) =>
+          !shipped.has(path) &&
+          ![".env", "bifrost.json"].includes(path) &&
+          !path.startsWith("backups/"),
+      )
       .sort();
     expect(left).toEqual([".gitignore", "Dockerfile", "Dockerfile.dockerignore", "README.md"]);
   });
 
   it("keeps the scripts executable", () => {
     const modes = Object.fromEntries(STACK_FILES.map((file) => [file.path, file.mode]));
-    for (const script of ["install.sh", "backup.sh", "restore.sh"]) {
+    for (const script of ["install.sh", "backup.sh", "restore.sh", "gateway-config.sh"]) {
       expect(modes[script], script).toBe(0o755);
     }
     expect(modes["compose.yml"]).toBe(0o644);

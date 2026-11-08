@@ -28,6 +28,7 @@ import {
 } from "./access.js";
 import { requireBearerToken } from "./auth.js";
 import { eventRoutes, MAX_BODY_BYTES } from "./events.js";
+import { type Gateway, gatewayRoutes } from "./gateway.js";
 import { limit, readBody, rethrow, SMALL_BODY_BYTES } from "./http.js";
 import { teamId } from "./ids.js";
 import { createOrgRoute, orgRoutes } from "./orgs.js";
@@ -49,6 +50,8 @@ export interface TeamRouteOptions {
   signin?: SigninOptions;
   /** Clones and default config for the provenance routes. */
   provenance?: Omit<ProvenanceRouteOptions, "now">;
+  /** The AI gateway selfhost configures; its routes answer 404 without one. */
+  gateway?: Gateway;
 }
 
 export type PersonEnv = { Bindings: { person: Person; caller: PersonCaller } };
@@ -83,12 +86,13 @@ export { teamId } from "./ids.js";
  * role in the team against the permission table in @selfhost/schema; the admin token can do
  * everything.
  *
- * There is no route that forwards anything to a model provider: agents keep talking to their
- * vendors directly, and this server only stores events and the team policy.
+ * There is no route that forwards anything to a model provider: agents talk to their vendors
+ * directly, or to the AI gateway with a key from /v1/gateway/keys, and this server only stores
+ * events, the team policy and the gateway's settings.
  */
 export function teamRoutes(
   app: Hono,
-  { ledger, token, personRoutes, now, signin, provenance }: TeamRouteOptions,
+  { ledger, token, personRoutes, now, signin, provenance, gateway }: TeamRouteOptions,
 ): void {
   const { teams } = ledger;
   const isAdminToken = sameAs(token);
@@ -167,7 +171,7 @@ export function teamRoutes(
       else person.on(method, path, run);
     },
   };
-  sharedRoutes(asPerson, ledger, now, provenance);
+  sharedRoutes(asPerson, ledger, now, provenance, gateway);
   personRoutes?.(person);
 
   app.use("*", async (c, next) => {
@@ -247,7 +251,7 @@ export function teamRoutes(
       else app.on(method, path, adminOnly, run);
     },
   };
-  sharedRoutes(asAdmin, ledger, now, provenance);
+  sharedRoutes(asAdmin, ledger, now, provenance, gateway);
 }
 
 /** The routes both kinds of token reach, each checking the caller's role. */
@@ -256,12 +260,14 @@ function sharedRoutes(
   ledger: Ledger,
   now: (() => Date) | undefined,
   provenance: TeamRouteOptions["provenance"],
+  gateway: Gateway | undefined,
 ): void {
   policyRoutes(router, ledger);
   peopleRoutes(router, ledger);
   orgRoutes(router, ledger, now ? { now } : {});
   usageRoutes(router, ledger, now ? { now } : {});
   provenanceRoutes(router, ledger, { ...provenance, ...(now ? { now } : {}) });
+  gatewayRoutes(router, ledger, gateway);
 }
 
 /**

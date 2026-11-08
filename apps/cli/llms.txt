@@ -34,6 +34,8 @@
 
 - `selfhost up --provider hetzner|digitalocean|aws|ssh` sets up the shared server (HTTPS, daily backups, optional GitHub or Google sign-in) and prints the `selfhost join` line. `--dry-run` prints the plan and the cloud-init user-data and creates nothing. It needs cloud credentials (HCLOUD_TOKEN, DIGITALOCEAN_TOKEN, the aws CLI) or `--host user@host`, so ask the person before running it without `--dry-run`: it creates billed servers.
 
+- `selfhost up --gateway` also runs the AI gateway (Bifrost). `selfhost gateway connect claude-code|codex|opencode|env` issues the person's virtual key and prints (or with `--write`, for Claude Code, writes) the settings that send that agent's API traffic through it; the key's value is shown once. `selfhost gateway` shows the team's hard limits and what is left. Subscription logins cannot go through it.
+
 ## Docs
 
 - [AGENTS.md](AGENTS.md): install steps for coding agents

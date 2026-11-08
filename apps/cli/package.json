@@ -53,6 +53,7 @@
   },
   "devDependencies": {
     "@selfhost/console": "workspace:*",
+    "@selfhost/gateway": "workspace:*",
     "@selfhost/server": "workspace:*",
     "@types/node": "catalog:",
     "tsup": "catalog:",

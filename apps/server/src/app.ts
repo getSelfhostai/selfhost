@@ -10,6 +10,7 @@ import { requireBearerToken } from "./auth.js";
 import { consoleRoutes } from "./console.js";
 import { decisionRoutes } from "./decisions.js";
 import { eventRoutes } from "./events.js";
+import { type Gateway, gatewayAdminRoutes } from "./gateway.js";
 import { type GitHubRouteOptions, githubRoutes } from "./github.js";
 import { adminMcpRoute, mcpRoutes } from "./mcp.js";
 import { otlpRoutes } from "./otlp.js";
@@ -44,6 +45,8 @@ export interface AppOptions {
   clones?: GitClones;
   /** How POST /v1/receipts checks the CI job's OIDC token. It uses the GitHub App above. */
   receipts?: Pick<ReceiptRouteOptions, "oidc" | "load">;
+  /** The AI gateway selfhost configures (see gateway.ts). */
+  gateway?: Gateway;
 }
 
 export function createApp({
@@ -57,6 +60,7 @@ export function createApp({
   signin,
   clones,
   receipts = {},
+  gateway,
 }: AppOptions): Hono {
   const app = new Hono();
   const review = { ...(config ? { config } : {}), ...(now ? { now } : {}) };
@@ -76,6 +80,7 @@ export function createApp({
     ...(now ? { now } : {}),
     ...(signin ? { signin } : {}),
     provenance: { ...(clones ? { clones } : {}), ...(config ? { config } : {}) },
+    ...(gateway ? { gateway } : {}),
     personRoutes: (person) => {
       reviewRoutes(person, ledger, {
         ...review,
@@ -103,6 +108,7 @@ export function createApp({
   otlpRoutes(app, ledger);
   adminMcpRoute(app);
   receiptReadRoutes(app, ledger);
+  gatewayAdminRoutes(app, ledger, gateway);
 
   app.notFound((c) =>
     c.json(

@@ -14,6 +14,7 @@ import { HETZNER_METADATA } from "../src/up/hetzner.js";
 import type { UpIo } from "../src/up/plan.js";
 import type { ExecOptions, ExecResult } from "../src/up/resources.js";
 import {
+  BOOTSTRAP_FILES,
   bootstrapScript,
   envFile,
   finishScript,
@@ -268,12 +269,14 @@ describe("the bootstrap script", () => {
       execFileSync("sh", ["-c", script], {
         env: { PATH: `${dir.path("bin")}:${process.env.PATH}` },
       });
-      for (const file of SERVER_FILES) {
+      for (const file of BOOTSTRAP_FILES) {
         const path = dir.path("stack", file.path);
         expect(readFileSync(path, "utf8"), file.path).toBe(file.content);
         expect(statSync(path).mode & 0o111, file.path).toBe(file.mode & 0o111 ? 0o111 : 0);
       }
       expect(existsSync(dir.path("stack", ".env.example"))).toBe(false);
+      // The gateway's files go over SSH, only with --gateway.
+      expect(existsSync(dir.path("stack", "compose.gateway.yml"))).toBe(false);
       const env = dir.path("stack", ".env.next");
       expect(readFileSync(env, "utf8")).toBe(
         `${envFile(settings())}SELFHOST_DOMAIN=5-6-7-8.sslip.io\nSELFHOST_PUBLIC_URL=https://5-6-7-8.sslip.io\n`,
@@ -306,6 +309,28 @@ describe("the .env selfhost up writes", () => {
     // Empty, so install.sh generates them on the server, and keeps them on a rerun.
     for (const key of SERVER_SECRETS) expect(env).toContain(`\n${key}=\n`);
     expect(env).not.toContain("SIGNIN_PROVIDER");
+  });
+
+  it("adds the AI gateway over SSH with --gateway, with or without sign-in", () => {
+    // Not in user-data, which Hetzner caps at 32 KB.
+    const bootstrap = bootstrapScript(settings({ gateway: true }), { domain: "a.example.com" });
+    expect(bootstrap).not.toContain("cat >compose.gateway.yml");
+    expect(envFile(settings({ gateway: true }))).toContain(
+      "COMPOSE_FILE=compose.yml:compose.tls.yml\n",
+    );
+    const alone = finishScript(null, true);
+    expect(alone).toContain("cat >compose.gateway.yml <<'SELFHOST_EOF'");
+    expect(alone).toContain("chmod 755 gateway-config.sh");
+    expect(alone).toContain("COMPOSE_FILE=compose.yml:compose.tls.yml:compose.gateway.yml\n");
+    expect(alone).toContain("sh ./install.sh");
+    expect(finishScript(null)).not.toContain("install.sh");
+    expect(signinEnvFile(githubSignin, true)).toContain(
+      "COMPOSE_FILE=compose.yml:compose.tls.yml:compose.signin.yml:compose.gateway.yml\n",
+    );
+    expect(finishScript(githubSignin, true)).toContain("compose.signin.yml:compose.gateway.yml");
+    // The gateway's admin key and encryption key are generated on the server, like the others.
+    expect(SERVER_SECRETS).toContain("SELFHOST_GATEWAY_ADMIN_KEY");
+    expect(SERVER_SECRETS).toContain("SELFHOST_GATEWAY_ENCRYPTION_KEY");
   });
 
   it("turns on sign-in over SSH, and lets a GitHub organization alone decide who signs in", () => {

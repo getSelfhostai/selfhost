@@ -14,6 +14,7 @@ import { registerConsole } from "./console.js";
 import { registerContext } from "./context/commands.js";
 import { registerDecisions } from "./decisions.js";
 import { doctor } from "./doctor.js";
+import { registerGateway } from "./gateway/commands.js";
 import { registerGuard } from "./guard/commands.js";
 import { readStdin, runHook } from "./hooks/receive.js";
 import { type ImportCommandOptions, type ImportIo, runImport, runWatch } from "./import.js";
@@ -463,6 +464,18 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
       exec: deps.exec ?? systemExec,
       sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
+    }),
+    fail,
+  );
+
+  registerGateway(
+    program,
+    () => ({
+      env: deps.env,
+      write: deps.write,
+      configPath: deps.configPath ?? defaultConfigPath(),
+      fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
+      ...(deps.home ? { home: deps.home } : {}),
     }),
     fail,
   );

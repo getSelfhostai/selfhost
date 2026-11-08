@@ -16,6 +16,20 @@
       "description": "A Claude Code request through Bedrock for session 538b2156 (a session the compliance feed does not cover), a Codex request through OpenAI for thread 01a10ca6, and a throttled Bedrock request that failed."
     },
     {
+      "path": "gateway/bifrost-logs.json",
+      "source": "gateway",
+      "shape": "One page of Bifrost's GET /api/logs ({ logs, pagination, stats, has_logs }), with content logging off.",
+      "fieldsFrom": "Bifrost API reference (docs.getbifrost.ai/api-reference/logging/get-logs), LogEntry and BifrostLLMUsage, v2.4.0. Whether prompt_tokens includes the cached tokens, and the key Bifrost files a logged header under in metadata, are not stated there and are assumed (OpenAI style, the header name as configured).",
+      "description": "A Claude Code request on Ada's person key, a Codex request on a run key served by the fallback provider, a request Bifrost refused with budget_exceeded (402), a throttled Bedrock request on the team key, and a request still in progress, which maps to nothing."
+    },
+    {
+      "path": "gateway/litellm-spend-logs.json",
+      "source": "gateway",
+      "shape": "One page of LiteLLM's GET /spend/logs/v2 ({ data, total, page, page_size, total_pages }), rows of its LiteLLM_SpendLogs table.",
+      "fieldsFrom": "LiteLLM spend tracking docs (docs.litellm.ai/docs/proxy/cost_tracking) and its SpendLogs table columns. Not yet checked against a captured response; metadata.error_information on failed rows is assumed.",
+      "description": "A Claude Code request on Ada's selfhost key and a request LiteLLM refused because the key's budget was spent."
+    },
+    {
       "path": "vendor-audit/anthropic-compliance-activities.json",
       "source": "vendor_api",
       "shape": "One page of an Anthropic Compliance API style activity feed ({ data, has_more }).",

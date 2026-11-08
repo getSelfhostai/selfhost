@@ -5,8 +5,12 @@ import type {
   CreateTeamResponse,
   DecisionRequest,
   DecisionResponse,
+  GatewayKeysResponse,
+  GatewayStatus,
   IngestEventsResponse,
   Invite,
+  IssueGatewayKeyRequest,
+  IssueGatewayKeyResponse,
   JoinResponse,
   LedgerEvent,
   MeResponse,
@@ -62,7 +66,7 @@ export function serverUrl(value: string): string {
 
 /**
  * Calls the selfhost team server, and only it: every request goes to `server` plus an API path.
- * Model traffic never goes through here; agents keep talking to their vendors directly.
+ * Model traffic never goes through here: agents talk to their vendors, or to the AI gateway.
  */
 export class TeamClient {
   constructor(
@@ -180,6 +184,20 @@ export class TeamClient {
   async snoozeReviewItem(id: string, until: string): Promise<ReviewItem> {
     const path = `/v1/review-items/${encodeURIComponent(id)}/snooze`;
     return (await this.call<{ item: ReviewItem }>("POST", path, { until })).item;
+  }
+
+  /** The AI gateway: health, the team's limits and the caller's own key, never its value. */
+  gateway(team?: string): Promise<GatewayStatus> {
+    return this.call("GET", `/v1/gateway${team ? `?team=${encodeURIComponent(team)}` : ""}`);
+  }
+
+  gatewayKeys(team?: string): Promise<GatewayKeysResponse> {
+    return this.call("GET", `/v1/gateway/keys${team ? `?team=${encodeURIComponent(team)}` : ""}`);
+  }
+
+  /** Issues a gateway key; the answer is the only place its value ever appears. */
+  issueGatewayKey(request: IssueGatewayKeyRequest): Promise<IssueGatewayKeyResponse> {
+    return this.call("POST", "/v1/gateway/keys", request);
   }
 
   private async call<T>(method: string, path: string, body?: unknown): Promise<T> {

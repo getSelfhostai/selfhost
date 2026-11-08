@@ -26,6 +26,7 @@
     "@selfhost/attribution": "workspace:*",
     "@selfhost/brief": "workspace:*",
     "@selfhost/compile": "workspace:*",
+    "@selfhost/gateway": "workspace:*",
     "@selfhost/ee-receipt": "workspace:*",
     "@selfhost/ee-risk": "workspace:*",
     "@selfhost/github": "workspace:*",

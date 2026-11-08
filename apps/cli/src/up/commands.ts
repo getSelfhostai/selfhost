@@ -54,6 +54,8 @@ export interface UpOptions {
   githubOrg?: string;
   backupTime?: string;
   backupKeepDays?: string;
+  /** Run the bundled AI gateway (Bifrost) next to the server. */
+  gateway?: boolean;
   /** Team to create on the new server; false with --no-team. */
   team?: string | false;
   join?: boolean;
@@ -88,6 +90,8 @@ export interface UpReport {
     github_org: string | null;
   } | null;
   backups: { time_utc: string; keep_days: number; dir: string; restore: string };
+  /** The bundled AI gateway, with --gateway: where agents reach it. */
+  gateway: { base_url: string | null } | null;
   team: { id: string; name: string; invite_expires_at: string; join_command: string } | null;
   joined: boolean;
   /** For `selfhost agents configure`: agents' OpenTelemetry straight to the server. */
@@ -289,7 +293,13 @@ function makePlan(options: UpOptions, io: UpIo) {
     }
   }
   const port = options.port === undefined ? null : whole(options.port, "--port", 22, 1);
-  const settings: StackSettings = { image, version, backupTime, backupKeepDays };
+  const settings: StackSettings = {
+    image,
+    version,
+    backupTime,
+    backupKeepDays,
+    ...(options.gateway ? { gateway: true } : {}),
+  };
   const plan: UpPlan = {
     provider,
     name,
@@ -417,6 +427,7 @@ function baseReport(
       dir: `${STACK_DIR}/backups`,
       restore: restoreCommand(deployed?.ssh ?? null, deployed?.sudo ?? false),
     },
+    gateway: settings.gateway ? { base_url: url ? `${url}/llm` : null } : null,
     team: null,
     joined: false,
     otel: null,
@@ -461,6 +472,7 @@ function printDryRun(report: UpReport, plan: UpPlan, note: string, write: (line:
       ],
       ["  Address", address],
       ["  Sign-in", signinText(report, plan)],
+      ["  Gateway", gatewayText(report)],
       [
         "  Backups",
         `daily at ${report.backups.time_utc} UTC into ${report.backups.dir}, kept ${report.backups.keep_days} days`,
@@ -491,6 +503,14 @@ function signinText(report: UpReport, plan: UpPlan): string {
   return `${SIGNIN_NAMES[signin.provider]} through oauth2-proxy, for ${signinWho(signin)}. OAuth app callback URL: ${callback}`;
 }
 
+function gatewayText(report: UpReport): string {
+  if (!report.gateway) {
+    return "off: agents talk to their vendors directly; selfhost up --gateway adds Bifrost with per-person keys and hard budgets";
+  }
+  const at = report.gateway.base_url ?? "https://<domain>/llm";
+  return `Bifrost at ${at}, behind virtual keys. Put provider keys (ANTHROPIC_API_KEY, OPENAI_API_KEY, ...) in ${STACK_DIR}/.env on the server and run ./install.sh there; then each person runs selfhost gateway connect <agent>`;
+}
+
 function printDone(report: UpReport, plan: UpPlan, deployed: Deployed, io: UpIo) {
   const { write } = io;
   const tls =
@@ -514,6 +534,7 @@ function printDone(report: UpReport, plan: UpPlan, deployed: Deployed, io: UpIo)
           : "ports 22, 80 and 443 only; the API and the collector answer inside the server",
       ],
       ["  Sign-in", signinText(report, plan)],
+      ["  Gateway", gatewayText(report)],
       [
         "  Backups",
         `daily at ${report.backups.time_utc} UTC into ${report.backups.dir}, kept ${report.backups.keep_days} days, on the server's disk only: they are lost with the server, so copy them elsewhere`,
@@ -601,8 +622,13 @@ export async function runUp(options: UpOptions, io: UpIo): Promise<UpReport> {
       plan.provider === "ssh"
         ? `Wait for ${health}/v1/health (Caddy gets the certificate within a minute or two)`
         : `Wait for ${health}/v1/health, up to ${waitMs / 60_000} minutes (cloud-init installs Docker and starts the stack, usually in 3 to 6)`,
-      plan.signin
-        ? "Over SSH: write the sign-in settings and the OAuth client secret to .env (mode 0600), run install.sh again, and read back the tokens it generated"
+      plan.signin || plan.settings.gateway
+        ? `Over SSH: ${[
+            ...(plan.signin
+              ? ["write the sign-in settings and the OAuth client secret to .env (mode 0600)"]
+              : []),
+            ...(plan.settings.gateway ? ["write the AI gateway's files and turn it on"] : []),
+          ].join(", ")}, run install.sh again, and read back the tokens it generated`
         : "Over SSH: read back the tokens install.sh generated",
       `Save the server and its admin token in ${tilde(io.configPath, io.env)} (mode 0600)`,
       ...(options.team === false
@@ -611,7 +637,7 @@ export async function runUp(options: UpOptions, io: UpIo): Promise<UpReport> {
       ...(options.join ? ["Join this laptop to the team"] : []),
     ];
     report.user_data = described.userData;
-    report.ssh_script = finishScript(plan.signin);
+    report.ssh_script = finishScript(plan.signin, plan.settings.gateway);
     if (options.json) io.write(JSON.stringify(report, null, 2));
     else printDryRun(report, plan, described.userDataNote, io.write);
     return report;
@@ -669,7 +695,7 @@ export async function runUp(options: UpOptions, io: UpIo): Promise<UpReport> {
 
   let tokens: Awaited<ReturnType<typeof finishOverSsh>>;
   try {
-    tokens = await finishOverSsh(deployed, plan.signin, io, log);
+    tokens = await finishOverSsh(deployed, plan.signin, io, log, plan.settings.gateway);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const sudo = deployed.sudo ? "sudo " : "";
@@ -770,6 +796,10 @@ export function registerUp(
     .option("--allow-email <email>", "may sign in, repeatable", collect, [])
     .option("--allow-domain <domain>", "emails at this domain may sign in, repeatable", collect, [])
     .option("--github-org <org>", "only members of this GitHub organization may sign in")
+    .option(
+      "--gateway",
+      "also run the AI gateway (Bifrost): per-person virtual keys and hard budgets from selfhost.toml",
+    )
     .option("--backup-time <HH:MM>", "daily backup time in UTC", "03:00")
     .option("--backup-keep-days <n>", "days of daily backups to keep on the server", "14")
     .option("--team <name>", "team to create on the new server", "default")

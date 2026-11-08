@@ -428,17 +428,48 @@ const BudgetUsd = (window: string) =>
     }),
   );
 
+export const BUDGET_MODES = ["alert", "hard"] as const;
+export type BudgetMode = (typeof BUDGET_MODES)[number];
+
+const PeriodBudgetSchema = (whose: string) =>
+  Type.Object(
+    {
+      daily_usd: BudgetUsd("day"),
+      weekly_usd: BudgetUsd("week, from Monday"),
+      monthly_usd: BudgetUsd("calendar month"),
+    },
+    { additionalProperties: false, minProperties: 1, description: whose },
+  );
+
 export const BudgetSchema = Type.Object(
   {
     daily_usd: BudgetUsd("day"),
     weekly_usd: BudgetUsd("week, from Monday"),
     monthly_usd: BudgetUsd("calendar month"),
+    mode: Type.Optional(
+      StringEnum(BUDGET_MODES, {
+        description:
+          "alert (the default) shows spend against the budget and raises an alert when it is spent; requests go on. hard also sets the budget on the AI gateway in [integrations.router], which refuses requests through it once the budget is spent. Subscription logins do not go through the gateway and cannot be stopped from outside.",
+      }),
+    ),
+    person: Type.Optional(
+      PeriodBudgetSchema(
+        "Budget of each person in the team, on their own gateway key. With mode = hard the gateway stops that person alone once theirs is spent.",
+      ),
+    ),
+    run_usd: Type.Optional(
+      Type.Number({
+        exclusiveMinimum: 0,
+        description:
+          "Spend allowed per background run, in USD, on the gateway key issued for that run. The key stops working once it is spent (with mode = hard) or after 24 hours.",
+      }),
+    ),
   },
   {
     additionalProperties: false,
     minProperties: 1,
     description:
-      "Spend budget of the team whose selfhost.toml this is; in the org policy, of the whole org. Spend is shown against it. Nothing is charged back and nothing is stopped.",
+      "Spend budget of the team whose selfhost.toml this is; in the org policy, of the whole org. Spend is shown against it and nothing is charged back. With mode = hard, the AI gateway refuses requests once a budget is spent.",
   },
 );
 
@@ -469,7 +500,21 @@ export const IntegrationsSchema = Type.Object(
             ),
           ),
           admin_key_env: Type.Optional(
-            EnvName("Environment variable on the server that holds the gateway's admin key."),
+            EnvName(
+              "Environment variable on the server that holds the gateway's admin key: LiteLLM's master key, or the Bifrost admin password. Default: SELFHOST_GATEWAY_ADMIN_KEY.",
+            ),
+          ),
+          public_url: Type.Optional(
+            HttpUrl(
+              "The address agents send model traffic to, when it is not url. Unset: https://<the server>/llm for the bundled Bifrost, url for LiteLLM.",
+            ),
+          ),
+          providers: Type.Optional(
+            Type.Array(NonEmpty(), {
+              uniqueItems: true,
+              description:
+                "Providers the team's gateway keys may use, as the gateway names them (anthropic, openai, bedrock, vertex, azure, fireworks), in fallback order: the first takes the traffic and the others are tried in turn when it fails. Unset allows every provider the gateway has a key for. Bifrost only; on LiteLLM, fallbacks are set in its own config.",
+            }),
           ),
         },
         { additionalProperties: false, description: "The AI gateway (model router)." },

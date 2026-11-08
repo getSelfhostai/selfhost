@@ -1,0 +1,69 @@
+{
+  "data": [
+    {
+      "request_id": "chatcmpl-synthetic-litellm-0001",
+      "call_type": "anthropic_messages",
+      "api_key": "hashed-1",
+      "spend": 0.0412,
+      "total_tokens": 21838,
+      "prompt_tokens": 21450,
+      "completion_tokens": 388,
+      "startTime": "2026-11-05T09:01:25.118Z",
+      "endTime": "2026-11-05T09:01:31.904Z",
+      "model": "claude-opus-5-5",
+      "model_group": "claude-opus-5-5",
+      "custom_llm_provider": "anthropic",
+      "user": "ada@example.com",
+      "team_id": "selfhost-platform",
+      "end_user": "",
+      "cache_hit": "False",
+      "request_tags": "[\"User-Agent: claude-cli/2.1.312 (external, cli)\"]",
+      "session_id": "7c1e9a52-4b3d-4f6e-9a21-0d8c7b6e5f41",
+      "status": "success",
+      "metadata": {
+        "user_api_key": "hashed-1",
+        "user_api_key_alias": "selfhost:person:platform:ada@example.com",
+        "user_api_key_user_id": "ada@example.com",
+        "user_api_key_team_id": "selfhost-platform",
+        "user_api_key_team_alias": "platform",
+        "usage_object": {
+          "prompt_tokens": 21450,
+          "completion_tokens": 388,
+          "cache_read_input_tokens": 17920,
+          "cache_creation_input_tokens": 3410
+        }
+      }
+    },
+    {
+      "request_id": "chatcmpl-synthetic-litellm-0002",
+      "call_type": "acompletion",
+      "api_key": "hashed-1",
+      "spend": 0,
+      "total_tokens": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "startTime": "2026-11-05T09:30:00.000Z",
+      "endTime": "2026-11-05T09:30:00.020Z",
+      "model": "claude-opus-5-5",
+      "custom_llm_provider": "anthropic",
+      "user": "ada@example.com",
+      "team_id": "selfhost-platform",
+      "cache_hit": "False",
+      "request_tags": "[]",
+      "status": "failure",
+      "metadata": {
+        "user_api_key_alias": "selfhost:person:platform:ada@example.com",
+        "user_api_key_user_id": "ada@example.com",
+        "user_api_key_team_alias": "platform",
+        "error_information": {
+          "error_class": "BudgetExceededError",
+          "error_message": "Budget has been exceeded! Current cost: 50.02, Max budget: 50.0"
+        }
+      }
+    }
+  ],
+  "total": 2,
+  "page": 1,
+  "page_size": 1000,
+  "total_pages": 1
+}
