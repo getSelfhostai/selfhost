@@ -105,6 +105,45 @@ jobs:
           path: apps/cli/dist/selfhost-*
           if-no-files-found: error
 
+  # The proof receipt action (ee/receipt) end to end on the sample app in fixtures/receipt-app,
+  # with real Playwright screenshots: once with a fake preview deployment and once without. Only
+  # Chromium's headless shell is installed, and cached by Playwright version.
+  receipt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PLAYWRIGHT_VERSION: 1.64.1
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Check that action/index.mjs is built from the current source
+        run: |
+          pnpm --filter @selfhost/ee-receipt bundle
+          git diff --exit-code ee/receipt/action || {
+            echo "::error::ee/receipt/action/index.mjs is out of date. Run: pnpm --filter @selfhost/ee-receipt bundle"
+            exit 1
+          }
+      - name: Install playwright-core next to the action, as action.yml does
+        run: |
+          npm install --prefix "$RUNNER_TEMP/playwright" --no-save --no-audit --no-fund \
+            --loglevel=error "playwright-core@$PLAYWRIGHT_VERSION"
+          echo "SELFHOST_RECEIPT_PLAYWRIGHT=$RUNNER_TEMP/playwright/node_modules/playwright-core" >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.PLAYWRIGHT_BROWSERS_PATH }}
+          key: playwright-chromium-${{ runner.os }}-${{ env.PLAYWRIGHT_VERSION }}
+      - run: '"$RUNNER_TEMP/playwright/node_modules/.bin/playwright-core" install --only-shell chromium'
+      - name: Run the receipt end to end
+        run: pnpm --filter @selfhost/ee-receipt exec vitest run test/e2e.test.ts
+        env:
+          SELFHOST_RECEIPT_E2E: "1"
+
   # The Docker Compose install end to end: build, health checks, writes through the API and the
   # collector, an upgrade, then a backup restored into a fresh volume.
   compose:

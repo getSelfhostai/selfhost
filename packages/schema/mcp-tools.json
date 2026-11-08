@@ -831,6 +831,90 @@
                     }
                   }
                 }
+              },
+              "receipt": {
+                "additionalProperties": false,
+                "description": "The proof receipt on agent pull requests: how CI starts the app, runs the tests the change adds or edits, and which screens it takes screenshots of. Setup and the start command come from [runtime] unless set here.",
+                "type": "object",
+                "properties": {
+                  "start": {
+                    "minLength": 1,
+                    "description": "Shell command that starts the app for the proof receipt's screenshots. Default: the default [runtime.run] command.",
+                    "type": "string"
+                  },
+                  "cwd": {
+                    "minLength": 1,
+                    "description": "Folder to run start in, relative to the repository root. Default: the run command's cwd.",
+                    "type": "string"
+                  },
+                  "port": {
+                    "minimum": 1,
+                    "maximum": 65535,
+                    "description": "Port the app listens on, passed to start as SELFHOST_PORT and PORT. Default: a free port.",
+                    "type": "integer"
+                  },
+                  "ready_url": {
+                    "minLength": 1,
+                    "description": "URL that answers once the app is up, also the base URL of the screens. $SELFHOST_PORT expands. Default: http://127.0.0.1:$SELFHOST_PORT/.",
+                    "type": "string"
+                  },
+                  "ready_timeout_seconds": {
+                    "minimum": 1,
+                    "description": "Seconds to wait for ready_url to answer before the app counts as failed. Default: 120.",
+                    "type": "integer"
+                  },
+                  "test_command": {
+                    "minLength": 1,
+                    "description": "Command for the tests the pull request adds or changes, run from the repository root: {file} is one test file (run once per file), {files} all of them (run once). Default: the runner each file's package uses (vitest, jest, node --test, pytest or go test).",
+                    "type": "string"
+                  },
+                  "tests": {
+                    "description": "Extra globs of test files, on top of the usual names (*.test.*, *.spec.*, __tests__/, test_*.py, *_test.py, *_test.go).",
+                    "type": "array",
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "test_timeout_seconds": {
+                    "minimum": 1,
+                    "description": "Seconds each test run may take before it is stopped. Default: 600.",
+                    "type": "integer"
+                  },
+                  "max_tests": {
+                    "minimum": 1,
+                    "description": "Most test runs per receipt; the rest are listed as not run. Default: 20.",
+                    "type": "integer"
+                  },
+                  "screens": {
+                    "description": "Globs of changed files to the screens Playwright takes screenshots of. Without it the receipt captures the home page.",
+                    "type": "object",
+                    "patternProperties": {
+                      "^(.*)$": {
+                        "description": "URL path, or paths, of the screens that show these files, such as /settings.",
+                        "anyOf": [
+                          {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          {
+                            "minItems": 1,
+                            "type": "array",
+                            "items": {
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "max_screens": {
+                    "minimum": 1,
+                    "description": "Most screenshots per receipt. Default: 10.",
+                    "type": "integer"
+                  }
+                }
               }
             }
           },

@@ -6,6 +6,7 @@ import { decisionRoutes } from "./decisions.js";
 import { eventRoutes } from "./events.js";
 import { type GitHubRouteOptions, githubRoutes } from "./github.js";
 import { otlpRoutes } from "./otlp.js";
+import { type ReceiptRouteOptions, receiptReadRoutes, receiptRoutes } from "./receipts.js";
 import { reviewRoutes } from "./review.js";
 import { type PersonEnv, teamRoutes } from "./teams.js";
 
@@ -20,14 +21,31 @@ export interface AppOptions {
   now?: () => Date;
   /** The GitHub App delivery. Without an App, POST /v1/github/webhooks answers 404. */
   github?: GitHubRouteOptions;
+  /** How POST /v1/receipts checks the CI job's OIDC token. It uses the GitHub App above. */
+  receipts?: Pick<ReceiptRouteOptions, "oidc" | "load">;
 }
 
-export function createApp({ version, ledger, token, config, now, github = {} }: AppOptions): Hono {
+export function createApp({
+  version,
+  ledger,
+  token,
+  config,
+  now,
+  github = {},
+  receipts = {},
+}: AppOptions): Hono {
   const app = new Hono();
   const review = { ...(config ? { config } : {}), ...(now ? { now } : {}) };
 
-  // Signed by GitHub instead of a bearer token, so it goes before both token checks.
-  githubRoutes(app, ledger, github);
+  // Signed by GitHub instead of a bearer token, so they go before both token checks.
+  const pulls = githubRoutes(app, ledger, github);
+  receiptRoutes(app, ledger, {
+    ...receipts,
+    ...(github.app ? { app: github.app } : {}),
+    ...(pulls ? { pulls } : {}),
+    ...(github.publicUrl ? { publicUrl: github.publicUrl } : {}),
+    ...(github.log ? { log: github.log } : {}),
+  });
   teamRoutes(app, {
     ledger,
     token,
@@ -51,6 +69,7 @@ export function createApp({ version, ledger, token, config, now, github = {} }: 
   decisionRoutes(app, ledger);
   reviewRoutes(app, ledger, review);
   otlpRoutes(app, ledger);
+  receiptReadRoutes(app, ledger);
 
   app.notFound((c) =>
     c.json(

@@ -30,8 +30,10 @@ export {
   type PullRequestRef,
   REVIEW_CHECK_NAME,
   type RefusedReviewRequest,
+  type SyncedComment,
   type SyncResult,
   type SyncWrite,
+  syncComment,
   syncPullRequest,
 } from "./sync.js";
 

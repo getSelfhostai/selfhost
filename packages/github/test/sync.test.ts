@@ -9,6 +9,7 @@ import {
   type PullRequestRef,
   REVIEW_CHECK_NAME,
   riskLabel,
+  syncComment,
   syncPullRequest,
 } from "../src/index.js";
 import { FAKE_INSTALLATION_TOKEN, FakeGitHub } from "../src/testing.js";
@@ -235,5 +236,33 @@ describe("syncPullRequest", () => {
     expect(github.requests.map((r) => `${r.method} ${r.path}`)).toEqual([
       "GET /repos/acme/acme-api/issues/101/labels",
     ]);
+  });
+});
+
+describe("syncComment", () => {
+  const RECEIPT = "<!-- selfhost:receipt v1 -->";
+
+  it("posts a marked comment once, edits it when it changes, and returns its URL", async () => {
+    const first = await syncComment(octokit, pr, { body: `${RECEIPT}\nPassed.`, marker: RECEIPT });
+    expect(first).toEqual({
+      id: first.id,
+      url: `https://github.com/${REPO}/pull/101#issuecomment-${first.id}`,
+      write: { action: "create_comment" },
+    });
+    const same = await syncComment(octokit, pr, { body: `${RECEIPT}\nPassed.`, marker: RECEIPT });
+    expect(same).toEqual({ id: first.id, url: first.url });
+    const changed = await syncComment(octokit, pr, {
+      body: `${RECEIPT}\nFailed.`,
+      marker: RECEIPT,
+    });
+    expect(changed.write).toEqual({ action: "update_comment", id: first.id });
+    expect(github.pull(REPO, 101).comments.map((c) => c.body)).toEqual([`${RECEIPT}\nFailed.`]);
+  });
+
+  it("keeps the brief and the receipt in separate comments", async () => {
+    await syncPullRequest(octokit, pr, { labels: {}, brief: desired().brief });
+    await syncComment(octokit, pr, { body: `${RECEIPT}\nPassed.`, marker: RECEIPT });
+    await syncPullRequest(octokit, pr, { labels: {}, brief: desired().brief });
+    expect(github.pull(REPO, 101).comments).toHaveLength(2);
   });
 });

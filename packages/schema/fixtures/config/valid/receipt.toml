@@ -1,0 +1,19 @@
+# The proof receipt: how CI starts the app, which tests count and which screens to capture.
+version = 1
+
+[runtime]
+setup = "pnpm install --frozen-lockfile"
+
+[runtime.run.web]
+command = "pnpm dev --port $SELFHOST_PORT"
+default = true
+
+[receipt]
+ready_url = "http://127.0.0.1:$SELFHOST_PORT/health"
+ready_timeout_seconds = 90
+tests = ["e2e/**/*.ts"]
+max_screens = 4
+
+[receipt.screens]
+"src/pages/settings/**" = ["/settings", "/settings/billing"]
+"src/components/Nav.tsx" = "/"

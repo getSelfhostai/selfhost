@@ -195,7 +195,7 @@ Where each part comes from is a provider in `src/github-pull.ts` (tests replace 
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `risk`   | The ee/ risk score (`src/github-risk.ts`, loaded through `src/ee.ts` on first use) from the pull request's files and new dependencies; none when ee/ is left out                                                                                                                     |
 | `owner`  | `src/github-review.ts`: the first owner of the pull request's `pr` review item (by PR URL, in `SELFHOST_GITHUB_TEAM`'s items when set); before there is one, `routeItem` on its changed files, the person whose session made its commits, the team's members and `[review] fallback` |
-| `brief`  | `src/github-review.ts`: the [review brief](../../packages/brief/README.md) as one comment, its summary leading the check run                                                                                                                                                         |
+| `brief`  | `src/github-review.ts`: the [review brief](../../packages/brief/README.md) as one comment, its summary leading the check run, ending with the newest proof receipt (see below) when CI posted one                                                                                    |
 
 The server has no clone and no `gh`, so the brief reads the pull request through the App with
 `readPullRequest` from [`@selfhost/pr`](../../packages/pr/README.md): the files with their
@@ -209,6 +209,36 @@ point at `<SELFHOST_PUBLIC_URL>/v1/events?session=<id>`, or at the origin the de
 to when that is unset. The risk score does not read the run yet: the agent run, tests and revert
 history are listed as missing inputs in the check.
 
+### Proof receipts
+
+`POST /v1/receipts` takes the proof receipt the receipt action ([`ee/receipt`](../../ee/receipt/README.md),
+commercial) makes in a repository's own CI: the tests the pull request adds or changes and their
+results, Playwright screenshots of the screens it touches, its preview link, and the logs of
+what failed. The server stores it (table `receipts`, migration `0008_receipts.sql`), posts it on
+the pull request as one comment (marker `<!-- selfhost:receipt v1 -->`, edited in place by the
+next CI run), and syncs the pull request so the review brief ends with a `Proof receipt` section:
+the receipt's headline and links to the comment, the preview, the screenshots and the CI run. The
+check run's summary gets the headline too. `GET /v1/receipts/{id}` (admin token) returns a stored
+receipt.
+
+The POST needs no selfhost token and no secret in the repository. Its bearer is the job's
+**GitHub Actions OIDC token** (`permissions: id-token: write`) with this server's URL as audience
+(`SELFHOST_PUBLIC_URL`, else the origin the request was sent to). The server checks GitHub's
+signature against the issuer's published keys, the issuer, the audience and the expiry, then:
+
+- the receipt's repository must be the token's `repository` claim, and on a `pull_request` run
+  (`ref` = `refs/pull/<n>/merge`) its pull request must be `<n>`, else 403;
+- the GitHub App must be installed on that repository, else 403 (any repository on GitHub can get
+  a token for this audience; only the App's installations are accepted);
+- the pull request must exist (404). A receipt for a commit that is no longer the head is stored
+  and answered `202` with `brief: "stale"`, and nothing on GitHub changes.
+
+The token proves which repository's workflow sent the receipt, not that the tests in it are
+honest: the receipt runs the pull request's own code, as any CI does. It answers 404 without the
+GitHub App, or in a build without ee/. A receipt is a few kilobytes (log tails are masked and
+capped by the action); bodies over 2 MB are refused. On GitHub Enterprise Server set
+`SELFHOST_GITHUB_OIDC_ISSUER` to `https://<host>/_services/token`.
+
 ### Registering the App
 
 1. Create a GitHub App (organization settings, Developer settings, GitHub Apps). Webhook URL:
@@ -216,7 +246,7 @@ history are listed as missing inputs in the check.
    `openssl rand -hex 32`.
 2. Repository permissions: Checks read and write, Pull requests read and write, Issues read and
    write (labels and comments on pull requests), Contents read-only (changed manifests for the
-   risk score and the brief), Metadata read-only.
+   risk score and the brief), Metadata read-only. Proof receipts need nothing more.
 3. Subscribe to the **Pull request** event.
 4. Generate a private key, and set `SELFHOST_GITHUB_APP_ID`, `SELFHOST_GITHUB_PRIVATE_KEY_FILE`
    (or `SELFHOST_GITHUB_PRIVATE_KEY`) and `SELFHOST_GITHUB_WEBHOOK_SECRET` on the server, plus
@@ -258,19 +288,20 @@ pnpm --filter @selfhost/server start   # runs the build
 
 Environment:
 
-| Variable                           | Default            | Meaning                                                                                                    |
-| ---------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------- |
-| `PORT`                             | `4400`             | Port to listen on.                                                                                         |
-| `HOST`                             | `127.0.0.1`        | Address to bind.                                                                                           |
-| `DATABASE_URL`                     | unset              | `postgres://` URL. Unset uses the embedded database.                                                       |
-| `SELFHOST_DATA_DIR`                | `~/.selfhost/data` | Embedded database and token file.                                                                          |
-| `SELFHOST_TOKEN`                   | unset              | API token. Unset uses or creates `<data dir>/token`.                                                       |
-| `SELFHOST_CONFIG`                  | unset              | `selfhost.toml` with the defaults for events with no team policy: `[ledger]`, `[[redaction]]`, `[review]`. |
-| `SELFHOST_RETENTION_SWEEP`         | `daily`            | `off` keeps every event instead of deleting expired ones daily.                                            |
-| `SELFHOST_REVIEW_REFRESH`          | `15s`              | `off` stops building review items and timing out approvals on this server.                                 |
-| `SELFHOST_GITHUB_APP_ID`           | unset              | GitHub App id. With the key and secret, turns on `POST /v1/github/webhooks`.                               |
-| `SELFHOST_GITHUB_PRIVATE_KEY`      | unset              | The App's private key (PEM, or one line with `\n` escapes).                                                |
-| `SELFHOST_GITHUB_PRIVATE_KEY_FILE` | unset              | Path to the App's .pem, instead of `SELFHOST_GITHUB_PRIVATE_KEY`.                                          |
-| `SELFHOST_GITHUB_WEBHOOK_SECRET`   | unset              | The App's webhook secret.                                                                                  |
-| `SELFHOST_GITHUB_TEAM`             | unset              | Team whose stored `selfhost.toml` sets `[review]` for GitHub, and whose review items pick the owner.       |
-| `SELFHOST_PUBLIC_URL`              | unset              | This server's URL as people reach it, for trace links in the brief. Unset uses the delivery's origin.      |
+| Variable                           | Default            | Meaning                                                                                                             |
+| ---------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                             | `4400`             | Port to listen on.                                                                                                  |
+| `HOST`                             | `127.0.0.1`        | Address to bind.                                                                                                    |
+| `DATABASE_URL`                     | unset              | `postgres://` URL. Unset uses the embedded database.                                                                |
+| `SELFHOST_DATA_DIR`                | `~/.selfhost/data` | Embedded database and token file.                                                                                   |
+| `SELFHOST_TOKEN`                   | unset              | API token. Unset uses or creates `<data dir>/token`.                                                                |
+| `SELFHOST_CONFIG`                  | unset              | `selfhost.toml` with the defaults for events with no team policy: `[ledger]`, `[[redaction]]`, `[review]`.          |
+| `SELFHOST_RETENTION_SWEEP`         | `daily`            | `off` keeps every event instead of deleting expired ones daily.                                                     |
+| `SELFHOST_REVIEW_REFRESH`          | `15s`              | `off` stops building review items and timing out approvals on this server.                                          |
+| `SELFHOST_GITHUB_APP_ID`           | unset              | GitHub App id. With the key and secret, turns on `POST /v1/github/webhooks`.                                        |
+| `SELFHOST_GITHUB_PRIVATE_KEY`      | unset              | The App's private key (PEM, or one line with `\n` escapes).                                                         |
+| `SELFHOST_GITHUB_PRIVATE_KEY_FILE` | unset              | Path to the App's .pem, instead of `SELFHOST_GITHUB_PRIVATE_KEY`.                                                   |
+| `SELFHOST_GITHUB_WEBHOOK_SECRET`   | unset              | The App's webhook secret.                                                                                           |
+| `SELFHOST_GITHUB_TEAM`             | unset              | Team whose stored `selfhost.toml` sets `[review]` for GitHub, and whose review items pick the owner.                |
+| `SELFHOST_PUBLIC_URL`              | unset              | This server's URL as people reach it, for brief links and the receipts' OIDC audience. Unset: the request's origin. |
+| `SELFHOST_GITHUB_OIDC_ISSUER`      | GitHub's           | Issuer of the CI OIDC tokens `POST /v1/receipts` accepts; set it on GitHub Enterprise Server.                       |

@@ -1,0 +1,36 @@
+{
+  "schema": "selfhost.receipt/v1",
+  "repo": "acme/acme-web",
+  "pull": {
+    "number": 43,
+    "url": "https://github.com/acme/acme-web/pull/43",
+    "head_sha": "b2e4f6a8c0d1e3f5a7b9c1d3e5f7a9b1c3d5e7f9"
+  },
+  "created_at": "2026-11-08T11:00:00.000Z",
+  "verdict": "failed",
+  "app": {
+    "status": "failed",
+    "command": "npm start",
+    "url": "http://127.0.0.1:41235/",
+    "duration_ms": 900,
+    "exit_code": 1,
+    "error": "The start command exited with code 1 before http://127.0.0.1:41235/ answered.",
+    "log": {
+      "tail": "Error: Cannot find module './config'\n    at server.js:3",
+      "lines": 2,
+      "file": "logs/app.log"
+    }
+  },
+  "tests": {
+    "runs": [],
+    "not_run": [
+      {
+        "path": "spec/models/user_spec.rb",
+        "reason": "No runner for Ruby test files; set [receipt] test_command."
+      }
+    ]
+  },
+  "screens": { "source": "none", "shots": [] },
+  "preview": { "status": "none" },
+  "notes": ["The app did not start, so no screenshots were taken."]
+}

@@ -46,6 +46,7 @@ export type {
   StoredLayer,
   TeamCost,
 } from "./orgs.js";
+export type { ReceiptStore, StoredReceipt } from "./receipts.js";
 export { type RetentionResult, retentionSweep } from "./retention.js";
 export * from "./sources/index.js";
 export {

@@ -13,7 +13,8 @@
       "!packages/schema/json",
       "!packages/schema/compat",
       "!packages/schema/mcp-tools.json",
-      "!deploy/src/stack.generated.ts"
+      "!deploy/src/stack.generated.ts",
+      "!ee/receipt/action/index.mjs"
     ]
   },
   "formatter": {

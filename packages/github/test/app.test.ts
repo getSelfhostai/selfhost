@@ -89,6 +89,21 @@ describe("createGitHubApp", () => {
     expect(github.requests[0]?.path).toBe("/app/installations/42/access_tokens");
   });
 
+  it("finds the App's installation on a repository, signed with its key", async () => {
+    const github = new FakeGitHub({
+      appId: "123",
+      publicKey: publicKey.export({ type: "spki", format: "pem" }).toString(),
+      installationOf: (repo) => (repo === "acme/acme-web" ? 77 : undefined),
+    });
+    const app = createGitHubApp(credentials, { fetch: github.fetch });
+    expect(await app.repoInstallation("acme", "acme-web")).toBe(77);
+    expect(await app.repoInstallation("acme", "elsewhere")).toBeUndefined();
+    expect(github.requests.map((r) => r.path)).toEqual([
+      "/repos/acme/acme-web/installation",
+      "/repos/acme/elsewhere/installation",
+    ]);
+  });
+
   it("gets no token with a key that is not the App's", async () => {
     const other = generateKeyPairSync("rsa", { modulusLength: 2048 });
     const github = new FakeGitHub({ appId: "123", publicKey: other.publicKey });

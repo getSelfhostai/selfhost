@@ -7,6 +7,7 @@ import {
   validateCodexHook,
   validateCodexNotify,
   validateEvent,
+  validateReceipt,
   validateReviewItem,
 } from "../src/index.js";
 
@@ -33,6 +34,7 @@ export const CONTRACTS: Record<string, Contract> = {
   event: json("event.schema.json", validateEvent),
   config: { ext: ".toml", jsonSchema: "config.schema.json", validate: parseConfig },
   "review-item": json("review-item.schema.json", validateReviewItem),
+  receipt: json("receipt.schema.json", validateReceipt),
   "claude-code-hook": json("claude-code-hook.schema.json", validateClaudeCodeHook),
   "codex-hook": json("codex-hook.schema.json", validateCodexHook),
   "codex-notify": json("codex-notify.schema.json", validateCodexNotify),
