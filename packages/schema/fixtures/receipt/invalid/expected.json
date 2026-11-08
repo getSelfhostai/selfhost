@@ -1,0 +1,14 @@
+{
+  "unknown-verdict.json": {
+    "field": "verdict"
+  },
+  "missing-head-sha.json": {
+    "field": "pull.head_sha"
+  },
+  "test-unknown-runner.json": {
+    "field": "tests.runs[0].runner"
+  },
+  "shot-unknown-field.json": {
+    "field": "screens.shots[0].thumbnail"
+  }
+}

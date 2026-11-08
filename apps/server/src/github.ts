@@ -75,7 +75,7 @@ const DEFAULT_CONFIG = (() => {
 })();
 
 /** One line about an error, without request or response bodies. */
-function errorLine(error: unknown): string {
+export function errorLine(error: unknown): string {
   if (!(error instanceof Error)) return "unknown error";
   const status = (error as { status?: unknown }).status;
   const first = error.message.split("\n")[0] ?? "";
@@ -104,18 +104,86 @@ function agentPull(
   return {
     installation,
     agent: found.agent,
-    pull: {
-      owner: body.repository.owner.login,
-      repo: body.repository.name,
-      number: pr.number,
-      title: pr.title,
-      ...(pr.body ? { body: pr.body } : {}),
-      url: pr.html_url,
-      headSha: pr.head.sha,
-      baseSha: pr.base.sha,
-      headRef: pr.head.ref,
-      author: pr.user?.login ?? "ghost",
-      draft: pr.draft === true,
+    pull: agentPullOf(body.repository.owner.login, body.repository.name, pr),
+  };
+}
+
+/** The fields of a pull request, as the webhook and GET /repos/{owner}/{repo}/pulls/{number} give it. */
+export interface PullRequestFields {
+  number: number;
+  title: string;
+  body: string | null;
+  html_url: string;
+  draft?: boolean;
+  user: { login: string; type?: string } | null;
+  head: { sha: string; ref: string };
+  base: { sha: string };
+}
+
+export function agentPullOf(owner: string, repo: string, pr: PullRequestFields): AgentPull {
+  return {
+    owner,
+    repo,
+    number: pr.number,
+    title: pr.title,
+    ...(pr.body ? { body: pr.body } : {}),
+    url: pr.html_url,
+    headSha: pr.head.sha,
+    baseSha: pr.base.sha,
+    headRef: pr.head.ref,
+    author: pr.user?.login ?? "ghost",
+    draft: pr.draft === true,
+  };
+}
+
+/** Keeps agent pull requests on GitHub in step with what selfhost knows about them. */
+export interface PullSync {
+  /** Runs `work` after every earlier sync of the same pull request, so two never race. */
+  serial<T>(installation: number, where: string, work: () => Promise<T>): Promise<T>;
+  /**
+   * Syncs the risk and agent labels, the selfhost/review check run, the brief comment and the
+   * review request of one open agent pull request. Not queued: call it inside `serial`.
+   */
+  sync(installation: number, pull: AgentPull, agent: AgentRef, server: string): Promise<SyncResult>;
+}
+
+/** `owner/repo#number`, the key `serial` queues on. */
+export const pullKey = (pull: Pick<AgentPull, "owner" | "repo" | "number">) =>
+  `${pull.owner}/${pull.repo}#${pull.number}`;
+
+export function pullSync(
+  github: GitHubApp,
+  ledger: Ledger,
+  options: Omit<GitHubRouteOptions, "app">,
+): PullSync {
+  const providers: GitHubProviders = {
+    risk: eeRisk(undefined, options.clones, ledger),
+    owner: reviewOwner(ledger, options.team),
+    brief: reviewBrief(ledger),
+    ...options.providers,
+  };
+  const config = options.config ?? (async () => DEFAULT_CONFIG);
+  const queued = queue();
+  return {
+    serial: (installation, where, work) => queued(`${installation}/${where}`, work),
+    async sync(installation, pull, agent, server) {
+      const octokit = github.installation(installation);
+      const reads = pullReads(octokit, pull, agent, ledger);
+      const desired = await desiredState(
+        { octokit, pull, agent, config: await config(), reads, server },
+        providers,
+      );
+      return syncPullRequest(
+        octokit,
+        {
+          owner: pull.owner,
+          repo: pull.repo,
+          number: pull.number,
+          headSha: pull.headSha,
+          author: pull.author,
+        },
+        desired,
+      );
     },
   };
 }
@@ -145,24 +213,21 @@ function queue() {
  * forgets the id and answers 500, so a redelivery from GitHub runs it again. Everything else
  * that is signed answers 200 with `handled: false`.
  */
-export function githubRoutes(app: Hono, ledger: Ledger, options: GitHubRouteOptions): void {
+export function githubRoutes(
+  app: Hono,
+  ledger: Ledger,
+  options: GitHubRouteOptions,
+): PullSync | undefined {
   const github = options.app;
   if (!github) {
     // Answered here, not by the bearer token check, so the route looks absent.
     app.post(GITHUB_WEBHOOK_PATH, (c) =>
       c.json(apiError("not_found", `No route for ${c.req.method} ${c.req.path}`), 404),
     );
-    return;
+    return undefined;
   }
-  const providers: GitHubProviders = {
-    risk: eeRisk(undefined, options.clones, ledger),
-    owner: reviewOwner(ledger, options.team),
-    brief: reviewBrief(),
-    ...options.providers,
-  };
-  const config = options.config ?? (async () => DEFAULT_CONFIG);
+  const pulls = pullSync(github, ledger, options);
   const log = options.log ?? console.log;
-  const serial = queue();
 
   app.post(
     GITHUB_WEBHOOK_PATH,
@@ -206,29 +271,13 @@ export function githubRoutes(app: Hono, ledger: Ledger, options: GitHubRouteOpti
       }
 
       const { pull, installation, agent } = target;
-      const where = `${pull.owner}/${pull.repo}#${pull.number}`;
+      const where = pullKey(pull);
       const server = options.publicUrl ?? new URL(c.req.url).origin;
       let result: SyncResult;
       try {
-        result = await serial(`${installation}/${where}`, async () => {
-          const octokit = github.installation(installation);
-          const reads = pullReads(octokit, pull, agent, ledger);
-          const desired = await desiredState(
-            { octokit, pull, agent, config: await config(), reads, server },
-            providers,
-          );
-          return syncPullRequest(
-            octokit,
-            {
-              owner: pull.owner,
-              repo: pull.repo,
-              number: pull.number,
-              headSha: pull.headSha,
-              author: pull.author,
-            },
-            desired,
-          );
-        });
+        result = await pulls.serial(installation, where, () =>
+          pulls.sync(installation, pull, agent, server),
+        );
       } catch (error) {
         await ledger.deliveries.release(delivery);
         log(`github: delivery ${delivery} for ${where} failed: ${errorLine(error)}`);
@@ -248,6 +297,7 @@ export function githubRoutes(app: Hono, ledger: Ledger, options: GitHubRouteOpti
       } satisfies WebhookResponse);
     },
   );
+  return pulls;
 }
 
 /**

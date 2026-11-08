@@ -11,6 +11,7 @@ export * from "./mcp.js";
 export * from "./org.js";
 export * from "./policy-test.js";
 export * from "./provenance.js";
+export * from "./receipt.js";
 export * from "./redact.js";
 export * from "./request-type.js";
 export * from "./review-item.js";

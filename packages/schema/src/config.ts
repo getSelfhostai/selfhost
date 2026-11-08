@@ -326,6 +326,92 @@ export const RuntimeSchema = Type.Object(
   },
 );
 
+export const ReceiptConfigSchema = Type.Object(
+  {
+    start: Type.Optional(
+      NonEmpty({
+        description:
+          "Shell command that starts the app for the proof receipt's screenshots. Default: the default [runtime.run] command.",
+      }),
+    ),
+    cwd: Type.Optional(
+      NonEmpty({
+        description:
+          "Folder to run start in, relative to the repository root. Default: the run command's cwd.",
+      }),
+    ),
+    port: Type.Optional(
+      Type.Integer({
+        minimum: 1,
+        maximum: 65535,
+        description:
+          "Port the app listens on, passed to start as SELFHOST_PORT and PORT. Default: a free port.",
+      }),
+    ),
+    ready_url: Type.Optional(
+      NonEmpty({
+        description:
+          "URL that answers once the app is up, also the base URL of the screens. $SELFHOST_PORT expands. Default: http://127.0.0.1:$SELFHOST_PORT/.",
+      }),
+    ),
+    ready_timeout_seconds: Type.Optional(
+      Type.Integer({
+        minimum: 1,
+        description:
+          "Seconds to wait for ready_url to answer before the app counts as failed. Default: 120.",
+      }),
+    ),
+    test_command: Type.Optional(
+      NonEmpty({
+        description:
+          "Command for the tests the pull request adds or changes, run from the repository root: {file} is one test file (run once per file), {files} all of them (run once). Default: the runner each file's package uses (vitest, jest, node --test, pytest or go test).",
+      }),
+    ),
+    tests: Type.Optional(
+      Type.Array(NonEmpty(), {
+        description:
+          "Extra globs of test files, on top of the usual names (*.test.*, *.spec.*, __tests__/, test_*.py, *_test.py, *_test.go).",
+      }),
+    ),
+    test_timeout_seconds: Type.Optional(
+      Type.Integer({
+        minimum: 1,
+        description: "Seconds each test run may take before it is stopped. Default: 600.",
+      }),
+    ),
+    max_tests: Type.Optional(
+      Type.Integer({
+        minimum: 1,
+        description: "Most test runs per receipt; the rest are listed as not run. Default: 20.",
+      }),
+    ),
+    screens: Type.Optional(
+      Type.Record(
+        Type.String(),
+        Type.Union([NonEmpty(), Type.Array(NonEmpty(), { minItems: 1 })], {
+          description:
+            "URL path, or paths, of the screens that show these files, such as /settings.",
+        }),
+        {
+          description:
+            "Globs of changed files to the screens Playwright takes screenshots of. Without it the receipt captures the home page.",
+        },
+      ),
+    ),
+    max_screens: Type.Optional(
+      Type.Integer({
+        minimum: 1,
+        description: "Most screenshots per receipt. Default: 10.",
+      }),
+    ),
+  },
+  {
+    additionalProperties: false,
+    description:
+      "The proof receipt on agent pull requests: how CI starts the app, runs the tests the change adds or edits, and which screens it takes screenshots of. Setup and the start command come from [runtime] unless set here.",
+  },
+);
+
 const PlanTiersSchema = (plan: string) =>
   Type.Optional(
     Type.Record(Type.String({ pattern: "^[a-z0-9_]+$" }), PlanLimitsSchema, {
@@ -719,6 +805,7 @@ export const SelfhostConfigSchema = Type.Object(
       Type.Record(Type.String(), TeamSchema, { default: {}, description: "Teams by name." }),
     ),
     runtime: Type.Optional(RuntimeSchema),
+    receipt: Type.Optional(ReceiptConfigSchema),
   },
   {
     $id: CONFIG_SCHEMA_URL,
@@ -737,6 +824,7 @@ export type Team = Static<typeof TeamSchema>;
 export type PlanLimits = Static<typeof PlanLimitsSchema>;
 export type Runtime = Static<typeof RuntimeSchema>;
 export type RunCommand = Static<typeof RunCommandSchema>;
+export type ReceiptConfig = Static<typeof ReceiptConfigSchema>;
 export type Budget = Static<typeof BudgetSchema>;
 
 type Present<T> = Exclude<T, undefined>;

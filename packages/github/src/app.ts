@@ -69,6 +69,8 @@ export interface GitHubApp {
    * is fetched once and renewed by @octokit/auth-app before it expires.
    */
   installation(id: number): Octokit;
+  /** The App's installation on owner/repo, or undefined when it is not installed there. */
+  repoInstallation(owner: string, repo: string): Promise<number | undefined>;
 }
 
 /** The GitHub App: webhook signatures through @octokit/webhooks, API calls through Octokit. */
@@ -85,6 +87,8 @@ export function createGitHubApp(
     error: (message: string) => write(`github: ${message}`),
   };
   const installations = new Map<number, Octokit>();
+  const request = options.fetch ? { request: { fetch: options.fetch } } : {};
+  let asApp: Octokit | undefined;
 
   return {
     async verify(body, signature) {
@@ -106,11 +110,26 @@ export function createGitHubApp(
             installationId: id,
           },
           log,
-          ...(options.fetch ? { request: { fetch: options.fetch } } : {}),
+          ...request,
         });
         installations.set(id, octokit);
       }
       return octokit;
+    },
+    async repoInstallation(owner, repo) {
+      asApp ??= new Octokit({
+        authStrategy: createAppAuth,
+        auth: { appId: credentials.appId, privateKey: credentials.privateKey },
+        log,
+        ...request,
+      });
+      try {
+        const { data } = await asApp.rest.apps.getRepoInstallation({ owner, repo });
+        return data.id;
+      } catch (error) {
+        if ((error as { status?: number }).status === 404) return undefined;
+        throw error;
+      }
     },
   };
 }

@@ -1,0 +1,44 @@
+{
+  "name": "@selfhost/ee-receipt",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Proof receipt for agent pull requests: starts the app, runs the tests the change adds or edits, takes Playwright screenshots of the screens it touches, finds the preview link, and renders the receipt for the pull request and the review brief.",
+  "license": "SEE LICENSE IN ../LICENSE",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "bundle": "tsup --config tsup.action.config.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@selfhost/attribution": "workspace:*",
+    "@selfhost/schema": "workspace:*",
+    "picomatch": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/picomatch": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

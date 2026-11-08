@@ -1,9 +1,10 @@
 import { defineConfig } from "vitest/config";
 
-// Tests here start an embedded Postgres; give setup room on slow CI runners.
+// Tests here start an embedded Postgres, often several per test (init, import, team join);
+// give them room on slow CI runners and busy laptops.
 export default defineConfig({
   test: {
     hookTimeout: 60_000,
-    testTimeout: 30_000,
+    testTimeout: 60_000,
   },
 });

@@ -15,7 +15,8 @@
       "!packages/schema/mcp-tools.json",
       "!packages/schema/event-versions.json",
       "!docs/compatibility",
-      "!deploy/src/stack.generated.ts"
+      "!deploy/src/stack.generated.ts",
+      "!ee/receipt/action/index.mjs"
     ]
   },
   "css": {

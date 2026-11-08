@@ -51,6 +51,8 @@ services:
       SELFHOST_GITHUB_PRIVATE_KEY: ${SELFHOST_GITHUB_PRIVATE_KEY:-}
       SELFHOST_GITHUB_WEBHOOK_SECRET: ${SELFHOST_GITHUB_WEBHOOK_SECRET:-}
       SELFHOST_GITHUB_TEAM: ${SELFHOST_GITHUB_TEAM:-}
+      # Issuer of the CI tokens proof receipts are posted with; set only on GitHub Enterprise Server.
+      SELFHOST_GITHUB_OIDC_ISSUER: ${SELFHOST_GITHUB_OIDC_ISSUER:-https://token.actions.githubusercontent.com}
     ports:
       - "${SELFHOST_BIND:-0.0.0.0}:${SELFHOST_PORT:-4400}:4400"
     # Health check: HEALTHCHECK in the image, GET /v1/health.

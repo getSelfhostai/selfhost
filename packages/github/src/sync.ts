@@ -94,7 +94,7 @@ export function checkExternalId(pr: Pick<PullRequestRef, "owner" | "repo" | "num
   return `selfhost:${lower(pr.owner)}/${lower(pr.repo)}#${pr.number}@${lower(pr.headSha)}`;
 }
 
-/** The brief comment body as posted: the marker first unless `body` already holds it. */
+/** A marked comment body as posted: the marker first unless `body` already holds it. */
 export function briefBody(brief: { body: string; marker: string }): string {
   const body = brief.body.includes(brief.marker) ? brief.body : `${brief.marker}\n${brief.body}`;
   return clip(body, MAX_COMMENT_BODY);
@@ -237,36 +237,61 @@ async function syncReviewers(
   result.writes.push({ action: "request_reviewers", users: newUsers, teams: newTeams });
 }
 
-async function syncBrief(
+/** The bot comment holding `marker`, as found and kept in place by `syncComment`. */
+export interface SyncedComment {
+  id: number;
+  /** The comment on github.com. */
+  url: string;
+  /** The write made, or none when the comment already read `body`. */
+  write?: SyncWrite;
+}
+
+/**
+ * Keeps one bot comment on a pull request: finds the comment holding `marker` (only an app's
+ * own comment counts, so a person quoting the marker does not take it over), edits it when its
+ * body differs, or posts it once.
+ */
+export async function syncComment(
   octokit: Octokit,
-  pr: PullRequestRef,
-  brief: NonNullable<DesiredState["brief"]>,
-  writes: SyncWrite[],
-) {
-  if (brief.marker.trim() === "") throw new Error("The brief marker is empty");
-  const body = briefBody(brief);
+  pr: Pick<PullRequestRef, "owner" | "repo" | "number">,
+  comment: { body: string; marker: string },
+): Promise<SyncedComment> {
+  if (comment.marker.trim() === "") throw new Error("The comment marker is empty");
+  const body = briefBody(comment);
   const issue = { owner: pr.owner, repo: pr.repo, issue_number: pr.number };
   const comments = await octokit.paginate(octokit.rest.issues.listComments, {
     ...issue,
     per_page: 100,
   });
-  // Only an app's own comment counts: a person quoting the marker does not take the brief over.
   const existing = comments.find(
-    (comment) => comment.user?.type === "Bot" && (comment.body ?? "").includes(brief.marker),
+    (found) => found.user?.type === "Bot" && (found.body ?? "").includes(comment.marker),
   );
   if (!existing) {
-    await octokit.rest.issues.createComment({ ...issue, body });
-    writes.push({ action: "create_comment" });
-    return;
+    const { data } = await octokit.rest.issues.createComment({ ...issue, body });
+    return { id: data.id, url: data.html_url, write: { action: "create_comment" } };
   }
-  if (sameBody(existing.body ?? "", body)) return;
+  if (sameBody(existing.body ?? "", body)) return { id: existing.id, url: existing.html_url };
   await octokit.rest.issues.updateComment({
     owner: pr.owner,
     repo: pr.repo,
     comment_id: existing.id,
     body,
   });
-  writes.push({ action: "update_comment", id: existing.id });
+  return {
+    id: existing.id,
+    url: existing.html_url,
+    write: { action: "update_comment", id: existing.id },
+  };
+}
+
+async function syncBrief(
+  octokit: Octokit,
+  pr: PullRequestRef,
+  brief: NonNullable<DesiredState["brief"]>,
+  writes: SyncWrite[],
+) {
+  const { write } = await syncComment(octokit, pr, brief);
+  if (write) writes.push(write);
 }
 
 /**

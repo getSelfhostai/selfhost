@@ -1,0 +1,70 @@
+{
+  "schema": "selfhost.receipt/v1",
+  "repo": "acme/acme-web",
+  "pull": {
+    "number": 42,
+    "url": "https://github.com/acme/acme-web/pull/42",
+    "head_sha": "5786c5c9d81ca4218b7e44bf0007f5580f66c489",
+    "base_sha": "c3b8739bdcca2b4e2f5bdead2a8f238916813446"
+  },
+  "created_at": "2026-11-08T10:15:00.000Z",
+  "verdict": "passed",
+  "ci": {
+    "run_url": "https://github.com/acme/acme-web/actions/runs/9001/attempts/1",
+    "run_id": "9001",
+    "attempt": 1,
+    "workflow": "CI"
+  },
+  "artifact": {
+    "name": "selfhost-receipt",
+    "url": "https://github.com/acme/acme-web/actions/runs/9001/artifacts/77"
+  },
+  "setup": {
+    "command": "pnpm install --frozen-lockfile",
+    "status": "passed",
+    "exit_code": 0,
+    "duration_ms": 8400
+  },
+  "app": {
+    "status": "started",
+    "command": "pnpm dev --port $SELFHOST_PORT",
+    "url": "http://127.0.0.1:41234/",
+    "duration_ms": 3100
+  },
+  "tests": {
+    "runs": [
+      {
+        "files": ["src/pages/settings/Billing.test.tsx"],
+        "runner": "mocha",
+        "command": "vitest run src/pages/settings/Billing.test.tsx",
+        "cwd": ".",
+        "status": "passed",
+        "exit_code": 0,
+        "duration_ms": 1900
+      }
+    ],
+    "not_run": []
+  },
+  "screens": {
+    "base_url": "http://127.0.0.1:41234/",
+    "source": "app",
+    "shots": [
+      {
+        "path": "/settings/billing",
+        "url": "http://127.0.0.1:41234/settings/billing",
+        "files": ["src/pages/settings/Billing.tsx"],
+        "status": "captured",
+        "http_status": 200,
+        "image": "screens/settings-billing.png"
+      }
+    ]
+  },
+  "preview": {
+    "status": "ready",
+    "url": "https://acme-web-git-agent-billing-acme.vercel.app",
+    "name": "Preview",
+    "source": "deployment",
+    "provider": "vercel"
+  },
+  "notes": []
+}

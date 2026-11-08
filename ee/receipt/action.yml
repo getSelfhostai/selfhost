@@ -1,0 +1,159 @@
+# The selfhost proof receipt, as a GitHub Action. Commercial code under ee/LICENSE.
+name: selfhost proof receipt
+description: >-
+  On an agent pull request: starts the app, runs the tests the pull request adds or changes,
+  takes Playwright screenshots of the screens it touches, finds its preview link, and attaches
+  the receipt to the pull request and the selfhost review brief.
+author: selfhost
+branding:
+  icon: check-square
+  color: green
+
+inputs:
+  server-url:
+    description: >-
+      Base URL of the team's selfhost server, such as https://selfhost.example.com. The receipt is
+      posted there with the job's GitHub OIDC token (needs permissions: id-token: write), and the
+      server's GitHub App comments it and links it from the review brief. Without it, or when the
+      post fails, the action comments with github-token.
+    required: false
+  github-token:
+    description: >-
+      Token for reading the pull request's files, deployments and statuses and, without a server,
+      commenting. Needs pull-requests: write for the comment, deployments: read and statuses: read
+      for the preview link.
+    default: ${{ github.token }}
+  config:
+    description: Path of selfhost.toml from the working directory.
+    default: selfhost.toml
+  working-directory:
+    description: The checkout of the repository, relative to the workspace.
+    default: .
+  setup:
+    description: Setup script, used when selfhost.toml has no [runtime] setup.
+    required: false
+  start:
+    description: Command that starts the app, used when selfhost.toml has no [receipt] start and no [runtime.run] command.
+    required: false
+  ready-url:
+    description: URL that answers once the app is up, used when selfhost.toml has no [receipt] ready_url. $SELFHOST_PORT expands.
+    required: false
+  test-command:
+    description: Command for the changed tests ({file} or {files}), used when selfhost.toml has no [receipt] test_command.
+    required: false
+  preview-url:
+    description: The pull request's preview link, when the host reports it neither as a GitHub deployment nor as a commit status.
+    required: false
+  preview-timeout:
+    description: Seconds to wait for a preview deployment that is still deploying.
+    default: "300"
+  agent-only:
+    description: Make a receipt only for agent pull requests (by agent bot, trailer or branch prefix).
+    default: "true"
+  screenshots:
+    description: Take Playwright screenshots. false skips installing Chromium.
+    default: "true"
+  browser-deps:
+    description: Install Chromium's system packages too (apt, with sudo). The GitHub-hosted Ubuntu runners already have them.
+    default: "false"
+  fail-on-failure:
+    description: Fail the job when the receipt fails (setup, the app, a test, a screen or the preview).
+    default: "true"
+  artifact-name:
+    description: Name of the workflow artifact with the screenshots, logs and receipt.html.
+    default: selfhost-receipt
+  retention-days:
+    description: Days to keep that artifact. 0 uses the repository's setting.
+    default: "14"
+  playwright-version:
+    description: playwright-core version used for the screenshots.
+    default: "1.64.1"
+
+outputs:
+  verdict:
+    description: passed, failed or nothing_checked. Empty when the pull request got no receipt.
+    value: ${{ steps.run.outputs.verdict }}
+  skipped:
+    description: true when the run made no receipt (not a pull request, or not an agent pull request).
+    value: ${{ steps.run.outputs.skipped }}
+  dir:
+    description: Folder with receipt.json, receipt.md, receipt.html, screens/ and logs/.
+    value: ${{ steps.run.outputs.dir }}
+  artifact-url:
+    description: Download link of the artifact.
+    value: ${{ steps.upload.outputs.artifact-url }}
+  comment-url:
+    description: The receipt comment on the pull request.
+    value: ${{ steps.report.outputs.comment-url }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install Playwright
+      if: inputs.screenshots == 'true'
+      shell: bash
+      env:
+        VERSION: ${{ inputs.playwright-version }}
+      run: |
+        npm install --prefix "$RUNNER_TEMP/selfhost-receipt-playwright" --no-save --no-audit \
+          --no-fund --loglevel=error "playwright-core@$VERSION"
+
+    - name: Restore Chromium
+      if: inputs.screenshots == 'true'
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.tool_cache }}/selfhost-receipt-browsers
+        key: selfhost-receipt-chromium-${{ runner.os }}-${{ runner.arch }}-${{ inputs.playwright-version }}
+
+    - name: Install Chromium
+      if: inputs.screenshots == 'true'
+      shell: bash
+      env:
+        PLAYWRIGHT_BROWSERS_PATH: ${{ runner.tool_cache }}/selfhost-receipt-browsers
+        DEPS: ${{ inputs.browser-deps == 'true' && '--with-deps' || '' }}
+      run: |
+        # Only the headless shell, and a no-op when the cache above restored it.
+        "$RUNNER_TEMP/selfhost-receipt-playwright/node_modules/.bin/playwright-core" install $DEPS --only-shell chromium
+
+    - name: Make the receipt
+      id: run
+      shell: bash
+      env:
+        PLAYWRIGHT_BROWSERS_PATH: ${{ runner.tool_cache }}/selfhost-receipt-browsers
+        SELFHOST_RECEIPT_PLAYWRIGHT: ${{ runner.temp }}/selfhost-receipt-playwright/node_modules/playwright-core
+        INPUT_SERVER_URL: ${{ inputs.server-url }}
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        INPUT_CONFIG: ${{ inputs.config }}
+        INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        INPUT_SETUP: ${{ inputs.setup }}
+        INPUT_START: ${{ inputs.start }}
+        INPUT_READY_URL: ${{ inputs.ready-url }}
+        INPUT_TEST_COMMAND: ${{ inputs.test-command }}
+        INPUT_PREVIEW_URL: ${{ inputs.preview-url }}
+        INPUT_PREVIEW_TIMEOUT: ${{ inputs.preview-timeout }}
+        INPUT_AGENT_ONLY: ${{ inputs.agent-only }}
+        INPUT_SCREENSHOTS: ${{ inputs.screenshots }}
+        INPUT_ARTIFACT_NAME: ${{ inputs.artifact-name }}
+      run: node "$GITHUB_ACTION_PATH/action/index.mjs" run
+
+    - name: Upload the screenshots and logs
+      id: upload
+      if: always() && steps.run.outputs.dir != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ steps.run.outputs.dir }}
+        retention-days: ${{ inputs.retention-days }}
+        if-no-files-found: ignore
+
+    - name: Attach the receipt to the pull request
+      id: report
+      if: always() && steps.run.outputs.dir != ''
+      shell: bash
+      env:
+        INPUT_SERVER_URL: ${{ inputs.server-url }}
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        INPUT_FAIL_ON_FAILURE: ${{ inputs.fail-on-failure }}
+        INPUT_ARTIFACT_NAME: ${{ inputs.artifact-name }}
+        SELFHOST_RECEIPT_ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+      run: node "$GITHUB_ACTION_PATH/action/index.mjs" report

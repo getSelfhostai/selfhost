@@ -78,6 +78,7 @@ describe("the ee/ license boundary", () => {
       );
     expect(dependents).toEqual([
       "apps/cli -> @selfhost/ee-risk",
+      "apps/server -> @selfhost/ee-receipt",
       "apps/server -> @selfhost/ee-risk",
     ]);
   });

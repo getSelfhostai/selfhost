@@ -16,6 +16,7 @@ import { createDecisionStore, type DecisionStore } from "./decisions/store.js";
 import { createDeliveryStore, type DeliveryStore } from "./deliveries.js";
 import { type LedgerFieldError, LedgerQueryError, LedgerValidationError } from "./errors.js";
 import { createOrgStore, type OrgStore } from "./orgs.js";
+import { createReceiptStore, type ReceiptStore } from "./receipts.js";
 import { redactBatch, teamRedaction } from "./redaction.js";
 import { createTeamStore, type TeamStore } from "./teams.js";
 
@@ -86,6 +87,8 @@ export interface Ledger {
   decisions: DecisionStore;
   /** GitHub webhook delivery ids already handled, so a redelivery changes nothing. */
   deliveries: DeliveryStore;
+  /** Proof receipts the receipt step in CI posted, by pull request. */
+  receipts: ReceiptStore;
   close(): Promise<void>;
 }
 
@@ -222,6 +225,8 @@ export function createLedger(db: Database, options: LedgerOptions = {}): Ledger 
     decisions: createDecisionStore(db),
 
     deliveries: createDeliveryStore(db),
+
+    receipts: createReceiptStore(db),
 
     close: () => db.close(),
   };

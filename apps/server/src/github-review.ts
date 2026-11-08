@@ -2,11 +2,13 @@ import {
   BRIEF_MARKER,
   briefInputs,
   buildBrief,
+  GITHUB_COMMENT_LIMIT,
   renderBrief,
   summarizeBrief,
 } from "@selfhost/brief";
 import type { Ledger } from "@selfhost/ledger";
 import { openReviewList, routeItem } from "@selfhost/review";
+import { loadReceipt } from "./ee.js";
 import type { GitHubProviders } from "./github-pull.js";
 
 /**
@@ -34,12 +36,25 @@ export function reviewOwner(ledger: Ledger, team: string | undefined): GitHubPro
   };
 }
 
+/** The ee/receipt functions the brief and the receipts route use. */
+export type ReceiptModule = NonNullable<Awaited<ReturnType<typeof loadReceipt>>>;
+
+/** The stored receipt's own URL on this server. */
+export const receiptUrl = (server: string, id: string) =>
+  `${server.replace(/\/+$/, "")}/v1/receipts/${id}`;
+
 /**
  * The review brief, built on the server: the change read from GitHub through the App (no clone,
  * no gh), its run joined from the ledger, `[review] high_risk_paths` from the delivery's
  * selfhost.toml, and trace links to this server's events API. Its summary leads the check run.
+ * When the receipt step in CI has posted a proof receipt for the pull request, the brief ends
+ * with its headline and links to the receipt comment, the preview and the screenshots.
  */
-export function reviewBrief(): GitHubProviders["brief"] {
+export function reviewBrief(
+  ledger: Pick<Ledger, "receipts">,
+  load: () => Promise<ReceiptModule | undefined> = loadReceipt,
+): GitHubProviders["brief"] {
+  let loaded: Promise<ReceiptModule | undefined> | undefined;
   return async (ctx) => {
     const change = await ctx.reads.change();
     const brief = buildBrief(
@@ -48,6 +63,32 @@ export function reviewBrief(): GitHubProviders["brief"] {
         server: ctx.server,
       }),
     );
-    return { body: renderBrief(brief), marker: BRIEF_MARKER, summary: summarizeBrief(brief) };
+    const stored = await ledger.receipts.latest(
+      `${ctx.pull.owner}/${ctx.pull.repo}`,
+      ctx.pull.number,
+    );
+    loaded ??= stored ? load() : undefined;
+    const receipts = stored ? await loaded : undefined;
+    const section =
+      stored && receipts
+        ? receipts.receiptBriefSection(stored.receipt, {
+            headSha: ctx.pull.headSha,
+            ...(stored.comment_url ? { commentUrl: stored.comment_url } : {}),
+            receiptUrl: receiptUrl(ctx.server, stored.id),
+          })
+        : undefined;
+    const summary = summarizeBrief(brief);
+    if (!section || !stored || !receipts) {
+      return { body: renderBrief(brief), marker: BRIEF_MARKER, summary };
+    }
+    const body = renderBrief(brief, { maxChars: GITHUB_COMMENT_LIMIT - section.length - 2 });
+    const current = stored.head_sha === ctx.pull.headSha.toLowerCase();
+    return {
+      body: `${body}\n${section}\n`,
+      marker: BRIEF_MARKER,
+      summary: current
+        ? `${summary} Proof receipt: ${receipts.receiptHeadline(stored.receipt)}`
+        : summary,
+    };
   };
 }

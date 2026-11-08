@@ -130,6 +130,7 @@ describe.each(BACKENDS)("ledger on $name", (backend) => {
         "deliveries",
         "orgs",
         "query",
+        "receipts",
         "teams",
       ]);
       expect(Object.keys(ledger.teams).filter((key) => /event/i.test(key))).toEqual([]);
@@ -139,6 +140,8 @@ describe.each(BACKENDS)("ledger on $name", (backend) => {
       expect(Object.keys(ledger.deliveries).sort()).toEqual(["claim", "release"]);
       // decisions only reads: a decision is recorded with append and corrected by a new one.
       expect(Object.keys(ledger.decisions).sort()).toEqual(["get", "search"]);
+      // receipts holds proof receipts from CI, never events.
+      expect(Object.keys(ledger.receipts).sort()).toEqual(["add", "get", "latest", "setComment"]);
     });
   });
 

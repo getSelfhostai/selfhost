@@ -25,6 +25,7 @@ export interface FakeComment {
   id: number;
   body: string;
   user: FakeUser;
+  html_url?: string;
 }
 
 export interface FakeCheckRun {
@@ -53,6 +54,13 @@ export interface FakeCommit {
 
 export interface FakePull {
   author: string;
+  /** What GET /repos/{owner}/{repo}/pulls/{number} answers with. */
+  title?: string;
+  body?: string;
+  state?: "open" | "closed";
+  draft?: boolean;
+  head?: { sha: string; ref: string };
+  base?: { sha: string; ref: string };
   labels: string[];
   requestedUsers: string[];
   requestedTeams: string[];
@@ -70,6 +78,8 @@ export interface FakeGitHubOptions {
   botLogin?: string;
   /** Logins a review can be requested from. Default: anyone but the author. */
   collaborators?: string[];
+  /** The App's installation id on a repository (owner/name), or undefined. Default: 1 on all. */
+  installationOf?: (repo: string) => number | undefined;
 }
 
 /** The token the fake hands out for installations; not shaped like a real one. */
@@ -179,11 +189,26 @@ export class FakeGitHub {
     const { method, path } = request;
     let match = /^\/app\/installations\/(\d+)\/access_tokens$/.exec(path);
     if (match && method === "POST") return this.accessToken(headers);
+    match = /^\/repos\/([^/]+)\/([^/]+)\/installation$/.exec(path);
+    if (match && method === "GET") {
+      const refused = this.checkAppJwt(headers);
+      if (refused) return refused;
+      const id = (this.options.installationOf ?? (() => 1))(`${match[1]}/${match[2]}`);
+      return id === undefined ? notFound() : json(200, { id, app_id: Number(this.options.appId) });
+    }
 
     if (headers.get("authorization") !== `token ${FAKE_INSTALLATION_TOKEN}`) {
       return json(401, { message: "Bad credentials" });
     }
 
+    match = /^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)$/.exec(path);
+    if (match && method === "GET") {
+      const [, owner, repo, number] = match as unknown as string[];
+      const pull = this.pulls.get(`${owner}/${repo}#${number}`);
+      return pull
+        ? json(200, this.pullObject(owner as string, repo as string, Number(number), pull))
+        : notFound();
+    }
     match = /^\/repos\/([^/]+)\/([^/]+)\/(issues|pulls)\/(\d+)\/(.+)$/.exec(path);
     if (match) {
       const [, owner, repo, , number, rest] = match as unknown as string[];
@@ -218,7 +243,8 @@ export class FakeGitHub {
     return undefined;
   }
 
-  private accessToken(headers: Headers): Response {
+  /** 401 unless the request carries a JWT for the App signed with its key, when one is set. */
+  private checkAppJwt(headers: Headers): Response | undefined {
     if (this.publicKey) {
       const jwt = /^bearer (.+)$/i.exec(headers.get("authorization") ?? "")?.[1] ?? "";
       const [header = "", payload = "", signature = ""] = jwt.split(".");
@@ -235,6 +261,12 @@ export class FakeGitHub {
         return json(401, { message: "A JSON web token could not be decoded" });
       }
     }
+    return undefined;
+  }
+
+  private accessToken(headers: Headers): Response {
+    const refused = this.checkAppJwt(headers);
+    if (refused) return refused;
     return json(201, {
       token: FAKE_INSTALLATION_TOKEN,
       expires_at: new Date(Date.now() + 3_600_000).toISOString(),
@@ -298,13 +330,40 @@ export class FakeGitHub {
     }
     if (rest === "comments" && method === "GET") return json(200, pull.comments);
     if (rest === "comments" && method === "POST") {
-      const comment = { id: this.nextId++, body: (body as { body: string }).body, user: bot };
+      const id = this.nextId++;
+      const comment = {
+        id,
+        body: (body as { body: string }).body,
+        user: bot,
+        html_url: `https://github.com/${this.where(pull)}#issuecomment-${id}`,
+      };
       pull.comments.push(comment);
       return json(201, comment);
     }
     if (rest === "files" && method === "GET") return json(200, pull.files);
     if (rest === "commits" && method === "GET") return json(200, pull.commits);
     return notFound();
+  }
+
+  private where(pull: FakePull): string {
+    for (const [key, value] of this.pulls) {
+      if (value === pull) return key.replace("#", "/pull/");
+    }
+    return "unknown";
+  }
+
+  private pullObject(owner: string, repo: string, number: number, pull: FakePull) {
+    return {
+      number,
+      html_url: `https://github.com/${owner}/${repo}/pull/${number}`,
+      title: pull.title ?? `Pull request ${number}`,
+      body: pull.body ?? null,
+      state: pull.state ?? "open",
+      draft: pull.draft ?? false,
+      user: { login: pull.author, type: pull.author.endsWith("[bot]") ? "Bot" : "User" },
+      head: pull.head ?? { sha: "0".repeat(40), ref: "main" },
+      base: pull.base ?? { sha: "1".repeat(40), ref: "main" },
+    };
   }
 
   private updateComment(id: number, body: unknown): Response {

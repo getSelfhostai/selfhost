@@ -14,6 +14,7 @@ import { type GitHubRouteOptions, githubRoutes } from "./github.js";
 import { adminMcpRoute, mcpRoutes } from "./mcp.js";
 import { otlpRoutes } from "./otlp.js";
 import type { GitClones } from "./provenance.js";
+import { type ReceiptRouteOptions, receiptReadRoutes, receiptRoutes } from "./receipts.js";
 import { reviewRoutes } from "./review.js";
 import type { SigninOptions } from "./signin.js";
 import { type PersonEnv, teamRoutes } from "./teams.js";
@@ -41,6 +42,8 @@ export interface AppOptions {
    * revert rates. Without them, provenance comes from the ledger alone.
    */
   clones?: GitClones;
+  /** How POST /v1/receipts checks the CI job's OIDC token. It uses the GitHub App above. */
+  receipts?: Pick<ReceiptRouteOptions, "oidc" | "load">;
 }
 
 export function createApp({
@@ -53,12 +56,20 @@ export function createApp({
   console: web,
   signin,
   clones,
+  receipts = {},
 }: AppOptions): Hono {
   const app = new Hono();
   const review = { ...(config ? { config } : {}), ...(now ? { now } : {}) };
 
-  // Signed by GitHub instead of a bearer token, so it goes before both token checks.
-  githubRoutes(app, ledger, { ...(clones ? { clones } : {}), ...github });
+  // Signed by GitHub instead of a bearer token, so they go before both token checks.
+  const pulls = githubRoutes(app, ledger, { ...(clones ? { clones } : {}), ...github });
+  receiptRoutes(app, ledger, {
+    ...receipts,
+    ...(github.app ? { app: github.app } : {}),
+    ...(pulls ? { pulls } : {}),
+    ...(github.publicUrl ? { publicUrl: github.publicUrl } : {}),
+    ...(github.log ? { log: github.log } : {}),
+  });
   teamRoutes(app, {
     ledger,
     token,
@@ -91,6 +102,7 @@ export function createApp({
   reviewRoutes(app, ledger, review);
   otlpRoutes(app, ledger);
   adminMcpRoute(app);
+  receiptReadRoutes(app, ledger);
 
   app.notFound((c) =>
     c.json(

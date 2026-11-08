@@ -4,6 +4,7 @@ import type { Hono } from "hono";
 import postgres from "postgres";
 import { createApp } from "../src/app.js";
 import type { GitHubRouteOptions } from "../src/github.js";
+import type { ReceiptRouteOptions } from "../src/receipts.js";
 
 export const TOKEN = "test-token";
 
@@ -14,9 +15,18 @@ export interface TestServer {
   request(path: string, init?: RequestInit): Promise<Response>;
 }
 
-export async function startTestServer(github?: GitHubRouteOptions): Promise<TestServer> {
+export async function startTestServer(
+  github?: GitHubRouteOptions,
+  receipts?: Pick<ReceiptRouteOptions, "oidc" | "load">,
+): Promise<TestServer> {
   const ledger = await openLedger({ dataDir: "memory://" });
-  const app = createApp({ version: "1.2.3", ledger, token: TOKEN, ...(github ? { github } : {}) });
+  const app = createApp({
+    version: "1.2.3",
+    ledger,
+    token: TOKEN,
+    ...(github ? { github } : {}),
+    ...(receipts ? { receipts } : {}),
+  });
   return {
     app,
     ledger,

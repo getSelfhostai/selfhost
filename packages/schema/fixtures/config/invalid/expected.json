@@ -21,5 +21,7 @@
   "runtime-run-mode-unknown.toml": { "field": "runtime.run_mode", "line": 5 },
   "runtime-two-defaults.toml": { "field": "runtime.run.worker.default", "line": 9 },
   "runtime-reserved-env.toml": { "field": "runtime.env.SELFHOST_PORT", "line": 5 },
-  "runtime-unknown-key.toml": { "field": "runtime.port", "line": 5 }
+  "runtime-unknown-key.toml": { "field": "runtime.port", "line": 5 },
+  "receipt-screen-empty.toml": { "field": "receipt.screens[\"src/pages/**\"]", "line": 4 },
+  "receipt-port-out-of-range.toml": { "field": "receipt.port", "line": 5 }
 }

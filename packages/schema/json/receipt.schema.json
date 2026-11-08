@@ -1,0 +1,523 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://selfhost.ai/schema/v1/receipt.schema.json",
+  "$comment": "Generated from packages/schema/src. Run `pnpm --filter @selfhost/schema export` after changing the source. Do not edit by hand.",
+  "title": "Receipt",
+  "description": "Proof receipt of an agent pull request: the tests it adds or changes and their results, screenshots of the screens it touches, its preview link, and the logs of anything that failed.",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "schema",
+    "repo",
+    "pull",
+    "created_at",
+    "verdict",
+    "app",
+    "tests",
+    "screens",
+    "preview",
+    "notes"
+  ],
+  "properties": {
+    "schema": {
+      "const": "selfhost.receipt/v1",
+      "type": "string"
+    },
+    "repo": {
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+      "description": "owner/name on GitHub.",
+      "type": "string"
+    },
+    "pull": {
+      "additionalProperties": false,
+      "description": "The pull request the receipt is for.",
+      "type": "object",
+      "required": [
+        "number",
+        "url",
+        "head_sha"
+      ],
+      "properties": {
+        "number": {
+          "minimum": 1,
+          "description": "Pull request number.",
+          "type": "integer"
+        },
+        "url": {
+          "format": "uri",
+          "description": "The pull request on GitHub.",
+          "type": "string"
+        },
+        "head_sha": {
+          "pattern": "^[0-9a-fA-F]{7,64}$",
+          "description": "The head commit the receipt checked.",
+          "type": "string"
+        },
+        "base_sha": {
+          "pattern": "^[0-9a-fA-F]{7,64}$",
+          "description": "The base commit.",
+          "type": "string"
+        }
+      }
+    },
+    "created_at": {
+      "format": "date-time",
+      "description": "When the receipt was made.",
+      "type": "string"
+    },
+    "verdict": {
+      "description": "The receipt's result in one word.",
+      "type": "string",
+      "enum": [
+        "passed",
+        "failed",
+        "nothing_checked"
+      ]
+    },
+    "ci": {
+      "additionalProperties": false,
+      "description": "Where the receipt was made.",
+      "type": "object",
+      "required": [
+        "run_url",
+        "run_id"
+      ],
+      "properties": {
+        "run_url": {
+          "format": "uri",
+          "description": "The CI run that made the receipt.",
+          "type": "string"
+        },
+        "run_id": {
+          "minLength": 1,
+          "description": "Its id.",
+          "type": "string"
+        },
+        "attempt": {
+          "minimum": 1,
+          "description": "Its attempt.",
+          "type": "integer"
+        },
+        "workflow": {
+          "minLength": 1,
+          "description": "Workflow name.",
+          "type": "string"
+        }
+      }
+    },
+    "artifact": {
+      "additionalProperties": false,
+      "description": "The workflow artifact with the screenshots, logs and receipt.html.",
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "description": "Name of the uploaded artifact.",
+          "type": "string"
+        },
+        "url": {
+          "format": "uri",
+          "description": "Download link for the artifact.",
+          "type": "string"
+        }
+      }
+    },
+    "setup": {
+      "additionalProperties": false,
+      "description": "The setup script, from [runtime] setup.",
+      "type": "object",
+      "required": [
+        "command",
+        "status",
+        "duration_ms"
+      ],
+      "properties": {
+        "command": {
+          "minLength": 1,
+          "description": "The shell command, as configured.",
+          "type": "string"
+        },
+        "status": {
+          "description": "Its exit status.",
+          "type": "string",
+          "enum": [
+            "passed",
+            "failed"
+          ]
+        },
+        "exit_code": {
+          "description": "Exit code; absent when killed.",
+          "type": "integer"
+        },
+        "duration_ms": {
+          "minimum": 0,
+          "description": "How long it ran.",
+          "type": "integer"
+        },
+        "log": {
+          "additionalProperties": false,
+          "description": "Output of a command.",
+          "type": "object",
+          "required": [
+            "tail",
+            "lines"
+          ],
+          "properties": {
+            "tail": {
+              "description": "The last lines of the output, secrets and emails masked. The whole log is in the artifact.",
+              "type": "string"
+            },
+            "lines": {
+              "minimum": 0,
+              "description": "Lines in the whole output.",
+              "type": "integer"
+            },
+            "file": {
+              "minLength": 1,
+              "description": "The whole log's path inside the artifact.",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "app": {
+      "additionalProperties": false,
+      "description": "Starting the app for the screenshots.",
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "description": "started: it answered at url. failed: it exited or did not answer in time. not_configured: no start command.",
+          "type": "string",
+          "enum": [
+            "started",
+            "failed",
+            "not_configured"
+          ]
+        },
+        "command": {
+          "minLength": 1,
+          "description": "The start command.",
+          "type": "string"
+        },
+        "url": {
+          "format": "uri",
+          "description": "The ready URL it was waited on at.",
+          "type": "string"
+        },
+        "duration_ms": {
+          "minimum": 0,
+          "description": "From start until it answered, or gave up.",
+          "type": "integer"
+        },
+        "exit_code": {
+          "description": "Exit code when it exited early.",
+          "type": "integer"
+        },
+        "error": {
+          "minLength": 1,
+          "description": "Why it did not start, in one sentence.",
+          "type": "string"
+        },
+        "log": {
+          "additionalProperties": false,
+          "description": "Output of a command.",
+          "type": "object",
+          "required": [
+            "tail",
+            "lines"
+          ],
+          "properties": {
+            "tail": {
+              "description": "The last lines of the output, secrets and emails masked. The whole log is in the artifact.",
+              "type": "string"
+            },
+            "lines": {
+              "minimum": 0,
+              "description": "Lines in the whole output.",
+              "type": "integer"
+            },
+            "file": {
+              "minLength": 1,
+              "description": "The whole log's path inside the artifact.",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "tests": {
+      "additionalProperties": false,
+      "description": "The tests the pull request adds or changes, run with the repository's runner.",
+      "type": "object",
+      "required": [
+        "runs",
+        "not_run"
+      ],
+      "properties": {
+        "runs": {
+          "description": "Each run, in order.",
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "description": "One run of the tests the change adds or edits.",
+            "type": "object",
+            "required": [
+              "files",
+              "runner",
+              "command",
+              "cwd",
+              "status",
+              "duration_ms"
+            ],
+            "properties": {
+              "files": {
+                "minItems": 1,
+                "description": "Test files run, relative to the repository root.",
+                "type": "array",
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "runner": {
+                "description": "The runner that ran them.",
+                "type": "string",
+                "enum": [
+                  "vitest",
+                  "jest",
+                  "node",
+                  "pytest",
+                  "go",
+                  "custom"
+                ]
+              },
+              "command": {
+                "minLength": 1,
+                "description": "The command, as run in cwd.",
+                "type": "string"
+              },
+              "cwd": {
+                "description": "Folder it ran in, relative to the repository root.",
+                "type": "string"
+              },
+              "status": {
+                "description": "The result.",
+                "type": "string",
+                "enum": [
+                  "passed",
+                  "failed",
+                  "timed_out"
+                ]
+              },
+              "exit_code": {
+                "description": "Exit code; absent when killed.",
+                "type": "integer"
+              },
+              "duration_ms": {
+                "minimum": 0,
+                "description": "How long it ran.",
+                "type": "integer"
+              },
+              "log": {
+                "additionalProperties": false,
+                "description": "Output of a command.",
+                "type": "object",
+                "required": [
+                  "tail",
+                  "lines"
+                ],
+                "properties": {
+                  "tail": {
+                    "description": "The last lines of the output, secrets and emails masked. The whole log is in the artifact.",
+                    "type": "string"
+                  },
+                  "lines": {
+                    "minimum": 0,
+                    "description": "Lines in the whole output.",
+                    "type": "integer"
+                  },
+                  "file": {
+                    "minLength": 1,
+                    "description": "The whole log's path inside the artifact.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "not_run": {
+          "description": "Changed test files that were not run, with why.",
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "path",
+              "reason"
+            ],
+            "properties": {
+              "path": {
+                "minLength": 1,
+                "description": "Test file, relative to the repository root.",
+                "type": "string"
+              },
+              "reason": {
+                "minLength": 1,
+                "description": "Why it was not run.",
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "screens": {
+      "additionalProperties": false,
+      "description": "Playwright screenshots of the changed screens.",
+      "type": "object",
+      "required": [
+        "source",
+        "shots"
+      ],
+      "properties": {
+        "base_url": {
+          "format": "uri",
+          "description": "Where the screens were opened.",
+          "type": "string"
+        },
+        "source": {
+          "description": "app: the app started for the receipt. preview: the preview environment.",
+          "type": "string",
+          "enum": [
+            "app",
+            "preview",
+            "none"
+          ]
+        },
+        "shots": {
+          "description": "One per screen.",
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "description": "A screenshot of one screen.",
+            "type": "object",
+            "required": [
+              "path",
+              "url",
+              "files",
+              "status"
+            ],
+            "properties": {
+              "path": {
+                "minLength": 1,
+                "description": "URL path of the screen, from [receipt.screens].",
+                "type": "string"
+              },
+              "url": {
+                "format": "uri",
+                "description": "The URL that was opened.",
+                "type": "string"
+              },
+              "files": {
+                "description": "Changed files mapped to this screen. Empty for the default home page shot.",
+                "type": "array",
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "status": {
+                "description": "captured, or failed with an error or an HTTP status of 400 or more.",
+                "type": "string",
+                "enum": [
+                  "captured",
+                  "failed"
+                ]
+              },
+              "http_status": {
+                "description": "Status of the page's response.",
+                "type": "integer"
+              },
+              "image": {
+                "minLength": 1,
+                "description": "The PNG's path inside the artifact.",
+                "type": "string"
+              },
+              "page_errors": {
+                "description": "Uncaught errors the page threw, at most 5.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "error": {
+                "minLength": 1,
+                "description": "Why it could not be captured.",
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "preview": {
+      "additionalProperties": false,
+      "description": "The pull request's preview environment.",
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "description": "ready: url serves the change. pending: it was still deploying when the receipt gave up waiting. failed: the deployment failed. none: no preview environment.",
+          "type": "string",
+          "enum": [
+            "ready",
+            "pending",
+            "failed",
+            "none"
+          ]
+        },
+        "url": {
+          "format": "uri",
+          "description": "The preview link.",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "description": "Environment or status name, such as Preview.",
+          "type": "string"
+        },
+        "source": {
+          "description": "Where it came from.",
+          "type": "string",
+          "enum": [
+            "deployment",
+            "commit_status",
+            "input"
+          ]
+        },
+        "provider": {
+          "minLength": 1,
+          "description": "vercel, netlify, or another host's name.",
+          "type": "string"
+        }
+      }
+    },
+    "notes": {
+      "description": "What the receipt could not check, and why, one sentence each.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}
