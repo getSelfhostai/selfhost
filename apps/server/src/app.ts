@@ -2,11 +2,13 @@ import type { Ledger } from "@selfhost/ledger";
 import type { ApiError, HealthResponse, ResolvedSelfhostConfig } from "@selfhost/schema";
 import { Hono } from "hono";
 import { requireBearerToken } from "./auth.js";
+import { consoleRoutes } from "./console.js";
 import { decisionRoutes } from "./decisions.js";
 import { eventRoutes } from "./events.js";
 import { type GitHubRouteOptions, githubRoutes } from "./github.js";
 import { otlpRoutes } from "./otlp.js";
 import { reviewRoutes } from "./review.js";
+import type { SigninOptions } from "./signin.js";
 import { type PersonEnv, teamRoutes } from "./teams.js";
 
 export interface AppOptions {
@@ -20,9 +22,25 @@ export interface AppOptions {
   now?: () => Date;
   /** The GitHub App delivery. Without an App, POST /v1/github/webhooks answers 404. */
   github?: GitHubRouteOptions;
+  /**
+   * Serve the web console at / from this folder (see console.ts); undefined dir serves a page
+   * saying it is not built. Without it, only /v1 answers.
+   */
+  console?: { dir: string | undefined };
+  /** Console sign-in through a proxy that forwards the person's email (see signin.ts). */
+  signin?: SigninOptions;
 }
 
-export function createApp({ version, ledger, token, config, now, github = {} }: AppOptions): Hono {
+export function createApp({
+  version,
+  ledger,
+  token,
+  config,
+  now,
+  github = {},
+  console: web,
+  signin,
+}: AppOptions): Hono {
   const app = new Hono();
   const review = { ...(config ? { config } : {}), ...(now ? { now } : {}) };
 
@@ -32,6 +50,7 @@ export function createApp({ version, ledger, token, config, now, github = {} }: 
     ledger,
     token,
     ...(now ? { now } : {}),
+    ...(signin ? { signin } : {}),
     personRoutes: (person) =>
       reviewRoutes(person, ledger, {
         ...review,
@@ -43,6 +62,8 @@ export function createApp({ version, ledger, token, config, now, github = {} }: 
         },
       }),
   });
+  // The console's files hold no data, so they need no token; what they read from /v1 does.
+  if (web) consoleRoutes(app, web.dir);
   app.use("*", requireBearerToken(token));
 
   app.get("/v1/health", (c) => c.json({ ok: true, version } satisfies HealthResponse));

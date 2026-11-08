@@ -4,12 +4,15 @@
 #
 #   /v1/*    the selfhost API, behind its bearer tokens (CLIs, hooks, the GitHub webhook)
 #   /otlp/*  agents' OpenTelemetry over HTTP, behind the agent token checked by the collector
-#   the rest the console, behind GitHub or Google sign-in when compose.signin.yml is in use
+#   the rest the web console, which the selfhost server serves: each person signs in with their
+#            own token, or with GitHub or Google when compose.signin.yml is in use
 
-# Without compose.signin.yml the console is closed: there is no sign-in to put in front of it.
-(console-closed) {
+# Without compose.signin.yml the console asks each person for their token (a person token from
+# selfhost team join, or the admin token). Its pages hold no data; everything it shows comes
+# from /v1 with that token.
+(console-token) {
 	handle {
-		respond "The selfhost console needs sign-in, which is not set up on this server. The API answers at /v1 with a bearer token." 503
+		reverse_proxy selfhost:4400
 	}
 }
 
@@ -27,16 +30,40 @@
 				redir * /oauth2/sign_in?rd={scheme}://{host}{uri}
 			}
 		}
-		root * /srv/console
-		try_files {path} /index.html
-		file_server
+		reverse_proxy selfhost:4400
 	}
+}
+
+# Bearer tokens only.
+(api-token) {
+	request_header -X-Selfhost-Email
+}
+
+# With compose.signin.yml, a signed-in browser's own reads of /v1 (GET, no bearer token, the
+# sign-in cookie) also say who signed in: oauth2-proxy answers with the email, and the secret
+# tells the server the email came from here. The server reads, never writes, as that person.
+(api-signin) {
+	@browser {
+		method GET HEAD
+		not header Authorization *
+		header Cookie *_oauth2_proxy*
+	}
+	forward_auth @browser oauth2-proxy:4180 {
+		uri /oauth2/auth
+		copy_headers X-Auth-Request-Email>X-Selfhost-Email
+	}
+	request_header @browser X-Selfhost-Proxy-Secret {$SELFHOST_SIGNIN_PROXY_SECRET}
 }
 
 {$SELFHOST_DOMAIN} {
 	encode zstd gzip
 
+	# Only this file sets these, after sign-in; whatever a client sends is dropped first.
+	request_header -X-Selfhost-Email
+	request_header -X-Selfhost-Proxy-Secret
+
 	handle /v1/* {
+		import api-{$SELFHOST_CONSOLE_ACCESS:token}
 		reverse_proxy selfhost:4400
 	}
 
@@ -44,5 +71,5 @@
 		reverse_proxy otel-collector:4318
 	}
 
-	import console-{$SELFHOST_CONSOLE_ACCESS:closed}
+	import console-{$SELFHOST_CONSOLE_ACCESS:token}
 }

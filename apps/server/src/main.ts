@@ -3,9 +3,11 @@ import { openLedger, resolveDataDir } from "@selfhost/ledger";
 import { redactionSettings } from "@selfhost/schema";
 import pkg from "../package.json" with { type: "json" };
 import { createApp } from "./app.js";
+import { findConsoleDir } from "./console.js";
 import { githubAppFromEnv, githubConfig } from "./github.js";
 import { serverConfig, startRetentionJob } from "./retention.js";
 import { startReviewRefreshJob } from "./review.js";
+import { signinFromEnv } from "./signin.js";
 import { loadApiToken } from "./token.js";
 
 const port = Number(process.env.PORT ?? 4400);
@@ -33,14 +35,30 @@ const github = {
   ...(publicUrl ? { publicUrl } : {}),
 };
 
+// SELFHOST_CONSOLE=off answers only /v1, for installs that serve the console some other way.
+const web = process.env.SELFHOST_CONSOLE === "off" ? undefined : { dir: findConsoleDir() };
+const signin = signinFromEnv();
+
 const server = serve(
   {
-    fetch: createApp({ version: pkg.version, ledger, token, config, github }).fetch,
+    fetch: createApp({
+      version: pkg.version,
+      ledger,
+      token,
+      config,
+      github,
+      ...(web ? { console: web } : {}),
+      ...(signin ? { signin } : {}),
+    }).fetch,
     port,
     hostname,
   },
   (info) => {
     console.log(`selfhost server ${pkg.version} listening on http://${hostname}:${info.port}`);
+    if (web) {
+      console.log(web.dir ? `console at http://${hostname}:${info.port}/` : "console not built");
+    }
+    if (signin) console.log("console sign-in through the proxy is on");
   },
 );
 

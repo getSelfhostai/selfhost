@@ -117,6 +117,12 @@ export interface TeamStore {
   /** The person a person token belongs to, or undefined for an unknown or revoked token. */
   personForToken(token: string): Promise<Person | undefined>;
   /**
+   * The person with this id (compared ignoring case) in each team where they still hold a
+   * person token, with that team's org, oldest first: who a sign-in proxy's email stands for.
+   * Someone whose tokens were all revoked is not in it.
+   */
+  peopleWithAccess(person: string): Promise<{ person: Person; org: string }[]>;
+  /**
    * Revokes every token a person holds, and the open invites for their email, so they cannot
    * join again with one. undefined when the team has no such person.
    */
@@ -444,6 +450,19 @@ export function createTeamStore(db: Database): TeamStore {
         [hashToken(token)],
       );
       return row ? { team: row.team_id, person: row.person_id, revoked: 1 } : undefined;
+    },
+
+    async peopleWithAccess(person) {
+      const rows = await db.query<PersonRow & { org_id: string }>(
+        `SELECT ${PERSON_COLUMNS}, t.org_id FROM people p JOIN teams t ON t.id = p.team_id
+         WHERE lower(p.id) = lower($1::text) AND EXISTS (
+           SELECT 1 FROM tokens k
+           WHERE k.team_id = p.team_id AND k.person_id = p.id AND k.kind = 'person'
+             AND k.revoked_at IS NULL)
+         ORDER BY p.created_at, p.team_id`,
+        [person],
+      );
+      return rows.map((row) => ({ person: toPerson(row), org: row.org_id }));
     },
 
     async personForToken(token) {

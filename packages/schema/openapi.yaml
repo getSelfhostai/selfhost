@@ -1288,6 +1288,180 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /v1/usage:
+    get:
+      operationId: getUsage
+      summary: Tokens, cost, sessions and pull requests, grouped and filtered.
+      description: What the console shows. Every filter applies to every row and to the total, from the ledger's events whatever source wrote them. The admin token sees every team of the org and events with no team; a person token sees the teams of its org it is in. A team filter for a team the caller is not in answers 403.
+      parameters:
+        - name: group_by
+          in: query
+          required: false
+          description: One or two of team, person, agent, model and day, comma separated, such as person or day,model. Without it, rows holds one row with the total.
+          schema:
+            pattern: ^(?:team|person|agent|model|day)(?:,(?:team|person|agent|model|day))?$
+            type: string
+        - name: from
+          in: query
+          required: false
+          description: "Events at or after this time. Default: 30 days before to."
+          schema:
+            format: date-time
+            type: string
+        - name: to
+          in: query
+          required: false
+          description: "Events before this time. Default: now."
+          schema:
+            format: date-time
+            type: string
+        - name: team
+          in: query
+          required: false
+          description: "Only this team: the team that owns the run's repo, else the team that wrote it. unknown matches events with none."
+          schema:
+            minLength: 1
+            maxLength: 256
+            type: string
+        - name: person
+          in: query
+          required: false
+          description: Only this person (actor.id of a person). unknown matches events with none.
+          schema:
+            minLength: 1
+            maxLength: 256
+            type: string
+        - name: agent
+          in: query
+          required: false
+          description: Only this agent (agent.vendor), such as claude_code or codex. unknown matches events with none.
+          schema:
+            minLength: 1
+            maxLength: 256
+            type: string
+        - name: model
+          in: query
+          required: false
+          description: Only this model, as the vendor reports it. unknown matches events with none.
+          schema:
+            minLength: 1
+            maxLength: 256
+            type: string
+        - name: org
+          in: query
+          required: false
+          description: "Org whose repos assign runs to teams. Default: the person token's org, or default with the admin token."
+          schema:
+            pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+            type: string
+      responses:
+        "200":
+          description: The rows and the total.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageResponse"
+        "400":
+          description: Invalid query or time range.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team or the org asked for.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/usage.csv:
+    get:
+      operationId: getUsageCsv
+      summary: The same rows as GET /v1/usage, as CSV.
+      description: "One line per row of GET /v1/usage for the same query, after a header line: the grouped dimensions, then usd, tokens, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, requests, sessions, prs_opened and prs_merged. Text that a spreadsheet would read as a formula starts with an apostrophe."
+      parameters:
+        - name: group_by
+          in: query
+          required: false
+          description: One or two of team, person, agent, model and day, comma separated, such as person or day,model. Without it, rows holds one row with the total.
+          schema:
+            pattern: ^(?:team|person|agent|model|day)(?:,(?:team|person|agent|model|day))?$
+            type: string
+        - name: from
+          in: query
+          required: false
+          description: "Events at or after this time. Default: 30 days before to."
+          schema:
+            format: date-time
+            type: string
+        - name: to
+          in: query
+          required: false
+          description: "Events before this time. Default: now."
+          schema:
+            format: date-time
+            type: string
+        - name: team
+          in: query
+          required: false
+          description: "Only this team: the team that owns the run's repo, else the team that wrote it. unknown matches events with none."
+          schema:
+            minLength: 1
+            maxLength: 256
+            type: string
+        - name: person
+          in: query
+          required: false
+          description: Only this person (actor.id of a person). unknown matches events with none.
+          schema:
+            minLength: 1
+            maxLength: 256
+            type: string
+        - name: agent
+          in: query
+          required: false
+          description: Only this agent (agent.vendor), such as claude_code or codex. unknown matches events with none.
+          schema:
+            minLength: 1
+            maxLength: 256
+            type: string
+        - name: model
+          in: query
+          required: false
+          description: Only this model, as the vendor reports it. unknown matches events with none.
+          schema:
+            minLength: 1
+            maxLength: 256
+            type: string
+        - name: org
+          in: query
+          required: false
+          description: "Org whose repos assign runs to teams. Default: the person token's org, or default with the admin token."
+          schema:
+            pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+            type: string
+      responses:
+        "200":
+          description: The rows as CSV.
+          content:
+            text/csv:
+              schema:
+                type: string
+        "400":
+          description: Invalid query or time range.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team or the org asked for.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /v1/teams/{team}/invites:
     post:
       operationId: createInvite
@@ -3412,3 +3586,331 @@ components:
                       type: number
                     - type: "null"
             - type: "null"
+    UsageTotals:
+      additionalProperties: false
+      title: UsageTotals
+      type: object
+      required:
+        - usd
+        - tokens
+        - input_tokens
+        - output_tokens
+        - cache_read_tokens
+        - cache_write_tokens
+        - requests
+        - sessions
+        - prs_opened
+        - prs_merged
+      properties:
+        usd:
+          minimum: 0
+          description: Cost in US dollars of the cost.recorded events, rounded to 6 decimals.
+          type: number
+        tokens:
+          minimum: 0
+          description: The four token counts added up.
+          type: integer
+        input_tokens:
+          minimum: 0
+          description: Uncached input tokens.
+          type: integer
+        output_tokens:
+          minimum: 0
+          description: Output tokens, including reasoning tokens.
+          type: integer
+        cache_read_tokens:
+          minimum: 0
+          description: Input tokens read from the prompt cache.
+          type: integer
+        cache_write_tokens:
+          minimum: 0
+          description: Input tokens written to the prompt cache.
+          type: integer
+        requests:
+          minimum: 0
+          description: cost.recorded events, one per model request.
+          type: integer
+        sessions:
+          minimum: 0
+          description: Distinct agent sessions (agent and session_id) with a session, prompt or cost event in the range.
+          type: integer
+        prs_opened:
+          minimum: 0
+          description: Distinct pull requests with a pr.opened event in the range.
+          type: integer
+        prs_merged:
+          minimum: 0
+          description: Distinct pull requests with a pr.merged event in the range.
+          type: integer
+    UsageRow:
+      additionalProperties: false
+      title: UsageRow
+      type: object
+      required:
+        - group
+        - usd
+        - tokens
+        - input_tokens
+        - output_tokens
+        - cache_read_tokens
+        - cache_write_tokens
+        - requests
+        - sessions
+        - prs_opened
+        - prs_merged
+      properties:
+        group:
+          additionalProperties: false
+          title: UsageGroup
+          description: The value of each grouped dimension.
+          type: object
+          properties:
+            team:
+              description: Team id, or unknown for none.
+              type: string
+            person:
+              description: actor.id when the actor is a person, else unknown.
+              type: string
+            agent:
+              description: agent.vendor, or unknown.
+              type: string
+            model:
+              description: Model id, or unknown.
+              type: string
+            day:
+              pattern: ^\d{4}-\d{2}-\d{2}$
+              description: UTC day, YYYY-MM-DD.
+              type: string
+        usd:
+          minimum: 0
+          description: Cost in US dollars of the cost.recorded events, rounded to 6 decimals.
+          type: number
+        tokens:
+          minimum: 0
+          description: The four token counts added up.
+          type: integer
+        input_tokens:
+          minimum: 0
+          description: Uncached input tokens.
+          type: integer
+        output_tokens:
+          minimum: 0
+          description: Output tokens, including reasoning tokens.
+          type: integer
+        cache_read_tokens:
+          minimum: 0
+          description: Input tokens read from the prompt cache.
+          type: integer
+        cache_write_tokens:
+          minimum: 0
+          description: Input tokens written to the prompt cache.
+          type: integer
+        requests:
+          minimum: 0
+          description: cost.recorded events, one per model request.
+          type: integer
+        sessions:
+          minimum: 0
+          description: Distinct agent sessions (agent and session_id) with a session, prompt or cost event in the range.
+          type: integer
+        prs_opened:
+          minimum: 0
+          description: Distinct pull requests with a pr.opened event in the range.
+          type: integer
+        prs_merged:
+          minimum: 0
+          description: Distinct pull requests with a pr.merged event in the range.
+          type: integer
+    UsageResponse:
+      additionalProperties: false
+      title: UsageResponse
+      description: "Tokens, cost, sessions and pull requests from the ledger alone. A session reported by more than one source counts its spend from one: otel, then local_log, hook, gateway, vendor_api."
+      type: object
+      required:
+        - org
+        - from
+        - to
+        - group_by
+        - filters
+        - teams
+        - rows
+        - total
+      properties:
+        org:
+          description: Org whose repos assigned runs to teams.
+          type: string
+        from:
+          format: date-time
+          type: string
+        to:
+          format: date-time
+          type: string
+        group_by:
+          description: As asked, in order.
+          type: array
+          items:
+            type: string
+            enum:
+              - team
+              - person
+              - agent
+              - model
+              - day
+        filters:
+          additionalProperties: false
+          description: The filters applied to every row.
+          type: object
+          properties:
+            team:
+              type: string
+            person:
+              type: string
+            agent:
+              type: string
+            model:
+              type: string
+        teams:
+          description: "Teams the caller sees: every team of the org they are in with a person token, or null with the admin token, which also sees events with no team."
+          anyOf:
+            - type: array
+              items:
+                type: string
+            - type: "null"
+        rows:
+          description: "One per group with any usage: by day (oldest first) when grouped by day, then by usd (highest first), then by group. A session is distinct, so it counts once in every group its events fall in and the rows can add up to more sessions than the total."
+          type: array
+          items:
+            additionalProperties: false
+            title: UsageRow
+            type: object
+            required:
+              - group
+              - usd
+              - tokens
+              - input_tokens
+              - output_tokens
+              - cache_read_tokens
+              - cache_write_tokens
+              - requests
+              - sessions
+              - prs_opened
+              - prs_merged
+            properties:
+              group:
+                additionalProperties: false
+                title: UsageGroup
+                description: The value of each grouped dimension.
+                type: object
+                properties:
+                  team:
+                    description: Team id, or unknown for none.
+                    type: string
+                  person:
+                    description: actor.id when the actor is a person, else unknown.
+                    type: string
+                  agent:
+                    description: agent.vendor, or unknown.
+                    type: string
+                  model:
+                    description: Model id, or unknown.
+                    type: string
+                  day:
+                    pattern: ^\d{4}-\d{2}-\d{2}$
+                    description: UTC day, YYYY-MM-DD.
+                    type: string
+              usd:
+                minimum: 0
+                description: Cost in US dollars of the cost.recorded events, rounded to 6 decimals.
+                type: number
+              tokens:
+                minimum: 0
+                description: The four token counts added up.
+                type: integer
+              input_tokens:
+                minimum: 0
+                description: Uncached input tokens.
+                type: integer
+              output_tokens:
+                minimum: 0
+                description: Output tokens, including reasoning tokens.
+                type: integer
+              cache_read_tokens:
+                minimum: 0
+                description: Input tokens read from the prompt cache.
+                type: integer
+              cache_write_tokens:
+                minimum: 0
+                description: Input tokens written to the prompt cache.
+                type: integer
+              requests:
+                minimum: 0
+                description: cost.recorded events, one per model request.
+                type: integer
+              sessions:
+                minimum: 0
+                description: Distinct agent sessions (agent and session_id) with a session, prompt or cost event in the range.
+                type: integer
+              prs_opened:
+                minimum: 0
+                description: Distinct pull requests with a pr.opened event in the range.
+                type: integer
+              prs_merged:
+                minimum: 0
+                description: Distinct pull requests with a pr.merged event in the range.
+                type: integer
+        total:
+          additionalProperties: false
+          title: UsageTotals
+          type: object
+          required:
+            - usd
+            - tokens
+            - input_tokens
+            - output_tokens
+            - cache_read_tokens
+            - cache_write_tokens
+            - requests
+            - sessions
+            - prs_opened
+            - prs_merged
+          properties:
+            usd:
+              minimum: 0
+              description: Cost in US dollars of the cost.recorded events, rounded to 6 decimals.
+              type: number
+            tokens:
+              minimum: 0
+              description: The four token counts added up.
+              type: integer
+            input_tokens:
+              minimum: 0
+              description: Uncached input tokens.
+              type: integer
+            output_tokens:
+              minimum: 0
+              description: Output tokens, including reasoning tokens.
+              type: integer
+            cache_read_tokens:
+              minimum: 0
+              description: Input tokens read from the prompt cache.
+              type: integer
+            cache_write_tokens:
+              minimum: 0
+              description: Input tokens written to the prompt cache.
+              type: integer
+            requests:
+              minimum: 0
+              description: cost.recorded events, one per model request.
+              type: integer
+            sessions:
+              minimum: 0
+              description: Distinct agent sessions (agent and session_id) with a session, prompt or cost event in the range.
+              type: integer
+            prs_opened:
+              minimum: 0
+              description: Distinct pull requests with a pr.opened event in the range.
+              type: integer
+            prs_merged:
+              minimum: 0
+              description: Distinct pull requests with a pr.merged event in the range.
+              type: integer

@@ -196,7 +196,7 @@ describe(".env.example", () => {
     const secrets = Object.entries(envExample.values).filter(([name]) =>
       /PASSWORD|TOKEN|SECRET|KEY/.test(name),
     );
-    expect(secrets.length).toBe(3);
+    expect(secrets.length).toBe(4);
     for (const [name, value] of secrets) expect(value, name).toBe("");
   });
 });
@@ -363,7 +363,9 @@ describe("HTTPS and sign-in overlays", () => {
   it("sends /v1 to the API and /otlp to the collector's OTLP HTTP port", () => {
     const port = /^\s+PORT=(\d+)/m.exec(read("Dockerfile"))?.[1];
     expect(caddyfile).toMatch(
-      new RegExp(`handle /v1/\\* \\{\\n\\s+reverse_proxy selfhost:${port}\\n`),
+      new RegExp(
+        `handle /v1/\\* \\{\\n\\s+import api-\\{\\$SELFHOST_CONSOLE_ACCESS:token\\}\\n\\s+reverse_proxy selfhost:${port}\\n`,
+      ),
     );
     expect(caddyfile).toMatch(/handle_path \/otlp\/\* \{\n\s+reverse_proxy otel-collector:4318\n/);
     const collector = service("otel-collector").ports ?? [];
@@ -371,19 +373,40 @@ describe("HTTPS and sign-in overlays", () => {
   });
 
   it("puts the console behind sign-in only when compose.signin.yml is in use", () => {
-    const access = (svc: Service | undefined) =>
-      (svc?.environment as Record<string, string> | undefined)?.SELFHOST_CONSOLE_ACCESS;
-    expect(access(caddy)).toBe("closed");
-    expect(access(signin.services.caddy)).toBe("signin");
-    expect(caddyfile).toContain("import console-{$SELFHOST_CONSOLE_ACCESS:closed}");
+    const env = (svc: Service | undefined) =>
+      (svc?.environment as Record<string, string> | undefined) ?? {};
+    expect(env(caddy).SELFHOST_CONSOLE_ACCESS).toBe("token");
+    expect(env(signin.services.caddy).SELFHOST_CONSOLE_ACCESS).toBe("signin");
+    expect(caddyfile).toContain("import console-{$SELFHOST_CONSOLE_ACCESS:token}");
     // Snippets are defined before the site block that imports them.
     const site = caddyfile.indexOf("{$SELFHOST_DOMAIN} {");
-    for (const name of ["closed", "signin"]) {
-      const at = caddyfile.indexOf(`(console-${name}) {`);
+    for (const name of ["console-token", "console-signin", "api-token", "api-signin"]) {
+      const at = caddyfile.indexOf(`(${name}) {`);
       expect(at, name).toBeGreaterThan(-1);
       expect(at, name).toBeLessThan(site);
     }
     expect(caddyfile).toMatch(/forward_auth oauth2-proxy:4180 \{\n\s+uri \/oauth2\/auth\n/);
+    // The server serves the console; Caddy keeps no copy of it.
+    expect(caddyfile).not.toContain("file_server");
+    expect(caddy?.volumes?.some((volume) => volume.includes("console"))).toBe(false);
+  });
+
+  it("forwards the signed-in email only from oauth2-proxy, with the shared secret", () => {
+    // Whatever a client sends is dropped before any route, so only forward_auth can set them.
+    const site = caddyfile.slice(caddyfile.indexOf("{$SELFHOST_DOMAIN} {"));
+    expect(site).toMatch(/^\s+request_header -X-Selfhost-Email$/m);
+    expect(site).toMatch(/^\s+request_header -X-Selfhost-Proxy-Secret$/m);
+    expect(caddyfile).toContain("copy_headers X-Auth-Request-Email>X-Selfhost-Email");
+    expect(caddyfile).toContain(
+      "request_header @browser X-Selfhost-Proxy-Secret {$SELFHOST_SIGNIN_PROXY_SECRET}",
+    );
+    const env = (svc: Service | undefined) =>
+      (svc?.environment as Record<string, string> | undefined) ?? {};
+    const secret =
+      /^\$\{SELFHOST_SIGNIN_PROXY_SECRET:\?Set SELFHOST_SIGNIN_PROXY_SECRET in \.env\}$/;
+    expect(env(signin.services.caddy).SELFHOST_SIGNIN_PROXY_SECRET).toMatch(secret);
+    expect(env(signin.services.selfhost).SELFHOST_SIGNIN_PROXY_SECRET).toMatch(secret);
+    expect(env(proxy).OAUTH2_PROXY_SET_XAUTHREQUEST).toBe("true");
   });
 
   it("asks oauth2-proxy for the callback on the served domain", () => {

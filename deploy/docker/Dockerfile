@@ -1,4 +1,4 @@
-# The selfhost API server. Build from the repository root (needs BuildKit, the default builder
+# The selfhost API server and the web console it serves at /. Build from the repository root (needs BuildKit, the default builder
 # since Docker Engine 23):
 #   docker build -f deploy/docker/Dockerfile -t selfhost:dev .
 
@@ -15,7 +15,8 @@ WORKDIR /src
 COPY . .
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile --filter "@selfhost/server..."
-RUN pnpm --filter @selfhost/server build
+# The web console first: the server build copies it into dist/console and serves it at /.
+RUN pnpm --filter @selfhost/console build && pnpm --filter @selfhost/server build
 # Production dependencies only: the bundle keeps hono, postgres and pglite external.
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm --filter @selfhost/server deploy --prod --legacy /out

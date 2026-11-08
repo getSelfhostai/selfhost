@@ -485,7 +485,7 @@ function printDryRun(report: UpReport, plan: UpPlan, note: string, write: (line:
 function signinText(report: UpReport, plan: UpPlan): string {
   const { signin } = plan;
   if (!signin) {
-    return "off: the console answers 503 until selfhost up runs with --signin github or google; /v1 keeps its bearer tokens";
+    return "off: the console asks each person for their selfhost token; selfhost up --signin github or google adds sign-in. /v1 keeps its bearer tokens";
   }
   const callback = report.signin?.callback_url ?? "https://<domain>/oauth2/callback";
   return `${SIGNIN_NAMES[signin.provider]} through oauth2-proxy, for ${signinWho(signin)}. OAuth app callback URL: ${callback}`;

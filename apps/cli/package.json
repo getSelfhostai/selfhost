@@ -10,6 +10,7 @@
   },
   "files": [
     "dist/*.js",
+    "dist/console",
     "AGENTS.md",
     "llms.txt"
   ],
@@ -47,6 +48,7 @@
     "yaml": "catalog:"
   },
   "devDependencies": {
+    "@selfhost/console": "workspace:*",
     "@selfhost/server": "workspace:*",
     "@types/node": "catalog:",
     "tsup": "catalog:",

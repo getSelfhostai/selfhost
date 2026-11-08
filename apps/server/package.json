@@ -6,7 +6,8 @@
   "license": "Apache-2.0",
   "type": "module",
   "exports": {
-    "./app": "./src/app.ts"
+    "./app": "./src/app.ts",
+    "./local": "./src/local.ts"
   },
   "engines": {
     "node": ">=20"
@@ -37,6 +38,7 @@
   },
   "devDependencies": {
     "@octokit/webhooks": "catalog:",
+    "@selfhost/console": "workspace:*",
     "@types/node": "catalog:",
     "tsup": "catalog:",
     "tsx": "catalog:",

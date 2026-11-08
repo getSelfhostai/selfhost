@@ -6,7 +6,7 @@
 #
 # Usage: sudo ./install.sh
 #
-# Secrets left empty in .env (database password, API and agent tokens, sign-in cookie secret)
+# Secrets left empty in .env (database password, API and agent tokens, sign-in secrets)
 # are generated here: selfhost up never sends one in user-data. When .env.next is present
 # (selfhost up writes it), it replaces .env, keeping the secrets .env already holds (a database
 # volume keeps the password it was created with) and any setting .env.next leaves out.
@@ -23,7 +23,7 @@ die() {
 
 [ "$(id -u)" = 0 ] || die "run this as root: sudo $0"
 
-SECRETS="POSTGRES_PASSWORD SELFHOST_TOKEN SELFHOST_OTLP_TOKEN SELFHOST_SIGNIN_COOKIE_SECRET"
+SECRETS="POSTGRES_PASSWORD SELFHOST_TOKEN SELFHOST_OTLP_TOKEN SELFHOST_SIGNIN_COOKIE_SECRET SELFHOST_SIGNIN_PROXY_SECRET"
 
 # value KEY FILE: the last KEY=value line of FILE, empty when there is none.
 value() { sed -n "s/^$1=//p" "$2" | tail -n 1; }
@@ -65,7 +65,7 @@ for key in $SECRETS; do
 done
 chmod 600 .env
 umask 022
-mkdir -p backups console
+mkdir -p backups
 # compose.signin.yml mounts this file; an empty one lets nobody in by email.
 [ -f signin-emails.txt ] || : >signin-emails.txt
 

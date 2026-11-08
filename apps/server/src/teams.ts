@@ -30,6 +30,8 @@ import { teamId } from "./ids.js";
 import { createOrgRoute, orgRoutes } from "./orgs.js";
 import { peopleRoutes } from "./people.js";
 import { policyRoutes } from "./policy.js";
+import { forwardedEmail, type SigninOptions, signedInPerson } from "./signin.js";
+import { usageRoutes } from "./usage.js";
 
 export interface TeamRouteOptions {
   ledger: Ledger;
@@ -39,6 +41,8 @@ export interface TeamRouteOptions {
   personRoutes?: (person: Hono<PersonEnv>) => void;
   /** Clock for budgets and overviews. */
   now?: () => Date;
+  /** Console sign-in through a proxy that forwards the person's email (see signin.ts). */
+  signin?: SigninOptions;
 }
 
 export type PersonEnv = { Bindings: { person: Person; caller: PersonCaller } };
@@ -78,7 +82,7 @@ export { teamId } from "./ids.js";
  */
 export function teamRoutes(
   app: Hono,
-  { ledger, token, personRoutes, now }: TeamRouteOptions,
+  { ledger, token, personRoutes, now, signin }: TeamRouteOptions,
 ): void {
   const { teams } = ledger;
   const isAdminToken = sameAs(token);
@@ -163,6 +167,13 @@ export function teamRoutes(
   app.use("*", async (c, next) => {
     if (PUBLIC_PATHS.has(c.req.path)) return next();
     const bearer = bearerToken(c.req.header("authorization"));
+    // Signed in at the proxy in front of the console: reads only, as the person.
+    const email = bearer === undefined ? forwardedEmail(c, signin) : undefined;
+    if (email !== undefined) {
+      const found = signedInPerson(c, email, await teams.peopleWithAccess(email));
+      if (found instanceof Response) return found;
+      return person.fetch(c.req.raw, { person: found, caller: personCaller(teams, found) });
+    }
     if (bearer === undefined || isAdminToken(bearer)) return next();
     const found = await teams.personForToken(bearer);
     // An unknown token goes on to the admin check, which answers 401.
@@ -238,6 +249,7 @@ function sharedRoutes(router: Router, ledger: Ledger, now: (() => Date) | undefi
   policyRoutes(router, ledger);
   peopleRoutes(router, ledger);
   orgRoutes(router, ledger, now ? { now } : {});
+  usageRoutes(router, ledger, now ? { now } : {});
 }
 
 /**
