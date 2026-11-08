@@ -74,7 +74,7 @@ describe("selfhost hook", () => {
     expect(blocked.errors.join("\n")).toMatch(/^selfhost hook: .*spool/);
 
     for (const [args, stdin] of [
-      [["cursor"], "{}"],
+      [["goose"], "{}"],
       [["claude"], "not json"],
       [["codex"], ""],
       [[], "{}"],

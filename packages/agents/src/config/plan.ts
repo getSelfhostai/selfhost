@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { locate } from "../locations.js";
 import type { AgentId } from "../types.js";
 import { isPlainObject } from "./docs.js";
-import { planToml } from "./toml.js";
+import { planFile } from "./file.js";
+import { planToml, tomlBlock } from "./toml.js";
 import { planTree } from "./tree.js";
 import type {
   AgentConfigPlan,
@@ -18,9 +19,13 @@ import { vendorTargets } from "./vendors.js";
 
 const MANIFEST_SCHEMA = "selfhost.agent_config/v1";
 
-/** selfhost's record of what it wrote for an agent: `<home>/.selfhost/agents/<agent>.json`. */
-export function manifestPath(home: string, agent: AgentId): string {
-  return join(home, ".selfhost", "agents", `${agent}.json`);
+/**
+ * selfhost's record of what it wrote for an agent: `<home>/.selfhost/agents/<agent>.json`, or
+ * `<agent>.<profile>.json` for another profile.
+ */
+export function manifestPath(home: string, agent: AgentId, profile?: string): string {
+  const name = profile === undefined ? agent : `${agent}.${profile}`;
+  return join(home, ".selfhost", "agents", `${name}.json`);
 }
 
 export function readText(path: string): string | null {
@@ -59,12 +64,13 @@ function itemRank(item: PlanItem): string {
  * applyAgentConfig. Running it again with the same input plans no changes.
  */
 export function planAgentConfig(agent: AgentId, options: PlanOptions): AgentConfigPlan {
-  const { home, processEnv = {}, platform = process.platform, ...input } = options;
+  const { home, processEnv = {}, platform = process.platform, profile, ...input } = options;
   const loc = locate({ home, env: processEnv, platform });
-  const statePath = manifestPath(home, agent);
+  const statePath = manifestPath(home, agent, profile);
+  const block = tomlBlock(profile, profile === "guard" ? "selfhost guard install" : undefined);
   const stateBefore = readText(statePath);
   const manifest = readManifest(stateBefore, agent);
-  const { targets, other } = vendorTargets(agent, input, loc, {
+  const { targets, other } = vendorTargets(agent, input, loc, block, {
     exists: existsSync,
     readJson(path) {
       try {
@@ -79,8 +85,10 @@ export function planAgentConfig(agent: AgentId, options: PlanOptions): AgentConf
     if (targets.some((target) => target.path === path)) continue;
     const target: Target =
       entry.format === "toml"
-        ? { kind: "toml", path, items: [] }
-        : { kind: "tree", path, format: entry.format, items: [] };
+        ? { kind: "toml", path, items: [], block }
+        : entry.format === "text"
+          ? { kind: "file", path, items: [] }
+          : { kind: "tree", path, format: entry.format, items: [] };
     targets.push(target);
   }
 
@@ -93,7 +101,9 @@ export function planAgentConfig(agent: AgentId, options: PlanOptions): AgentConf
     const result =
       target.kind === "toml"
         ? planToml(target, before, previous)
-        : planTree(target, before, previous);
+        : target.kind === "file"
+          ? planFile(target, before, previous)
+          : planTree(target, before, previous);
     items.push(...result.items);
     if (result.after !== before) {
       changes.push({ path: target.path, role: "config", before, after: result.after });
@@ -118,11 +128,12 @@ export function planAgentConfig(agent: AgentId, options: PlanOptions): AgentConf
  */
 export function removeAgentConfig(
   agent: AgentId,
-  options: Pick<PlanOptions, "home" | "processEnv" | "platform">,
+  options: Pick<PlanOptions, "home" | "processEnv" | "platform" | "profile">,
 ): AgentConfigPlan {
   return planAgentConfig(agent, {
     home: options.home,
     processEnv: options.processEnv,
     platform: options.platform,
+    profile: options.profile,
   });
 }

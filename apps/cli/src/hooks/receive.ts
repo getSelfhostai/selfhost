@@ -1,31 +1,63 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import {
+  DROPPED_FIELDS,
+  failOpenText,
+  HOOK_AGENTS,
+  type HookAgent,
+  isPreToolEvent,
+  otherEventText,
+} from "./vendors.js";
 
 /**
- * `selfhost hook <agent>`: runs inside the agent on every hook event, so it does one thing. It
+ * `selfhost hook <agent>`: runs inside the agent on every hook event, so it does little. It
  * appends the payload to a spool file with a single write and exits 0, whatever happens.
  * `selfhost import` maps the spool into the ledger later. The ledger is never opened here:
  * the embedded database allows one process at a time, and agents run hooks concurrently.
  *
+ * Pre-tool events also get an answer: pretool.ts checks the call against selfhost.toml and the
+ * built-in guardrails and prints allow, deny or ask in the agent's format. Only those events
+ * load it, so every other event starts as fast as before.
+ *
  * Keep this module free of workspace imports: main.ts loads it alone, for a quick start.
  */
 
-/** The payload kinds the ledger mappers read, by the names agents are configured with. */
-export const HOOK_AGENTS = {
-  claude: "claude",
-  "claude-code": "claude",
-  claude_code: "claude",
-  codex: "codex",
-  "codex-notify": "codex-notify",
-} as const;
+export { HOOK_AGENTS, type HookAgent } from "./vendors.js";
 
-export type HookAgent = (typeof HOOK_AGENTS)[keyof typeof HOOK_AGENTS];
+/** One hit as the spool keeps it. */
+export interface GuardHit {
+  rule_id: string;
+  mode: "observe" | "enforce";
+  verdict: "block" | "ask";
+  message: string;
+  irreversible: boolean;
+}
+
+/** What the pre-tool check decided, kept on the event's spool line for the ledger. */
+export interface GuardRecord {
+  /** What the agent was told. An ask the agent cannot put to a person is answered deny. */
+  answer: "allow" | "deny" | "ask";
+  /** The hit behind the answer; for allow, the first observe hit, if any. */
+  hit?: GuardHit;
+  /** Every rule, guardrail and checker that fired, in order. */
+  hits: Pick<GuardHit, "rule_id" | "mode" | "verdict">[];
+  /** The selfhost.toml used, if any: absolute path and SHA-256 of its bytes. */
+  policy?: { path: string; hash: string };
+  /** Why the check fell back: an invalid policy file, a checker that failed or timed out. */
+  failures?: string[];
+  /** The check itself failed, so the call was allowed. */
+  fail_open?: boolean;
+  /** Time the check took, in milliseconds. */
+  ms: number;
+}
 
 /** One line of a spool file. */
 export interface SpoolLine {
   agent: HookAgent;
   received_at: string;
   payload: unknown;
+  /** Set on pre-tool events. */
+  guard?: GuardRecord;
 }
 
 /** How long to wait for the payload on stdin before giving up. */
@@ -47,17 +79,34 @@ export function spoolFile(dir: string, receivedAt: string): string {
 
 export const SPOOL_FILE_PATTERN = /^hooks-(\d{4}-\d{2}-\d{2})\.jsonl$/;
 
-/**
- * Appends one payload to the spool. Tool output (tool_response) is replaced with null: the
- * ledger never reads it, and it can be large or hold file contents.
- */
-export function appendToSpool(dir: string, agent: HookAgent, text: string, now = new Date()) {
+function parsePayload(text: string): Record<string, unknown> {
   const payload: unknown = JSON.parse(text);
   if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
     throw new Error("expected a JSON object");
   }
-  if ("tool_response" in payload) (payload as Record<string, unknown>).tool_response = null;
-  const line: SpoolLine = { agent, received_at: now.toISOString(), payload };
+  return payload as Record<string, unknown>;
+}
+
+/**
+ * Appends one payload to the spool. Tool output and file contents (tool_response, and Cursor's
+ * output and content) are replaced with null: the ledger never reads them, and they can be large
+ * or hold secrets.
+ */
+export function appendToSpool(
+  dir: string,
+  agent: HookAgent,
+  text: string | Record<string, unknown>,
+  now = new Date(),
+  guard?: GuardRecord,
+) {
+  const payload = typeof text === "string" ? parsePayload(text) : { ...text };
+  for (const field of DROPPED_FIELDS) if (field in payload) payload[field] = null;
+  const line: SpoolLine = {
+    agent,
+    received_at: now.toISOString(),
+    payload,
+    ...(guard ? { guard } : {}),
+  };
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   appendFileSync(spoolFile(dir, line.received_at), `${JSON.stringify(line)}\n`, { mode: 0o600 });
 }
@@ -66,30 +115,76 @@ export interface HookIo {
   env: NodeJS.ProcessEnv;
   /** The payload agents pipe in. */
   readStdin: () => Promise<string>;
+  /** The answer agents read on stdout. Default: nothing is printed. */
+  writeOutput?: (text: string) => void;
   writeError: (line: string) => void;
   now?: Date;
+  /** Runs the pre-tool check; tests pass one with extra checkers or a fixed clock. */
+  checkPreTool?: CheckPreTool;
 }
 
+export type CheckPreTool = (
+  agent: HookAgent,
+  payload: Record<string, unknown>,
+  io: { env: NodeJS.ProcessEnv; writeError: (line: string) => void },
+) => Promise<{ output: string; guard?: GuardRecord }>;
+
+const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
 /**
- * Receives one hook event. Claude Code and Codex hooks pipe the payload on stdin; Codex
- * notify passes it as the last argument. Always returns 0: a failure here must not stop or
- * slow the agent, so it is reported on stderr only and nothing is printed on stdout.
+ * Receives one hook event. Claude Code, Codex, Cursor and the OpenCode plugin pipe the payload
+ * on stdin; Codex notify passes it as the last argument. Always returns 0: a failure here must
+ * not stop the agent, so it is reported on stderr. A pre-tool event that cannot be checked is
+ * answered allow (fail open); see pretool.ts for the cases that answer otherwise.
  */
 export async function runHook(args: string[], io: HookIo): Promise<number> {
+  const writeOutput = io.writeOutput ?? (() => {});
+  let agent: HookAgent | undefined;
+  let payload: Record<string, unknown> | undefined;
+  let answered = false;
   try {
     const name = args[0] ?? "";
-    const agent = HOOK_AGENTS[name as keyof typeof HOOK_AGENTS];
+    agent = HOOK_AGENTS[name as keyof typeof HOOK_AGENTS];
     if (!agent) {
-      throw new Error(`expected claude, codex or codex-notify, got "${name}"`);
+      throw new Error(`expected claude, codex, codex-notify, cursor or opencode, got "${name}"`);
     }
-    const dir = spoolDir(io.env);
-    if (!dir) throw new Error("HOME is not set, so there is no ~/.selfhost/spool");
     const argument = agent === "codex-notify" && args.length > 1 ? args.at(-1) : undefined;
     const text = argument ?? (await io.readStdin());
     if (text.trim() === "") throw new Error("no payload");
-    appendToSpool(dir, agent, text, io.now);
+    payload = parsePayload(text);
+    let guard: GuardRecord | undefined;
+    if (isPreToolEvent(agent, payload)) {
+      const check = io.checkPreTool ?? (await import("./pretool.js")).checkPreTool;
+      const result = await check(agent, payload, { env: io.env, writeError: io.writeError });
+      writeOutput(result.output);
+      answered = true;
+      guard = result.guard;
+    } else {
+      writeOutput(otherEventText(agent, payload));
+      answered = true;
+    }
+    const dir = spoolDir(io.env);
+    if (!dir) throw new Error("HOME is not set, so there is no ~/.selfhost/spool");
+    appendToSpool(dir, agent, payload, io.now, guard);
   } catch (error) {
-    io.writeError(`selfhost hook: ${error instanceof Error ? error.message : String(error)}`);
+    io.writeError(`selfhost hook: ${errorText(error)}`);
+    if (!answered && agent && payload && isPreToolEvent(agent, payload)) {
+      io.writeError("selfhost hook: the call was allowed without a check (fail open)");
+      writeOutput(failOpenText(agent, payload));
+      const guard: GuardRecord = {
+        answer: "allow",
+        hits: [],
+        failures: [`internal: ${errorText(error)}`],
+        fail_open: true,
+        ms: 0,
+      };
+      try {
+        const dir = spoolDir(io.env);
+        if (dir) appendToSpool(dir, agent, payload, io.now, guard);
+      } catch {
+        // Already reported above; the answer matters more than the record.
+      }
+    }
   }
   return 0;
 }
@@ -121,6 +216,9 @@ export function hookMain(args: string[]): Promise<number> {
   return runHook(args, {
     env: process.env,
     readStdin,
+    writeOutput: (text) => {
+      if (text !== "") process.stdout.write(`${text}\n`);
+    },
     writeError: (line) => process.stderr.write(`${line}\n`),
   });
 }

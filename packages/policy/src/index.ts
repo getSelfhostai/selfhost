@@ -1,4 +1,13 @@
 export {
+  type CheckerFailure,
+  type CheckOptions,
+  checkToolCall,
+  DEFAULT_CHECK_BUDGET_MS,
+  decide,
+  type ToolCallChecker,
+  type ToolCallDecision,
+} from "./check.js";
+export {
   effectiveRules,
   evaluate,
   type PolicyCheck,
@@ -6,6 +15,13 @@ export {
   policyChecks,
   type RuleScope,
 } from "./evaluate.js";
+export {
+  GUARDRAILS,
+  type GuardContext,
+  guardrailChecks,
+  guardrailHits,
+  isSecretPath,
+} from "./guardrails.js";
 export { anyGlobMatches, globMatches } from "./match.js";
 export {
   type ObservedRule,
@@ -15,5 +31,6 @@ export {
   POLICY_ACTOR_ID,
   policyEvent,
 } from "./observe.js";
+export { type ShellCommand, type ShellOptions, shellCommands } from "./shell.js";
 export { type PolicySource, policySource } from "./source.js";
 export { mcpServerOf, normalizePath, type ToolCall, toolCallFromEvent } from "./tool-call.js";

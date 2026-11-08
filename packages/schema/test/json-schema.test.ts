@@ -15,6 +15,7 @@ const SEMANTIC_ONLY = new Set([
   "duplicate-rule-id.toml",
   "override-unknown-rule.toml",
   "reserved-rule-id.toml",
+  "reserved-guardrail-id.toml",
   "not-toml.toml",
 ]);
 

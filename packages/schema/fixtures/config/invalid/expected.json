@@ -13,5 +13,7 @@
   "mcp-mode-unknown.toml": { "field": "mcp.mode", "line": 4 },
   "models-allow-empty.toml": { "field": "models.allow[1]", "line": 4 },
   "reserved-rule-id.toml": { "field": "rules[0].id", "line": 7 },
-  "github-login-invalid.toml": { "field": "review.github_logins[\"bob@example.com\"]", "line": 4 }
+  "github-login-invalid.toml": { "field": "review.github_logins[\"bob@example.com\"]", "line": 4 },
+  "reserved-guardrail-id.toml": { "field": "rules[0].id", "line": 4 },
+  "guardrail-unknown.toml": { "field": "guardrails.disable[1]", "line": 4 }
 }

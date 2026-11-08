@@ -1,0 +1,26 @@
+# The policy every guardrails fixture case runs against. Built-in guardrails are on (enforce) by
+# default; the rules and the [mcp] list check that rules, allow lists and guardrails share one
+# decision.
+version = 1
+
+[[rules]]
+id = "ask-before-migrations"
+mode = "enforce"
+match = { path = "db/migrations/**" }
+action = "ask"
+message = "Migrations need a person's review."
+
+# Observe only: recorded on the decision, never applied.
+[[rules]]
+id = "observe-curl"
+match = { command = '\bcurl\b' }
+action = "block"
+message = "Agents do not call curl."
+
+[mcp]
+mode = "enforce"
+allow = ["github"]
+
+[guardrails]
+prod_connections = ["*.prod.acme.internal", "PROD_DATABASE_URL"]
+prod_credentials = ["PROD_*", "prod", "~/.config/acme/prod-*.json"]

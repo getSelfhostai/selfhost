@@ -3,6 +3,7 @@ export {
   SourcePayloadError,
   stableEventId,
   type TokenCounts,
+  toolDetails,
 } from "./common.js";
 export { mapGatewayLog } from "./gateway.js";
 export { mapClaudeCodeHook, mapCodexHook, mapCodexNotify } from "./hooks.js";

@@ -30,6 +30,17 @@ export interface HooksSpec {
    * `{agent}` is replaced with the agent id, for example `selfhost hook --agent {agent}`.
    */
   command: string;
+  /**
+   * all (the default) hooks every event selfhost reads; pre_tool only the events whose answer
+   * can stop a tool call, as the guardrails pack needs.
+   */
+  events?: "all" | "pre_tool";
+  /**
+   * An OpenCode plugin, as JavaScript source. OpenCode has no hook settings, so with this the
+   * hooks item for OpenCode is this file in its plugins folder; without it OpenCode's hooks
+   * are unsupported.
+   */
+  opencodePlugin?: string;
 }
 
 export interface AgentConfigInput {
@@ -42,6 +53,12 @@ export interface AgentConfigInput {
 
 export interface PlanOptions extends AgentConfigInput {
   home: string;
+  /**
+   * Which of selfhost's setups the plan is for. Each keeps its own record of what it wrote (and
+   * its own block in a TOML file), so the guardrails pack and `agents configure` are added and
+   * removed apart. Default: the main setup.
+   */
+  profile?: string;
   /** Process environment, read for CLAUDE_CONFIG_DIR, CODEX_HOME, XDG_* and similar. */
   processEnv?: Env;
   platform?: NodeJS.Platform;
@@ -93,10 +110,12 @@ export type Edit =
 export type Owned =
   | { kind: "key"; item: string; path: string[] }
   | { kind: "container"; path: string[] }
-  | { kind: "hook"; item: string; path: string[]; style: HookStyle; command: string };
+  | { kind: "hook"; item: string; path: string[]; style: HookStyle; command: string }
+  | { kind: "file"; item: string };
 
 export interface ManifestFile {
-  format: "json" | "yaml" | "toml";
+  /** text is a whole file selfhost wrote, such as an OpenCode plugin. */
+  format: "json" | "yaml" | "toml" | "text";
   /** True when selfhost created the file, so removal may delete it once it is empty. */
   created: boolean;
   owned: Owned[];
@@ -134,11 +153,28 @@ export interface TomlItem {
   note?: string;
 }
 
+/** The marker lines around selfhost's block in a TOML file, one pair per profile. */
+export interface TomlBlock {
+  start: string;
+  end: string;
+  note: string;
+}
+
 /** A TOML file, where selfhost keeps its settings in one marked block. */
 export interface TomlTarget {
   kind: "toml";
   path: string;
   items: TomlItem[];
+  /** Default: the main setup's markers. */
+  block?: TomlBlock;
 }
 
-export type Target = TreeTarget | TomlTarget;
+/** A whole file that selfhost owns, such as a plugin. */
+export interface FileTarget {
+  kind: "file";
+  path: string;
+  /** At most one: the item and the content the file should have. */
+  items: { item: string; content: string; note?: string }[];
+}
+
+export type Target = TreeTarget | TomlTarget | FileTarget;

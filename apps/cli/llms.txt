@@ -8,12 +8,14 @@
 - From source: `pnpm install && pnpm --filter @selfhost/cli build && node apps/cli/dist/main.js init`
 - Preview first: `init --dry-run` prints every change and writes nothing. `--json` prints one `selfhost.init/v1` object.
 - Join a team while installing: `init --team "selfhost join <server> <invite>"`. A refused invite exits 1 and changes no files.
+- Only the guardrails (pre-tool hooks that block destructive and secret-leaking calls in Claude Code, Codex, Cursor and OpenCode; Goose has no hooks): `selfhost guard install`, then `selfhost guard status`. No account or server.
 
 ## What it changes
 
 - A hook running `selfhost hook <agent>` in ~/.claude/settings.json and ~/.codex/config.toml (or ~/.codex/hooks.json), each file backed up first as `<file>.selfhost-backup-<UTC time>`.
 - ~/.selfhost/: the ledger (data/), hook events waiting for import (spool/), the files init changed (init.json), the team membership (config.json, team mode only).
-- selfhost.toml at the git repository root when there is none: 4 rules, all in observe mode, nothing blocked.
+- selfhost.toml at the git repository root when there is none: 4 rules, all in observe mode.
+- The hooks apply the built-in guardrails before each tool call: force pushes, git reset --hard, rm -rf outside the workspace and reads of .env and key files are blocked unless `[guardrails] mode` in selfhost.toml says observe or off.
 - No shell profile, API key or sign-in.
 
 ## Undo

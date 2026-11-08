@@ -29,6 +29,7 @@ describe("parseConfig", () => {
           spike_baseline_days: 14,
           forecast_warn_hours: 24,
         },
+        guardrails: { mode: "enforce", disable: [], prod_connections: [], prod_credentials: [] },
         teams: {},
       },
     });
