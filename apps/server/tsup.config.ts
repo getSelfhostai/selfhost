@@ -8,4 +8,9 @@ export default defineConfig({
   clean: true,
   // Workspace packages export TypeScript source, so they are bundled in.
   noExternal: [/^@selfhost\//],
+  // Bundled CommonJS dependencies (yaml, through the policy compiler) call require, which an
+  // ES module does not have.
+  banner: {
+    js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);',
+  },
 });
