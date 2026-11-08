@@ -1,0 +1,7 @@
+version = 1
+
+[[rules]]
+id = "packages.not_found"
+match = { command = "npm\\s+i" }
+action = "ask"
+message = "Ask before installing."

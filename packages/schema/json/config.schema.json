@@ -260,7 +260,7 @@
     "packages": {
       "additionalProperties": false,
       "default": {},
-      "description": "Which packages agents may install.",
+      "description": "Checks on every package an agent installs with npm, pnpm, yarn, bun, pip, uv, poetry, pipx, cargo or go, recorded under rule ids that start with \"packages.\".",
       "type": "object",
       "properties": {
         "mode": {
@@ -275,7 +275,7 @@
         },
         "allow": {
           "default": [],
-          "description": "Package names or globs to allow.",
+          "description": "Package names or globs installed without any registry check, for example \"@acme/*\". Prefix one with npm:, pypi:, cargo: or go: to limit it to that registry.",
           "type": "array",
           "items": {
             "minLength": 1,
@@ -284,7 +284,7 @@
         },
         "deny": {
           "default": [],
-          "description": "Package names or globs to deny.",
+          "description": "Package names or globs to deny, with the same prefixes as allow. Deny wins over allow.",
           "type": "array",
           "items": {
             "minLength": 1,
@@ -295,6 +295,25 @@
           "minimum": 0,
           "description": "Flag package versions published fewer than this many days ago.",
           "type": "integer"
+        },
+        "blocked_registries": {
+          "default": [],
+          "description": "Registry hosts, URLs or globs installs may not use, for example \"registry.npmjs.cf\" or \"*.example.com\". Matched against every registry, index or proxy an install names (--registry, --index-url, --extra-index-url, GOPROXY, cargo --index or --registry) or else its default one, and against the host of a URL or git install.",
+          "type": "array",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "install_scripts": {
+          "default": "ask",
+          "description": "Packages that run code at install (npm install scripts, a PyPI release with no wheel): ask flags them for a person, block stops them, allow skips the check.",
+          "type": "string",
+          "enum": [
+            "ask",
+            "block",
+            "allow"
+          ]
         }
       }
     },

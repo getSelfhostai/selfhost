@@ -1,0 +1,1046 @@
+{
+  "status": 200,
+  "body": {
+    "packageKey": {
+      "system": "GO",
+      "name": "golang.org/x/sync"
+    },
+    "versions": [
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20151030033146-b62d5b6cb434"
+        },
+        "publishedAt": "2015-10-30T03:31:46Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20160713201611-c6cf2573d3cd"
+        },
+        "publishedAt": "2016-07-13T20:16:11Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20160715182834-457c58284081"
+        },
+        "publishedAt": "2016-07-15T18:28:34Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20160715184041-53cf14c8d759"
+        },
+        "publishedAt": "2016-07-15T18:40:41Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20160715190549-316e794f7b5e"
+        },
+        "publishedAt": "2016-07-15T19:05:49Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20161004233620-1ae7c7b29e06"
+        },
+        "publishedAt": "2016-10-04T23:36:20Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20161201225126-81567d9de79a"
+        },
+        "publishedAt": "2016-12-01T22:51:26Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20161206014632-450f422ab23c"
+        },
+        "publishedAt": "2016-12-06T01:46:32Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20170215173238-54b13b0b037d"
+        },
+        "publishedAt": "2017-02-15T17:32:38Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20170216192033-37569ff7631b"
+        },
+        "publishedAt": "2017-02-16T19:20:33Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20170216192236-86ddc858aa39"
+        },
+        "publishedAt": "2017-02-16T19:22:36Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20170315185649-a60ad46e0ed3"
+        },
+        "publishedAt": "2017-03-15T18:56:49Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20170317231601-5a06fca2c336"
+        },
+        "publishedAt": "2017-03-17T23:16:01Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20170418210838-de49d9dcd27d"
+        },
+        "publishedAt": "2017-04-18T21:08:38Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20170504182618-305c7b3edb43"
+        },
+        "publishedAt": "2017-05-04T18:26:18Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20170510201452-57af736625aa"
+        },
+        "publishedAt": "2017-05-10T20:14:52Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20170517211232-f52d1811a629"
+        },
+        "publishedAt": "2017-05-17T21:12:32Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20170927054112-8e0aa688b654"
+        },
+        "publishedAt": "2017-09-27T05:41:12Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20171101214715-fd80eb99c8f6"
+        },
+        "publishedAt": "2017-11-01T21:47:15Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20180314180146-1d60e4601c6f"
+        },
+        "publishedAt": "2018-03-14T18:01:46Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20181108010431-42b317875d0f"
+        },
+        "publishedAt": "2018-11-08T01:04:31Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20181221193216-37e7f081c4d4"
+        },
+        "publishedAt": "2018-12-21T19:32:16Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20190227155943-e225da77a7e6"
+        },
+        "publishedAt": "2019-02-27T15:59:43Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20190412183630-56d357773e84"
+        },
+        "publishedAt": "2019-04-12T18:36:30Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20190423024810-112230192c58"
+        },
+        "publishedAt": "2019-04-23T02:48:10Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20190911185100-cd5d95a43a6e"
+        },
+        "publishedAt": "2019-09-11T18:51:00Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20200317015054-43a5402ce75a"
+        },
+        "publishedAt": "2020-03-17T01:50:54Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20200625203802-6e8e738ad208"
+        },
+        "publishedAt": "2020-06-25T20:38:02Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20200930132711-30421366ff76"
+        },
+        "publishedAt": "2020-09-30T13:27:11Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20201008141435-b3e1573b7520"
+        },
+        "publishedAt": "2020-10-08T14:14:35Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20201020160332-67f06af15bc9"
+        },
+        "publishedAt": "2020-10-20T16:03:32Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20201207232520-09787c993a3a"
+        },
+        "publishedAt": "2020-12-07T23:25:20Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20210220032951-036812b2e83c"
+        },
+        "publishedAt": "2021-02-20T03:29:51Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20220513210516-0976fa681c29"
+        },
+        "publishedAt": "2022-05-13T21:05:16Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20220601150217-0de741cfad7f"
+        },
+        "publishedAt": "2022-06-01T15:02:17Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20220722155255-886fb9371eb4"
+        },
+        "publishedAt": "2022-07-22T15:52:55Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20220819030929-7fc1605a5dde"
+        },
+        "publishedAt": "2022-08-19T03:09:29Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20220907140024-f12130a52804"
+        },
+        "publishedAt": "2022-09-07T14:00:24Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20220923202941-7f9b1623fab7"
+        },
+        "publishedAt": "2022-09-23T20:29:41Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20220929204114-8fcdb60fdcc0"
+        },
+        "publishedAt": "2022-09-29T20:41:14Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20230419161159-1ea32573ddff"
+        },
+        "publishedAt": "2023-04-19T16:11:59Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20230517132107-a6666c150eb9"
+        },
+        "publishedAt": "2023-05-17T13:21:07Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20230523185436-4966af63bb0c"
+        },
+        "publishedAt": "2023-05-23T18:54:36Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20230601203510-93782cc822b6"
+        },
+        "publishedAt": "2023-06-01T20:35:10Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20230926164649-22ba2078e183"
+        },
+        "publishedAt": "2023-09-26T16:46:49Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20231011140417-10739b037d36"
+        },
+        "publishedAt": "2023-10-11T14:04:17Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20231207165819-59c1ca1e4661"
+        },
+        "publishedAt": "2023-12-07T16:58:19Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20240716160658-411f99ef1213"
+        },
+        "publishedAt": "2024-07-16T16:06:58Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20241101004618-151027eb5637"
+        },
+        "publishedAt": "2024-11-01T00:46:18Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20241113011828-913fb63af28f"
+        },
+        "publishedAt": "2024-11-13T01:18:28Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20250117154937-fe3591bd8a96"
+        },
+        "publishedAt": "2025-01-17T15:49:37Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20250304233319-b637f27e40ad"
+        },
+        "publishedAt": "2025-03-04T23:33:19Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20250407162050-506c70f97318"
+        },
+        "publishedAt": "2025-04-07T16:20:50Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20250528151315-8a14946fb031"
+        },
+        "publishedAt": "2025-05-28T15:13:15Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20250620182935-7fad2c9213e0"
+        },
+        "publishedAt": "2025-06-20T18:29:35Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20250813144705-04914c200cb3"
+        },
+        "publishedAt": "2025-08-13T14:47:05Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20260223185442-ec11c4a93de2"
+        },
+        "publishedAt": "2026-02-23T18:54:42Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20260604165753-5071ed6a9f16"
+        },
+        "publishedAt": "2026-06-04T16:57:53Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20260701172934-1eb64d4bc0cd"
+        },
+        "publishedAt": "2026-07-01T17:29:34Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.0.0-20261015161703-1f920df1e8fc"
+        },
+        "publishedAt": "2026-10-15T16:17:03Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.1.0"
+        },
+        "publishedAt": "2022-09-29T20:41:14Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.1.1-0.20230419161159-1ea32573ddff"
+        },
+        "publishedAt": "2023-04-19T16:11:59Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.10.0"
+        },
+        "publishedAt": "2024-11-13T01:18:28Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.10.1-0.20250117154937-fe3591bd8a96"
+        },
+        "publishedAt": "2025-01-17T15:49:37Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.11.0"
+        },
+        "publishedAt": "2025-01-17T15:49:37Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.11.1-0.20250214214105-960bf1fb13c6"
+        },
+        "publishedAt": "2025-02-14T21:41:05Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.11.1-0.20250304233319-b637f27e40ad"
+        },
+        "publishedAt": "2025-03-04T23:33:19Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.12.0"
+        },
+        "publishedAt": "2025-03-04T23:33:19Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.12.1-0.20250402150534-396f3a06ea2a"
+        },
+        "publishedAt": "2025-04-02T15:05:34Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.13.0"
+        },
+        "publishedAt": "2025-04-02T15:05:34Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.13.1-0.20250407162050-506c70f97318"
+        },
+        "publishedAt": "2025-04-07T16:20:50Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.14.0"
+        },
+        "publishedAt": "2025-04-07T16:20:50Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.14.1-0.20250514235408-d1ac909e84c0"
+        },
+        "publishedAt": "2025-05-14T23:54:08Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.14.1-0.20250524152725-1869c690bf11"
+        },
+        "publishedAt": "2025-05-24T15:27:25Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.14.1-0.20250528151315-8a14946fb031"
+        },
+        "publishedAt": "2025-05-28T15:13:15Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.15.0"
+        },
+        "publishedAt": "2025-05-28T15:13:15Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.15.1-0.20250620182935-7fad2c9213e0"
+        },
+        "publishedAt": "2025-06-20T18:29:35Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.16.0"
+        },
+        "publishedAt": "2025-06-20T18:29:35Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.16.1-0.20250813144705-04914c200cb3"
+        },
+        "publishedAt": "2025-08-13T14:47:05Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.17.0"
+        },
+        "publishedAt": "2025-08-13T14:47:05Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.17.1-0.20251021174411-1966f539bbd7"
+        },
+        "publishedAt": "2025-10-21T17:44:11Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.18.0"
+        },
+        "publishedAt": "2025-10-21T17:44:11Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.18.1-0.20251204002439-2a180e22fddc"
+        },
+        "publishedAt": "2025-12-04T00:24:39Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.19.0"
+        },
+        "publishedAt": "2025-12-04T00:24:39Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.19.1-0.20260211230050-1a583072c11b"
+        },
+        "publishedAt": "2026-02-11T23:00:50Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.19.1-0.20260223185442-ec11c4a93de2"
+        },
+        "publishedAt": "2026-02-23T18:54:42Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.2.0"
+        },
+        "publishedAt": "2023-04-19T16:11:59Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.2.1-0.20230517132107-a6666c150eb9"
+        },
+        "publishedAt": "2023-05-17T13:21:07Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.2.1-0.20230523185436-4966af63bb0c"
+        },
+        "publishedAt": "2023-05-23T18:54:36Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.2.1-0.20230601203510-93782cc822b6"
+        },
+        "publishedAt": "2023-06-01T20:35:10Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.20.0"
+        },
+        "publishedAt": "2026-02-23T18:54:42Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.20.1-0.20260604165753-5071ed6a9f16"
+        },
+        "publishedAt": "2026-06-04T16:57:53Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.21.0"
+        },
+        "publishedAt": "2026-06-04T16:57:53Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.21.1-0.20260701172934-1eb64d4bc0cd"
+        },
+        "publishedAt": "2026-07-01T17:29:34Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.22.0"
+        },
+        "publishedAt": "2026-07-01T17:29:34Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.22.1-0.20260819171727-3ffd83cb522e"
+        },
+        "publishedAt": "2026-08-19T17:17:27Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.22.1-0.20260831030441-f75267d8412f"
+        },
+        "publishedAt": "2026-08-31T03:04:41Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.23.0"
+        },
+        "publishedAt": "2026-08-31T03:04:41Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.23.1-0.20260923162817-36f2d70ecde9"
+        },
+        "publishedAt": "2026-09-23T16:28:17Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.24.0"
+        },
+        "publishedAt": "2026-09-23T16:28:17Z",
+        "isDefault": true
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.24.1-0.20261015161703-1f920df1e8fc"
+        },
+        "publishedAt": "2026-10-15T16:17:03Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.3.0"
+        },
+        "publishedAt": "2023-06-01T20:35:10Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.3.1-0.20230926164649-22ba2078e183"
+        },
+        "publishedAt": "2023-09-26T16:46:49Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.4.0"
+        },
+        "publishedAt": "2023-09-26T16:46:49Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.4.1-0.20231011140417-10739b037d36"
+        },
+        "publishedAt": "2023-10-11T14:04:17Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.5.0"
+        },
+        "publishedAt": "2023-10-11T14:04:17Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.5.1-0.20231207165819-59c1ca1e4661"
+        },
+        "publishedAt": "2023-12-07T16:58:19Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.6.0"
+        },
+        "publishedAt": "2023-12-07T16:58:19Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.6.1-0.20240304172602-14be23e5b48b"
+        },
+        "publishedAt": "2024-03-04T17:26:02Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.7.0"
+        },
+        "publishedAt": "2024-03-04T17:26:02Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.7.1-0.20240716160658-411f99ef1213"
+        },
+        "publishedAt": "2024-07-16T16:06:58Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.8.0"
+        },
+        "publishedAt": "2024-07-16T16:06:58Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.8.1-0.20241101004618-151027eb5637"
+        },
+        "publishedAt": "2024-11-01T00:46:18Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.9.0"
+        },
+        "publishedAt": "2024-11-01T00:46:18Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "GO",
+          "name": "golang.org/x/sync",
+          "version": "v0.9.1-0.20241113011828-913fb63af28f"
+        },
+        "publishedAt": "2024-11-13T01:18:28Z",
+        "isDefault": false
+      }
+    ]
+  }
+}

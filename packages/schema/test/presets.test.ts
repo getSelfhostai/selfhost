@@ -39,6 +39,7 @@ describe("config.schema.json", () => {
       "duplicate-rule-id.toml",
       "override-unknown-rule.toml",
       "reserved-rule-id.toml",
+      "reserved-package-rule-id.toml",
       "not-toml.toml",
     ];
     const dir = join(FIXTURES, "config", "invalid");

@@ -1,0 +1,506 @@
+{
+  "status": 200,
+  "body": {
+    "packageKey": {
+      "system": "NPM",
+      "name": "bcrypt"
+    },
+    "versions": [
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.1.2"
+        },
+        "publishedAt": "2011-02-21T19:08:56Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.1.3"
+        },
+        "publishedAt": "2011-04-12T05:25:27Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.2.0"
+        },
+        "publishedAt": "2011-03-28T05:57:12Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.2.1"
+        },
+        "publishedAt": "2011-04-12T05:10:00Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.2.2"
+        },
+        "publishedAt": "2011-04-13T02:03:37Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.2.3"
+        },
+        "publishedAt": "2011-04-24T19:32:38Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.2.4"
+        },
+        "publishedAt": "2011-08-08T01:52:14Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.3.0"
+        },
+        "publishedAt": "2011-09-02T03:39:02Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.3.1"
+        },
+        "publishedAt": "2011-09-02T22:19:18Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.3.2"
+        },
+        "publishedAt": "2011-09-26T23:54:54Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.4.0"
+        },
+        "publishedAt": "2011-10-05T12:48:59Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.4.1"
+        },
+        "publishedAt": "2011-11-18T13:57:42Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.5.0"
+        },
+        "publishedAt": "2012-01-09T04:15:26Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.6.0"
+        },
+        "publishedAt": "2012-06-26T17:23:19Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.7.0"
+        },
+        "publishedAt": "2012-07-04T17:36:17Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.7.1"
+        },
+        "publishedAt": "2012-08-04T04:42:55Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.7.2"
+        },
+        "publishedAt": "2012-09-02T19:21:59Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.7.3"
+        },
+        "publishedAt": "2012-11-04T04:16:14Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.7.4"
+        },
+        "publishedAt": "2013-02-26T02:43:26Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.7.5"
+        },
+        "publishedAt": "2013-03-12T03:21:50Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.7.6"
+        },
+        "publishedAt": "2013-06-13T00:36:00Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.7.7"
+        },
+        "publishedAt": "2013-09-05T22:46:19Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.7.8"
+        },
+        "publishedAt": "2014-04-25T14:22:32Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.8.0"
+        },
+        "publishedAt": "2014-08-03T23:03:45Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.8.1"
+        },
+        "publishedAt": "2015-01-19T02:51:25Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.8.2"
+        },
+        "publishedAt": "2015-03-29T02:02:28Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.8.3"
+        },
+        "publishedAt": "2015-05-06T19:40:27Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.8.4"
+        },
+        "publishedAt": "2015-07-24T16:48:25Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.8.5"
+        },
+        "publishedAt": "2015-08-12T22:11:55Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.8.6"
+        },
+        "publishedAt": "2016-04-21T01:03:00Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "0.8.7"
+        },
+        "publishedAt": "2016-06-10T02:45:14Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "1.0.0"
+        },
+        "publishedAt": "2016-12-05T01:01:21Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "1.0.1"
+        },
+        "publishedAt": "2016-12-08T05:16:23Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "1.0.2"
+        },
+        "publishedAt": "2016-12-31T22:40:45Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "1.0.3"
+        },
+        "publishedAt": "2017-08-24T03:47:34Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "1.1.0-napi"
+        },
+        "publishedAt": "2018-01-21T07:35:27Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "2.0.0"
+        },
+        "publishedAt": "2018-04-07T15:36:38Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "2.0.1"
+        },
+        "publishedAt": "2018-04-20T17:40:43Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "3.0.0"
+        },
+        "publishedAt": "2018-07-06T09:55:34Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "3.0.1"
+        },
+        "publishedAt": "2018-09-21T12:47:19Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "3.0.2"
+        },
+        "publishedAt": "2018-10-18T02:58:28Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "3.0.3"
+        },
+        "publishedAt": "2018-12-24T03:55:31Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "3.0.4"
+        },
+        "publishedAt": "2019-02-06T20:11:20Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "3.0.4-napi"
+        },
+        "publishedAt": "2019-03-08T12:37:49Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "3.0.5"
+        },
+        "publishedAt": "2019-03-19T12:54:33Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "3.0.6"
+        },
+        "publishedAt": "2019-04-14T09:25:57Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "3.0.7"
+        },
+        "publishedAt": "2019-11-18T10:26:39Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "3.0.8"
+        },
+        "publishedAt": "2020-02-05T18:31:55Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "4.0.0"
+        },
+        "publishedAt": "2020-02-21T09:58:15Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "4.0.1"
+        },
+        "publishedAt": "2020-03-02T16:23:41Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "5.0.0"
+        },
+        "publishedAt": "2020-06-08T10:01:24Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "5.0.1"
+        },
+        "publishedAt": "2021-02-26T04:59:28Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "5.1.0"
+        },
+        "publishedAt": "2022-10-06T17:44:39Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "5.1.1"
+        },
+        "publishedAt": "2023-08-16T03:48:51Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "bcrypt",
+          "version": "6.0.0"
+        },
+        "publishedAt": "2025-05-11T18:06:24Z",
+        "isDefault": true
+      }
+    ]
+  }
+}

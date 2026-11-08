@@ -1,3 +1,4 @@
+import { PACKAGE_RULE_PREFIX } from "@selfhost/schema";
 import {
   BRIEF_MARKER,
   BRIEF_SECTIONS,
@@ -121,14 +122,20 @@ function riskyLine(item: RiskyLine): string {
 }
 
 function blockedLine(item: BriefBlock): string {
+  // The package guard's verdicts are about an install: a block stops it, an ask flags it.
+  const install = item.rule_id.startsWith(PACKAGE_RULE_PREFIX) ? " the install" : "";
   const verb =
     item.verdict === "block"
       ? item.mode === "enforce"
-        ? "blocked"
-        : "would have blocked (observe mode)"
-      : item.mode === "enforce"
-        ? "stopped for approval"
-        : "would have stopped for approval (observe mode)";
+        ? `blocked${install}`
+        : `would have blocked${install} (observe mode)`
+      : install
+        ? item.mode === "enforce"
+          ? "flagged the install and stopped it for approval"
+          : "flagged the install (observe mode)"
+        : item.mode === "enforce"
+          ? "stopped for approval"
+          : "would have stopped for approval (observe mode)";
   const what = item.target
     ? ` ${code(item.target)}`
     : item.tool

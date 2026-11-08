@@ -32,6 +32,7 @@
     "@selfhost/ee-risk": "workspace:*",
     "@selfhost/importers": "workspace:*",
     "@selfhost/ledger": "workspace:*",
+    "@selfhost/package-guard": "workspace:*",
     "@selfhost/policy": "workspace:*",
     "@selfhost/pr": "workspace:*",
     "@selfhost/review": "workspace:*",

@@ -36,6 +36,29 @@ export const MCP_ALLOW_RULE_ID = "mcp.allow";
 export const MODELS_ALLOW_RULE_ID = "models.allow";
 export const BUILT_IN_RULE_IDS = [MCP_ALLOW_RULE_ID, MODELS_ALLOW_RULE_ID] as const;
 
+/** Every rule id the package guard records starts with this. */
+export const PACKAGE_RULE_PREFIX = "packages.";
+/** Rule ids the package guard records for installs that break [packages], one per check. */
+export const PACKAGE_RULE_IDS = {
+  /** The registry has no package by that name: block. */
+  not_found: "packages.not_found",
+  /** The version was published fewer than min_age_days ago: ask. */
+  too_new: "packages.too_new",
+  /** The package runs code at install: install_scripts decides. */
+  install_scripts: "packages.install_scripts",
+  /** The install uses a registry in blocked_registries: block. */
+  blocked_registry: "packages.blocked_registry",
+  /** The package is in deny: block. */
+  deny: "packages.deny",
+  /** OSV lists the package or version as malicious: block. */
+  malicious: "packages.malicious",
+  /** The registry could not be reached in time, so the install ran unchecked: always observe. */
+  unchecked: "packages.unchecked",
+} as const;
+
+export const INSTALL_SCRIPT_ACTIONS = ["ask", "block", "allow"] as const;
+export type InstallScriptAction = (typeof INSTALL_SCRIPT_ACTIONS)[number];
+
 const RULE_ID_PATTERN = "^[A-Za-z0-9][A-Za-z0-9_.-]*$";
 /** GitHub logins: letters, digits and single hyphens, at most 39 characters. */
 const GITHUB_LOGIN_PATTERN = "^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$";
@@ -341,11 +364,16 @@ export const SelfhostConfigSchema = Type.Object(
           allow: Type.Optional(
             Type.Array(NonEmpty(), {
               default: [],
-              description: "Package names or globs to allow.",
+              description:
+                'Package names or globs installed without any registry check, for example "@acme/*". Prefix one with npm:, pypi:, cargo: or go: to limit it to that registry.',
             }),
           ),
           deny: Type.Optional(
-            Type.Array(NonEmpty(), { default: [], description: "Package names or globs to deny." }),
+            Type.Array(NonEmpty(), {
+              default: [],
+              description:
+                "Package names or globs to deny, with the same prefixes as allow. Deny wins over allow.",
+            }),
           ),
           min_age_days: Type.Optional(
             Type.Integer({
@@ -353,11 +381,25 @@ export const SelfhostConfigSchema = Type.Object(
               description: "Flag package versions published fewer than this many days ago.",
             }),
           ),
+          blocked_registries: Type.Optional(
+            Type.Array(NonEmpty(), {
+              default: [],
+              description:
+                'Registry hosts, URLs or globs installs may not use, for example "registry.npmjs.cf" or "*.example.com". Matched against every registry, index or proxy an install names (--registry, --index-url, --extra-index-url, GOPROXY, cargo --index or --registry) or else its default one, and against the host of a URL or git install.',
+            }),
+          ),
+          install_scripts: Type.Optional(
+            StringEnum(INSTALL_SCRIPT_ACTIONS, {
+              default: "ask",
+              description:
+                "Packages that run code at install (npm install scripts, a PyPI release with no wheel): ask flags them for a person, block stops them, allow skips the check.",
+            }),
+          ),
         },
         {
           additionalProperties: false,
           default: {},
-          description: "Which packages agents may install.",
+          description: `Checks on every package an agent installs with npm, pnpm, yarn, bun, pip, uv, poetry, pipx, cargo or go, recorded under rule ids that start with "${PACKAGE_RULE_PREFIX}".`,
         },
       ),
     ),
@@ -493,7 +535,12 @@ export type ResolvedSelfhostConfig = Omit<
   review: Present<SelfhostConfig["review"]> &
     Required<Omit<Present<SelfhostConfig["review"]>, "github_team">>;
   packages: Present<SelfhostConfig["packages"]> &
-    Required<Pick<Present<SelfhostConfig["packages"]>, "mode" | "allow" | "deny">>;
+    Required<
+      Pick<
+        Present<SelfhostConfig["packages"]>,
+        "mode" | "allow" | "deny" | "blocked_registries" | "install_scripts"
+      >
+    >;
   mcp: Required<Present<SelfhostConfig["mcp"]>>;
   models: Required<Present<SelfhostConfig["models"]>>;
   alerts: Present<SelfhostConfig["alerts"]> &
@@ -537,6 +584,11 @@ function semanticErrors(config: ResolvedSelfhostConfig): SegmentError[] {
       errors.push({
         segments: ["rules", index, "id"],
         message: `Rule id "${rule.id}" is reserved for ${reservedBy}`,
+      });
+    } else if (rule.id.startsWith(PACKAGE_RULE_PREFIX)) {
+      errors.push({
+        segments: ["rules", index, "id"],
+        message: `Rule id "${rule.id}" is reserved: ids that start with "${PACKAGE_RULE_PREFIX}" belong to [packages]`,
       });
     } else {
       ruleIds.set(rule.id, index);

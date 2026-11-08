@@ -1,0 +1,11 @@
+{
+  "status": 200,
+  "body": {
+    "name": "cowsay",
+    "version": "1.6.0",
+    "scripts": {
+      "test": "tape test/**/*.js",
+      "prepare": "rollup -c"
+    }
+  }
+}

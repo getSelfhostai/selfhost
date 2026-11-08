@@ -1,0 +1,12 @@
+{
+  "status": 200,
+  "body": {
+    "name": "bcrypt",
+    "version": "6.0.0",
+    "scripts": {
+      "test": "jest",
+      "build": "prebuildify --napi --tag-libc --strip",
+      "install": "node-gyp-build"
+    }
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "name": "@selfhost/package-guard",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Checks every package an agent installs with npm, pip, cargo or go against its registry: blocks names that do not exist, flags brand new packages and install scripts.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "capture": "tsx scripts/capture-fixtures.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@selfhost/policy": "workspace:*",
+    "@selfhost/schema": "workspace:*",
+    "semver": "catalog:",
+    "shell-quote": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/semver": "catalog:",
+    "tsup": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

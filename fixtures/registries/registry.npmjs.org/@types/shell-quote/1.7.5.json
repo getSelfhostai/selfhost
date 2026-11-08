@@ -1,0 +1,8 @@
+{
+  "status": 200,
+  "body": {
+    "name": "@types/shell-quote",
+    "version": "1.7.5",
+    "scripts": {}
+  }
+}
