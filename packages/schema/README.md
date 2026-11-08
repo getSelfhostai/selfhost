@@ -151,6 +151,37 @@ key = "team-overflow"       # gateway key alias
 monthly_cap_usd = 500
 ```
 
+## Runtime
+
+`[runtime]` says how each agent workspace is set up, run and cleaned up; the runtime plugin reads
+it, and `selfhost migrate conductor` writes it from Conductor's settings. Every command runs in
+the workspace folder with `RUNTIME_VARIABLES` set: `SELFHOST_WORKSPACE_NAME`,
+`SELFHOST_WORKSPACE_PATH`, `SELFHOST_ROOT_PATH`, `SELFHOST_DEFAULT_BRANCH` and `SELFHOST_PORT`
+(the first of 10 ports kept for the workspace). `[runtime.env]` values may refer to them as
+`$NAME` or `${NAME}`; names that start with `SELFHOST_` are reserved, and at most one run command
+is the default.
+
+```toml
+[runtime]
+setup = """
+pnpm install
+cp "$SELFHOST_ROOT_PATH/.env.local" .env.local
+"""
+archive = "./script/workspace-archive.sh"   # before a workspace is archived
+run_mode = "concurrent"                     # concurrent (default) or exclusive
+
+[runtime.run.dev]
+command = "pnpm dev --port $SELFHOST_PORT"
+default = true
+
+[runtime.run.api]
+command = "pnpm api --port $((SELFHOST_PORT + 1))"
+cwd = "services/api"                        # relative to the workspace
+
+[runtime.env]
+API_BASE_URL = "http://localhost:${SELFHOST_PORT}"
+```
+
 ## Review item
 
 One entry in the review list: `kind`, `state`, `blocking`, `risk` (score 0 to 100 with reasons),

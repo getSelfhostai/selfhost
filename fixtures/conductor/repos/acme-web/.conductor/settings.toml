@@ -1,0 +1,57 @@
+"$schema" = "https://conductor.build/schemas/settings.repo.schema.json"
+enterprise_data_privacy = true
+file_include_globs = ".env*\nconfig/*.local.json\n"
+notify_on_finish = true
+
+[scripts]
+setup = """
+pnpm install
+cp "$CONDUCTOR_ROOT_PATH/.env.local" .env.local
+./script/setup-db.sh
+"""
+archive = "./script/workspace-archive.sh"
+run_mode = "nonconcurrent"
+auto_run_after_setup = true
+teardown = "docker compose down"
+
+[scripts.run.web]
+command = "pnpm dev --port $CONDUCTOR_PORT"
+default = true
+icon = "play"
+
+[scripts.run.api]
+available_in = [ "local" ]
+command = "pnpm api"
+args = [ "--port", "$((CONDUCTOR_PORT + 1))" ]
+options = { cwd = "services/api" }
+icon = "server"
+
+[scripts.run."e2e tests"]
+command = "pnpm test:e2e --base-url http://localhost:${CONDUCTOR_PORT}"
+icon = "test-tube"
+hide = true
+
+[scripts.run.sync]
+available_in = "cloud"
+command = "curl -fsS \"$CONDUCTOR_API_URL/v0/projects\""
+
+[environment_variables]
+API_BASE_URL = "http://localhost:$CONDUCTOR_PORT"
+LOG_LEVEL = "debug"
+STRIPE_SECRET_KEY = "replace-me"
+
+[environment_variables.local]
+LOCAL_AGENT_MODE = "1"
+
+[environment_variables.cloud]
+OPENAI_BASE_URL = "https://openai.example.com"
+
+[prompts]
+general = "Prefer small, reviewable changes and run the narrowest relevant tests."
+
+[git]
+archive_on_merge = true
+branch_prefix = "agent"
+
+[[preview_urls]]
+url = "http://localhost:$CONDUCTOR_PORT"

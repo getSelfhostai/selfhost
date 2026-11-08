@@ -1,0 +1,27 @@
+{
+  "description": "Synthetic Conductor repositories and a workspace history export for selfhost migrate conductor. Nothing here comes from a real Conductor install: the settings follow Conductor's published docs and settings schema, and the export follows the objects of its published API, since the format of Conductor's account export (Settings, Account, Export data) is not published.",
+  "sources": {
+    "settings": "https://www.conductor.build/docs/reference/settings and https://conductor.build/schemas/settings.repo.schema.json, fetched 2026-11-08",
+    "scripts": "https://www.conductor.build/docs/reference/scripts, fetched 2026-11-08",
+    "conductor.json": "https://www.conductor.build/docs/reference/conductor-json, fetched 2026-11-08",
+    "variables": "https://www.conductor.build/docs/reference/environment-variables, fetched 2026-11-08",
+    "api": "https://www.conductor.build/docs/api and https://api.conductor.build/v0/openapi.json, fetched 2026-11-08",
+    "export": "https://www.conductor.build/changelog/0.93.0-conductor-is-joining-meta, fetched 2026-11-08"
+  },
+  "files": {
+    "repos/acme-web/.conductor/settings.toml": "shared settings: a multi-line setup that runs script/setup-db.sh, an archive script, run_mode nonconcurrent, four named actions (args, options.cwd, available_in, icon, hide, default), environment_variables with local and cloud tables and a secret-named key, prompts, git, preview_urls, file_include_globs, and two keys the schema does not have (notify_on_finish, scripts.teardown)",
+    "repos/acme-web/.conductor/settings.local.toml": "one machine's overrides, which migrate lists but does not move",
+    "repos/acme-web/conductor.json": "a legacy file that Conductor ignores while .conductor/settings.toml exists",
+    "repos/acme-web/script/setup-db.sh": "a script the setup runs; reads CONDUCTOR_WORKSPACE_NAME, CONDUCTOR_PORT and CONDUCTOR_IS_LOCAL",
+    "repos/acme-web/script/workspace-archive.sh": "the archive script; reads CONDUCTOR_WORKSPACE_NAME",
+    "repos/acme-web/selfhost.toml": "an existing selfhost.toml with comments and one rule, which migrate must keep byte for byte",
+    "repos/legacy-api/conductor.json": "the legacy example from Conductor's conductor.json docs",
+    "repos/no-settings/README.md": "a repository with no Conductor settings",
+    "export/projects.json": "GET /v0/projects page",
+    "export/workspaces/lisbon.json": "an archived workspace (GET /v0/workspaces/{id}) with two Claude sessions and their transcript messages nested under sessions and messages",
+    "export/workspaces/porto.json": "a cloud workspace with no repoUrl (the repository comes from its project), one Codex session and one session with no messages or timestamps",
+    "export/sessions/ses_osaka_1.messages.json": "GET /v0/sessions/{id}/messages page for a session known otherwise only from transcripts.json",
+    "export/transcripts.json": "POST /v0/sql response with rows of session_transcripts_view",
+    "export/notes.txt": "a file that is not JSON, which the importer does not read"
+  }
+}

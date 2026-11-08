@@ -1,0 +1,22 @@
+# How each agent workspace is set up, run and cleaned up.
+version = 1
+
+[runtime]
+setup = '''
+pnpm install
+cp "$SELFHOST_ROOT_PATH/.env.local" .env.local
+'''
+archive = "./script/workspace-archive.sh"
+run_mode = "exclusive"
+
+[runtime.run.dev]
+command = "pnpm dev --port $SELFHOST_PORT"
+default = true
+
+[runtime.run."api server"]
+command = "pnpm api --port $((SELFHOST_PORT + 1))"
+cwd = "services/api"
+
+[runtime.env]
+API_BASE_URL = "http://localhost:${SELFHOST_PORT}"
+CONDUCTOR_WORKSPACE_NAME = "${SELFHOST_WORKSPACE_NAME}"

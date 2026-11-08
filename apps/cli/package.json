@@ -40,7 +40,8 @@
     "@selfhost/review": "workspace:*",
     "@selfhost/schema": "workspace:*",
     "@selfhost/spend": "workspace:*",
-    "commander": "catalog:"
+    "commander": "catalog:",
+    "smol-toml": "catalog:"
   },
   "devDependencies": {
     "@selfhost/server": "workspace:*",

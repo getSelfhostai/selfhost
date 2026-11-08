@@ -1,0 +1,7 @@
+{
+  "data": [
+    { "id": "prj_acme_web", "name": "acme-web", "gitRemote": "https://github.com/acme/acme-web.git" }
+  ],
+  "offset": 0,
+  "hasMore": false
+}

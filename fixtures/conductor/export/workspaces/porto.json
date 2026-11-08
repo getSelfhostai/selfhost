@@ -1,0 +1,52 @@
+{
+  "id": "ws_porto",
+  "projectId": "prj_acme_web",
+  "name": "porto",
+  "number": 15,
+  "state": "ready",
+  "createdAt": "2026-11-02T13:58:00.000Z",
+  "deepLink": "conductor://workspace/ws_porto",
+  "creatorId": "usr_2",
+  "creatorName": "dev@example.com",
+  "sessions": [
+    {
+      "id": "ses_porto_1",
+      "deepLink": "conductor://session/ses_porto_1",
+      "name": "Move the config loader to zod",
+      "model": "gpt-6.1-sol",
+      "effort": "high",
+      "messages": [
+        {
+          "id": "msg_p1_0",
+          "sessionId": "ses_porto_1",
+          "sessionIndex": 0,
+          "type": "userMessage",
+          "content": "Move the config loader to zod and keep the env names.",
+          "receivedAt": "2026-11-02T14:00:00.000Z"
+        },
+        {
+          "id": "msg_p1_1",
+          "sessionId": "ses_porto_1",
+          "sessionIndex": 1,
+          "type": "agent",
+          "content": { "type": "item.completed", "item": { "id": "item_1", "type": "command_execution", "command": "pnpm test", "exit_code": 0 } },
+          "receivedAt": "2026-11-02T14:05:00.000Z"
+        },
+        {
+          "id": "msg_p1_2",
+          "sessionId": "ses_porto_1",
+          "sessionIndex": 2,
+          "type": "agent",
+          "content": { "type": "item.completed", "item": { "id": "item_2", "type": "agent_message", "text": "The loader now parses with zod; the tests pass." } },
+          "receivedAt": "2026-11-02T14:20:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "ses_porto_2",
+      "deepLink": "conductor://session/ses_porto_2",
+      "name": "Untitled",
+      "model": "gpt-6.1-sol"
+    }
+  ]
+}

@@ -17,5 +17,9 @@
   "install-scripts-unknown.toml": { "field": "packages.install_scripts", "line": 4 },
   "github-login-invalid.toml": { "field": "review.github_logins[\"bob@example.com\"]", "line": 4 },
   "reserved-guardrail-id.toml": { "field": "rules[0].id", "line": 4 },
-  "guardrail-unknown.toml": { "field": "guardrails.disable[1]", "line": 4 }
+  "guardrail-unknown.toml": { "field": "guardrails.disable[1]", "line": 4 },
+  "runtime-run-mode-unknown.toml": { "field": "runtime.run_mode", "line": 5 },
+  "runtime-two-defaults.toml": { "field": "runtime.run.worker.default", "line": 9 },
+  "runtime-reserved-env.toml": { "field": "runtime.env.SELFHOST_PORT", "line": 5 },
+  "runtime-unknown-key.toml": { "field": "runtime.port", "line": 5 }
 }

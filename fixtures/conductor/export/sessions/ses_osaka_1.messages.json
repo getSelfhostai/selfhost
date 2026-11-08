@@ -1,0 +1,30 @@
+{
+  "data": [
+    {
+      "id": "msg_o1_0",
+      "sessionId": "ses_osaka_1",
+      "sessionIndex": 0,
+      "type": "userMessage",
+      "content": { "message": "The checkout test fails one run in ten. Find out why." },
+      "receivedAt": "2026-11-05T16:00:30.000Z"
+    },
+    {
+      "id": "msg_o1_1",
+      "sessionId": "ses_osaka_1",
+      "sessionIndex": 1,
+      "type": "agent",
+      "content": { "type": "assistant", "message": { "model": "claude-opus-5-5", "content": [{ "type": "text", "text": "The test shares a cart id across runs." }] } },
+      "receivedAt": "2026-11-05T16:20:00.000Z"
+    },
+    {
+      "id": "msg_o1_2",
+      "sessionId": "ses_osaka_1",
+      "sessionIndex": 2,
+      "type": "agent",
+      "content": { "type": "assistant", "message": { "model": "claude-opus-5-5", "content": [{ "type": "text", "text": "Fixed by seeding a fresh cart per test." }] } },
+      "receivedAt": "2026-11-05T16:44:00.000Z"
+    }
+  ],
+  "offset": 0,
+  "hasMore": false
+}

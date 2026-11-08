@@ -41,6 +41,8 @@ describe("config.schema.json", () => {
       "reserved-rule-id.toml",
       "reserved-package-rule-id.toml",
       "reserved-guardrail-id.toml",
+      "runtime-two-defaults.toml",
+      "runtime-reserved-env.toml",
       "not-toml.toml",
     ];
     const dir = join(FIXTURES, "config", "invalid");

@@ -706,6 +706,73 @@
                     }
                   }
                 }
+              },
+              "runtime": {
+                "additionalProperties": false,
+                "description": "How each agent workspace is set up, run and cleaned up, read by the runtime plugin. Commands run in the workspace folder with SELFHOST_WORKSPACE_NAME, SELFHOST_WORKSPACE_PATH, SELFHOST_ROOT_PATH, SELFHOST_DEFAULT_BRANCH, SELFHOST_PORT set.",
+                "type": "object",
+                "properties": {
+                  "setup": {
+                    "minLength": 1,
+                    "description": "Shell script run in each new workspace after checkout and before the agent starts: install dependencies, generate files, link local config.",
+                    "type": "string"
+                  },
+                  "run": {
+                    "additionalProperties": false,
+                    "description": "Named commands that run the project in a workspace, for example [runtime.run.dev].",
+                    "type": "object",
+                    "patternProperties": {
+                      "^[A-Za-z0-9][A-Za-z0-9 _-]*$": {
+                        "additionalProperties": false,
+                        "description": "One named command that runs the project.",
+                        "type": "object",
+                        "required": [
+                          "command"
+                        ],
+                        "properties": {
+                          "command": {
+                            "minLength": 1,
+                            "description": "Shell command that starts the app, a server, a worker, a watcher or a test loop in the workspace.",
+                            "type": "string"
+                          },
+                          "cwd": {
+                            "minLength": 1,
+                            "description": "Folder to run it in, relative to the workspace folder.",
+                            "type": "string"
+                          },
+                          "default": {
+                            "description": "The command to start when none is named. At most one command sets it.",
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "run_mode": {
+                    "default": "concurrent",
+                    "description": "concurrent lets the run commands of several workspaces run at once. exclusive stops the others first, for projects that need one fixed port, database or Docker stack.",
+                    "type": "string",
+                    "enum": [
+                      "concurrent",
+                      "exclusive"
+                    ]
+                  },
+                  "archive": {
+                    "minLength": 1,
+                    "description": "Shell script run before a workspace is archived, to clean up what it made outside its own folder.",
+                    "type": "string"
+                  },
+                  "env": {
+                    "additionalProperties": false,
+                    "description": "Environment variables for the setup, run and archive commands. Values may refer to the variables selfhost sets (SELFHOST_WORKSPACE_NAME, SELFHOST_WORKSPACE_PATH, SELFHOST_ROOT_PATH, SELFHOST_DEFAULT_BRANCH, SELFHOST_PORT) as $NAME or ${NAME}. This file is shared: keep secrets out of it.",
+                    "type": "object",
+                    "patternProperties": {
+                      "^[A-Za-z_][A-Za-z0-9_]*$": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
               }
             }
           },
