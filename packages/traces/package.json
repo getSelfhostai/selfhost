@@ -1,0 +1,47 @@
+{
+  "name": "@selfhost/traces",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Sends agent runs from the ledger to the team's tracer (Langfuse, Phoenix, Datadog or any OTLP endpoint) as OpenTelemetry GenAI spans, and reads one run for the console's run view.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "catalog:",
+    "@opentelemetry/core": "catalog:",
+    "@opentelemetry/exporter-trace-otlp-proto": "catalog:",
+    "@opentelemetry/resources": "catalog:",
+    "@opentelemetry/sdk-trace": "catalog:",
+    "@selfhost/ledger": "workspace:*",
+    "@selfhost/schema": "workspace:*",
+    "@selfhost/spend": "workspace:*"
+  },
+  "devDependencies": {
+    "@selfhost/importers": "workspace:*",
+    "@types/node": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

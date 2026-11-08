@@ -61,6 +61,7 @@ export function reviewBrief(
       briefInputs(change, {
         highRiskPaths: ctx.config.review.high_risk_paths,
         server: ctx.server,
+        ...(ctx.config.integrations.tracer ? { tracer: ctx.config.integrations.tracer } : {}),
       }),
     );
     const stored = await ledger.receipts.latest(

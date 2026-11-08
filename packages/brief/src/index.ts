@@ -25,6 +25,7 @@ export {
   type BriefSection,
   type BriefTarget,
   type BriefTask,
+  type BriefTracer,
   type BriefTraceSession,
   type CommandResult,
   type PlanUpdate,

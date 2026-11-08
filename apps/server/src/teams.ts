@@ -34,6 +34,7 @@ import { createOrgRoute, orgRoutes } from "./orgs.js";
 import { peopleRoutes } from "./people.js";
 import { policyRoutes } from "./policy.js";
 import { type ProvenanceRouteOptions, provenanceRoutes } from "./provenance.js";
+import { type RunRouteOptions, runRoutes } from "./runs.js";
 import { forwardedEmail, type SigninOptions, signedInPerson } from "./signin.js";
 import { usageRoutes } from "./usage.js";
 
@@ -49,6 +50,8 @@ export interface TeamRouteOptions {
   signin?: SigninOptions;
   /** Clones and default config for the provenance routes. */
   provenance?: Omit<ProvenanceRouteOptions, "now">;
+  /** Default config for the run view. */
+  runs?: Omit<RunRouteOptions, "now">;
 }
 
 export type PersonEnv = { Bindings: { person: Person; caller: PersonCaller } };
@@ -88,7 +91,7 @@ export { teamId } from "./ids.js";
  */
 export function teamRoutes(
   app: Hono,
-  { ledger, token, personRoutes, now, signin, provenance }: TeamRouteOptions,
+  { ledger, token, personRoutes, now, signin, provenance, runs }: TeamRouteOptions,
 ): void {
   const { teams } = ledger;
   const isAdminToken = sameAs(token);
@@ -167,7 +170,7 @@ export function teamRoutes(
       else person.on(method, path, run);
     },
   };
-  sharedRoutes(asPerson, ledger, now, provenance);
+  sharedRoutes(asPerson, ledger, now, provenance, runs);
   personRoutes?.(person);
 
   app.use("*", async (c, next) => {
@@ -247,7 +250,7 @@ export function teamRoutes(
       else app.on(method, path, adminOnly, run);
     },
   };
-  sharedRoutes(asAdmin, ledger, now, provenance);
+  sharedRoutes(asAdmin, ledger, now, provenance, runs);
 }
 
 /** The routes both kinds of token reach, each checking the caller's role. */
@@ -256,12 +259,14 @@ function sharedRoutes(
   ledger: Ledger,
   now: (() => Date) | undefined,
   provenance: TeamRouteOptions["provenance"],
+  runs: TeamRouteOptions["runs"],
 ): void {
   policyRoutes(router, ledger);
   peopleRoutes(router, ledger);
   orgRoutes(router, ledger, now ? { now } : {});
   usageRoutes(router, ledger, now ? { now } : {});
   provenanceRoutes(router, ledger, { ...provenance, ...(now ? { now } : {}) });
+  runRoutes(router, ledger, { ...runs, ...(now ? { now } : {}) });
 }
 
 /**

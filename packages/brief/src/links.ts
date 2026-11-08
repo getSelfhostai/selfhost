@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { runViewUrl } from "@selfhost/traces";
 import type { BriefTarget } from "./types.js";
 
 // Parentheses too, so the URL cannot end a Markdown link early.
@@ -31,10 +32,9 @@ export function lineUrl(
   return `https://github.com/${target.repo}/blob/${sha}/${encodePath(path)}${suffix}`;
 }
 
-/** The team server's events for one session, or undefined without a server. */
+/** One session's run view in the team server's console, or undefined without a server. */
 export function traceUrl(server: string | undefined, session: string): string | undefined {
-  if (!server) return undefined;
-  return `${server.replace(/\/+$/, "")}/v1/events?session=${encodeURIComponent(session)}`;
+  return server ? runViewUrl(server, session) : undefined;
 }
 
 /** The local command that prints a session's events. */

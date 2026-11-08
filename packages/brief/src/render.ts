@@ -1,4 +1,4 @@
-import { PACKAGE_RULE_PREFIX } from "@selfhost/schema";
+import { PACKAGE_RULE_PREFIX, type TracerTool } from "@selfhost/schema";
 import {
   BRIEF_MARKER,
   BRIEF_SECTIONS,
@@ -28,6 +28,13 @@ type Limits = Record<keyof typeof LIST_LIMITS, number>;
 
 /** Lists longer than this go inside a collapsed <details> block. */
 const COLLAPSE_AFTER = 10;
+
+const TRACER_NAMES: Record<TracerTool, string> = {
+  langfuse: "Langfuse",
+  phoenix: "Phoenix",
+  datadog: "Datadog",
+  otlp: "the tracer",
+};
 
 const TITLES: Record<BriefSection, string> = {
   task: "Task",
@@ -297,9 +304,12 @@ function section(brief: Brief, name: BriefSection, limits: Limits): string[] {
             ...(session.start ? [span(session.start, session.end)] : []),
           ].join(", ");
           const where = session.url
-            ? `[events on the team server](${session.url})`
+            ? `[run view](${session.url})`
             : `run ${code(session.command ?? "")} where its ledger is`;
-          return `- ${code(session.id)} (${about}): ${where}`;
+          const traced = session.tracerUrl
+            ? `, [trace in ${TRACER_NAMES[session.tracer ?? "otlp"]}](${session.tracerUrl})`
+            : "";
+          return `- ${code(session.id)} (${about}): ${where}${traced}`;
         }),
       );
       break;

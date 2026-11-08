@@ -16,6 +16,7 @@ import {
   type Person,
   REVIEW_ITEM_STATES,
   type ResolvedSelfhostConfig,
+  type ReviewItem,
   type ReviewItemConflict,
   type ReviewItemState,
   type SnoozeRequest,
@@ -24,6 +25,7 @@ import {
 } from "@selfhost/schema";
 import type { Context, Env, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { teamConfig, withRunLinks } from "./runs.js";
 
 /** A decision or snooze is a few fields; anything this big is not one. */
 const MAX_ACTION_BYTES = 64 * 1024;
@@ -42,6 +44,11 @@ export interface ReviewRouteOptions {
    * items of each. Default: their own team only.
    */
   teams?: (c: Context) => Promise<string[]>;
+  /**
+   * SELFHOST_PUBLIC_URL, the console's address for the run links on items. Default: the
+   * request's own origin.
+   */
+  publicUrl?: string;
 }
 
 const apiError = (code: string, message: string): ApiError => ({ error: { code, message } });
@@ -115,6 +122,13 @@ export function reviewRoutes<E extends Env>(
     for (const list of lists) if (await list.get(id)) return list;
     return lists[0] ?? scope(c).list;
   };
+  const configOf = teamConfig(ledger, options.config);
+  /** Items with links to their run in the console and in the team's tracer. */
+  const linked = async (c: Context, items: ReviewItem[], team: string | undefined) =>
+    withRunLinks(ledger, items, {
+      server: options.publicUrl ?? new URL(c.req.url).origin,
+      config: await configOf(team ?? null),
+    });
   const limit = bodyLimit({
     maxSize: MAX_ACTION_BYTES,
     onError: (c) =>
@@ -168,7 +182,9 @@ export function reviewRoutes<E extends Env>(
       }
     }
     try {
-      return c.json(await listFor(person ? (team ?? person.team) : team).list(query));
+      const listed = person ? (team ?? person.team) : team;
+      const page = await listFor(listed).list(query);
+      return c.json({ ...page, items: await linked(c, page.items, listed) });
     } catch (error) {
       if (error instanceof ReviewInputError) {
         return c.json(apiError("invalid_query", error.message), 400);
@@ -181,7 +197,8 @@ export function reviewRoutes<E extends Env>(
     const id = c.req.param("id");
     const item = await (await listWith(c, id)).get(id);
     if (!item) return c.json(apiError("not_found", `No review item ${id}`), 404);
-    return c.json(item);
+    const [withLinks] = await linked(c, [item], options.person?.(c)?.team);
+    return c.json(withLinks ?? item);
   });
 
   app.post("/v1/review-items/:id/decision", limit, async (c) => {

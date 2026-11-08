@@ -37,6 +37,7 @@ import { type Ask, askOnTerminal, type SendPing } from "./scan/telemetry.js";
 import { registerSpend } from "./spend.js";
 import type { Fetch } from "./team/client.js";
 import { registerTeam } from "./team/commands.js";
+import { registerTraces } from "./traces.js";
 import { registerUp } from "./up/commands.js";
 import { type Exec, systemExec } from "./up/resources.js";
 
@@ -321,6 +322,18 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
   registerLedger(
     program,
     () => ({ env: deps.env, cwd: deps.cwd, write: deps.write, now: deps.now }),
+    fail,
+  );
+
+  registerTraces(
+    program,
+    () => ({
+      env: deps.env,
+      cwd: deps.cwd,
+      write: deps.write,
+      setExitCode: deps.setExitCode,
+      now: deps.now,
+    }),
     fail,
   );
 

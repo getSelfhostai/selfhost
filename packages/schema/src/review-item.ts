@@ -125,6 +125,18 @@ export const ReviewItemSchema = Type.Object(
     agent: Type.Optional(AgentRefSchema),
     session_id: Type.Optional(Type.String({ description: "Vendor session id." })),
     run_id: Type.Optional(Type.String({ description: "Run id." })),
+    run_url: Type.Optional(
+      Url({
+        description:
+          "The run this item came from in the console's run view, <SELFHOST_PUBLIC_URL>/runs/<session_id>. Added by the team server when the item names a session.",
+      }),
+    ),
+    trace_url: Type.Optional(
+      Type.String({
+        description:
+          "The same run in the team's tracer, from [integrations.tracer] run_url, once the run has been sent there.",
+      }),
+    ),
     brief: Type.Optional(
       Type.String({
         description: "Markdown summary of what the reviewer needs to know to decide quickly.",

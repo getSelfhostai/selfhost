@@ -25,9 +25,9 @@ describe("lineUrl", () => {
 });
 
 describe("trace links", () => {
-  it("uses the team server's events API, or the local command", () => {
+  it("opens the run view in the team server's console, or names the local command", () => {
     expect(traceUrl("https://selfhost.example.com/", "sess 1")).toBe(
-      "https://selfhost.example.com/v1/events?session=sess%201",
+      "https://selfhost.example.com/runs/sess%201",
     );
     expect(traceUrl(undefined, "sess-1")).toBeUndefined();
     expect(traceCommand("0199f2a4-6c1d")).toBe("selfhost review trace 0199f2a4-6c1d");

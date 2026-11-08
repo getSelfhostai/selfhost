@@ -10,6 +10,7 @@ import {
 } from "@selfhost/pr";
 import { type LedgerEvent, PACKAGE_RULE_IDS } from "@selfhost/schema";
 import { oneSourcePerSession } from "@selfhost/spend";
+import { tracerRunUrl } from "@selfhost/traces";
 import { commandsRun, oneToolSourcePerSession } from "./commands.js";
 import { lineUrl, traceCommand, traceUrl } from "./links.js";
 import {
@@ -350,6 +351,7 @@ export function buildBrief(inputs: BriefInputs): Brief {
     const own = events.filter((event) => event.session_id === id);
     const agent = own.find((event) => event.agent)?.agent?.vendor;
     const url = traceUrl(inputs.server, id);
+    const tracerUrl = inputs.tracer ? tracerRunUrl(inputs.tracer.run_url, id) : undefined;
     return {
       id,
       ...(agent ? { agent } : {}),
@@ -357,6 +359,7 @@ export function buildBrief(inputs: BriefInputs): Brief {
       end: own[own.length - 1]?.ts ?? "",
       events: own.length,
       ...(url ? { url } : { command: traceCommand(id) }),
+      ...(tracerUrl && inputs.tracer ? { tracerUrl, tracer: inputs.tracer.tool } : {}),
     };
   });
   trace.sort((a, b) => compare(a.start, b.start) || compare(a.id, b.id));

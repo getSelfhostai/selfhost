@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { EVENT_SCHEMA, type LedgerEvent } from "@selfhost/schema";
+import { traceIdOf } from "@selfhost/traces";
 import { describe, expect, it } from "vitest";
 import {
   BRIEF_MARKER,
@@ -124,10 +125,26 @@ describe("buildBrief", () => {
     });
     // Sessions in the order they started.
     expect(brief.trace.map((s) => s.url)).toEqual([
-      "https://selfhost.acme.example.com/v1/events?session=5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
-      "https://selfhost.acme.example.com/v1/events?session=0199f2a4-6c1d-7e3b-9f20-5b8c7d6e4a31",
+      "https://selfhost.acme.example.com/runs/5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+      "https://selfhost.acme.example.com/runs/0199f2a4-6c1d-7e3b-9f20-5b8c7d6e4a31",
     ]);
     expect(brief.notes).toEqual({});
+  });
+
+  it("also links each run to the team's tracer when [integrations.tracer] has a run_url", () => {
+    const inputs = fixture("agent-pr");
+    const brief = buildBrief({
+      ...inputs,
+      tracer: { tool: "langfuse", run_url: "https://langfuse.example.com/trace/{trace_id}" },
+    });
+    const [first] = brief.trace;
+    expect(first?.tracerUrl).toBe(
+      `https://langfuse.example.com/trace/${traceIdOf("5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87")}`,
+    );
+    expect(renderBrief(brief)).toContain(
+      `[run view](https://selfhost.acme.example.com/runs/5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87), [trace in Langfuse](${first?.tracerUrl})`,
+    );
+    expect(buildBrief({ ...inputs, tracer: { tool: "otlp" } }).trace[0]?.tracerUrl).toBeUndefined();
   });
 
   it("links each risky line to its line in the pull request's diff view", () => {

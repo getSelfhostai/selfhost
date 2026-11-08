@@ -48,6 +48,7 @@ export async function reviewBriefCommand(
       highRiskPaths: config.review.high_risk_paths,
       ...(ledger ? { ledger } : {}),
       ...(server ? { server } : {}),
+      ...(config.integrations.tracer ? { tracer: config.integrations.tracer } : {}),
     });
     io.write(options.json ? JSON.stringify(brief, null, 2) : renderBrief(brief).trimEnd());
   } finally {
