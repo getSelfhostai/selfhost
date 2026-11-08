@@ -22,14 +22,15 @@ import type { CallContext, McpData } from "./data.js";
 import { itemOutOfReach, McpToolError, notInTeam } from "./errors.js";
 
 /**
- * Kinds of item an agent waits on or that guard a rule: a person answers them, never the agent
- * itself through record_decision.
+ * Kinds of item an agent waits on, that guard a rule or that change what every agent of the team
+ * loads: a person answers them, never the agent itself through record_decision.
  */
 export const GATING_KINDS: readonly ReviewItemKind[] = [
   "approval",
   "question",
   "exception",
   "blocked_action",
+  "context_promotion",
 ];
 
 export interface LedgerDataOptions {

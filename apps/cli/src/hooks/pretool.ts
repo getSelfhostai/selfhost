@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   checkToolCall,
@@ -13,7 +13,7 @@ import {
   type ResolvedSelfhostConfig,
   validateConfig,
 } from "@selfhost/schema";
-import { findConfig } from "../find-config.js";
+import { findConfig, policyText } from "../find-config.js";
 import { extraCheckers } from "./checkers.js";
 import {
   callFingerprint,
@@ -116,15 +116,15 @@ export function loadPolicy(
 ): LoadedPolicy {
   const location = cwd === undefined ? undefined : findConfig(cwd, undefined, env, configPath);
   if (!location) return { config: defaultConfig() };
-  let bytes: Buffer;
+  let text: string;
   try {
-    bytes = readFileSync(location.path);
+    // On a machine in a team, a repository's file adds to the team policy, never replaces it.
+    text = policyText(location).text;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return { config: defaultConfig(), failure: `${location.path} could not be read: ${message}` };
   }
-  const source = { path: location.path, hash: createHash("sha256").update(bytes).digest("hex") };
-  const text = bytes.toString("utf8");
+  const source = { path: location.path, hash: createHash("sha256").update(text).digest("hex") };
   const result = parseConfig(text);
   if (result.ok) return { config: result.config, source, text };
   const first = result.errors[0];

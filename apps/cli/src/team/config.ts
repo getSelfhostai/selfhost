@@ -70,12 +70,26 @@ export interface SyncState {
   history_synced_at?: string;
   /** sha256 of the team policy pulled on the last sync, or null when the team has none. */
   policy_hash?: string | null;
+  /** sha256 over the org and team context layers pulled on the last sync. */
+  context_hash?: string;
+  /**
+   * Repositories whose context was compiled with the pulled layers on this machine: a sync
+   * that pulls changed layers compiles them again.
+   */
+  context_repos?: string[];
 }
 
 export const syncStatePath = (configPath: string) => join(dirname(configPath), "sync.json");
 
 /** The team's selfhost.toml as pulled on the last sync. */
 export const teamPolicyPath = (configPath: string) => join(dirname(configPath), "team-policy.toml");
+
+/**
+ * Context layers on this machine, next to the config file: org/<id>/ and team/<id>/ as pulled on
+ * the last sync, and personal/, the person's own items, which never leave this machine unless
+ * they propose one to the team.
+ */
+export const contextLayersDir = (configPath: string) => join(dirname(configPath), "context");
 
 /** Sync progress for this membership; a file left by another membership is ignored. */
 export function readSyncState(configPath: string, membership: Membership): SyncState {
@@ -95,4 +109,7 @@ export function writeSyncState(configPath: string, state: SyncState): void {
 function clearSyncFiles(configPath: string): void {
   rmSync(syncStatePath(configPath), { force: true });
   rmSync(teamPolicyPath(configPath), { force: true });
+  for (const pulled of ["org", "team"]) {
+    rmSync(join(contextLayersDir(configPath), pulled), { recursive: true, force: true });
+  }
 }

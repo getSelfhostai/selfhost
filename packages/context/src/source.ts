@@ -93,6 +93,8 @@ class Reader {
   constructor(
     private root: string,
     private dir: string,
+    /** What file paths start with: .selfhost/context, or a layer's name like team:web. */
+    private label: string = CONTEXT_DIR,
   ) {}
 
   fail(file: string, message: string, line?: number, field?: string): void {
@@ -166,7 +168,7 @@ class Reader {
     const out: { name: string; path: string; file: string }[] = [];
     for (const entry of entries(dir)) {
       const path = join(dir, entry);
-      const file = posix(CONTEXT_DIR, folder, entry);
+      const file = posix(this.label, folder, entry);
       const kind = this.kind(path, file);
       if (kind === undefined) continue;
       if (kind === "dir" || !entry.endsWith(".md")) {
@@ -282,7 +284,7 @@ class Reader {
     const skills: ContextSkill[] = [];
     for (const entry of entries(dir)) {
       const path = join(dir, entry);
-      const folder = posix(CONTEXT_DIR, "skills", entry);
+      const folder = posix(this.label, "skills", entry);
       const kind = this.kind(path, folder);
       if (kind === undefined) continue;
       if (kind === "file") {
@@ -331,7 +333,7 @@ class Reader {
 
   mcp(): ContextMcpServer[] {
     const path = join(this.dir, "mcp.json");
-    const file = posix(CONTEXT_DIR, "mcp.json");
+    const file = posix(this.label, "mcp.json");
     if (!existsSync(path)) return [];
     if (this.kind(path, file) !== "file") return [];
     const text = readFileSync(path, "utf8");
@@ -381,8 +383,8 @@ class Reader {
     for (const entry of entries(this.dir)) {
       if (!TOP_LEVEL.has(entry)) {
         this.fail(
-          posix(CONTEXT_DIR, entry),
-          "Unknown entry; .selfhost/context holds rules/, skills/, commands/, agents/ and mcp.json",
+          posix(this.label, entry),
+          `Unknown entry; ${this.label} holds rules/, skills/, commands/, agents/ and mcp.json`,
         );
       }
     }
@@ -436,11 +438,20 @@ class Reader {
 
 /**
  * Reads and validates .selfhost/context under root, and the Markdown in root/.ruler that Ruler
- * would put in every rules file. Every problem is reported with its file and line.
+ * would put in every rules file. Every problem is reported with its file and line. A missing
+ * .selfhost/context is an error unless `allowMissing`, which reads it as empty (the repository
+ * adds nothing to the other layers).
  */
-export function readContextSource(root: string): ReadResult {
+export function readContextSource(
+  root: string,
+  options: { allowMissing?: boolean } = {},
+): ReadResult {
   const dir = join(root, CONTEXT_DIR);
   if (!existsSync(dir)) {
+    if (options.allowMissing) {
+      const source = { rules: [], skills: [], commands: [], agents: [], mcp: [] };
+      return { ok: true, source, ruler: new Reader(root, dir).ruler() };
+    }
     return {
       ok: false,
       errors: [
@@ -457,6 +468,18 @@ export function readContextSource(root: string): ReadResult {
   const ruler = reader.ruler();
   if (reader.errors.length > 0) return { ok: false, errors: reader.errors };
   return { ok: true, source, ruler };
+}
+
+/**
+ * Reads and validates a context folder in the .selfhost/context layout that is not a
+ * repository's own, such as a layer pulled from the team server. File paths in items and errors
+ * start with `label` instead of .selfhost/context.
+ */
+export function readContextDir(dir: string, label: string): ReadResult {
+  const reader = new Reader(dir, dir, label);
+  const source = reader.read();
+  if (reader.errors.length > 0) return { ok: false, errors: reader.errors };
+  return { ok: true, source, ruler: [] };
 }
 
 /** `file:line: field: message`, the way compilers print problems. */

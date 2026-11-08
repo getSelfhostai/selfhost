@@ -20,6 +20,7 @@ export const REVIEW_KIND_NAMES: Record<ReviewItemKind, string> = {
   spend_spike: "Spend spike",
   quality: "Code quality",
   policy_report: "Rules report",
+  context_promotion: "Team context proposal",
 };
 
 /** The built-in guardrails, in the order the hooks check them. */

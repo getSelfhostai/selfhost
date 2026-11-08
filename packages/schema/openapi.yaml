@@ -622,6 +622,133 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /v1/context:
+    get:
+      operationId: getContext
+      summary: "Get the team's context layers: the org's and the team's own."
+      description: The admin token, or a person token of anyone in the team. The org and team layers of .selfhost/context items (rules, skills, commands, subagents, MCP servers) every member's laptop pulls on sync and merges with the repository's own and the person's, in the order org, team, repo, personal. On a conflict the earlier layer's item is used, so the org's always wins; conflicts lists the team items the org layer replaces. Reading also applies the team's proposals whose review items an owner or admin approved.
+      parameters:
+        - name: team
+          in: query
+          required: false
+          description: Team id. Needed with the admin token; a person token writes its own team by default, or another team it is in.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The layers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContextResponse"
+        "400":
+          description: No team given with the admin token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such team.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    put:
+      operationId: setContext
+      summary: Replace the team's context layer.
+      description: The admin token, or a person token whose role in the team is owner or admin. The files are validated like selfhost context compile reads .selfhost/context; an invalid layer changes nothing. Members get the new layer on their next sync.
+      parameters:
+        - name: team
+          in: query
+          required: false
+          description: Team id. Needed with the admin token; a person token writes its own team by default, or another team it is in.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetContextRequest"
+      responses:
+        "200":
+          description: Stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContextResponse"
+        "400":
+          description: The files are not a valid context folder. Nothing was stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such team.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/context/proposals:
+    post:
+      operationId: proposeContextItem
+      summary: Propose one of the caller's own context items to the team.
+      description: A person token of anyone in the team. Opens a context_promotion review item with the proposal's id. The item is added to the team layer only after an owner or admin of the team approves that review item; a member's answer is refused.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContextProposalRequest"
+      responses:
+        "201":
+          description: Proposed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContextProposal"
+        "400":
+          description: The files are not valid, or are not exactly the files of the item named.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The admin token, or a team the person is not in.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such team.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: The org or team layer already has the item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /v1/policy/coverage:
     get:
       operationId: getPolicyCoverage
@@ -1755,6 +1882,83 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InvalidPolicyError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Not the admin token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such org.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/orgs/{org}/context:
+    get:
+      operationId: getOrgContext
+      summary: "Get the org's context layer: the floor of every team's context."
+      description: The admin token, or a person token of anyone in the org.
+      parameters:
+        - name: org
+          in: path
+          required: true
+          description: Org id.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The org layer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrgContextResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: A person token of another org.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such org.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    put:
+      operationId: setOrgContext
+      summary: Replace the org's context layer.
+      description: Admin token only. Its items are merged first on every member's laptop, so a team, repo or personal item of the same name is never used in their place.
+      parameters:
+        - name: org
+          in: path
+          required: true
+          description: Org id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetContextRequest"
+      responses:
+        "200":
+          description: Stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrgContextResponse"
+        "400":
+          description: The files are not a valid context folder. Nothing was stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -4006,6 +4210,516 @@ components:
               org_rule:
                 description: The org rule or setting it relaxes.
                 type: string
+    ContextFile:
+      additionalProperties: false
+      title: ContextFile
+      type: object
+      required:
+        - path
+        - text
+      properties:
+        path:
+          pattern: ^(mcp\.json|(rules|skills|commands|agents)/[A-Za-z0-9 ._/+-]+)$
+          maxLength: 512
+          description: Path inside the context folder, like rules/no-secrets.md or mcp.json.
+          type: string
+        text:
+          maxLength: 1000000
+          description: The file, as UTF-8 text.
+          type: string
+        executable:
+          description: A skill's script, written with the executable bit.
+          type: boolean
+    SetContextRequest:
+      additionalProperties: false
+      title: SetContextRequest
+      type: object
+      required:
+        - files
+      properties:
+        files:
+          maxItems: 500
+          description: "The layer's files in the .selfhost/context layout: rules/<name>.md, skills/<name>/SKILL.md and the files beside it, commands/<name>.md, agents/<name>.md and mcp.json."
+          type: array
+          items:
+            additionalProperties: false
+            title: ContextFile
+            type: object
+            required:
+              - path
+              - text
+            properties:
+              path:
+                pattern: ^(mcp\.json|(rules|skills|commands|agents)/[A-Za-z0-9 ._/+-]+)$
+                maxLength: 512
+                description: Path inside the context folder, like rules/no-secrets.md or mcp.json.
+                type: string
+              text:
+                maxLength: 1000000
+                description: The file, as UTF-8 text.
+                type: string
+              executable:
+                description: A skill's script, written with the executable bit.
+                type: boolean
+    ContextLayer:
+      additionalProperties: false
+      title: ContextLayer
+      type: object
+      required:
+        - kind
+        - name
+        - hash
+        - updated_at
+        - files
+      properties:
+        kind:
+          description: Which layer.
+          type: string
+          enum:
+            - org
+            - team
+        name:
+          minLength: 1
+          description: The org id or the team id.
+          type: string
+        hash:
+          description: sha256 of the layer's files.
+          type: string
+        updated_at:
+          format: date-time
+          description: When the layer was last set or an item was added.
+          type: string
+        files:
+          maxItems: 500
+          description: "The layer's files in the .selfhost/context layout: rules/<name>.md, skills/<name>/SKILL.md and the files beside it, commands/<name>.md, agents/<name>.md and mcp.json."
+          type: array
+          items:
+            additionalProperties: false
+            title: ContextFile
+            type: object
+            required:
+              - path
+              - text
+            properties:
+              path:
+                pattern: ^(mcp\.json|(rules|skills|commands|agents)/[A-Za-z0-9 ._/+-]+)$
+                maxLength: 512
+                description: Path inside the context folder, like rules/no-secrets.md or mcp.json.
+                type: string
+              text:
+                maxLength: 1000000
+                description: The file, as UTF-8 text.
+                type: string
+              executable:
+                description: A skill's script, written with the executable bit.
+                type: boolean
+    ContextConflict:
+      additionalProperties: false
+      title: ContextConflict
+      description: Two layers define the same item (or a skill and a command share a name). The earlier layer's item is used; the org's always wins.
+      type: object
+      required:
+        - lost
+        - kept
+        - message
+      properties:
+        lost:
+          additionalProperties: false
+          description: The item that is not used.
+          type: object
+          required:
+            - item
+            - layer
+            - name
+            - path
+          properties:
+            item:
+              pattern: ^(rule|skill|command|agent|mcp):[A-Za-z0-9_-]{1,64}$
+              description: The item, as kind:name.
+              type: string
+            layer:
+              type: string
+              enum:
+                - org
+                - team
+                - repo
+                - personal
+            name:
+              minLength: 1
+              description: The org id, team id, repo or person of the layer.
+              type: string
+            path:
+              minLength: 1
+              description: Where the item is defined.
+              type: string
+        kept:
+          additionalProperties: false
+          description: The item of the earlier layer, which is used instead.
+          type: object
+          required:
+            - item
+            - layer
+            - name
+            - path
+          properties:
+            item:
+              pattern: ^(rule|skill|command|agent|mcp):[A-Za-z0-9_-]{1,64}$
+              description: The item, as kind:name.
+              type: string
+            layer:
+              type: string
+              enum:
+                - org
+                - team
+                - repo
+                - personal
+            name:
+              minLength: 1
+              description: The org id, team id, repo or person of the layer.
+              type: string
+            path:
+              minLength: 1
+              description: Where the item is defined.
+              type: string
+        message:
+          type: string
+    ContextProposal:
+      additionalProperties: false
+      title: ContextProposal
+      type: object
+      required:
+        - id
+        - team
+        - person
+        - item
+        - state
+        - created_at
+      properties:
+        id:
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+          description: The proposal's id, which is also its review item's id.
+          type: string
+        team:
+          pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+          description: The team it is proposed to.
+          type: string
+        person:
+          minLength: 1
+          description: Who proposed it.
+          type: string
+        item:
+          pattern: ^(rule|skill|command|agent|mcp):[A-Za-z0-9_-]{1,64}$
+          description: The item, as kind:name.
+          type: string
+        state:
+          description: open until its review item is answered; applied once an owner or admin approved it and it was added to the team layer; refused when it was denied, replaced by a newer proposal, approved by someone without the role, or the team layer already has the item.
+          type: string
+          enum:
+            - open
+            - applied
+            - refused
+        created_at:
+          format: date-time
+          type: string
+        decided_at:
+          format: date-time
+          type: string
+        decided_by:
+          minLength: 1
+          description: Who answered the review item.
+          type: string
+        note:
+          description: Why it was refused.
+          type: string
+    ContextProposalRequest:
+      additionalProperties: false
+      title: ContextProposalRequest
+      type: object
+      required:
+        - item
+        - files
+      properties:
+        team:
+          pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+          description: "Team to propose it to. Default: the person token's own."
+          type: string
+        item:
+          pattern: ^(rule|skill|command|agent|mcp):[A-Za-z0-9_-]{1,64}$
+          description: The item, as kind:name.
+          type: string
+        files:
+          maxItems: 500
+          description: "The layer's files in the .selfhost/context layout: rules/<name>.md, skills/<name>/SKILL.md and the files beside it, commands/<name>.md, agents/<name>.md and mcp.json."
+          type: array
+          items:
+            additionalProperties: false
+            title: ContextFile
+            type: object
+            required:
+              - path
+              - text
+            properties:
+              path:
+                pattern: ^(mcp\.json|(rules|skills|commands|agents)/[A-Za-z0-9 ._/+-]+)$
+                maxLength: 512
+                description: Path inside the context folder, like rules/no-secrets.md or mcp.json.
+                type: string
+              text:
+                maxLength: 1000000
+                description: The file, as UTF-8 text.
+                type: string
+              executable:
+                description: A skill's script, written with the executable bit.
+                type: boolean
+    ContextResponse:
+      additionalProperties: false
+      title: ContextResponse
+      type: object
+      required:
+        - team
+        - org
+        - hash
+        - layers
+        - conflicts
+        - proposals
+      properties:
+        team:
+          pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+          description: Team id.
+          type: string
+        org:
+          pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+          description: The team's org.
+          type: string
+        hash:
+          description: sha256 over the layers, to tell whether anything changed.
+          type: string
+        layers:
+          description: The org layer, then the team layer; a layer that was never set is left out.
+          type: array
+          items:
+            additionalProperties: false
+            title: ContextLayer
+            type: object
+            required:
+              - kind
+              - name
+              - hash
+              - updated_at
+              - files
+            properties:
+              kind:
+                description: Which layer.
+                type: string
+                enum:
+                  - org
+                  - team
+              name:
+                minLength: 1
+                description: The org id or the team id.
+                type: string
+              hash:
+                description: sha256 of the layer's files.
+                type: string
+              updated_at:
+                format: date-time
+                description: When the layer was last set or an item was added.
+                type: string
+              files:
+                maxItems: 500
+                description: "The layer's files in the .selfhost/context layout: rules/<name>.md, skills/<name>/SKILL.md and the files beside it, commands/<name>.md, agents/<name>.md and mcp.json."
+                type: array
+                items:
+                  additionalProperties: false
+                  title: ContextFile
+                  type: object
+                  required:
+                    - path
+                    - text
+                  properties:
+                    path:
+                      pattern: ^(mcp\.json|(rules|skills|commands|agents)/[A-Za-z0-9 ._/+-]+)$
+                      maxLength: 512
+                      description: Path inside the context folder, like rules/no-secrets.md or mcp.json.
+                      type: string
+                    text:
+                      maxLength: 1000000
+                      description: The file, as UTF-8 text.
+                      type: string
+                    executable:
+                      description: A skill's script, written with the executable bit.
+                      type: boolean
+        conflicts:
+          description: Team items the org layer replaces.
+          type: array
+          items:
+            additionalProperties: false
+            title: ContextConflict
+            description: Two layers define the same item (or a skill and a command share a name). The earlier layer's item is used; the org's always wins.
+            type: object
+            required:
+              - lost
+              - kept
+              - message
+            properties:
+              lost:
+                additionalProperties: false
+                description: The item that is not used.
+                type: object
+                required:
+                  - item
+                  - layer
+                  - name
+                  - path
+                properties:
+                  item:
+                    pattern: ^(rule|skill|command|agent|mcp):[A-Za-z0-9_-]{1,64}$
+                    description: The item, as kind:name.
+                    type: string
+                  layer:
+                    type: string
+                    enum:
+                      - org
+                      - team
+                      - repo
+                      - personal
+                  name:
+                    minLength: 1
+                    description: The org id, team id, repo or person of the layer.
+                    type: string
+                  path:
+                    minLength: 1
+                    description: Where the item is defined.
+                    type: string
+              kept:
+                additionalProperties: false
+                description: The item of the earlier layer, which is used instead.
+                type: object
+                required:
+                  - item
+                  - layer
+                  - name
+                  - path
+                properties:
+                  item:
+                    pattern: ^(rule|skill|command|agent|mcp):[A-Za-z0-9_-]{1,64}$
+                    description: The item, as kind:name.
+                    type: string
+                  layer:
+                    type: string
+                    enum:
+                      - org
+                      - team
+                      - repo
+                      - personal
+                  name:
+                    minLength: 1
+                    description: The org id, team id, repo or person of the layer.
+                    type: string
+                  path:
+                    minLength: 1
+                    description: Where the item is defined.
+                    type: string
+              message:
+                type: string
+        proposals:
+          description: The team's newest proposals, at most 50, newest first.
+          type: array
+          items:
+            additionalProperties: false
+            title: ContextProposal
+            type: object
+            required:
+              - id
+              - team
+              - person
+              - item
+              - state
+              - created_at
+            properties:
+              id:
+                pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+                description: The proposal's id, which is also its review item's id.
+                type: string
+              team:
+                pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+                description: The team it is proposed to.
+                type: string
+              person:
+                minLength: 1
+                description: Who proposed it.
+                type: string
+              item:
+                pattern: ^(rule|skill|command|agent|mcp):[A-Za-z0-9_-]{1,64}$
+                description: The item, as kind:name.
+                type: string
+              state:
+                description: open until its review item is answered; applied once an owner or admin approved it and it was added to the team layer; refused when it was denied, replaced by a newer proposal, approved by someone without the role, or the team layer already has the item.
+                type: string
+                enum:
+                  - open
+                  - applied
+                  - refused
+              created_at:
+                format: date-time
+                type: string
+              decided_at:
+                format: date-time
+                type: string
+              decided_by:
+                minLength: 1
+                description: Who answered the review item.
+                type: string
+              note:
+                description: Why it was refused.
+                type: string
+    OrgContextResponse:
+      additionalProperties: false
+      title: OrgContextResponse
+      type: object
+      required:
+        - org
+        - hash
+        - updated_at
+        - files
+      properties:
+        org:
+          pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+          description: Org id.
+          type: string
+        hash:
+          description: sha256 of the layer's files.
+          type: string
+        updated_at:
+          description: When the org layer was set; null when it never was.
+          anyOf:
+            - format: date-time
+              type: string
+            - type: "null"
+        files:
+          maxItems: 500
+          description: "The layer's files in the .selfhost/context layout: rules/<name>.md, skills/<name>/SKILL.md and the files beside it, commands/<name>.md, agents/<name>.md and mcp.json."
+          type: array
+          items:
+            additionalProperties: false
+            title: ContextFile
+            type: object
+            required:
+              - path
+              - text
+            properties:
+              path:
+                pattern: ^(mcp\.json|(rules|skills|commands|agents)/[A-Za-z0-9 ._/+-]+)$
+                maxLength: 512
+                description: Path inside the context folder, like rules/no-secrets.md or mcp.json.
+                type: string
+              text:
+                maxLength: 1000000
+                description: The file, as UTF-8 text.
+                type: string
+              executable:
+                description: A skill's script, written with the executable bit.
+                type: boolean
     AddRepoRequest:
       additionalProperties: false
       title: AddRepoRequest

@@ -2,6 +2,7 @@ export * from "./api.js";
 export * from "./common.js";
 export * from "./compile.js";
 export * from "./config.js";
+export * from "./context-layers.js";
 export * from "./event.js";
 export * from "./event-versions.js";
 export * from "./gateway.js";

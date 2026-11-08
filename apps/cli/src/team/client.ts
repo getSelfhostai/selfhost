@@ -1,5 +1,9 @@
 import { hashToken } from "@selfhost/ledger";
 import type {
+  ContextFile,
+  ContextProposal,
+  ContextProposalRequest,
+  ContextResponse,
   CreateInviteRequest,
   CreateInviteResponse,
   CreateTeamResponse,
@@ -16,6 +20,7 @@ import type {
   JoinResponse,
   LedgerEvent,
   MeResponse,
+  OrgContextResponse,
   Person,
   PersonRole,
   PolicyResponse,
@@ -153,6 +158,26 @@ export class TeamClient {
       if (error instanceof TeamApiError && error.code === "no_policy") return undefined;
       throw error;
     }
+  }
+
+  /** The org and team context layers of a team: the token's own team by default. */
+  context(team?: string): Promise<ContextResponse> {
+    return this.call("GET", `/v1/context${team ? `?team=${encodeURIComponent(team)}` : ""}`);
+  }
+
+  /** Replaces a team's context layer; only its owners and admins can. */
+  setContext(team: string, files: ContextFile[]): Promise<ContextResponse> {
+    return this.call("PUT", `/v1/context?team=${encodeURIComponent(team)}`, { files });
+  }
+
+  /** Replaces an org's context layer; only the admin token can. */
+  setOrgContext(org: string, files: ContextFile[]): Promise<OrgContextResponse> {
+    return this.call("PUT", `/v1/orgs/${encodeURIComponent(org)}/context`, { files });
+  }
+
+  /** Proposes one of the person's own items to the team; an owner or admin approves it. */
+  proposeContext(request: ContextProposalRequest): Promise<ContextProposal> {
+    return this.call("POST", "/v1/context/proposals", request);
   }
 
   /** The team's router, tracer, runtime and reviewer, each checked by the server. */

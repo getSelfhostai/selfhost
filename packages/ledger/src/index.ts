@@ -1,4 +1,11 @@
 export {
+  type ContextStore,
+  proposalInfo,
+  type Settlement,
+  type StoredContext,
+  type StoredProposal,
+} from "./context.js";
+export {
   type Database,
   isPostgresUrl,
   MEMORY_DATA_DIR,

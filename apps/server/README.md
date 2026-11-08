@@ -103,6 +103,22 @@ bootstrap admin; everything else is a token the server issues and keeps only as 
   blocked or asked in observe mode, and blocked or asked in enforce mode, from the team's
   `policy.evaluated` events, by default over the last 7 days (`?from=`, `?to=`), with each rule's
   mode now and likely false positives marked like the weekly policy report.
+- `GET /v1/context` (anyone in the team) and `PUT` (owner or admin): the org and team context
+  layers, the `.selfhost/context` items every member's laptop pulls on sync and merges with the
+  repository's own and the person's (org first; the earlier layer's item wins a conflict). `PUT`
+  takes `{ files }` (`{ path, text, executable? }` in the `.selfhost/context` layout) and
+  validates them like `selfhost context compile`; an invalid layer answers 400 `invalid_context`.
+  The answer lists `conflicts` (team items the org layer replaces) and the team's newest
+  `proposals`. `GET` and `PUT /v1/orgs/{org}/context` read and set the org layer (`PUT`: admin
+  token only).
+- `POST /v1/context/proposals` (a person token in the team): `{ item, files, team? }` proposes one
+  of the person's own items to the team. It is stored in `context_proposals` and opens a
+  `context_promotion` review item with the same id (409 `item_exists` when the org or team
+  layer has the item). Only an owner or admin answers that item (`POST
+  /v1/review-items/{id}/decision` answers 403 to anyone else, and agents cannot answer it over
+  MCP); the next read of the team's context adds an approved item to the team layer. An item
+  denied, replaced by a newer proposal, expired, or approved by someone without the role (the
+  admin token naming a member in `by`) is marked refused with the reason.
 - `GET /v1/orgs/{org}/policy` (anyone in the org) and `PUT` (admin token): the org floor. The
   answer lists `conflicts`: stored team and repo rules that relax it, which get the org's value
   until they change.
@@ -156,7 +172,7 @@ same rule when asked, so a run whose repo became known later (a commit found by
 
 Tables `orgs`, `teams`, `people`, `tokens`, `team_repos` and `run_repos` come from the ledger
 package's migrations `0002_teams.sql`, `0003_team_access.sql`, `0006_roles.sql` and
-`0007_orgs.sql`, in the same database as the events, and are reached through `ledger.teams` and
+`0007_orgs.sql` and context layers and proposals from `0010_context_layers.sql`, in the same database as the events, and are reached through `ledger.teams` and
 `ledger.orgs`.
 
 No model traffic passes through this server. It has no route that forwards requests to Anthropic,

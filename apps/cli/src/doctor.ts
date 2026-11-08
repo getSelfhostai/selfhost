@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { relative } from "node:path";
 import { formatConfigError, parseConfig } from "@selfhost/schema";
-import { type ConfigLocation, findConfig, type TeamPolicyFile } from "./find-config.js";
+import { type ConfigLocation, findConfig, policyText, type TeamPolicyFile } from "./find-config.js";
 
 export interface DoctorOptions {
   cwd: string;
@@ -66,7 +66,9 @@ export function doctorReport({
   }
   const result = parseConfig(readFileSync(location.path, "utf8"));
   if (result.ok) {
-    const { rules } = result.config;
+    // On a machine in a team, the rules in use are the team's with this file's added.
+    const used = parseConfig(policyText(location).text);
+    const { rules } = used.ok ? used.config : result.config;
     const enforced = rules.filter((rule) => rule.mode === "enforce").length;
     report.config = {
       ...base,
@@ -115,7 +117,11 @@ export function doctor(options: DoctorOptions): number {
     row("config", `${config.path} (team ${team.team} from ${team.server}, no selfhost.toml here)`);
   } else {
     row("config", config.path);
-    if (team) row("team", `${team.path} from ${team.server} is not used while this file exists`);
+    if (team && config.from === "search") {
+      row("team", `adds to ${team.path} from ${team.server}; the team's rules are the floor`);
+    } else if (team) {
+      row("team", `${team.path} from ${team.server} is not used with a file given by name`);
+    }
   }
   if (config.valid) {
     row("status", `valid, ${config.rules} rules (${config.enforced} enforced)`);

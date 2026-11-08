@@ -119,6 +119,20 @@ const alert = (ts: string, data: Record<string, unknown>, extra: Partial<LedgerE
     ...extra,
   });
 
+/** A person's context item proposed to the team, as the team server records it. */
+const contextProposal = (ts: string, id: string) =>
+  event({
+    kind: "approval.requested",
+    ts,
+    source: "server",
+    links: { item_id: id },
+    data: {
+      request: "context_promotion",
+      item: "rule:no-secrets",
+      summary: "Never print secrets.",
+    },
+  });
+
 /** pr.opened as PR attribution writes it, with the risk score as an input. */
 const pullRequest = (ts: string, risk: number, url = PR_URL) =>
   event({
@@ -191,6 +205,7 @@ describe.each(BACKENDS)("review list on $name", (backend) => {
         [alert(t, { alert: "quality_alarm", metric: "test_pass_rate", message: "Pass rate fell" })],
         [pullRequest(t, 82)],
         [exceptionBlock(t, { id: requestId(t, 1), fingerprint: "f".repeat(64) })],
+        [contextProposal(t, requestId(t, 2))],
         [
           verdict("2026-11-04T09:00:00.000Z", {
             rule_id: "no-force-push",
@@ -270,6 +285,15 @@ describe.each(BACKENDS)("review list on $name", (backend) => {
       expect(byKind("policy_report")[0]).toMatchObject({
         title: "Observed rules would have stopped 1 tool call (2026-11-02 to 2026-11-08)",
         blocking: false,
+      });
+      // Not routed to the person who proposed it: an owner or admin answers it.
+      expect(byKind("context_promotion")[0]).toMatchObject({
+        id: requestId(t, 2),
+        title: "Add rule:no-secrets to the team's context",
+        blocking: false,
+        owners: [],
+        brief: "Never print secrets.",
+        actions: ["approve", "deny", "snooze"],
       });
     });
 

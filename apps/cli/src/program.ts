@@ -385,7 +385,14 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
 
   registerContext(
     program,
-    () => ({ env: deps.env, cwd: deps.cwd, write: deps.write, setExitCode: deps.setExitCode }),
+    () => ({
+      env: deps.env,
+      cwd: deps.cwd,
+      write: deps.write,
+      setExitCode: deps.setExitCode,
+      configPath: deps.configPath ?? defaultConfigPath(),
+      fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
+    }),
     fail,
   );
 

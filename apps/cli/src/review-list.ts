@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { type Ledger, openLedger } from "@selfhost/ledger";
 import {
   openReviewList,
@@ -16,7 +16,7 @@ import {
   type ReviewItemsPage,
 } from "@selfhost/schema";
 import type { Command } from "commander";
-import { findConfig } from "./find-config.js";
+import { findConfig, policyText } from "./find-config.js";
 import { plural, table } from "./format.js";
 import { drainSpool } from "./hooks/drain.js";
 import { spoolDir } from "./hooks/receive.js";
@@ -56,7 +56,7 @@ const TITLE_WIDTH = 60;
 function loadConfig(options: ReviewListCommandOptions, io: ReviewListIo): ResolvedSelfhostConfig {
   const location = findConfig(io.cwd, options.config, io.env, io.configPath);
   if (location && !existsSync(location.path)) throw new Error(`${location.path} does not exist`);
-  const parsed = parseConfig(location ? readFileSync(location.path, "utf8") : "version = 1\n");
+  const parsed = parseConfig(location ? policyText(location).text : "version = 1\n");
   if (parsed.ok) return parsed.config;
   const lines = parsed.errors.map((error) => `  ${formatConfigError(error, location?.path)}`);
   throw new Error([`${location?.path} is invalid. Run selfhost doctor.`, ...lines].join("\n"));

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { readContextSource } from "@selfhost/context";
 import { describe, expect, it } from "vitest";
@@ -102,18 +102,16 @@ describe("selfhost init: importing the context files", () => {
       "skills/release/scripts/changelog.sh",
     ]);
 
-    // Each rule keeps who reads it today, so compiling it back changes no agent's context.
+    // The repository's own instruction files are for every agent, whichever agents load that
+    // file name today; a file in one agent's rules folder stays with the agents that read it.
     const claude = readFileSync(source("rules", "claude.md"), "utf8");
-    expect(front(claude)).toEqual({ agents: ["claude_code", "cursor", "copilot"] });
+    expect(claude.startsWith("---")).toBe(false);
     expect(claude.endsWith(readFileSync(repo.path("CLAUDE.md"), "utf8").replace(/^\n+/, ""))).toBe(
       true,
     );
-    // Exact copies become one rule for the readers of both.
-    expect(front(readFileSync(source("rules", "gemini.md"), "utf8"))).toEqual({
-      agents: ["copilot", "gemini"],
-    });
+    // Exact copies become one rule.
+    expect(readFileSync(source("rules", "gemini.md"), "utf8").startsWith("---")).toBe(false);
     expect(front(readFileSync(source("rules", "packages-web-agents.md"), "utf8"))).toEqual({
-      agents: ["codex", "cursor", "copilot", "opencode", "goose"],
       globs: ["packages/web/**"],
     });
     expect(front(readFileSync(source("rules", "components.md"), "utf8"))).toEqual({
@@ -159,7 +157,7 @@ describe("selfhost init: importing the context files", () => {
 
     const undo = await run(["init", "--home", home.root, "--undo"], { cwd: repo.root });
     expect(undo.out).toContain(
-      "Deleted 11 context files selfhost init imported into .selfhost/context/.",
+      "Deleted 12 context files selfhost init imported into .selfhost/context/.",
     );
     expect(existsSync(repo.path(".selfhost"))).toBe(false);
     expect(hashes(home.root, repo.root)).toEqual(before);
@@ -170,6 +168,42 @@ describe("selfhost init: importing the context files", () => {
     expect((await init(["--import-context"])).code).toBe(0);
     const read = readContextSource(repo.root);
     expect(read.ok ? [] : read.errors).toEqual([]);
+  });
+
+  it("hands the imported files over, so context compile runs without --force", async () => {
+    const { repo, init } = laptop();
+    const claudeBefore = readFileSync(repo.path("CLAUDE.md"), "utf8");
+    expect((await init(["--import-context"])).code).toBe(0);
+    const lock = JSON.parse(readFileSync(repo.path(".selfhost", "context.lock.json"), "utf8"));
+    expect(lock.files["CLAUDE.md"]).toMatchObject({
+      sources: expect.arrayContaining([".selfhost/context/rules/claude.md"]),
+      header: "comment",
+    });
+    // .cursor/mcp.json sets up the docs server differently, so the import kept the other one
+    // and said so: that file stays the person's to settle. Everything else is handed over.
+    const first = JSON.parse((await run(["context", "compile", "--json"], { cwd: repo.root })).out);
+    expect(first.conflicts.map((c: { path: string }) => c.path)).toEqual([".cursor/mcp.json"]);
+    rmSync(repo.path(".cursor", "mcp.json"));
+    const compiled = await run(["context", "compile", "--json"], { cwd: repo.root });
+    const report = JSON.parse(compiled.out);
+    expect(report.conflicts).toEqual([]);
+    expect(compiled.code).toBe(0);
+    // CLAUDE.md is now the compiled copy, with the same text, and every agent gets the rule.
+    const claude = readFileSync(repo.path("CLAUDE.md"), "utf8");
+    expect(claude).toContain("Compiled by selfhost from");
+    expect(claude).toContain(
+      claudeBefore
+        .trim()
+        .split("\n")
+        .find((line) => line.trim()) ?? "",
+    );
+    const rule = report.coverage.items.filter(
+      (entry: { item: string }) => entry.item === "rule:claude",
+    );
+    expect(rule.every((entry: { status: string }) => entry.status !== "not_applicable")).toBe(true);
+    // A second compile finds nothing to do.
+    const again = JSON.parse((await run(["context", "check", "--json"], { cwd: repo.root })).out);
+    expect(again.drift).toEqual([]);
   });
 
   it("asks in a terminal, and never with --yes or --json", async () => {
@@ -236,7 +270,7 @@ describe("selfhost init: importing the context files", () => {
     writeFileSync(source("rules", "claude.md"), "edited by hand\n");
     const undo = await run(["init", "--home", home.root, "--undo"], { cwd: repo.root });
     expect(undo.code).toBe(1);
-    expect(undo.out).toContain("Deleted 10 context files");
+    expect(undo.out).toContain("Deleted 11 context files");
     expect(undo.out).toContain(
       `Left ${source("rules", "claude.md")} as is: changed since selfhost init.`,
     );

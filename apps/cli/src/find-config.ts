@@ -1,6 +1,6 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { CONFIG_FILE_NAME } from "@selfhost/schema";
+import { CONFIG_FILE_NAME, composePolicy, type LayerConflict } from "@selfhost/schema";
 import { readMembership, teamPolicyPath } from "./team/config.js";
 
 /** The team policy pulled by the last sync, on a machine that joined a team. */
@@ -31,8 +31,8 @@ export function findTeamPolicy(configPath: string | undefined): TeamPolicyFile |
  * Finds selfhost.toml: the --config flag, then SELFHOST_CONFIG, then the nearest
  * selfhost.toml from cwd upward, stopping at the git repository root. With configPath (the
  * ~/.selfhost/config.json that holds a team membership), a machine in a team falls back to the
- * team policy pulled by its last sync when none of those is found; a repository's own file
- * always wins over it.
+ * team policy pulled by its last sync when none of those is found. A repository's own file is
+ * used on top of it: see policyText.
  */
 export function findConfig(
   cwd: string,
@@ -59,6 +59,41 @@ export function findConfig(
   return teamPolicy ? found(teamPolicy.path, "team") : undefined;
 }
 
+/** True when the repository's file is layered on the pulled team policy (see policyText). */
+export const layeredOnTeam = (location: ConfigLocation): boolean =>
+  location.from === "search" &&
+  location.teamPolicy !== undefined &&
+  location.teamPolicy.path !== location.path;
+
+export interface PolicyText {
+  /** The selfhost.toml in use. */
+  text: string;
+  /** Fields of the repository's file that would relax the team policy; the team's value is used. */
+  conflicts: LayerConflict[];
+}
+
+/**
+ * The selfhost.toml in use at a location. On a machine in a team, a repository's own file adds
+ * to the team policy pulled by the last sync, as a repo layer adds to its team's on the server:
+ * it can add rules and tighten the team's, and the team's rules stay the floor (a field that
+ * would relax one is listed in conflicts and the team's value is used). Otherwise, or when the
+ * repository's file is invalid (so its own errors are reported), the file as it is.
+ */
+export function policyText(location: ConfigLocation): PolicyText {
+  const own = readFileSync(location.path, "utf8");
+  const team = location.teamPolicy;
+  if (!team || !layeredOnTeam(location)) return { text: own, conflicts: [] };
+  try {
+    const composed = composePolicy([
+      { kind: "org", name: `team ${team.team}`, text: readFileSync(team.path, "utf8") },
+      { kind: "repo", name: location.path, text: own },
+    ]);
+    return { text: composed.text, conflicts: composed.conflicts };
+  } catch {
+    return { text: own, conflicts: [] };
+  }
+}
+
 /** One line saying which file a command used when a team policy is also on this machine. */
 export function describeConfigSource(location: ConfigLocation, shown: string): string | undefined {
   const { teamPolicy } = location;
@@ -66,5 +101,8 @@ export function describeConfigSource(location: ConfigLocation, shown: string): s
   if (location.from === "team") {
     return `Using the policy of team ${teamPolicy.team} pulled from ${teamPolicy.server}: there is no selfhost.toml in this repository.`;
   }
-  return `Using ${shown}; the policy of team ${teamPolicy.team} pulled from ${teamPolicy.server} (${teamPolicy.path}) is not used while it exists.`;
+  if (layeredOnTeam(location)) {
+    return `Using ${shown} on top of the policy of team ${teamPolicy.team} pulled from ${teamPolicy.server} (${teamPolicy.path}): the team's rules are the floor, and ${shown} adds to them.`;
+  }
+  return `Using ${shown}; the policy of team ${teamPolicy.team} pulled from ${teamPolicy.server} (${teamPolicy.path}) is not used with a file given by name.`;
 }

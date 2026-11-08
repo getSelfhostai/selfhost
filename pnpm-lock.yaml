@@ -421,6 +421,9 @@ importers:
       '@selfhost/compile':
         specifier: workspace:*
         version: link:../../packages/compile
+      '@selfhost/context':
+        specifier: workspace:*
+        version: link:../../packages/context
       '@selfhost/ee-receipt':
         specifier: workspace:*
         version: link:../../ee/receipt

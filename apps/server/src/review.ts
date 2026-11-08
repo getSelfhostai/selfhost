@@ -49,6 +49,11 @@ export interface ReviewRouteOptions {
    * request's own origin.
    */
   publicUrl?: string;
+  /**
+   * Checked before an answer is recorded: the response that refuses it, such as a 403 for an
+   * item only some roles may answer, or undefined to go on.
+   */
+  beforeDecision?: (c: Context, id: string) => Promise<Response | undefined>;
 }
 
 const apiError = (code: string, message: string): ApiError => ({ error: { code, message } });
@@ -207,6 +212,8 @@ export function reviewRoutes<E extends Env>(
     const by = actor(c, body.by);
     if (by instanceof Response) return by;
     const id = c.req.param("id");
+    const refused = await options.beforeDecision?.(c, id);
+    if (refused) return refused;
     try {
       const response = await (await listWith(c, id)).decide(id, {
         verdict: body.verdict,

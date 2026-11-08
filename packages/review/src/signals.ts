@@ -62,6 +62,12 @@ const ALERT_KINDS: Record<string, ReviewItemKind> = {
 export const MCP_QUESTION_REQUEST = "mcp_question";
 export const MCP_EXCEPTION_REQUEST = "mcp_exception";
 
+/**
+ * data.request of the approval.requested event the team server writes when a person proposes
+ * one of their own context items to the team (POST /v1/context/proposals).
+ */
+export const CONTEXT_PROMOTION_REQUEST = "context_promotion";
+
 /** Claude Code notification types that ask a question rather than for permission. */
 const QUESTION_NOTIFICATIONS = new Set(["idle_prompt", "elicitation_dialog"]);
 
@@ -186,8 +192,42 @@ function fromMcpRequest(event: LedgerEvent): Draft | undefined {
   return undefined;
 }
 
+/**
+ * A person's context item proposed to the team. Its item id is the proposal's id, so approving
+ * the item is what adds it to the team layer. It is not routed to the person who proposed it:
+ * an owner or admin of the team answers it.
+ */
+function fromContextProposal(event: LedgerEvent): Draft | undefined {
+  const data = event.data ?? {};
+  const id = event.links?.item_id?.toLowerCase();
+  const item = text(data.item);
+  if (id === undefined || !UUIDV7.test(id) || !item) return undefined;
+  const { person: _proposer, ...common } = base(event);
+  const who = eventPerson(event) ?? "A team member";
+  const summary = typeof data.summary === "string" ? data.summary.trim() : "";
+  return {
+    ...common,
+    kind: "context_promotion",
+    id,
+    // A newer proposal of the same item replaces the open one.
+    dedupeKey: `context_promotion:${item}`,
+    title: title(`Add ${item} to the team's context`),
+    why: {
+      signal: "approval.requested",
+      text: `${who} proposes their ${item} for everyone in the team. Approving adds it to the team layer, which every member's agents get on their next sync; it takes an owner or admin.`,
+    },
+    score: 20,
+    reasons: ["Approving changes what every member's agents load"],
+    scored: false,
+    blocking: false,
+    timesOut: false,
+    ...(summary ? { brief: summary } : {}),
+  };
+}
+
 /** approval.requested: a permission prompt is an approval, an idle prompt or elicitation a question. */
-function fromApprovalRequest(event: LedgerEvent): Draft {
+function fromApprovalRequest(event: LedgerEvent): Draft | undefined {
+  if (event.data?.request === CONTEXT_PROMOTION_REQUEST) return fromContextProposal(event);
   const mcp = fromMcpRequest(event);
   if (mcp) return mcp;
   const data = event.data ?? {};

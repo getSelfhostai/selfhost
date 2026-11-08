@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, sep } from "node:path";
 import { CONTEXT_READERS, type ContextReader } from "@selfhost/agents";
-import { maskSecrets } from "@selfhost/schema";
+import { buildContext, type ContextLock, LOCK_PATH, parseLock } from "@selfhost/context";
+import { CONTEXT_AGENTS, maskSecrets } from "@selfhost/schema";
 import { type ContextDoc, fileFolder, type McpServer, stringList } from "../scan/context/files.js";
 import {
   CONTEXT_SOURCE_DIR,
@@ -26,10 +27,26 @@ export interface ImportFile {
   action: "create" | "exists" | "same";
 }
 
+/**
+ * A context file the import moved into the source. When the compile writes the same path
+ * (CLAUDE.md, AGENTS.md, .mcp.json, a skill in .claude/skills, ...), it is recorded in the
+ * context lock once its source file is in place, so selfhost context compile replaces it with
+ * the compiled copy instead of refusing to touch a file it did not write.
+ */
+export interface TakeOver {
+  /** Repository-relative, /-separated; a skill's folder ends with /. */
+  path: string;
+  /** The source files (relative to .selfhost/context) that now hold its content. */
+  sources: string[];
+}
+
 export interface ContextImportPlan {
+  /** The repository root. */
+  root: string;
   /** `<repo>/.selfhost/context`. */
   dir: string;
   files: ImportFile[];
+  takeOver: TakeOver[];
   /** Context files that are not imported, and why. */
   skipped: { path: string; reason: string }[];
   /** What the import changed on the way: merged copies, secrets left out. */
@@ -87,8 +104,27 @@ function ruleGlobs(doc: ContextDoc, root: string): string[] {
 }
 
 /** Readers as the rule's agents list; none when every agent reads it. */
-const agentsField = (readers: ContextReader[]) =>
+const agentsField = (readers: readonly ContextReader[]) =>
   CONTEXT_READERS.every((reader) => readers.includes(reader)) ? undefined : [...readers];
+
+/**
+ * Who a rule is for. The repository's own instruction files (CLAUDE.md, AGENTS.md, GEMINI.md,
+ * .goosehints, .github/copilot-instructions.md) are instructions for the repository, so the rule
+ * is for every agent, whichever agents happen to load that file name today. A file in one
+ * agent's own rules folder (.cursor/rules, .claude/rules, .github/instructions) stays with the
+ * agents that read it. An `agents` list in the front matter always wins.
+ */
+function ruleAgents(doc: ContextDoc): ContextReader[] | undefined {
+  const declared = stringList(doc.front.agents);
+  if (declared.length > 0) {
+    if (declared.includes("all")) return undefined;
+    return agentsField(CONTEXT_READERS.filter((reader) => declared.includes(reader)));
+  }
+  const repoWide =
+    FOLDER_KINDS.has(doc.file.kind) ||
+    (doc.file.kind === "instructions" && basename(doc.file.path) === "copilot-instructions.md");
+  return repoWide ? undefined : agentsField(doc.file.readers);
+}
 
 /** A unique name: the base, then base-<agent>, then numbered. */
 function unique(base: string, agent: string, taken: Set<string>): string {
@@ -197,6 +233,13 @@ export function planContextImport(docs: ContextDoc[], root: string): ContextImpo
     agents: new Set<string>(),
   };
   const rulesByText = new Map<string, SourceRule>();
+  const claimed = new Map<string, string[]>();
+  /** Records that a context file (or a skill's folder) now has its content in this source file. */
+  const claim = (doc: ContextDoc, sourcePath: string, folder = false) => {
+    const rel = relative(root, folder ? dirname(doc.file.path) : doc.file.path);
+    const path = `${rel.split(sep).join("/")}${folder ? "/" : ""}`;
+    claimed.set(path, [...(claimed.get(path) ?? []), sourcePath]);
+  };
   const serverFrom = new Map<string, { display: string; spec: string }>();
   const replaced: string[] = [];
 
@@ -223,17 +266,19 @@ export function planContextImport(docs: ContextDoc[], root: string): ContextImpo
       const globs = ruleGlobs(doc, root);
       const key = `${globs.join(",")}\n${doc.body.trim()}`;
       const same = rulesByText.get(key);
+      const agents = ruleAgents(doc);
       if (same) {
-        const agents = new Set([...(same.agents ?? CONTEXT_READERS), ...file.readers]);
-        same.agents = agentsField(CONTEXT_READERS.filter((reader) => agents.has(reader)));
+        const both = new Set([...(same.agents ?? CONTEXT_READERS), ...(agents ?? CONTEXT_READERS)]);
+        same.agents = agentsField(CONTEXT_READERS.filter((reader) => both.has(reader)));
         from.get(`rules/${same.name}.md`)?.push(doc.display);
+        claim(doc, `rules/${same.name}.md`);
         notes.push(`${doc.display} is a copy of rules/${same.name}.md, so it was merged into it.`);
         continue;
       }
       const description = text(doc.front.description);
       const rule: SourceRule = {
         name: unique(ruleName(doc, root), file.agent, names.rules),
-        ...(agentsField(file.readers) ? { agents: agentsField(file.readers) } : {}),
+        ...(agents ? { agents } : {}),
         ...(globs.length ? { globs } : {}),
         ...(description ? { description } : {}),
         body: doc.body.replace(/^\s*\n/, ""),
@@ -241,6 +286,7 @@ export function planContextImport(docs: ContextDoc[], root: string): ContextImpo
       rulesByText.set(key, rule);
       source.rules.push(rule);
       from.set(`rules/${rule.name}.md`, [doc.display]);
+      claim(doc, `rules/${rule.name}.md`);
     } else if (file.kind === "skill") {
       const folder = dirname(file.path);
       const name = unique(slug(text(doc.front.name) || basename(folder)), file.agent, names.skills);
@@ -254,6 +300,7 @@ export function planContextImport(docs: ContextDoc[], root: string): ContextImpo
         files: skillFiles(folder),
       });
       from.set(`skills/${name}`, [doc.display]);
+      claim(doc, `skills/${name}/SKILL.md`, true);
     } else if (file.kind === "command") {
       const commands =
         /[\\/]commands?[\\/](.*)\.md$/.exec(file.path)?.[1] ?? basename(file.path, ".md");
@@ -271,6 +318,7 @@ export function planContextImport(docs: ContextDoc[], root: string): ContextImpo
         body: doc.body.replace(/^\s*\n/, ""),
       });
       from.set(`commands/${name}.md`, [doc.display]);
+      claim(doc, `commands/${name}.md`);
     } else if (file.kind === "subagent") {
       const name = unique(
         slug(text(doc.front.name) || basename(file.path, ".md")),
@@ -289,7 +337,9 @@ export function planContextImport(docs: ContextDoc[], root: string): ContextImpo
         body: doc.body.replace(/^\s*\n/, ""),
       });
       from.set(`agents/${name}.md`, [doc.display]);
+      claim(doc, `agents/${name}.md`);
     } else if (file.kind === "mcp") {
+      const secrets = replaced.length;
       for (const server of doc.servers) {
         const spec = JSON.stringify([
           server.command,
@@ -321,6 +371,13 @@ export function planContextImport(docs: ContextDoc[], root: string): ContextImpo
       if (doc.servers.some((server) => serverFrom.get(server.name)?.display === doc.display)) {
         from.set("mcp.json", [...(from.get("mcp.json") ?? []), doc.display]);
       }
+      // Only a file whose every server was copied as it is, no secret swapped out, is handed over.
+      if (
+        replaced.length === secrets &&
+        doc.servers.every((server) => serverFrom.get(server.name)?.display === doc.display)
+      ) {
+        claim(doc, "mcp.json");
+      }
     }
   }
   if (replaced.length > 0) {
@@ -342,11 +399,61 @@ export function planContextImport(docs: ContextDoc[], root: string): ContextImpo
       action: before === null ? "create" : sha(before) === sha(entry.data) ? "same" : "exists",
     };
   });
-  return { dir, files, skipped, notes };
+  const takeOver = [...claimed].map(([path, sources]) => ({ path, sources }));
+  return { root, dir, files, takeOver, skipped, notes };
 }
 
-/** Writes the plan's new files, never replacing one, and returns the paths it wrote. */
-export function applyContextImport(plan: ContextImportPlan): string[] {
+/**
+ * Records in the context lock the files the import handed over to the compile: each file the
+ * compile would refuse to replace because selfhost did not write it, when it is one the import
+ * read and its source file is in place. Each goes in with the hash it has now, so the next
+ * compile replaces it. Returns the lock's path when this made a new lock, for the init record.
+ */
+async function recordTakeOver(plan: ContextImportPlan): Promise<string | undefined> {
+  const inPlace = new Set(
+    plan.files
+      .filter((file) => file.action !== "exists")
+      .map((file) => relative(plan.dir, file.path).split(sep).join("/")),
+  );
+  const lockPath = join(plan.root, ...LOCK_PATH.split("/"));
+  const current = existsSync(lockPath) ? parseLock(readFileSync(lockPath, "utf8")) : undefined;
+  if (existsSync(lockPath) && !current) return undefined;
+  const built = await buildContext(plan.root);
+  if (!built.ok) return undefined;
+  const refused = new Set(built.plan.conflicts.map((conflict) => conflict.path));
+  const imported = (path: string) =>
+    plan.takeOver.find((entry) =>
+      entry.path.endsWith("/") ? path.startsWith(entry.path) : entry.path === path,
+    );
+  const lock: ContextLock = current ?? {
+    schema: "selfhost.context_lock/v1",
+    agents: [...CONTEXT_AGENTS],
+    skills: {},
+    files: {},
+  };
+  let recorded = 0;
+  for (const file of built.result.files) {
+    if (!refused.has(file.path) || (file.content.kind !== "text" && file.content.kind !== "bytes"))
+      continue;
+    const entry = imported(file.path);
+    if (!entry?.sources.every((source) => inPlace.has(source))) continue;
+    const bytes = existing(join(plan.root, ...file.path.split("/")));
+    if (bytes === null) continue;
+    lock.files[file.path] = { sources: file.sources, header: file.header, sha256: sha(bytes) };
+    recorded += 1;
+  }
+  if (recorded === 0) return undefined;
+  mkdirSync(dirname(lockPath), { recursive: true });
+  writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
+  return current ? undefined : lockPath;
+}
+
+/**
+ * Writes the plan's new files, never replacing one, and returns the paths it wrote (a new
+ * context lock among them). The files the import moved into the source (CLAUDE.md and the
+ * like) are recorded in the context lock, so the next selfhost context compile takes them over.
+ */
+export async function applyContextImport(plan: ContextImportPlan): Promise<string[]> {
   const written: string[] = [];
   for (const file of plan.files) {
     if (file.action !== "create") continue;
@@ -359,5 +466,6 @@ export function applyContextImport(plan: ContextImportPlan): string[] {
       file.action = "exists";
     }
   }
-  return written;
+  const lock = await recordTakeOver(plan);
+  return lock ? [...written, lock] : written;
 }

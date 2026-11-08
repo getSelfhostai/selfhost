@@ -112,7 +112,8 @@ describe("selfhost init", () => {
       mode: "team",
       team: { server: "https://team.example.com", joined: true },
       hook_command: "selfhost hook {agent}",
-      config: { path: repo.path("selfhost.toml"), action: "created" },
+      // In a team the team's policy applies: no starter file that would only add to it.
+      config: { path: null, action: "none", preset: null },
       sources: { log_files: 6, hook_lines: 0 },
       import: null,
     });
@@ -428,7 +429,7 @@ describe("selfhost init --team", () => {
   it("accepts the whole line team init prints, then imports and syncs", async () => {
     blockNetwork();
     const server = await teamServer();
-    const { home, deps } = laptop();
+    const { home, repo, deps } = laptop();
     const configPath = home.path(".selfhost", "config.json");
     try {
       const created = await run(["team", "init", "--server", SERVER, "--json"], {
@@ -460,6 +461,9 @@ describe("selfhost init --team", () => {
       });
       expect(report.import.sync).toMatchObject({ server: SERVER });
       expect(report.import.sync.error).toBeUndefined();
+      // No starter selfhost.toml: one would only sit on top of the team's policy.
+      expect(report.config).toEqual({ path: null, action: "none", preset: null });
+      expect(existsSync(repo.path("selfhost.toml"))).toBe(false);
       // Joined before anything else went to the server.
       expect(server.calls.slice(1, 2)).toEqual([`POST ${SERVER}/v1/join`]);
       expect(JSON.parse(readFileSync(configPath, "utf8"))).toMatchObject({
@@ -485,6 +489,9 @@ describe("selfhost init --team", () => {
       expect(again.code).toBe(0);
       expect(again.out).toMatch(
         /^Already in team \S+ on http:\/\/team\.test as dev@example\.com\.$/m,
+      );
+      expect(again.out).toContain(
+        "Policy: the team's policy applies here, so no selfhost.toml was written.",
       );
       expect(server.calls.filter((call) => call.endsWith("/v1/join"))).toHaveLength(1);
     } finally {

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import {
   checkCommand,
@@ -15,7 +15,7 @@ import {
   validateConfig,
 } from "@selfhost/schema";
 import type { Command } from "commander";
-import { findConfig } from "./find-config.js";
+import { findConfig, policyText } from "./find-config.js";
 import { table } from "./format.js";
 
 export interface PackagesIo {
@@ -65,7 +65,7 @@ function policy(
     return { config: defaults.config };
   }
   if (!existsSync(location.path)) throw new Error(`${location.path} does not exist`);
-  const result = parseConfig(readFileSync(location.path, "utf8"));
+  const result = parseConfig(policyText(location).text);
   if (!result.ok) {
     const file = relative(io.cwd, location.path) || location.path;
     const lines = result.errors.map((error) => `  ${formatConfigError(error, file)}`);

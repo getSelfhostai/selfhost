@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import type { LedgerWriter } from "@selfhost/importers";
 import type { Ledger } from "@selfhost/ledger";
 import { PAGE_LIMIT_MAX } from "@selfhost/schema";
+import { compileRepos, pullContext, type RepoCompile } from "../context/layers.js";
 import { exceptionsDir, hasRequests, issueGrants } from "../hooks/exceptions.js";
 import { type Fetch, TeamClient } from "./client.js";
 import {
@@ -29,6 +30,13 @@ export interface SyncReport {
   policy_hash?: string | null;
   /** One-time exceptions people approved on the server, pulled as grants for this machine. */
   grants?: number;
+  /** sha256 over the org and team context layers pulled by this sync. */
+  context_hash?: string;
+  /**
+   * Repositories compiled again because the pulled layers changed: the ones whose context was
+   * compiled with them on this machine.
+   */
+  context_repos?: RepoCompile[];
   /** Why the sync stopped. The events stay in the local ledger and go up on the next sync. */
   error?: string;
 }
@@ -62,7 +70,9 @@ export async function pushLedger(ledger: Ledger, remote: LedgerWriter, from?: Da
 }
 
 /**
- * Brings the server up to date with the local ledger and pulls the team policy. The first sync
+ * Brings the server up to date with the local ledger and pulls the team policy and the org and
+ * team context layers; when the layers changed, the repositories compiled with them on this
+ * machine are compiled again. The first sync
  * after joining sends the whole local ledger, so history from solo mode shows up on the server;
  * later ones send events from `since` on. Ids are idempotency keys, so nothing is stored twice.
  */
@@ -89,6 +99,11 @@ export async function syncLedger(
     report.policy_hash = await pullPolicy(client, configPath, state);
     const grants = await pullGrants(client, configPath);
     if (grants !== undefined) report.grants = grants;
+    const context = await pullContext(client, configPath, state);
+    report.context_hash = context.hash;
+    if (context.changed && state.context_repos?.length) {
+      report.context_repos = await compileRepos(configPath, state.context_repos);
+    }
   } catch (error) {
     report.error = error instanceof Error ? error.message : String(error);
   }

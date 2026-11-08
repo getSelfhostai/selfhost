@@ -34,6 +34,7 @@ export {
 } from "./refresh.js";
 export { type RouteInput, type Routing, routeItem } from "./routing.js";
 export {
+  CONTEXT_PROMOTION_REQUEST,
   type Draft,
   draftFor,
   MCP_EXCEPTION_REQUEST,

@@ -364,6 +364,10 @@ function printHeader(
   } else if (config.action === "created") {
     const verb = report.dry_run ? "would write" : "wrote";
     write(`Policy: ${verb} ${file}, ${STARTER_RULES} rules, all in observe mode.`);
+  } else if (report.mode === "team") {
+    write(
+      "Policy: the team's policy applies here, so no selfhost.toml was written. A repository file adds rules on top of it (selfhost init --preset); the team's rules stay the floor.",
+    );
   } else write("Policy: not in a git repository, so no selfhost.toml was written.");
   write("");
 }
@@ -439,7 +443,7 @@ async function offerContext(
   else if (options.dryRun || options.json || options.yes || !io.ask) status = "offered";
   else status = (await io.ask(contextQuestion(creates.length))) ? "imported" : "declined";
   if (status === "imported") {
-    const written = applyContextImport(plan);
+    const written = await applyContextImport(plan);
     if (written.length > 0) recordCreated(recordPath(home), written);
   }
   return {
@@ -598,10 +602,13 @@ export async function runInit(options: InitOptions, io: InitIo): Promise<number>
   const apply = plans.filter((plan) => !skipped.has(plan.agent));
   const found = findConfig(io.cwd, undefined, io.env);
   const repo = repoDir(undefined, io.cwd);
+  // In a team the pulled team policy applies with no file in the repository. A starter would
+  // only add observe-mode copies of rules, so none is written unless a preset is asked for.
+  const inTeam = invite !== undefined || readMembership(where.configPath) !== undefined;
   const config: InitReport["config"] =
     found && existsSync(found.path)
       ? { path: found.path, action: "kept", preset: null }
-      : repo
+      : repo && (preset !== undefined || !inTeam)
         ? { path: join(repo, CONFIG_FILE_NAME), action: "created", preset: preset ?? null }
         : { path: null, action: "none", preset: null };
   if (preset && config.action === "kept") {
