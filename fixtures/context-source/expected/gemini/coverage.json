@@ -1,0 +1,168 @@
+{
+  "schema": "selfhost.context_coverage/v1",
+  "agents": [
+    {
+      "agent": "gemini",
+      "docs": [
+        "https://geminicli.com/docs/cli/gemini-md/",
+        "https://geminicli.com/docs/cli/skills/",
+        "https://geminicli.com/docs/cli/custom-commands/",
+        "https://geminicli.com/docs/core/subagents/",
+        "https://geminicli.com/docs/tools/mcp-server/"
+      ],
+      "notes": []
+    }
+  ],
+  "items": [
+    {
+      "item": "rule:api",
+      "kind": "rule",
+      "agent": "gemini",
+      "status": "partial",
+      "files": [
+        "GEMINI.md"
+      ],
+      "detail": "Gemini CLI has no path-scoped instructions, so GEMINI.md carries the rule for every file, with its globs written out."
+    },
+    {
+      "item": "rule:claude-memory",
+      "kind": "rule",
+      "agent": "gemini",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Claude Code."
+    },
+    {
+      "item": "rule:codex-sandbox",
+      "kind": "rule",
+      "agent": "gemini",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Codex."
+    },
+    {
+      "item": "rule:copilot-review",
+      "kind": "rule",
+      "agent": "gemini",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Copilot."
+    },
+    {
+      "item": "rule:cursor-tabs",
+      "kind": "rule",
+      "agent": "gemini",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Cursor."
+    },
+    {
+      "item": "rule:goose-hints",
+      "kind": "rule",
+      "agent": "gemini",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Goose."
+    },
+    {
+      "item": "rule:style",
+      "kind": "rule",
+      "agent": "gemini",
+      "status": "compiled",
+      "files": [
+        "GEMINI.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "skill:db-migrate",
+      "kind": "skill",
+      "agent": "gemini",
+      "status": "partial",
+      "files": [
+        ".agents/skills/db-migrate/SKILL.md"
+      ],
+      "detail": "Gemini CLI does not read allowed-tools and disable-model-invocation, so the skill runs without them."
+    },
+    {
+      "item": "skill:release-notes",
+      "kind": "skill",
+      "agent": "gemini",
+      "status": "compiled",
+      "files": [
+        ".agents/skills/release-notes/SKILL.md",
+        ".agents/skills/release-notes/references/template.md",
+        ".agents/skills/release-notes/scripts/collect.sh"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "command:fix-issue",
+      "kind": "command",
+      "agent": "gemini",
+      "status": "compiled",
+      "files": [
+        ".gemini/commands/fix-issue.toml"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "command:standup",
+      "kind": "command",
+      "agent": "gemini",
+      "status": "compiled",
+      "files": [
+        ".gemini/commands/standup.toml"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "agent:migrator",
+      "kind": "agent",
+      "agent": "gemini",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Claude Code, Codex, Copilot and OpenCode."
+    },
+    {
+      "item": "agent:reviewer",
+      "kind": "agent",
+      "agent": "gemini",
+      "status": "partial",
+      "files": [
+        ".gemini/agents/reviewer.md"
+      ],
+      "detail": "selfhost does not map tool names to Gemini CLI's, so the subagent gets every tool."
+    },
+    {
+      "item": "mcp:docs",
+      "kind": "mcp",
+      "agent": "gemini",
+      "status": "compiled",
+      "files": [
+        ".gemini/settings.json"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "mcp:github",
+      "kind": "mcp",
+      "agent": "gemini",
+      "status": "compiled",
+      "files": [
+        ".gemini/settings.json"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "mcp:tickets",
+      "kind": "mcp",
+      "agent": "gemini",
+      "status": "compiled",
+      "files": [
+        ".gemini/settings.json"
+      ],
+      "detail": ""
+    }
+  ]
+}

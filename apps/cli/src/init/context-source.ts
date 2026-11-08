@@ -1,3 +1,4 @@
+import { SEMVER_PATTERN } from "@selfhost/context";
 import { stringify } from "yaml";
 
 /**
@@ -77,6 +78,21 @@ function markdown(front: Record<string, unknown>, body: string): string {
   return `---\n${stringify(fields, { lineWidth: 0 })}---\n\n${text.replace(/^\n+/, "")}`;
 }
 
+/**
+ * The context source requires a semantic version on every skill, so one with none, or with a
+ * version that is not semver (such as "1.0"), starts at 1.0.0.
+ */
+function splitTools(tools: string): string[] {
+  return tools
+    .split(",")
+    .map((tool) => tool.trim())
+    .filter((tool) => tool !== "");
+}
+
+function skillVersion(version: string | undefined): string {
+  return version !== undefined && new RegExp(SEMVER_PATTERN).test(version) ? version : "1.0.0";
+}
+
 /** The files of the source, in a stable order. */
 export function contextSourceFiles(source: ContextSource): SourceFile[] {
   const files: SourceFile[] = [];
@@ -93,7 +109,7 @@ export function contextSourceFiles(source: ContextSource): SourceFile[] {
     files.push({
       path: `skills/${skill.name}/SKILL.md`,
       data: markdown(
-        { name: skill.name, description: skill.description, version: skill.version },
+        { name: skill.name, description: skill.description, version: skillVersion(skill.version) },
         skill.body,
       ),
     });
@@ -117,7 +133,8 @@ export function contextSourceFiles(source: ContextSource): SourceFile[] {
         {
           name: agent.name,
           description: agent.description,
-          tools: agent.tools,
+          // Claude Code writes tools as one comma-separated string; the source keeps a list.
+          tools: typeof agent.tools === "string" ? splitTools(agent.tools) : agent.tools,
           model: agent.model,
         },
         agent.body,

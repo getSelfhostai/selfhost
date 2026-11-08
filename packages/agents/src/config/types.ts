@@ -1,6 +1,8 @@
 import type { AgentId, Env } from "../types.js";
 
 export interface McpServerSpec {
+  /** The transport for a url: streamable HTTP (the default) or the older SSE. */
+  type?: "stdio" | "http" | "sse";
   /** A stdio server: the executable and its arguments. */
   command?: string;
   args?: string[];

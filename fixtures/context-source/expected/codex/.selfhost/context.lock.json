@@ -1,0 +1,97 @@
+{
+  "schema": "selfhost.context_lock/v1",
+  "agents": [
+    "codex"
+  ],
+  "skills": {
+    "db-migrate": {
+      "version": "0.3.0",
+      "sha256": "d46c3f2990085cde8101c72b273751a0a3b141956673ccaa8f2b8884c6e872ad",
+      "agents": {
+        "codex": {
+          "status": "partial",
+          "version": "0.3.0",
+          "files": [
+            ".agents/skills/db-migrate/SKILL.md"
+          ]
+        }
+      }
+    },
+    "release-notes": {
+      "version": "1.2.0",
+      "sha256": "feb41bc69907b82d6fe9f0e091a2a0e989950e99332ee81fcfa372371f115da9",
+      "agents": {
+        "codex": {
+          "status": "compiled",
+          "version": "1.2.0",
+          "files": [
+            ".agents/skills/release-notes/SKILL.md",
+            ".agents/skills/release-notes/references/template.md",
+            ".agents/skills/release-notes/scripts/collect.sh"
+          ]
+        }
+      }
+    }
+  },
+  "files": {
+    ".agents/skills/db-migrate/SKILL.md": {
+      "sources": [
+        ".selfhost/context/skills/db-migrate/SKILL.md"
+      ],
+      "header": "front_matter",
+      "sha256": "3b370f61e012cabbea1e0a03f2862a14e48a8d4f3c8a2c2a95e22cd52d886565"
+    },
+    ".agents/skills/release-notes/SKILL.md": {
+      "sources": [
+        ".selfhost/context/skills/release-notes/SKILL.md"
+      ],
+      "header": "front_matter",
+      "sha256": "9d6681f300ac6dfa31b73e068e7b523c9ea26d343c0fc3994e5cdb8bc08b100d"
+    },
+    ".agents/skills/release-notes/references/template.md": {
+      "sources": [
+        ".selfhost/context/skills/release-notes/references/template.md"
+      ],
+      "header": "lock",
+      "sha256": "fe17f2e230643068727e855a21f59130c9b2a917332f89fcd6608b51f16ae7c6"
+    },
+    ".agents/skills/release-notes/scripts/collect.sh": {
+      "sources": [
+        ".selfhost/context/skills/release-notes/scripts/collect.sh"
+      ],
+      "header": "lock",
+      "sha256": "a3f37f6d9fcb3ceb21fadc935c001001c57a35d540d2cbc9879e584566ce6006"
+    },
+    ".codex/agents/migrator.toml": {
+      "sources": [
+        ".selfhost/context/agents/migrator.md"
+      ],
+      "header": "comment",
+      "sha256": "22475fdf174173434dfbb3121ffae4b0a6d11b1c0e2b1d25da805ec9d4d53a6c"
+    },
+    ".codex/agents/reviewer.toml": {
+      "sources": [
+        ".selfhost/context/agents/reviewer.md"
+      ],
+      "header": "comment",
+      "sha256": "5925c917a9b9b9d969b50e50954481478071b6139aa5d8adce111010370e8efd"
+    },
+    ".codex/config.toml": {
+      "sources": [
+        ".selfhost/context/mcp.json"
+      ],
+      "header": "block",
+      "sha256": "496164f5dc5cdc06a0f82fae24577aaed387f998b3391df8394c0faf89c39972"
+    },
+    "AGENTS.md": {
+      "sources": [
+        ".ruler/team.md",
+        ".selfhost/context/rules/api.md",
+        ".selfhost/context/rules/codex-sandbox.md",
+        ".selfhost/context/rules/style.md"
+      ],
+      "header": "comment",
+      "sha256": "99c7b900f0bf40b785cbe6c60b16c68b4dfa306f50add2136d441667f78416d6"
+    }
+  }
+}

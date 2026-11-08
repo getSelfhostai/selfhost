@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { readContextSource } from "@selfhost/context";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { contextLaptop } from "./context-fixture.js";
@@ -127,7 +128,7 @@ describe("selfhost init: importing the context files", () => {
     expect(front(readFileSync(source("agents", "reviewer.md"), "utf8"))).toEqual({
       name: "reviewer",
       description: "Reviews a diff for missing tests and unsafe migrations.",
-      tools: "Read, Grep, Glob",
+      tools: ["Read", "Grep", "Glob"],
       model: "sonnet",
     });
     expect(front(readFileSync(source("skills", "release", "SKILL.md"), "utf8"))).toEqual({
@@ -162,6 +163,13 @@ describe("selfhost init: importing the context files", () => {
     );
     expect(existsSync(repo.path(".selfhost"))).toBe(false);
     expect(hashes(home.root, repo.root)).toEqual(before);
+  });
+
+  it("writes a source the context compiler reads without errors", async () => {
+    const { repo, init } = laptop();
+    expect((await init(["--import-context"])).code).toBe(0);
+    const read = readContextSource(repo.root);
+    expect(read.ok ? [] : read.errors).toEqual([]);
   });
 
   it("asks in a terminal, and never with --yes or --json", async () => {

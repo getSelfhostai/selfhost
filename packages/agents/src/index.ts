@@ -1,6 +1,25 @@
 export { type AppliedChange, applyAgentConfig } from "./config/apply.js";
+export { isPlainObject, openDoc, type Plain, type TreeDoc } from "./config/docs.js";
+export {
+  claudeMcpServer,
+  codexMcpTable,
+  cursorMcpServer,
+  gooseExtension,
+  type McpTransport,
+  mcpTransport,
+  opencodeMcpServer,
+} from "./config/mcp.js";
 export { manifestPath, planAgentConfig, removeAgentConfig } from "./config/plan.js";
-export { BLOCK_END, BLOCK_START, tomlBlock } from "./config/toml.js";
+export {
+  BLOCK_END,
+  BLOCK_START,
+  extractBlock,
+  insertBlock,
+  tomlBlock,
+  tomlKey,
+  tomlTable,
+  tomlValue,
+} from "./config/toml.js";
 export type {
   AgentConfigInput,
   AgentConfigPlan,
@@ -12,6 +31,7 @@ export type {
   OtlpProtocol,
   PlanItem,
   PlanOptions,
+  TomlBlock,
 } from "./config/types.js";
 export {
   CURSOR_HOOK_EVENTS,

@@ -1,0 +1,168 @@
+{
+  "schema": "selfhost.context_coverage/v1",
+  "agents": [
+    {
+      "agent": "codex",
+      "docs": [
+        "https://learn.chatgpt.com/docs/agent-configuration/agents-md",
+        "https://learn.chatgpt.com/docs/build-skills",
+        "https://learn.chatgpt.com/docs/custom-prompts",
+        "https://learn.chatgpt.com/docs/agent-configuration/subagents",
+        "https://learn.chatgpt.com/docs/extend/mcp"
+      ],
+      "notes": [
+        "Codex loads .codex/config.toml, and its MCP servers, only in projects you trust."
+      ]
+    }
+  ],
+  "items": [
+    {
+      "item": "rule:api",
+      "kind": "rule",
+      "agent": "codex",
+      "status": "partial",
+      "files": [
+        "AGENTS.md"
+      ],
+      "detail": "Codex has no path-scoped instructions, so AGENTS.md carries the rule for every file, with its globs written out."
+    },
+    {
+      "item": "rule:claude-memory",
+      "kind": "rule",
+      "agent": "codex",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Claude Code."
+    },
+    {
+      "item": "rule:codex-sandbox",
+      "kind": "rule",
+      "agent": "codex",
+      "status": "compiled",
+      "files": [
+        "AGENTS.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "rule:copilot-review",
+      "kind": "rule",
+      "agent": "codex",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Copilot."
+    },
+    {
+      "item": "rule:cursor-tabs",
+      "kind": "rule",
+      "agent": "codex",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Cursor."
+    },
+    {
+      "item": "rule:goose-hints",
+      "kind": "rule",
+      "agent": "codex",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Goose."
+    },
+    {
+      "item": "rule:style",
+      "kind": "rule",
+      "agent": "codex",
+      "status": "compiled",
+      "files": [
+        "AGENTS.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "skill:db-migrate",
+      "kind": "skill",
+      "agent": "codex",
+      "status": "partial",
+      "files": [
+        ".agents/skills/db-migrate/SKILL.md"
+      ],
+      "detail": "Codex does not read allowed-tools and disable-model-invocation, so the skill runs without them."
+    },
+    {
+      "item": "skill:release-notes",
+      "kind": "skill",
+      "agent": "codex",
+      "status": "compiled",
+      "files": [
+        ".agents/skills/release-notes/SKILL.md",
+        ".agents/skills/release-notes/references/template.md",
+        ".agents/skills/release-notes/scripts/collect.sh"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "command:fix-issue",
+      "kind": "command",
+      "agent": "codex",
+      "status": "not_expressible",
+      "files": [],
+      "detail": "Codex reads custom prompts only from ~/.codex/prompts, and they are deprecated in favor of skills; it has no project commands."
+    },
+    {
+      "item": "command:standup",
+      "kind": "command",
+      "agent": "codex",
+      "status": "not_expressible",
+      "files": [],
+      "detail": "Codex reads custom prompts only from ~/.codex/prompts, and they are deprecated in favor of skills; it has no project commands."
+    },
+    {
+      "item": "agent:migrator",
+      "kind": "agent",
+      "agent": "codex",
+      "status": "partial",
+      "files": [
+        ".codex/agents/migrator.toml"
+      ],
+      "detail": "Codex subagents take their tools and sandbox from the parent session, so tools is not compiled."
+    },
+    {
+      "item": "agent:reviewer",
+      "kind": "agent",
+      "agent": "codex",
+      "status": "partial",
+      "files": [
+        ".codex/agents/reviewer.toml"
+      ],
+      "detail": "Codex subagents take their tools and sandbox from the parent session, so tools is not compiled."
+    },
+    {
+      "item": "mcp:docs",
+      "kind": "mcp",
+      "agent": "codex",
+      "status": "compiled",
+      "files": [
+        ".codex/config.toml"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "mcp:github",
+      "kind": "mcp",
+      "agent": "codex",
+      "status": "compiled",
+      "files": [
+        ".codex/config.toml"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "mcp:tickets",
+      "kind": "mcp",
+      "agent": "codex",
+      "status": "not_expressible",
+      "files": [],
+      "detail": "Codex connects to stdio and streamable HTTP servers only, not SSE."
+    }
+  ]
+}

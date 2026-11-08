@@ -1,0 +1,106 @@
+{
+  "schema": "selfhost.context_lock/v1",
+  "agents": [
+    "gemini"
+  ],
+  "skills": {
+    "db-migrate": {
+      "version": "0.3.0",
+      "sha256": "d46c3f2990085cde8101c72b273751a0a3b141956673ccaa8f2b8884c6e872ad",
+      "agents": {
+        "gemini": {
+          "status": "partial",
+          "version": "0.3.0",
+          "files": [
+            ".agents/skills/db-migrate/SKILL.md"
+          ]
+        }
+      }
+    },
+    "release-notes": {
+      "version": "1.2.0",
+      "sha256": "feb41bc69907b82d6fe9f0e091a2a0e989950e99332ee81fcfa372371f115da9",
+      "agents": {
+        "gemini": {
+          "status": "compiled",
+          "version": "1.2.0",
+          "files": [
+            ".agents/skills/release-notes/SKILL.md",
+            ".agents/skills/release-notes/references/template.md",
+            ".agents/skills/release-notes/scripts/collect.sh"
+          ]
+        }
+      }
+    }
+  },
+  "files": {
+    ".agents/skills/db-migrate/SKILL.md": {
+      "sources": [
+        ".selfhost/context/skills/db-migrate/SKILL.md"
+      ],
+      "header": "front_matter",
+      "sha256": "3b370f61e012cabbea1e0a03f2862a14e48a8d4f3c8a2c2a95e22cd52d886565"
+    },
+    ".agents/skills/release-notes/SKILL.md": {
+      "sources": [
+        ".selfhost/context/skills/release-notes/SKILL.md"
+      ],
+      "header": "front_matter",
+      "sha256": "9d6681f300ac6dfa31b73e068e7b523c9ea26d343c0fc3994e5cdb8bc08b100d"
+    },
+    ".agents/skills/release-notes/references/template.md": {
+      "sources": [
+        ".selfhost/context/skills/release-notes/references/template.md"
+      ],
+      "header": "lock",
+      "sha256": "fe17f2e230643068727e855a21f59130c9b2a917332f89fcd6608b51f16ae7c6"
+    },
+    ".agents/skills/release-notes/scripts/collect.sh": {
+      "sources": [
+        ".selfhost/context/skills/release-notes/scripts/collect.sh"
+      ],
+      "header": "lock",
+      "sha256": "a3f37f6d9fcb3ceb21fadc935c001001c57a35d540d2cbc9879e584566ce6006"
+    },
+    ".gemini/agents/reviewer.md": {
+      "sources": [
+        ".selfhost/context/agents/reviewer.md"
+      ],
+      "header": "front_matter",
+      "sha256": "da0482587905af355376aab5cbc1c845f328b0b1488d104975d2e7f00b984ced"
+    },
+    ".gemini/commands/fix-issue.toml": {
+      "sources": [
+        ".selfhost/context/commands/fix-issue.md"
+      ],
+      "header": "comment",
+      "sha256": "36ae616fbd38dfddfd5aa264ee42157d3074cb2924b15f88f56b959fd399c8c7"
+    },
+    ".gemini/commands/standup.toml": {
+      "sources": [
+        ".selfhost/context/commands/standup.md"
+      ],
+      "header": "comment",
+      "sha256": "beecfd76adfdc19cd8dbf26daa8a02dbd4c6a316ba0894004df5e7476085c0ef"
+    },
+    ".gemini/settings.json": {
+      "sources": [
+        ".selfhost/context/mcp.json"
+      ],
+      "header": "lock",
+      "sha256": "05c4ebb931be96b2d8fee433931ab5fbd5fb508e7a129feb8f001b673203efbf",
+      "key": [
+        "mcpServers"
+      ]
+    },
+    "GEMINI.md": {
+      "sources": [
+        ".ruler/team.md",
+        ".selfhost/context/rules/api.md",
+        ".selfhost/context/rules/style.md"
+      ],
+      "header": "comment",
+      "sha256": "09361ba0e2b11015deb9cde2aa11ba34094536598eae6dd05dbdb17904c27f16"
+    }
+  }
+}

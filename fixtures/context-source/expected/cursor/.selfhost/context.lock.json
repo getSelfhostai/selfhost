@@ -1,0 +1,110 @@
+{
+  "schema": "selfhost.context_lock/v1",
+  "agents": [
+    "cursor"
+  ],
+  "skills": {
+    "db-migrate": {
+      "version": "0.3.0",
+      "sha256": "d46c3f2990085cde8101c72b273751a0a3b141956673ccaa8f2b8884c6e872ad",
+      "agents": {
+        "cursor": {
+          "status": "partial",
+          "version": "0.3.0",
+          "files": [
+            ".agents/skills/db-migrate/SKILL.md"
+          ]
+        }
+      }
+    },
+    "release-notes": {
+      "version": "1.2.0",
+      "sha256": "feb41bc69907b82d6fe9f0e091a2a0e989950e99332ee81fcfa372371f115da9",
+      "agents": {
+        "cursor": {
+          "status": "compiled",
+          "version": "1.2.0",
+          "files": [
+            ".agents/skills/release-notes/SKILL.md",
+            ".agents/skills/release-notes/references/template.md",
+            ".agents/skills/release-notes/scripts/collect.sh"
+          ]
+        }
+      }
+    }
+  },
+  "files": {
+    ".agents/skills/db-migrate/SKILL.md": {
+      "sources": [
+        ".selfhost/context/skills/db-migrate/SKILL.md"
+      ],
+      "header": "front_matter",
+      "sha256": "3b370f61e012cabbea1e0a03f2862a14e48a8d4f3c8a2c2a95e22cd52d886565"
+    },
+    ".agents/skills/release-notes/SKILL.md": {
+      "sources": [
+        ".selfhost/context/skills/release-notes/SKILL.md"
+      ],
+      "header": "front_matter",
+      "sha256": "9d6681f300ac6dfa31b73e068e7b523c9ea26d343c0fc3994e5cdb8bc08b100d"
+    },
+    ".agents/skills/release-notes/references/template.md": {
+      "sources": [
+        ".selfhost/context/skills/release-notes/references/template.md"
+      ],
+      "header": "lock",
+      "sha256": "fe17f2e230643068727e855a21f59130c9b2a917332f89fcd6608b51f16ae7c6"
+    },
+    ".agents/skills/release-notes/scripts/collect.sh": {
+      "sources": [
+        ".selfhost/context/skills/release-notes/scripts/collect.sh"
+      ],
+      "header": "lock",
+      "sha256": "a3f37f6d9fcb3ceb21fadc935c001001c57a35d540d2cbc9879e584566ce6006"
+    },
+    ".cursor/agents/reviewer.md": {
+      "sources": [
+        ".selfhost/context/agents/reviewer.md"
+      ],
+      "header": "front_matter",
+      "sha256": "aa2bb3182a454ceea2d668a1616bb50112a905bd8ba32389c64754b72fcd77ac"
+    },
+    ".cursor/mcp.json": {
+      "sources": [
+        ".selfhost/context/mcp.json"
+      ],
+      "header": "lock",
+      "sha256": "006099337b60f7c3a5da2e3b9023959fda3f95921743a6a94c7f04a536f4090a"
+    },
+    ".cursor/rules/api.mdc": {
+      "sources": [
+        ".selfhost/context/rules/api.md"
+      ],
+      "header": "front_matter",
+      "sha256": "4100512c140a71a4d344bc75c42e1f6cdbf4da5b3c8f75ff164cd4f7eb00cc26"
+    },
+    ".cursor/skills/fix-issue/SKILL.md": {
+      "sources": [
+        ".selfhost/context/commands/fix-issue.md"
+      ],
+      "header": "front_matter",
+      "sha256": "3e4207101897589a44fcbd34b4a9ca0588994c3ab7ad5d3610c6dd2b2af79795"
+    },
+    ".cursor/skills/standup/SKILL.md": {
+      "sources": [
+        ".selfhost/context/commands/standup.md"
+      ],
+      "header": "front_matter",
+      "sha256": "5602999fbe10fc4b5b5e6f9f3251ee5480d0508a1effb413f116a77ad3eb41a2"
+    },
+    "AGENTS.md": {
+      "sources": [
+        ".ruler/team.md",
+        ".selfhost/context/rules/cursor-tabs.md",
+        ".selfhost/context/rules/style.md"
+      ],
+      "header": "comment",
+      "sha256": "d1cba9c13662c89a436326c95d44b87b5bc979502ddcd1c54cd443579fed4a65"
+    }
+  }
+}

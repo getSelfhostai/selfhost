@@ -249,6 +249,30 @@ update `AGENTS.md` and `CLAUDE.md` (refusing when they were written by hand and 
 `.ruler/` yet), makes the GitHub API call when `--github-org` and `GITHUB_TOKEN` are given, and
 prints the `sudo install` commands for the system paths. selfhost never runs those itself.
 
+### Context: `selfhost context`
+
+`selfhost context compile [--agent <name...>] [--out <dir>] [--check] [--force] [--json]` compiles
+the rules, skills, commands, subagents and MCP servers in `.selfhost/context/` (next to
+`selfhost.toml`; see [`packages/context`](../../packages/context/README.md)) into each agent's own
+files in the repository: `CLAUDE.md` and `.claude/`, `AGENTS.md`, `.agents/skills`, `.codex/`,
+`.cursor/`, `.github/` instructions, prompts and agents, `GEMINI.md` and `.gemini/`, `opencode.json`
+and `.opencode/`, `.goosehints` and `.mcp.json`. Rules files are written through Ruler. It prints
+a table of every item per agent: `compiled`, `partial`, `none` (the agent can't express it) or
+`n/a`, with `n/a*` where an agent reads an item that is not for it, then each gap and why.
+`--agent` (claude, codex, cursor, copilot, gemini, opencode, goose) sets the agents; later runs
+keep them. `--out` writes into another folder instead. A file selfhost did not write is never
+replaced without `--force`, and nothing is written then. `.selfhost/context.lock.json` records
+every generated file with its source and the skill version each agent received; commit it with
+the files. When the repository has `.selfhost/context`, `selfhost policy compile --apply` writes
+`.ruler/selfhost-policy.md` and lets the context compile write the rules files, so both end up in
+them.
+
+`selfhost context check [--json]` (or `context compile --check`) writes nothing and exits 1 when a
+generated file differs from what `.selfhost/context` compiles to, saying which file and whether it
+was edited by hand (move the change into the source), is out of date or missing (run `selfhost
+context compile`), or is no longer compiled. Run it in CI. An invalid source fails both commands,
+with each problem's file and line.
+
 ### Policy test files
 
 A test file is TOML: an optional `config`, the `selfhost.toml` it tests relative to the test file,

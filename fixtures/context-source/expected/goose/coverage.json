@@ -1,0 +1,162 @@
+{
+  "schema": "selfhost.context_coverage/v1",
+  "agents": [
+    {
+      "agent": "goose",
+      "docs": [
+        "https://goose-docs.ai/docs/guides/context-engineering/using-goosehints/",
+        "https://goose-docs.ai/docs/guides/context-engineering/using-skills/",
+        "https://goose-docs.ai/docs/guides/context-engineering/custom-agents/",
+        "https://goose-docs.ai/docs/guides/context-engineering/slash-commands/",
+        "https://goose-docs.ai/docs/guides/config-files/"
+      ],
+      "notes": [
+        "Goose loads AGENTS.md and .goosehints only with its Developer extension on."
+      ]
+    }
+  ],
+  "items": [
+    {
+      "item": "rule:api",
+      "kind": "rule",
+      "agent": "goose",
+      "status": "partial",
+      "files": [
+        "AGENTS.md"
+      ],
+      "detail": "Goose has no path-scoped instructions, so AGENTS.md carries the rule for every file, with its globs written out."
+    },
+    {
+      "item": "rule:claude-memory",
+      "kind": "rule",
+      "agent": "goose",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Claude Code."
+    },
+    {
+      "item": "rule:codex-sandbox",
+      "kind": "rule",
+      "agent": "goose",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Codex."
+    },
+    {
+      "item": "rule:copilot-review",
+      "kind": "rule",
+      "agent": "goose",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Copilot."
+    },
+    {
+      "item": "rule:cursor-tabs",
+      "kind": "rule",
+      "agent": "goose",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Cursor."
+    },
+    {
+      "item": "rule:goose-hints",
+      "kind": "rule",
+      "agent": "goose",
+      "status": "compiled",
+      "files": [
+        "AGENTS.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "rule:style",
+      "kind": "rule",
+      "agent": "goose",
+      "status": "compiled",
+      "files": [
+        "AGENTS.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "skill:db-migrate",
+      "kind": "skill",
+      "agent": "goose",
+      "status": "partial",
+      "files": [
+        ".agents/skills/db-migrate/SKILL.md"
+      ],
+      "detail": "Goose does not read allowed-tools and disable-model-invocation, so the skill runs without them."
+    },
+    {
+      "item": "skill:release-notes",
+      "kind": "skill",
+      "agent": "goose",
+      "status": "compiled",
+      "files": [
+        ".agents/skills/release-notes/SKILL.md",
+        ".agents/skills/release-notes/references/template.md",
+        ".agents/skills/release-notes/scripts/collect.sh"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "command:fix-issue",
+      "kind": "command",
+      "agent": "goose",
+      "status": "not_expressible",
+      "files": [],
+      "detail": "Goose maps slash commands to recipes only in each person's config.yaml; it has no project commands."
+    },
+    {
+      "item": "command:standup",
+      "kind": "command",
+      "agent": "goose",
+      "status": "not_expressible",
+      "files": [],
+      "detail": "Goose maps slash commands to recipes only in each person's config.yaml; it has no project commands."
+    },
+    {
+      "item": "agent:migrator",
+      "kind": "agent",
+      "agent": "goose",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Claude Code, Codex, Copilot and OpenCode."
+    },
+    {
+      "item": "agent:reviewer",
+      "kind": "agent",
+      "agent": "goose",
+      "status": "partial",
+      "files": [
+        ".agents/agents/reviewer.md"
+      ],
+      "detail": "Goose subagents have no tool list, so it gets every tool."
+    },
+    {
+      "item": "mcp:docs",
+      "kind": "mcp",
+      "agent": "goose",
+      "status": "not_expressible",
+      "files": [],
+      "detail": "Goose reads MCP extensions only from each person's ~/.config/goose/config.yaml; selfhost agents configure --agent goose --mcp <name>=<command> writes it there."
+    },
+    {
+      "item": "mcp:github",
+      "kind": "mcp",
+      "agent": "goose",
+      "status": "not_expressible",
+      "files": [],
+      "detail": "Goose reads MCP extensions only from each person's ~/.config/goose/config.yaml; selfhost agents configure --agent goose --mcp <name>=<command> writes it there."
+    },
+    {
+      "item": "mcp:tickets",
+      "kind": "mcp",
+      "agent": "goose",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Claude Code, Codex, Cursor, Gemini CLI and OpenCode."
+    }
+  ]
+}

@@ -1,0 +1,117 @@
+{
+  "schema": "selfhost.context_lock/v1",
+  "agents": [
+    "copilot"
+  ],
+  "skills": {
+    "db-migrate": {
+      "version": "0.3.0",
+      "sha256": "d46c3f2990085cde8101c72b273751a0a3b141956673ccaa8f2b8884c6e872ad",
+      "agents": {
+        "copilot": {
+          "status": "partial",
+          "version": "0.3.0",
+          "files": [
+            ".agents/skills/db-migrate/SKILL.md"
+          ]
+        }
+      }
+    },
+    "release-notes": {
+      "version": "1.2.0",
+      "sha256": "feb41bc69907b82d6fe9f0e091a2a0e989950e99332ee81fcfa372371f115da9",
+      "agents": {
+        "copilot": {
+          "status": "partial",
+          "version": "1.2.0",
+          "files": [
+            ".agents/skills/release-notes/SKILL.md",
+            ".agents/skills/release-notes/references/template.md",
+            ".agents/skills/release-notes/scripts/collect.sh"
+          ]
+        }
+      }
+    }
+  },
+  "files": {
+    ".agents/skills/db-migrate/SKILL.md": {
+      "sources": [
+        ".selfhost/context/skills/db-migrate/SKILL.md"
+      ],
+      "header": "front_matter",
+      "sha256": "3b370f61e012cabbea1e0a03f2862a14e48a8d4f3c8a2c2a95e22cd52d886565"
+    },
+    ".agents/skills/release-notes/SKILL.md": {
+      "sources": [
+        ".selfhost/context/skills/release-notes/SKILL.md"
+      ],
+      "header": "front_matter",
+      "sha256": "9d6681f300ac6dfa31b73e068e7b523c9ea26d343c0fc3994e5cdb8bc08b100d"
+    },
+    ".agents/skills/release-notes/references/template.md": {
+      "sources": [
+        ".selfhost/context/skills/release-notes/references/template.md"
+      ],
+      "header": "lock",
+      "sha256": "fe17f2e230643068727e855a21f59130c9b2a917332f89fcd6608b51f16ae7c6"
+    },
+    ".agents/skills/release-notes/scripts/collect.sh": {
+      "sources": [
+        ".selfhost/context/skills/release-notes/scripts/collect.sh"
+      ],
+      "header": "lock",
+      "sha256": "a3f37f6d9fcb3ceb21fadc935c001001c57a35d540d2cbc9879e584566ce6006"
+    },
+    ".github/agents/migrator.agent.md": {
+      "sources": [
+        ".selfhost/context/agents/migrator.md"
+      ],
+      "header": "front_matter",
+      "sha256": "703ab48e0249f67006c4b4bd07cd87e066e8da8fa4121453e59024c39f1b19f4"
+    },
+    ".github/agents/reviewer.agent.md": {
+      "sources": [
+        ".selfhost/context/agents/reviewer.md"
+      ],
+      "header": "front_matter",
+      "sha256": "3a5b36bb48b5263996ec6dc415e27226208597b1d9bf59ca37375bab0ec662f5"
+    },
+    ".github/instructions/api.instructions.md": {
+      "sources": [
+        ".selfhost/context/rules/api.md"
+      ],
+      "header": "front_matter",
+      "sha256": "e0e3b88112b4134783bb7b61bfb9905d2b659b001b0a7fec43c961ccd7ba536b"
+    },
+    ".github/prompts/fix-issue.prompt.md": {
+      "sources": [
+        ".selfhost/context/commands/fix-issue.md"
+      ],
+      "header": "front_matter",
+      "sha256": "d091570cba451d48de0aa6ef62b6946041e0e4a1dc35cf6ff188b4cfe0364f19"
+    },
+    ".github/prompts/standup.prompt.md": {
+      "sources": [
+        ".selfhost/context/commands/standup.md"
+      ],
+      "header": "front_matter",
+      "sha256": "9e75ba1860f8f5bcd939a3473f053a0db894de0672c4beb5c744f85509475f2c"
+    },
+    ".mcp.json": {
+      "sources": [
+        ".selfhost/context/mcp.json"
+      ],
+      "header": "lock",
+      "sha256": "3fd3de5182d27ba97925c8a9d973bdb9a613728d3b6e5a1cc7ba91412e50209d"
+    },
+    "AGENTS.md": {
+      "sources": [
+        ".ruler/team.md",
+        ".selfhost/context/rules/copilot-review.md",
+        ".selfhost/context/rules/style.md"
+      ],
+      "header": "comment",
+      "sha256": "941395cc4cf5a73b5c8ff5094eb84ac17c41b903bf693df70ec30d72139dafc9"
+    }
+  }
+}

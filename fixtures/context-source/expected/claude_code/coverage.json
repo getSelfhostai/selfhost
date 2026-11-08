@@ -1,0 +1,173 @@
+{
+  "schema": "selfhost.context_coverage/v1",
+  "agents": [
+    {
+      "agent": "claude_code",
+      "docs": [
+        "https://code.claude.com/docs/en/memory",
+        "https://code.claude.com/docs/en/skills",
+        "https://code.claude.com/docs/en/sub-agents",
+        "https://code.claude.com/docs/en/mcp"
+      ],
+      "notes": [
+        "Claude Code asks once before it starts each server in .mcp.json."
+      ]
+    }
+  ],
+  "items": [
+    {
+      "item": "rule:api",
+      "kind": "rule",
+      "agent": "claude_code",
+      "status": "compiled",
+      "files": [
+        ".claude/rules/api.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "rule:claude-memory",
+      "kind": "rule",
+      "agent": "claude_code",
+      "status": "compiled",
+      "files": [
+        "CLAUDE.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "rule:codex-sandbox",
+      "kind": "rule",
+      "agent": "claude_code",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Codex."
+    },
+    {
+      "item": "rule:copilot-review",
+      "kind": "rule",
+      "agent": "claude_code",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Copilot."
+    },
+    {
+      "item": "rule:cursor-tabs",
+      "kind": "rule",
+      "agent": "claude_code",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Cursor."
+    },
+    {
+      "item": "rule:goose-hints",
+      "kind": "rule",
+      "agent": "claude_code",
+      "status": "not_applicable",
+      "files": [],
+      "detail": "Only for Goose."
+    },
+    {
+      "item": "rule:style",
+      "kind": "rule",
+      "agent": "claude_code",
+      "status": "compiled",
+      "files": [
+        "CLAUDE.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "skill:db-migrate",
+      "kind": "skill",
+      "agent": "claude_code",
+      "status": "compiled",
+      "files": [
+        ".claude/skills/db-migrate/SKILL.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "skill:release-notes",
+      "kind": "skill",
+      "agent": "claude_code",
+      "status": "compiled",
+      "files": [
+        ".claude/skills/release-notes/SKILL.md",
+        ".claude/skills/release-notes/references/template.md",
+        ".claude/skills/release-notes/scripts/collect.sh"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "command:fix-issue",
+      "kind": "command",
+      "agent": "claude_code",
+      "status": "compiled",
+      "files": [
+        ".claude/commands/fix-issue.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "command:standup",
+      "kind": "command",
+      "agent": "claude_code",
+      "status": "compiled",
+      "files": [
+        ".claude/commands/standup.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "agent:migrator",
+      "kind": "agent",
+      "agent": "claude_code",
+      "status": "compiled",
+      "files": [
+        ".claude/agents/migrator.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "agent:reviewer",
+      "kind": "agent",
+      "agent": "claude_code",
+      "status": "compiled",
+      "files": [
+        ".claude/agents/reviewer.md"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "mcp:docs",
+      "kind": "mcp",
+      "agent": "claude_code",
+      "status": "compiled",
+      "files": [
+        ".mcp.json"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "mcp:github",
+      "kind": "mcp",
+      "agent": "claude_code",
+      "status": "compiled",
+      "files": [
+        ".mcp.json"
+      ],
+      "detail": ""
+    },
+    {
+      "item": "mcp:tickets",
+      "kind": "mcp",
+      "agent": "claude_code",
+      "status": "compiled",
+      "files": [
+        ".mcp.json"
+      ],
+      "detail": ""
+    }
+  ]
+}

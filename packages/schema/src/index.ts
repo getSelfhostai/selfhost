@@ -16,6 +16,10 @@ export {
   createValidator,
   type FieldError,
   formatField,
+  lazyCheck,
+  type Segment,
+  type SegmentError,
+  schemaErrors,
   type ValidationResult,
   type Validator,
 } from "./validate.js";

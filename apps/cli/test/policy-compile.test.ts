@@ -199,4 +199,20 @@ describe("selfhost policy compile", () => {
       "failed: GET /repos/acme/.github-private/contents/copilot/managed-settings.json answered 403",
     );
   });
+
+  it("with .selfhost/context, --apply leaves the rules files to the context compile", async () => {
+    const dir = repo({ ".selfhost/context/rules/style.md": "Use tabs.\n" });
+    const result = await run(["policy", "compile", "--apply", "--vendor", "claude", "--json"], {
+      cwd: dir.root,
+    });
+    expect(result.code).toBe(0);
+    expect(report(result.out).apply?.rules).toMatchObject({
+      written: true,
+      message: expect.stringContaining("selfhost context compile then wrote"),
+    });
+    const claude = readFileSync(dir.path("CLAUDE.md"), "utf8");
+    expect(claude).toContain("<!-- Source: .ruler/selfhost-policy.md -->");
+    expect(claude).toContain("<!-- Source: .selfhost/context/rules/style.md -->");
+    expect((await run(["context", "check"], { cwd: dir.root })).code).toBe(0);
+  });
 });

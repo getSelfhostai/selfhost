@@ -3,6 +3,14 @@ import { CLAUDE_CODE_HOOK_EVENTS, CODEX_HOOK_EVENTS } from "@selfhost/schema";
 import type { AgentLocations } from "../locations.js";
 import type { AgentId } from "../types.js";
 import { deepEqual, isPlainObject, type Plain } from "./docs.js";
+import {
+  claudeMcpServer,
+  codexMcpTable,
+  cursorMcpServer,
+  gooseExtension,
+  mcpTransport,
+  opencodeMcpServer,
+} from "./mcp.js";
 import { tomlKey, tomlTable } from "./toml.js";
 import type {
   AgentConfigInput,
@@ -74,16 +82,10 @@ function signalUrl(endpoint: string, signal: "logs" | "traces"): string {
     : `${base}/v1/${signal}`;
 }
 
-function serverKind(spec: McpServerSpec): "stdio" | "http" | undefined {
-  if (spec.command && !spec.url) return "stdio";
-  if (spec.url && !spec.command) return "http";
-  return undefined;
-}
-
 /** Splits MCP servers into valid ones and error items for the rest. */
 function mcpEntries(input: AgentConfigInput, other: PlanItem[]): [string, McpServerSpec][] {
   return Object.entries(input.mcpServers ?? {}).filter(([name, spec]) => {
-    if (serverKind(spec)) return true;
+    if (mcpTransport(spec)) return true;
     other.push({
       item: `mcp:${name}`,
       status: "error",
@@ -147,10 +149,7 @@ function claudeCode(input: AgentConfigInput, loc: AgentLocations): VendorTargets
       {
         kind: "key",
         path: ["mcpServers", name],
-        value:
-          serverKind(spec) === "stdio"
-            ? { type: "stdio", command: spec.command, args: spec.args ?? [], env: spec.env ?? {} }
-            : { type: "http", url: spec.url, ...(spec.headers ? { headers: spec.headers } : {}) },
+        value: claudeMcpServer(spec),
       },
     ],
   }));
@@ -294,14 +293,7 @@ function codex(
     }
   }
   for (const [name, spec] of mcpEntries(input, other)) {
-    const table: Plain =
-      serverKind(spec) === "stdio"
-        ? {
-            command: spec.command,
-            ...(spec.args ? { args: spec.args } : {}),
-            ...(spec.env ? { env: spec.env } : {}),
-          }
-        : { url: spec.url };
+    const table = codexMcpTable(spec);
     const note = spec.headers
       ? "headers are not written for Codex; set bearer_token_env_var on the server by hand"
       : undefined;
@@ -352,14 +344,7 @@ function opencode(
   }
   const v1 = opencodeUsesV1Layout(readJson(paths.config));
   const items: DesiredItem[] = mcpEntries(input, other).map(([name, spec]) => {
-    const value =
-      serverKind(spec) === "stdio"
-        ? {
-            type: "local",
-            command: [spec.command, ...(spec.args ?? [])],
-            ...(spec.env ? { environment: spec.env } : {}),
-          }
-        : { type: "remote", url: spec.url, ...(spec.headers ? { headers: spec.headers } : {}) };
+    const value = opencodeMcpServer(spec);
     return {
       item: `mcp:${name}`,
       edits: [
@@ -403,28 +388,7 @@ function goose(input: AgentConfigInput, loc: AgentLocations): VendorTargets {
     });
   }
   for (const [name, spec] of mcpEntries(input, other)) {
-    const value =
-      serverKind(spec) === "stdio"
-        ? {
-            name,
-            type: "stdio",
-            enabled: true,
-            cmd: spec.command,
-            args: spec.args ?? [],
-            envs: spec.env ?? {},
-            env_keys: [],
-            timeout: 300,
-          }
-        : {
-            name,
-            type: "streamable_http",
-            enabled: true,
-            uri: spec.url,
-            headers: spec.headers ?? {},
-            envs: {},
-            env_keys: [],
-            timeout: 300,
-          };
+    const value = gooseExtension(name, spec);
     items.push({
       item: `mcp:${name}`,
       edits: [{ kind: "key", path: ["extensions", name], value }],
@@ -468,10 +432,7 @@ function cursor(input: AgentConfigInput, loc: AgentLocations): VendorTargets {
       {
         kind: "key",
         path: ["mcpServers", name],
-        value:
-          serverKind(spec) === "stdio"
-            ? { command: spec.command, args: spec.args ?? [], env: spec.env ?? {} }
-            : { url: spec.url, ...(spec.headers ? { headers: spec.headers } : {}) },
+        value: cursorMcpServer(spec),
       },
     ],
   }));
