@@ -10,3 +10,5 @@
 docs
 fixtures
 deploy
+# The CLI depends on @selfhost/deploy, so pnpm needs its manifest to read the workspace.
+!deploy/package.json
