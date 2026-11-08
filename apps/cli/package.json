@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@electric-sql/pglite": "catalog:",
+    "@modelcontextprotocol/sdk": "catalog:",
     "@selfhost/agents": "workspace:*",
     "@selfhost/attribution": "workspace:*",
     "@selfhost/brief": "workspace:*",
@@ -35,6 +36,7 @@
     "@selfhost/ee-risk": "workspace:*",
     "@selfhost/importers": "workspace:*",
     "@selfhost/ledger": "workspace:*",
+    "@selfhost/mcp": "workspace:*",
     "@selfhost/package-guard": "workspace:*",
     "@selfhost/policy": "workspace:*",
     "@selfhost/pr": "workspace:*",
@@ -44,7 +46,8 @@
     "commander": "catalog:",
     "gpt-tokenizer": "catalog:",
     "smol-toml": "catalog:",
-    "yaml": "catalog:"
+    "yaml": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@selfhost/server": "workspace:*",

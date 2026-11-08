@@ -1,0 +1,48 @@
+{
+  "name": "@selfhost/mcp",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The selfhost MCP server for agents: the tools in mcp-tools.json over a small data interface, served on stdio by the CLI and over Streamable HTTP by the team server.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "catalog:",
+    "@selfhost/ledger": "workspace:*",
+    "@selfhost/review": "workspace:*",
+    "@selfhost/schema": "workspace:*",
+    "@sinclair/typebox": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "catalog:",
+    "@selfhost/policy": "workspace:*",
+    "@types/node": "catalog:",
+    "gpt-tokenizer": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

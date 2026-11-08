@@ -235,6 +235,81 @@ describe("events written with a person token", () => {
     expect((await stored("ada@example.com")).map((e) => e.id)).not.toContain(good.id);
   });
 
+  it("take the laptop's own rule verdicts and alerts, stamped with who sent them", async () => {
+    const verdict = makeEvent({
+      source: "hook",
+      kind: "policy.evaluated",
+      actor: { kind: "system", id: "selfhost-policy" },
+      decision: { verdict: "block", by: "selfhost-policy", rule_id: "no-curl", mode: "enforce" },
+      data: { exception: { id: "0193ffff-0000-7000-8000-000000000001", fingerprint: "f" } },
+    });
+    const alert = makeEvent({
+      source: "cli",
+      kind: "alert.raised",
+      actor: { kind: "system", id: "selfhost" },
+      data: { alert: "spend_spike", sent_by: "eve@example.com" },
+    });
+    const res = await write([verdict, alert]);
+    expect(res.status).toBe(200);
+    const stored = await server.request("/v1/events?team=events-team&limit=1000");
+    const events = ((await stored.json()) as EventsPage).events;
+    for (const sent of [verdict, alert]) {
+      const event = events.find((e) => e.id === sent.id);
+      expect(event?.actor.kind).toBe("system");
+      expect(event?.team).toBe("events-team");
+      // Whatever the batch said, the person who sent it.
+      expect(event?.data?.sent_by).toBe("ada@example.com");
+    }
+  });
+
+  it("refuse system events that would speak for a person or the server", async () => {
+    const policy = (overrides: Partial<LedgerEvent>) =>
+      makeEvent({
+        source: "hook",
+        kind: "policy.evaluated",
+        actor: { kind: "system", id: "selfhost-policy" },
+        decision: { verdict: "block", by: "selfhost-policy" },
+        ...overrides,
+      });
+    const cases: [LedgerEvent, string][] = [
+      [policy({ decision: { verdict: "approve", by: "selfhost-policy" } }), "decision.verdict"],
+      [policy({ decision: { verdict: "block", by: "eve@example.com" } }), "decision.by"],
+      [policy({ actor: { kind: "system", id: "selfhost" } }), "actor.id"],
+      [policy({ source: "server" }), "source"],
+      [
+        makeEvent({
+          kind: "decision.recorded",
+          actor: { kind: "system", id: "selfhost" },
+          decision: { verdict: "deny", by: "selfhost" },
+        }),
+        "actor.kind",
+      ],
+      [
+        makeEvent({
+          source: "hook",
+          kind: "alert.raised",
+          actor: { kind: "system", id: "selfhost" },
+          data: { alert: "spend_spike" },
+        }),
+        "source",
+      ],
+      [
+        makeEvent({
+          source: "cli",
+          kind: "alert.raised",
+          actor: { kind: "system", id: "litellm:key" },
+          data: { alert: "spend_spike" },
+        }),
+        "actor.id",
+      ],
+    ];
+    for (const [event, field] of cases) {
+      const res = await write([event]);
+      expect(res.status, field).toBe(400);
+      expect(await res.json()).toMatchObject({ errors: [{ index: 0, field }] });
+    }
+  });
+
   it("are idempotent and validated like any other batch", async () => {
     const event = makeEvent();
     await write([event]);

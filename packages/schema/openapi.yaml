@@ -408,6 +408,12 @@ paths:
           description: Who decided.
           schema:
             type: string
+        - name: team
+          in: query
+          required: false
+          description: "Team id on a team server: decisions and verdicts stored with that team's events. The MCP tool reads every team of the person's by default."
+          schema:
+            type: string
         - name: item_id
           in: query
           required: false

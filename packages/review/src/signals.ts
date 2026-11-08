@@ -23,6 +23,13 @@ export interface Draft {
   blocking: boolean;
   /** Times out to a deny: a blocking approval. */
   timesOut: boolean;
+  /**
+   * The signal adds to the item `id` names and opens none: an agent's case for an exception the
+   * hook already asked for. Nothing happens when that item is not on the list.
+   */
+  attach?: boolean;
+  /** Markdown the person reads to decide: replaces the item's brief. */
+  brief?: string;
   /** Tool an approval waits on, when known. Its next result in the session ends the wait. */
   tool?: string;
   paths: string[];
@@ -47,6 +54,13 @@ const ALERT_KINDS: Record<string, ReviewItemKind> = {
   quality: "quality",
   quality_alarm: "quality",
 };
+
+/**
+ * data.request of the approval.requested events the selfhost MCP server writes: an agent asks a
+ * person a question, or makes its case for a one-time exception a block named.
+ */
+export const MCP_QUESTION_REQUEST = "mcp_question";
+export const MCP_EXCEPTION_REQUEST = "mcp_exception";
 
 /** Claude Code notification types that ask a question rather than for permission. */
 const QUESTION_NOTIFICATIONS = new Set(["idle_prompt", "elicitation_dialog"]);
@@ -118,8 +132,64 @@ function base(event: LedgerEvent) {
   };
 }
 
+const UUIDV7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+/**
+ * A request an agent made through the selfhost MCP server. Its item id is in links.item_id: a
+ * question opens that item; an exception request adds the agent's reason to the exception item
+ * the hook opened when it blocked the call, and marks it blocking, since the agent now waits.
+ */
+function fromMcpRequest(event: LedgerEvent): Draft | undefined {
+  const data = event.data ?? {};
+  const id = event.links?.item_id?.toLowerCase();
+  if (id === undefined || !UUIDV7.test(id)) return undefined;
+  const agent = agentName(event);
+  const common = {
+    ...base(event),
+    id,
+    scored: false,
+    blocking: true,
+    timesOut: false,
+  };
+  if (data.request === MCP_QUESTION_REQUEST) {
+    const question = text(data.question);
+    if (!question) return undefined;
+    const context = typeof data.context === "string" ? data.context.trim() : "";
+    return {
+      ...common,
+      kind: "question",
+      dedupeKey: `question:mcp:${id}`,
+      title: title(question),
+      why: {
+        signal: "approval.requested",
+        text: `${agent} asked this through the selfhost MCP server and waits for the answer.`,
+      },
+      score: 30,
+      reasons: ["An agent is waiting for an answer"],
+      ...(context ? { brief: context } : {}),
+    };
+  }
+  if (data.request === MCP_EXCEPTION_REQUEST) {
+    const reason = text(data.reason);
+    return {
+      ...common,
+      kind: "exception",
+      attach: true,
+      dedupeKey: `exception:mcp:${id}`,
+      title: "Exception request",
+      why: { signal: "approval.requested", text: "The agent asks for this exception." },
+      score: 0,
+      reasons: [],
+      ...(reason ? { brief: `${agent} asks for this exception: ${reason}` } : {}),
+    };
+  }
+  return undefined;
+}
+
 /** approval.requested: a permission prompt is an approval, an idle prompt or elicitation a question. */
 function fromApprovalRequest(event: LedgerEvent): Draft {
+  const mcp = fromMcpRequest(event);
+  if (mcp) return mcp;
   const data = event.data ?? {};
   const message = text(data.message);
   const waitKey = event.session_id ?? event.id;
@@ -174,8 +244,6 @@ function isLive(event: LedgerEvent): boolean {
   if (typeof evaluatedAt !== "string") return true;
   return Math.abs(Date.parse(evaluatedAt) - Date.parse(event.ts)) <= LIVE_EVALUATION_MS;
 }
-
-const UUIDV7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 /** The one-time exception a hook's block asks for: the item id it named and the call's hash. */
 function exceptionRequest(event: LedgerEvent): { id: string; fingerprint: string } | undefined {

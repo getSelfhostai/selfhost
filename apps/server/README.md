@@ -25,8 +25,14 @@ The selfhost HTTP API, specified in
 - `GET /v1/decisions`: `decision.recorded` and `policy.evaluated` events, newest first, by
   `path` (a file, the files under a folder, the folders that hold it), `topic` (every word in
   the question or reason), `text`, `rule_id`, `verdict`, `repo`, `target`, `person`,
-  `item_id`, `from` and `to`. `format=text` returns the plain text the CLI and the MCP tool
-  print: each decision's id, who, verdict, reason and links.
+  `item_id`, `team`, `from` and `to`. `format=text` returns the plain text the CLI and the MCP
+  tool print: each decision's id, who, verdict, reason and links.
+- `POST /v1/mcp`: the agent MCP server ([`packages/mcp`](../../packages/mcp/README.md)) over
+  Streamable HTTP, stateless with JSON responses, for person tokens only (the admin token gets
+  403). Every tool acts as the token's person in the teams of their org they are in: a team,
+  repo or item outside them answers a `forbidden` tool error with no data. `get_policy` and
+  `get_budget` answer exactly as `GET /v1/policy` and `/v1/budget` do for the token. GET and
+  DELETE answer 405.
 
 Every route except `/v1/health`, `/v1/join` and `/v1/github/webhooks` needs
 `Authorization: Bearer <token>`. The admin
@@ -105,8 +111,13 @@ A person is one id across their org: a person token works in every team of the o
 is in, under their role there (`?team=` on `/v1/events`, `/v1/review-items` and `/v1/policy`,
 and review item actions on any of their teams' items). It gets 403 for teams it is not in and
 for the admin token's routes, including `/v1/decisions`. Before its events are written, an
-event with no actor gets the person, a person actor must be that person, system actors are
-refused, and `team` is set to the person's team; the batch then goes through the ordinary
+event with no actor gets the person, a person actor must be that person, and `team` is set
+to the person's team. A system actor is accepted only on what a laptop writes itself and its
+sync forwards: rule verdicts of the pre-tool hook and `selfhost policy observe`
+(`policy.evaluated` by `selfhost-policy`, source `hook` or `cli`, never a person's verdict) and
+the CLI's alerts (`alert.raised` by `selfhost`, source `cli`), each stamped with
+`data.sent_by` set to the token's person. Every other system actor is refused, so a person
+token speaks neither for another person nor for the server; the batch then goes through the ordinary
 events route, so validation, atomicity and idempotent ids are the same. The ledger then stores
 each event with the team that owns its run: the team owning the event's repo, or the repo an
 earlier event of its session named, else the token's team (teams of the token's org only), and

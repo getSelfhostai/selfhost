@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { JoinRefusal, Ledger } from "@selfhost/ledger";
+import { POLICY_ACTOR_ID } from "@selfhost/policy";
 import {
   allowedActions,
   CreateTeamRequestSchema,
@@ -10,6 +11,7 @@ import {
   JoinRequestSchema,
   type JoinResponse,
   type MeResponse,
+  PERSON_VERDICTS,
   type Person,
   type RevokeTokensResponse,
   TEAM_ACTIONS,
@@ -241,9 +243,55 @@ function sharedRoutes(router: Router, ledger: Ledger, now: (() => Date) | undefi
 }
 
 /**
+ * The selfhost CLI's own actor on the alerts it raises on a laptop (spend spikes, plan limit
+ * forecasts), as apps/cli/src/alerts/events.ts writes them.
+ */
+const LAPTOP_ALERT_ACTOR_ID = "selfhost";
+
+/** Where a laptop's own system events come from: the pre-tool hook and the CLI. */
+const LAPTOP_SOURCES = new Set(["hook", "cli"]);
+
+/**
+ * Why a system-actor event may not come from a person token, or undefined when it is one the
+ * laptop itself writes and its sync forwards: a rule verdict of the pre-tool hook or `selfhost
+ * policy observe` (policy.evaluated by the policy engine, with a rule verdict, never a person's
+ * approve, deny, answer or override), or an alert the CLI raised (alert.raised by the CLI).
+ * Anything else with a system actor (a gateway or vendor audit actor, the server's own events,
+ * a decision) needs the admin token, so a person can speak neither for another person nor for
+ * the server.
+ */
+function laptopSystemRefusal(event: Record<string, unknown>): BatchError["field"] | undefined {
+  const actor = event.actor as Record<string, unknown>;
+  if (event.kind !== "policy.evaluated" && event.kind !== "alert.raised") return "actor.kind";
+  const source = event.source;
+  if (typeof source !== "string" || !LAPTOP_SOURCES.has(source)) return "source";
+  if (event.kind === "policy.evaluated") {
+    if (actor.id !== POLICY_ACTOR_ID) return "actor.id";
+    const decision = isObject(event.decision) ? event.decision : {};
+    if ((PERSON_VERDICTS as readonly unknown[]).includes(decision.verdict)) {
+      return "decision.verdict";
+    }
+    if (decision.by !== undefined && decision.by !== POLICY_ACTOR_ID) return "decision.by";
+    return undefined;
+  }
+  if (source !== "cli") return "source";
+  return actor.id === LAPTOP_ALERT_ACTOR_ID ? undefined : "actor.id";
+}
+
+const SYSTEM_REFUSALS: Record<string, string> = {
+  "actor.kind": "A person token cannot write system events",
+  source: "A person token writes system events from its own hook or CLI only",
+  "actor.id": `A person token writes system events only as the policy engine (${POLICY_ACTOR_ID}) or the CLI's alerts (${LAPTOP_ALERT_ACTOR_ID})`,
+  "decision.verdict":
+    "A rule verdict cannot be a person's verdict; a person's decision is a decision.recorded event with them as actor",
+  "decision.by": `Expected ${POLICY_ACTOR_ID}, the policy engine`,
+};
+
+/**
  * Checks a person token's events before they are written: an event with no actor is filled in
- * as the person, a person actor must be that person, system actors are refused, and team is
- * set to the person's team. The ledger then moves each event to the team that owns its run's
+ * as the person, a person actor must be that person, and team is set to the person's team. A
+ * system actor is accepted only on the events a laptop writes itself and forwards on sync (see
+ * laptopSystemRefusal), and data.sent_by is set to the person who sent it. The ledger then moves each event to the team that owns its run's
  * repo, if another team of the org does. A body that is not a JSON object with an events array
  * is passed on as it is, for the events route to report.
  */
@@ -270,11 +318,19 @@ export function stampEvents(
       });
     }
     if (isObject(actor) && actor.kind === "system") {
-      errors.push({
-        index,
-        field: "actor.kind",
-        message: "A person token cannot write system events",
-      });
+      const field = laptopSystemRefusal({ ...event, actor });
+      if (field !== undefined) {
+        errors.push({ index, field, message: SYSTEM_REFUSALS[field] ?? "Not allowed" });
+        return event;
+      }
+      const data = event.data === undefined ? {} : event.data;
+      return {
+        ...event,
+        actor,
+        team: person.team,
+        // Leave anything that is not an object for the validation to report.
+        data: isObject(data) ? { ...data, sent_by: person.id } : data,
+      };
     }
     return { ...event, actor, team: person.team };
   });

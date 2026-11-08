@@ -17,7 +17,7 @@ import { actionsFor, type BuildContext, deliveryOf, mergeItem, newItem } from ".
 import { decisionSubject, internalsOf, type ReviewList } from "./list.js";
 import { buildPolicyReport } from "./policy-report.js";
 import { routeItem } from "./routing.js";
-import { closedPullRequest, draftFor } from "./signals.js";
+import { closedPullRequest, type Draft, draftFor } from "./signals.js";
 import {
   claimItem,
   finishClaim,
@@ -222,6 +222,39 @@ async function applyDecision(
   return item.id;
 }
 
+/**
+ * Adds a signal to the open item it names, in its own team scope. undefined when the item is
+ * not on the list (or is another kind); a closed item keeps the signal and changes nothing.
+ */
+async function attachTo(
+  tx: Queryable,
+  draft: Draft & { id: string },
+  event: LedgerEvent,
+  team: string | null,
+  ctx: BuildContext,
+  run: Run,
+): Promise<string | undefined> {
+  for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
+    const stored = await getItem(tx, draft.id, {});
+    if (!stored || stored.item.kind !== draft.kind) return undefined;
+    if (team !== null && stored.team !== team) return undefined;
+    if (stored.item.state !== "open") return stored.item.id;
+    const paths = union(stored.paths, draft.paths);
+    const item = mergeItem(stored.item, paths, draft, event, ctx);
+    const written = await updateItem(tx, {
+      ...stored,
+      item,
+      paths,
+      signalAt: later(stored.signalAt, iso(event.ts)),
+    });
+    if (written) {
+      run.result.updated += 1;
+      return item.id;
+    }
+  }
+  return undefined;
+}
+
 /** Opens an item for the signal, or adds the signal to the open item with its key. */
 async function applyDraft(
   tx: Queryable,
@@ -239,6 +272,9 @@ async function applyDraft(
       ? {}
       : { sessionPerson: await sessionPerson(tx, team, event.session_id, run) }),
   };
+  if (draft.attach && draft.id !== undefined) {
+    return attachTo(tx, { ...draft, id: draft.id }, event, team, ctx, run);
+  }
   for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
     let open = await openItemByKey(tx, team, draft.dedupeKey);
     // A signal that names its own item replaces an open one with another id: the agent and the

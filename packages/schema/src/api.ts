@@ -345,6 +345,12 @@ export const DecisionQuerySchema = Type.Object(
       Type.String({ description: "Substring of the target value: file path, command or URL." }),
     ),
     person: Type.Optional(Type.String({ description: "Who decided." })),
+    team: Type.Optional(
+      Type.String({
+        description:
+          "Team id on a team server: decisions and verdicts stored with that team's events. The MCP tool reads every team of the person's by default.",
+      }),
+    ),
     item_id: Type.Optional(Type.String()),
     from: Type.Optional(DateTime()),
     to: Type.Optional(DateTime()),

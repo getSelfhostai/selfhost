@@ -20,6 +20,7 @@ import { registerInbox } from "./inbox/commands.js";
 import type { OpenLocalReviewList } from "./inbox/sync.js";
 import { registerInit } from "./init/commands.js";
 import { registerLedger } from "./ledger.js";
+import { registerMcp } from "./mcp/commands.js";
 import { registerMigrate } from "./migrate/commands.js";
 import { registerPackages } from "./packages.js";
 import { registerPolicy } from "./policy/commands.js";
@@ -451,6 +452,18 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       exec: deps.exec ?? systemExec,
       sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
     }),
+    fail,
+  );
+
+  registerMcp(
+    program,
+    () => ({
+      ...io(),
+      setExitCode: deps.setExitCode,
+      configPath: deps.configPath ?? defaultConfigPath(),
+      ...(deps.fetch ? { fetch: deps.fetch } : {}),
+    }),
+    VERSION,
     fail,
   );
 

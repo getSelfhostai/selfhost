@@ -17,6 +17,7 @@ export {
 export {
   DECISION_KINDS,
   type DecisionPage,
+  type DecisionSearchOptions,
   type DecisionStore,
   normalizeDecisionPath,
 } from "./decisions/store.js";
@@ -27,6 +28,7 @@ export {
   type DeliveryStore,
 } from "./deliveries.js";
 export { type LedgerFieldError, LedgerQueryError, LedgerValidationError } from "./errors.js";
+export { type FileCallQuery, fileCalls } from "./files.js";
 export {
   type AppendOptions,
   type AppendResult,

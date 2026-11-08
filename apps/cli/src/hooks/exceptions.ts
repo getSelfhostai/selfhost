@@ -369,3 +369,18 @@ export async function issueGrants(
 
 /** true when the hook wrote requests that wait on a person. */
 export const hasRequests = (dir: string) => idsIn(requestsDir(dir)).length > 0;
+
+/** true when this machine's hook asked for exception `id`: a request, a grant or a used grant. */
+export const isOwnException = (dir: string, id: string) =>
+  ID.test(id) &&
+  [requestsDir(dir), grantsDir(dir), usedDir(dir)].some((folder) => existsSync(fileOf(folder, id)));
+
+/** The unused grant for exception `id`, signed with the key and not expired. */
+export function readGrant(dir: string, id: string, now: Date): ExceptionGrant | undefined {
+  const key = exceptionKey(dir, false);
+  const grant = ID.test(id) ? readJson<ExceptionGrant>(fileOf(grantsDir(dir), id)) : undefined;
+  if (!key || grant?.schema !== GRANT_SCHEMA || grant.id !== id || !signed(key, grant)) {
+    return undefined;
+  }
+  return Date.parse(grant.expires_at) > now.getTime() ? grant : undefined;
+}

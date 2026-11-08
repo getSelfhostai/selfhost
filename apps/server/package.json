@@ -21,19 +21,22 @@
   "dependencies": {
     "@electric-sql/pglite": "catalog:",
     "@hono/node-server": "catalog:",
+    "@modelcontextprotocol/sdk": "catalog:",
     "@selfhost/attribution": "workspace:*",
     "@selfhost/brief": "workspace:*",
     "@selfhost/compile": "workspace:*",
     "@selfhost/ee-risk": "workspace:*",
     "@selfhost/github": "workspace:*",
     "@selfhost/ledger": "workspace:*",
+    "@selfhost/mcp": "workspace:*",
     "@selfhost/policy": "workspace:*",
     "@selfhost/pr": "workspace:*",
     "@selfhost/review": "workspace:*",
     "@selfhost/schema": "workspace:*",
     "@selfhost/spend": "workspace:*",
     "hono": "catalog:",
-    "postgres": "catalog:"
+    "postgres": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@octokit/webhooks": "catalog:",

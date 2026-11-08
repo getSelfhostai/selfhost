@@ -5,6 +5,7 @@ import { requireBearerToken } from "./auth.js";
 import { decisionRoutes } from "./decisions.js";
 import { eventRoutes } from "./events.js";
 import { type GitHubRouteOptions, githubRoutes } from "./github.js";
+import { adminMcpRoute, mcpRoutes } from "./mcp.js";
 import { otlpRoutes } from "./otlp.js";
 import { reviewRoutes } from "./review.js";
 import { type PersonEnv, teamRoutes } from "./teams.js";
@@ -32,7 +33,7 @@ export function createApp({ version, ledger, token, config, now, github = {} }: 
     ledger,
     token,
     ...(now ? { now } : {}),
-    personRoutes: (person) =>
+    personRoutes: (person) => {
       reviewRoutes(person, ledger, {
         ...review,
         person: (c) => (c.env as PersonEnv["Bindings"]).person,
@@ -41,7 +42,9 @@ export function createApp({ version, ledger, token, config, now, github = {} }: 
           const { memberships } = await caller.scope();
           return [own.team, ...memberships.map((m) => m.team).filter((t) => t !== own.team)];
         },
-      }),
+      });
+      mcpRoutes(person, ledger, { version, ...review });
+    },
   });
   app.use("*", requireBearerToken(token));
 
@@ -51,6 +54,7 @@ export function createApp({ version, ledger, token, config, now, github = {} }: 
   decisionRoutes(app, ledger);
   reviewRoutes(app, ledger, review);
   otlpRoutes(app, ledger);
+  adminMcpRoute(app);
 
   app.notFound((c) =>
     c.json(
