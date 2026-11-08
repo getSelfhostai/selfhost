@@ -9,6 +9,7 @@ import {
   type RevokeTokensResponse,
   SetRoleRequestSchema,
   type TeamInfo,
+  type TeamInvitesResponse,
   type TeamPeopleResponse,
   UpdateTeamRequestSchema,
 } from "@selfhost/schema";
@@ -26,8 +27,9 @@ const actorOf = (caller: Caller) => (caller.kind === "admin" ? "admin" : caller.
 const sameId = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 /**
- * Team settings and people, for both kinds of token: invites, revoking access, the people of a
- * team and their roles, adding someone from another team of the org, and renaming the team.
+ * Team settings and people, for both kinds of token: invites and the list of open ones, revoking
+ * access, the people of a team and their roles, adding someone from another team of the org, and
+ * renaming the team.
  * Each route checks the caller's role in the team against the permission table.
  */
 export function peopleRoutes(router: Router, ledger: Ledger): void {
@@ -52,6 +54,14 @@ export function peopleRoutes(router: Router, ledger: Ledger): void {
     },
     small,
   );
+
+  router.on("GET", "/v1/teams/:team/invites", async (c, caller) => {
+    const team = c.req.param("team") ?? "";
+    const refused = await authorize(c, caller, team, "invites");
+    if (refused) return refused;
+    if (!(await teams.getTeam(team))) return c.json(apiError("not_found", `No team ${team}`), 404);
+    return c.json({ team, invites: await teams.listInvites(team) } satisfies TeamInvitesResponse);
+  });
 
   router.on("DELETE", "/v1/invites/:id", async (c, caller) => {
     const id = c.req.param("id") ?? "";

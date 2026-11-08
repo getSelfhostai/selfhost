@@ -23,6 +23,8 @@ import {
   PolicyResponseSchema,
   RevokeTokensResponseSchema,
   TEAM_ACTIONS,
+  type TeamInvitesResponse,
+  TeamInvitesResponseSchema,
 } from "@selfhost/schema";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { stampEvents, teamId } from "../src/teams.js";
@@ -402,6 +404,30 @@ describe("invites", () => {
     expect(((await again.json()) as { revoked_at: string }).revoked_at).toBe(revoked.revoked_at);
     const unknown = await server.request(`/v1/invites/${"0".repeat(64)}`, { method: "DELETE" });
     expect(unknown.status).toBe(404);
+  });
+
+  it("are listed for owners and admins while they work, newest first, without their codes", async () => {
+    const { invite } = await createTeam("List Team");
+    const { token: owner } = await join(invite, "ada@example.com");
+    const { token: member } = await join(invite, "mia@example.com");
+    const forBob = await createInvite("list-team", { email: "bob@example.com" });
+    const gone = await createInvite("list-team");
+    await server.request(`/v1/invites/${gone.id}`, { method: "DELETE" });
+
+    const res = await server.app.request("/v1/teams/list-team/invites", as(owner));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as TeamInvitesResponse;
+    matches(TeamInvitesResponseSchema, body);
+    expect(body.team).toBe("list-team");
+    const ids = body.invites.map((item) => item.id);
+    expect(ids).toContain(forBob.id);
+    expect(ids).not.toContain(gone.id);
+    expect(body.invites[0]).toMatchObject({ id: forBob.id, email: "bob@example.com" });
+    expect(JSON.stringify(body)).not.toContain(forBob.invite);
+
+    const asMember = await server.app.request("/v1/teams/list-team/invites", as(member));
+    expect(asMember.status).toBe(403);
+    expect((await server.request("/v1/teams/nope/invites")).status).toBe(404);
   });
 
   it("team-wide add only new people; the owner and others who joined need their own invite", async () => {

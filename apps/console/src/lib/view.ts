@@ -1,8 +1,20 @@
 /**
  * What the console shows, kept in the address bar so a view can be bookmarked and shared:
- * the date range, the four filters, the breakdown and the chart metric. The token never goes
- * in it.
+ * the screen, the date range, the four filters (team is also the team every screen is about),
+ * the breakdown and the chart metric, and the run the run view opens. The token never goes in it.
  */
+
+export const SCREENS = [
+  "overview",
+  "review",
+  "rules",
+  "spend",
+  "code",
+  "run",
+  "integrations",
+  "team",
+] as const;
+export type Screen = (typeof SCREENS)[number];
 
 export const BREAKDOWNS = ["team", "person", "agent", "model"] as const;
 export type Breakdown = (typeof BREAKDOWNS)[number];
@@ -16,6 +28,10 @@ export const CHART_METRICS = ["usd", "tokens", "sessions"] as const;
 export type ChartMetric = (typeof CHART_METRICS)[number];
 
 export interface View {
+  /** Absent for the overview. */
+  screen?: Exclude<Screen, "overview">;
+  /** The run (or session) id the run view shows. */
+  run?: string;
   /** A preset, or custom with from and to. */
   range: Preset | "custom";
   /** First day, YYYY-MM-DD (UTC). Only for custom. */
@@ -49,7 +65,11 @@ export function parseView(search: string): View {
     if (value) filters[name] = value;
   }
   const org = params.get("org") ?? undefined;
+  const screen = params.get("screen");
+  const run = params.get("run") ?? undefined;
   return {
+    ...(isOneOf(SCREENS, screen) && screen !== "overview" ? { screen } : {}),
+    ...(run ? { run } : {}),
     range: custom ? "custom" : isOneOf(PRESETS, range) ? range : "30d",
     ...(custom ? { from, to } : {}),
     filters,
@@ -61,6 +81,8 @@ export function parseView(search: string): View {
 
 export function viewSearch(view: View): string {
   const params = new URLSearchParams();
+  if (view.screen) params.set("screen", view.screen);
+  if (view.run) params.set("run", view.run);
   if (view.range === "custom" && view.from && view.to) {
     params.set("from", view.from);
     params.set("to", view.to);

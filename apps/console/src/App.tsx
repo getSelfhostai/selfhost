@@ -1,6 +1,6 @@
 import type { MeResponse } from "@selfhost/schema";
 import { useCallback, useEffect, useState } from "react";
-import { Dashboard } from "@/components/dashboard";
+import { Console } from "@/components/console";
 import { SignIn } from "@/components/sign-in";
 import { ApiRequestError, forgetToken, getMe, saveToken, storedToken } from "@/lib/api";
 import { parseView, type View, viewSearch } from "@/lib/view";
@@ -43,8 +43,10 @@ export function App() {
   }, []);
 
   const change = (next: View) => {
+    const moved = next.screen !== view.screen || next.run !== view.run;
     window.history.pushState(null, "", `${window.location.pathname}${viewSearch(next)}`);
     setView(next);
+    if (moved) window.scrollTo({ top: 0 });
   };
 
   if (session.state === "loading") return null;
@@ -60,7 +62,7 @@ export function App() {
     );
   }
   return (
-    <Dashboard
+    <Console
       me={session.me}
       view={view}
       onChange={change}

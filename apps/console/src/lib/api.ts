@@ -56,10 +56,14 @@ export function takeTokenFromUrl(location: Location, history: History): void {
 
 const currentToken = () => memoryToken ?? storedToken();
 
-async function request(path: string, signal?: AbortSignal): Promise<Response> {
+async function request(path: string, signal?: AbortSignal, init: RequestInit = {}) {
   const token = currentToken();
   const res = await fetch(path, {
-    headers: token ? { authorization: `Bearer ${token}` } : {},
+    ...init,
+    headers: {
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...(init.body !== undefined ? { "content-type": "application/json" } : {}),
+    },
     credentials: "same-origin",
     signal,
   });
@@ -73,12 +77,67 @@ async function request(path: string, signal?: AbortSignal): Promise<Response> {
   throw new ApiRequestError(res.status, message);
 }
 
-export async function getMe(signal?: AbortSignal): Promise<MeResponse> {
-  return (await request("/v1/me", signal)).json();
+/** GET a JSON body. */
+export async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
+  return (await (await request(path, signal)).json()) as T;
 }
 
-export async function getUsage(query: URLSearchParams, signal?: AbortSignal) {
-  return (await (await request(`/v1/usage?${query}`, signal)).json()) as UsageResponse;
+/**
+ * Whether the server has no such route or thing. A person token's unknown routes answer 403
+ * with this message rather than 404, so it counts too.
+ */
+export function isMissing(error: unknown): boolean {
+  if (!(error instanceof ApiRequestError)) return false;
+  return (
+    error.status === 404 ||
+    (error.status === 403 && error.message.startsWith("A person token works in the teams"))
+  );
+}
+
+/**
+ * GET a JSON body from a route this server may not have yet: null when it is missing, so the
+ * screen shows that it is not there instead of an error.
+ */
+export async function getOptional<T>(path: string, signal?: AbortSignal): Promise<T | null> {
+  try {
+    return await getJson<T>(path, signal);
+  } catch (error) {
+    if (isMissing(error)) return null;
+    throw error;
+  }
+}
+
+/** POST, PUT, PATCH or DELETE with an optional JSON body; the JSON answer. */
+export async function send<T>(
+  method: "POST" | "PUT" | "PATCH" | "DELETE",
+  path: string,
+  body?: unknown,
+): Promise<T> {
+  const res = await request(path, undefined, {
+    method,
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  return (await res.json()) as T;
+}
+
+/** A query string from the values that are set. */
+export function query(values: Record<string, string | number | undefined>): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(values)) {
+    if (value !== undefined && value !== "") params.set(key, String(value));
+  }
+  const text = params.toString();
+  return text ? `?${text}` : "";
+}
+
+export const teamPath = (id: string) => `/v1/teams/${encodeURIComponent(id)}`;
+
+export async function getMe(signal?: AbortSignal): Promise<MeResponse> {
+  return getJson("/v1/me", signal);
+}
+
+export async function getUsage(params: URLSearchParams, signal?: AbortSignal) {
+  return getJson<UsageResponse>(`/v1/usage?${params}`, signal);
 }
 
 /** Downloads the CSV of a usage query under the name the server gives it. */

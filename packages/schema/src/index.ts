@@ -9,6 +9,7 @@ export * from "./hooks/codex.js";
 export * from "./layers.js";
 export * from "./mcp.js";
 export * from "./org.js";
+export * from "./policy-observed.js";
 export * from "./policy-test.js";
 export * from "./provenance.js";
 export * from "./receipt.js";

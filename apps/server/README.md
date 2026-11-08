@@ -63,6 +63,8 @@ bootstrap admin; everything else is a token the server issues and keeps only as 
   `{ ttl_seconds?, email? }`. Invites expire after 7 days unless `ttl_seconds` says otherwise
   (60 seconds to 365 days). An invite with an email joins only that person, and their person id
   is the email, so whoever holds it cannot join as someone else.
+- `GET /v1/teams/{team}/invites` (owner or admin): the invites that still work, newest first,
+  by id and email. The codes themselves are never shown again.
 - `DELETE /v1/invites/{id}` (owner or admin of the invite's team): revokes an invite. `id` is
   the sha256 of the code in hex, returned when the invite is created, so the code itself never
   goes in a URL.
@@ -97,6 +99,10 @@ bootstrap admin; everything else is a token the server issues and keeps only as 
   repo's own rules, after validating it like `selfhost doctor` and against the org floor. A
   field that would relax an org rule answers 400 `invalid_policy` with the field, the line and
   the org rule in `org_rule`.
+- `GET /v1/policy/observed` (anyone in the team): what each rule and guardrail would have
+  blocked or asked in observe mode, and blocked or asked in enforce mode, from the team's
+  `policy.evaluated` events, by default over the last 7 days (`?from=`, `?to=`), with each rule's
+  mode now and likely false positives marked like the weekly policy report.
 - `GET /v1/orgs/{org}/policy` (anyone in the org) and `PUT` (admin token): the org floor. The
   answer lists `conflicts`: stored team and repo rules that relax it, which get the org's value
   until they change.

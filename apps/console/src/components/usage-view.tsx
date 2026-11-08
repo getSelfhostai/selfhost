@@ -1,9 +1,8 @@
 import type { MeResponse, UsageResponse } from "@selfhost/schema";
-import { LogOut } from "lucide-react";
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { BreakdownTable } from "@/components/breakdown-table";
+import { Stat } from "@/components/common";
 import { FilterBar } from "@/components/filters";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -68,35 +67,15 @@ function useUsage(view: View, breakdown: Breakdown, now: Date) {
   return state;
 }
 
-function Stat({ title, value, detail }: { title: string; value: string; detail?: string }) {
-  return (
-    <Card className="gap-1 py-4">
-      <CardHeader className="px-4">
-        <CardTitle className="font-normal text-muted-foreground text-sm">{title}</CardTitle>
-      </CardHeader>
-      <CardContent className="px-4">
-        <div className="font-semibold text-2xl tabular-nums tracking-tight">{value}</div>
-        {detail ? <div className="mt-0.5 text-muted-foreground text-xs">{detail}</div> : null}
-      </CardContent>
-    </Card>
-  );
-}
-
-function who(me: MeResponse): string {
-  if (me.kind === "admin") return "Admin token";
-  const role = me.role ? ` (${me.role})` : "";
-  return `${me.person?.name || me.person?.id || "Signed in"}${role}`;
-}
-
-export interface DashboardProps {
+export interface UsageViewProps {
   me: MeResponse;
   view: View;
   onChange: (view: View) => void;
-  onSignOut?: () => void;
+  now: Date;
 }
 
-export function Dashboard({ me, view, onChange, onSignOut }: DashboardProps) {
-  const now = useMemo(() => new Date(), []);
+/** Usage and cost: totals, the daily chart and the breakdown table, with filters and CSV. */
+export function UsageView({ me, view, onChange, now }: UsageViewProps) {
   const range = rangeOf(view, now);
   // A person in one team has no cross-team view: no team filter or breakdown.
   const teams = me.kind === "admin" ? null : (me.memberships ?? []).map((m) => m.team);
@@ -130,26 +109,7 @@ export function Dashboard({ me, view, onChange, onSignOut }: DashboardProps) {
   const picked = view.filters[breakdown] !== undefined;
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6">
-      <header className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <div className="flex items-baseline gap-3">
-          <span className="font-semibold tracking-tight">selfhost</span>
-          <h1 className="text-muted-foreground">Usage and cost</h1>
-        </div>
-        <div className="ml-auto flex items-center gap-2 text-muted-foreground text-sm">
-          <span>
-            {who(me)}
-            {data?.main.org && data.main.org !== "default" ? `, org ${data.main.org}` : ""}
-          </span>
-          {onSignOut ? (
-            <Button variant="ghost" size="sm" onClick={onSignOut}>
-              <LogOut />
-              Sign out
-            </Button>
-          ) : null}
-        </div>
-      </header>
-
+    <div className="space-y-6">
       <FilterBar
         view={view}
         options={data?.options ?? {}}

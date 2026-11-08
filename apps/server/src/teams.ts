@@ -34,6 +34,7 @@ import { type IntegrationRouteOptions, integrationRoutes } from "./integrations.
 import { createOrgRoute, orgRoutes } from "./orgs.js";
 import { peopleRoutes } from "./people.js";
 import { policyRoutes } from "./policy.js";
+import { policyObservedRoutes } from "./policy-observe.js";
 import { type ProvenanceRouteOptions, provenanceRoutes } from "./provenance.js";
 import { roiRoutes } from "./roi.js";
 import { type RunRouteOptions, runRoutes } from "./runs.js";
@@ -268,6 +269,7 @@ function sharedRoutes(
 ): void {
   policyRoutes(router, ledger);
   integrationRoutes(router, ledger, integrations);
+  policyObservedRoutes(router, ledger, now ? { now } : {});
   peopleRoutes(router, ledger);
   orgRoutes(router, ledger, now ? { now } : {});
   usageRoutes(router, ledger, now ? { now } : {});

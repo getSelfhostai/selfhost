@@ -1,6 +1,7 @@
 import { Kind, type Static, type TSchema } from "@sinclair/typebox";
-import { type TypeCheck, TypeCompiler } from "@sinclair/typebox/compiler";
+import { TypeCheck, TypeCompiler } from "@sinclair/typebox/compiler";
 import { DefaultErrorFunction, SetErrorFunction } from "@sinclair/typebox/errors";
+import { Value } from "@sinclair/typebox/value";
 import type { RequiredWhen } from "./common.js";
 
 /** One validation problem, located by field path such as `actor.kind` or `rules[0].mode`. */
@@ -102,11 +103,21 @@ export function toFieldErrors(errors: readonly SegmentError[]): FieldError[] {
   return errors.map((error) => ({ field: formatField(error.segments), message: error.message }));
 }
 
-/** Compiles a schema on first use, so importing the package stays cheap. */
+/**
+ * Compiles a schema on first use, so importing the package stays cheap. Where code cannot be
+ * compiled at run time (a page whose content security policy forbids eval, like the console),
+ * the same schema is checked by walking it instead: same answers, only slower.
+ */
 export function lazyCheck<T extends TSchema>(schema: T): () => TypeCheck<T> {
   let compiled: TypeCheck<T> | undefined;
   return () => {
-    compiled ??= TypeCompiler.Compile(schema);
+    if (compiled) return compiled;
+    try {
+      compiled = TypeCompiler.Compile(schema);
+    } catch (error) {
+      if (!(error instanceof EvalError)) throw error;
+      compiled = new TypeCheck(schema, [], (value) => Value.Check(schema, value), "");
+    }
     return compiled;
   };
 }

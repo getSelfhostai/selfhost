@@ -31,6 +31,12 @@ export {
   POLICY_ACTOR_ID,
   policyEvent,
 } from "./observe.js";
+export {
+  type PromoteOptions,
+  type PromoteResult,
+  promoteRule,
+  setGuardrailsMode,
+} from "./promote.js";
 export { type ShellCommand, type ShellOptions, shellCommands } from "./shell.js";
 export { type PolicySource, policySource } from "./source.js";
 export { mcpServerOf, normalizePath, type ToolCall, toolCallFromEvent } from "./tool-call.js";
