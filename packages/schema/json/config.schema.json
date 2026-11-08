@@ -172,6 +172,16 @@
             "description": "Shown to the agent and the person when the rule fires.",
             "type": "string"
           },
+          "alternative": {
+            "minLength": 1,
+            "description": "What the agent should do instead, shown with the message when the rule blocks or asks, for example \"Open a pull request instead.\"",
+            "type": "string"
+          },
+          "docs": {
+            "format": "uri",
+            "description": "Page that explains the rule, linked from every block and ask.",
+            "type": "string"
+          },
           "irreversible": {
             "default": false,
             "description": "true when the matched action cannot be undone, which raises review risk.",
@@ -231,6 +241,12 @@
           "minimum": 1,
           "default": 30,
           "description": "Minutes an approval that blocks an agent waits for an answer. Then it is denied and the deny is written to the decision log.",
+          "type": "integer"
+        },
+        "exception_expiry_minutes": {
+          "minimum": 1,
+          "default": 30,
+          "description": "Minutes a one-time exception stays usable once a person approves it. The blocked call is allowed once in that time, then blocked again.",
           "type": "integer"
         },
         "github_logins": {
@@ -615,6 +631,11 @@
                     "message": {
                       "minLength": 1,
                       "description": "Message for this team.",
+                      "type": "string"
+                    },
+                    "alternative": {
+                      "minLength": 1,
+                      "description": "Alternative for this team.",
                       "type": "string"
                     }
                   }

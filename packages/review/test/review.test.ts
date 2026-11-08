@@ -78,6 +78,36 @@ function verdict(
   return { ...evaluated, ...extra };
 }
 
+/**
+ * A pre-tool hook's block as the spool drain writes it: the verdict with the one-time exception
+ * request (the item id the hook named and the call's fingerprint) and the rule's alternative.
+ */
+function exceptionBlock(
+  ts: string,
+  request: { id: string; fingerprint: string; rule_id?: string },
+  extra: Partial<LedgerEvent> = {},
+): LedgerEvent {
+  const blocked = verdict(ts, { rule_id: request.rule_id ?? "guard.force_push", verdict: "block" });
+  return {
+    ...blocked,
+    source: "hook",
+    links: { item_id: request.id },
+    data: {
+      ...blocked.data,
+      answer: "deny",
+      alternative: "Push to a new branch and open a pull request.",
+      exception: {
+        id: request.id,
+        fingerprint: request.fingerprint,
+        rules: [request.rule_id ?? "guard.force_push"],
+      },
+    },
+    ...extra,
+  };
+}
+
+const requestId = (ts: string, n: number) => stableEventId(ts, `exception-request:${n}`);
+
 const alert = (ts: string, data: Record<string, unknown>, extra: Partial<LedgerEvent> = {}) =>
   event({
     kind: "alert.raised",
@@ -160,6 +190,7 @@ describe.each(BACKENDS)("review list on $name", (backend) => {
         ],
         [alert(t, { alert: "quality_alarm", metric: "test_pass_rate", message: "Pass rate fell" })],
         [pullRequest(t, 82)],
+        [exceptionBlock(t, { id: requestId(t, 1), fingerprint: "f".repeat(64) })],
         [
           verdict("2026-11-04T09:00:00.000Z", {
             rule_id: "no-force-push",
@@ -213,6 +244,20 @@ describe.each(BACKENDS)("review list on $name", (backend) => {
         why: { signal: "policy.evaluated", rule_id: "irreversible-rm" },
         risk: { score: 70 },
       });
+      expect(byKind("exception")[0]).toMatchObject({
+        id: requestId(t, 1),
+        title:
+          'Allow once: Bash: git add src/app.ts test/health.test.ts && git commit -m "Add GET /health endpoint"',
+        blocking: true,
+        deadline: at(t, 30),
+        actions: ["approve", "deny", "snooze"],
+        why: {
+          signal: "policy.evaluated",
+          rule_id: "guard.force_push",
+          text: "Rule guard.force_push fired Instead: Push to a new branch and open a pull request.",
+        },
+        risk: { score: 50 },
+      });
       expect(byKind("stuck_run")[0]?.why?.signal).toBe("alert.raised:api_error");
       expect(byKind("budget")[0]?.why?.signal).toBe("alert.raised:limit_forecast");
       expect(byKind("spend_spike")[0]).toMatchObject({ owners: ["ops"], delivery: "instant" });
@@ -246,6 +291,55 @@ describe.each(BACKENDS)("review list on $name", (backend) => {
       expect(approval?.deadline).toBe(at(t, 30));
       expect(await refresh()).toEqual({ created: 0, updated: 0 });
       expect(await all(list)).toEqual(items);
+    });
+
+    it("opens an exception under the id the hook named, replaced by a retry, answered once", async () => {
+      const t = at(NOW, -10);
+      const { ledger, list, refresh, append } = await setup();
+      const first = requestId(t, 1);
+      const retry = requestId(at(t, 1), 2);
+      const other = requestId(at(t, 2), 3);
+      await append([exceptionBlock(t, { id: first, fingerprint: "a".repeat(64) })]);
+      expect(await refresh()).toEqual({ created: 1, updated: 0 });
+      expect((await list.get(first))?.state).toBe("open");
+
+      // The agent retried the same call: the hook named a new id, which replaces the open one.
+      await append(
+        [exceptionBlock(at(t, 1), { id: retry, fingerprint: "a".repeat(64) })],
+        [
+          exceptionBlock(at(t, 2), {
+            id: other,
+            fingerprint: "b".repeat(64),
+            rule_id: "guard.secret_read",
+          }),
+        ],
+      );
+      expect(await refresh()).toEqual({ created: 2, updated: 1 });
+      expect((await list.get(first))?.state).toBe("dismissed");
+      expect((await all(list)).map((item) => item.id).sort()).toEqual([retry, other].sort());
+
+      const answered = await list.decide(retry, { verdict: "approve", by: PERSON });
+      expect(answered.item).toMatchObject({ kind: "exception", state: "answered" });
+      expect(answered.decision_event.decision).toMatchObject({
+        verdict: "approve",
+        rule_id: "guard.force_push",
+        item_id: retry,
+      });
+
+      // The call the exception let through is an allow: no new item.
+      const used = exceptionBlock(at(t, 3), { id: retry, fingerprint: "a".repeat(64) });
+      await append([
+        {
+          ...used,
+          decision: {
+            ...(used.decision as NonNullable<LedgerEvent["decision"]>),
+            verdict: "allow",
+          },
+          data: { ...used.data, exception: { id: retry, rules: ["guard.force_push"], used: true } },
+        },
+      ]);
+      expect(await refresh()).toEqual({ created: 0, updated: 0 });
+      expect((await decisions(ledger)).map((event) => event.decision?.item_id)).toEqual([retry]);
     });
 
     it("groups items from the same run, else the same session", async () => {

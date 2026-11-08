@@ -7,6 +7,11 @@ import type { AgentVendor, LedgerEvent, ReviewItemKind, ReviewWhy } from "@selfh
  */
 export interface Draft {
   kind: ReviewItemKind;
+  /**
+   * The item's id when the signal fixes it: an exception request names its item before the item
+   * exists. A newer signal with the same key and another id replaces the open item.
+   */
+  id?: string;
   dedupeKey: string;
   title: string;
   why: ReviewWhy;
@@ -170,7 +175,23 @@ function isLive(event: LedgerEvent): boolean {
   return Math.abs(Date.parse(evaluatedAt) - Date.parse(event.ts)) <= LIVE_EVALUATION_MS;
 }
 
-/** policy.evaluated in enforce mode: ask is an approval, block a blocked action. */
+const UUIDV7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+/** The one-time exception a hook's block asks for: the item id it named and the call's hash. */
+function exceptionRequest(event: LedgerEvent): { id: string; fingerprint: string } | undefined {
+  const exception = event.data?.exception;
+  if (exception === null || typeof exception !== "object") return undefined;
+  const { id, fingerprint, used } = exception as Record<string, unknown>;
+  if (used === true || typeof id !== "string" || !UUIDV7.test(id)) return undefined;
+  if (typeof fingerprint !== "string" || fingerprint === "") return undefined;
+  return { id, fingerprint };
+}
+
+/**
+ * policy.evaluated in enforce mode: ask is an approval, block a blocked action, and a block that
+ * carries an exception request (from a pre-tool hook) an exception item a person can approve to
+ * allow the call once.
+ */
 function fromPolicyVerdict(event: LedgerEvent): Draft | undefined {
   const decision = event.decision;
   if (!decision || (decision.verdict !== "ask" && decision.verdict !== "block")) return undefined;
@@ -198,6 +219,28 @@ function fromPolicyVerdict(event: LedgerEvent): Draft | undefined {
       why,
       score: irreversible ? 90 : 50,
       reasons: [`Rule ${rule} asks a person first`, ...irreversibleReason],
+      scored: false,
+      blocking: live,
+      timesOut: live,
+      ...(tool ? { tool } : {}),
+    };
+  }
+  const exception = exceptionRequest(event);
+  if (exception) {
+    const alternative = text(event.data?.alternative);
+    return {
+      ...base(event),
+      kind: "exception",
+      id: exception.id,
+      // One open request per call: a retry replaces it, since the agent was given the new id.
+      dedupeKey: `exception:${exception.fingerprint}`,
+      title: title(`Allow once: ${what}`),
+      why: { ...why, text: alternative ? `${why.text} Instead: ${alternative}` : why.text },
+      score: irreversible ? 80 : 50,
+      reasons: [
+        `Rule ${rule} blocked it; approving allows this exact call once`,
+        ...irreversibleReason,
+      ],
       scored: false,
       blocking: live,
       timesOut: live,

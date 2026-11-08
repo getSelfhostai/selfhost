@@ -125,6 +125,15 @@ export const RuleSchema = Type.Object(
     match: RuleMatchSchema,
     action: RuleActionSchema("block stops the action, ask sends it to a person."),
     message: NonEmpty({ description: "Shown to the agent and the person when the rule fires." }),
+    alternative: Type.Optional(
+      NonEmpty({
+        description:
+          'What the agent should do instead, shown with the message when the rule blocks or asks, for example "Open a pull request instead."',
+      }),
+    ),
+    docs: Type.Optional(
+      Url({ description: "Page that explains the rule, linked from every block and ask." }),
+    ),
     irreversible: Type.Optional(
       Type.Boolean({
         default: false,
@@ -185,6 +194,7 @@ export const RuleOverrideSchema = Type.Object(
     agents: Type.Optional(AgentsSchema(false)),
     action: Type.Optional(RuleActionSchema("Action for this team.")),
     message: Type.Optional(NonEmpty({ description: "Message for this team." })),
+    alternative: Type.Optional(NonEmpty({ description: "Alternative for this team." })),
   },
   {
     additionalProperties: false,
@@ -326,6 +336,14 @@ export const SelfhostConfigSchema = Type.Object(
               default: 30,
               description:
                 "Minutes an approval that blocks an agent waits for an answer. Then it is denied and the deny is written to the decision log.",
+            }),
+          ),
+          exception_expiry_minutes: Type.Optional(
+            Type.Integer({
+              minimum: 1,
+              default: 30,
+              description:
+                "Minutes a one-time exception stays usable once a person approves it. The blocked call is allowed once in that time, then blocked again.",
             }),
           ),
           github_logins: Type.Optional(

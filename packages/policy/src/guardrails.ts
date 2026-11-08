@@ -38,43 +38,65 @@ export interface GuardContext {
 }
 
 interface Guardrail {
+  /** Why the call is stopped, in plain language. */
   message: string;
+  /** What the agent can do instead. */
+  alternative: string;
   irreversible: boolean;
 }
 
-/** Each guardrail's default message, and whether what it stops can be undone. */
+/** Each guardrail's default message and alternative, and whether what it stops can be undone. */
 export const GUARDRAILS: Record<GuardrailId, Guardrail> = {
   "guard.force_push": {
-    message:
-      "Force pushes rewrite shared history. Push a new commit or open a pull request instead.",
+    message: "Force pushes rewrite shared history and can drop commits other people pushed.",
+    alternative:
+      "Push your commits to a new branch and open a pull request. If this branch really has to be rewritten, ask the user first; git push --force-with-lease is the safer form.",
     irreversible: true,
   },
   "guard.reset_hard": {
-    message: "git reset --hard throws away uncommitted work. Commit or stash it first.",
+    message: "git reset --hard throws away uncommitted work.",
+    alternative:
+      "Commit or stash the changes first (git stash), or discard only the files you mean to with git restore <file>.",
     irreversible: true,
   },
   "guard.rm_outside_workspace": {
     message: "Recursive rm outside the workspace is blocked.",
+    alternative:
+      "Delete only inside the workspace or a temp folder. If something outside has to go, tell the user the exact path and why, and let them delete it.",
     irreversible: true,
   },
   "guard.secret_read": {
     message: ".env files, private keys and credential files are not read by agents.",
+    alternative:
+      "Read .env.example (or another template) for the variable names, or ask the user for the one value you need. Never print a secret.",
     irreversible: false,
   },
   "guard.prod_sql": {
     message: "DROP and TRUNCATE on a production database are blocked.",
+    alternative:
+      "Run it against a local or staging database, or write a migration and let a person apply it to production.",
     irreversible: true,
   },
   "guard.prod_credentials": {
     message: "Production credentials are not used by agents.",
+    alternative:
+      "Use development or staging credentials, or ask the user to run the production step themselves.",
     irreversible: false,
   },
 };
 
-type Finding = { verdict: RuleAction; message: string } | undefined;
+type Finding = { verdict: RuleAction; message: string; alternative?: string } | undefined;
 
-const block = (message: string): Finding => ({ verdict: "block", message });
-const ask = (message: string): Finding => ({ verdict: "ask", message });
+const block = (message: string, alternative?: string): Finding => ({
+  verdict: "block",
+  message,
+  ...(alternative ? { alternative } : {}),
+});
+const ask = (message: string, alternative?: string): Finding => ({
+  verdict: "ask",
+  message,
+  ...(alternative ? { alternative } : {}),
+});
 
 /** Every guardrail with its mode, in the order hits are reported. */
 export function guardrailChecks(config: ResolvedSelfhostConfig): PolicyCheck[] {
@@ -85,6 +107,7 @@ export function guardrailChecks(config: ResolvedSelfhostConfig): PolicyCheck[] {
     agents: ["all"],
     action: "block",
     message: GUARDRAILS[id].message,
+    alternative: GUARDRAILS[id].alternative,
     irreversible: GUARDRAILS[id].irreversible,
   }));
 }
@@ -138,6 +161,7 @@ function pushForces(args: string[]): Finding {
   return lease
     ? ask(
         "git push --force-with-lease still rewrites the remote branch; a person has to confirm it.",
+        "Push your commits to a new branch and open a pull request, or ask the user to confirm the rewrite.",
       )
     : undefined;
 }
@@ -239,7 +263,10 @@ function rmOutsideWorkspace(
       });
       if (holds !== undefined) {
         const what = roots.includes(holds) ? "the workspace" : "the home folder";
-        return block(`rm -rf on ${short(path, 120)} would delete ${what}.`);
+        return block(
+          `rm -rf on ${short(path, 120)} would delete ${what}.`,
+          "Remove the specific files or folders you mean, inside the workspace, by their own paths.",
+        );
       }
       const inside =
         allowed.some((dir) => within(dir, path)) && allowedReal.some((dir) => within(dir, real));
@@ -253,6 +280,7 @@ function rmOutsideWorkspace(
     ? undefined
     : ask(
         `rm -rf on ${unknown}, which cannot be resolved before it runs; a person has to confirm it.`,
+        "Spell the path out in the command so it can be checked before it runs, or ask the user.",
       );
 }
 
@@ -318,6 +346,7 @@ const SECRET_PATHS = [
   "**/opencode/auth.json",
   "**/.config/goose/secrets.yaml",
   "**/.selfhost/config.json",
+  "**/.selfhost/exceptions/key",
 ];
 
 const nameMatcher = picomatch(SECRET_NAMES, { dot: true, nocase: true });
@@ -658,11 +687,13 @@ export function guardrailHits(
   for (const check of checks) {
     const finding = findings[check.id as GuardrailId]();
     if (!finding) continue;
+    const alternative = finding.alternative ?? check.alternative;
     hits.push({
       rule_id: check.id,
       mode: check.mode === "enforce" ? "enforce" : "observe",
       verdict: finding.verdict,
       message: finding.message,
+      ...(alternative ? { alternative } : {}),
       irreversible: check.irreversible,
     });
   }

@@ -49,6 +49,8 @@ describe("selfhost review risk", () => {
       "brief",
       "trace",
       "list",
+      "approve",
+      "deny",
     ]);
   });
 

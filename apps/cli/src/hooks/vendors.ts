@@ -7,7 +7,7 @@ import { isAbsolute, resolve } from "node:path";
  *
  * Vendor docs, as of November 2026:
  * - Claude Code: https://code.claude.com/docs/en/hooks (PreToolUse, hookSpecificOutput)
- * - Codex: https://developers.openai.com/codex/hooks (PreToolUse; "ask" is parsed but not
+ * - Codex: https://learn.chatgpt.com/docs/hooks (PreToolUse; "ask" is parsed but not
  *   supported, so an ask is answered as a deny)
  * - Cursor: https://cursor.com/docs/hooks (preToolUse, beforeShellExecution, beforeReadFile,
  *   beforeMCPExecution; a permission hook that prints nothing or invalid JSON blocks the action)
@@ -275,26 +275,45 @@ export function canAsk(agent: HookAgent, event: string): boolean {
   return false;
 }
 
+/** The text that goes with an answer: what the agent reads and what the person sees. */
+export interface AnswerText {
+  agent: string;
+  user: string;
+}
+
 /**
- * What the hook prints on stdout for a pre-tool answer, in the agent's own format. Allow prints
- * nothing where the agent reads silence as "no opinion" (Claude Code, Codex), so selfhost never
- * approves a call the agent would otherwise ask about. Cursor needs a JSON answer on every
- * permission hook: silence blocks the action there.
+ * What the hook prints on stdout for a pre-tool answer, in the agent's own format, with the text
+ * in the field each side reads (vendor docs as of November 2026):
+ *
+ * - Claude Code: a deny's permissionDecisionReason goes to the model; an ask's is shown to the
+ *   person in the permission prompt. systemMessage is shown to the person.
+ * - Codex: permissionDecisionReason goes to the model as the reason the call was blocked;
+ *   systemMessage is shown as a warning in the UI.
+ * - Cursor: agent_message goes to the agent, user_message to the person. beforeReadFile has no
+ *   agent_message.
+ * - OpenCode: the plugin throws `reason`, which the model gets as the tool's error and the person
+ *   sees on the call.
+ *
+ * Allow prints nothing where the agent reads silence as "no opinion" (Claude Code, Codex), so
+ * selfhost never approves a call the agent would otherwise ask about; with a text for the person
+ * (an exception used) it prints only systemMessage, which decides nothing. Cursor needs a JSON
+ * answer on every permission hook: silence blocks the action there.
  */
 export function answerText(
   agent: HookAgent,
   event: string,
   answer: Answer,
-  reason?: string,
+  text?: AnswerText,
 ): string {
   if (agent === "claude" || agent === "codex") {
-    if (answer === "allow") return "";
+    if (answer === "allow") return text ? JSON.stringify({ systemMessage: text.user }) : "";
     return JSON.stringify({
       hookSpecificOutput: {
         hookEventName: event,
         permissionDecision: answer,
-        permissionDecisionReason: reason ?? "",
+        permissionDecisionReason: (answer === "ask" ? text?.user : text?.agent) ?? "",
       },
+      ...(answer === "deny" && text ? { systemMessage: text.user } : {}),
     });
   }
   if (agent === "cursor") {
@@ -302,13 +321,13 @@ export function answerText(
     // beforeReadFile's answer has no agent_message.
     const messages =
       event === "beforeReadFile"
-        ? { user_message: reason ?? "" }
-        : { user_message: reason ?? "", agent_message: reason ?? "" };
+        ? { user_message: text?.user ?? "" }
+        : { user_message: text?.user ?? "", agent_message: text?.agent ?? "" };
     return JSON.stringify({ permission: answer, ...messages });
   }
   if (agent === "opencode") {
     return JSON.stringify(
-      answer === "allow" ? { decision: "allow" } : { decision: answer, reason },
+      answer === "allow" ? { decision: "allow" } : { decision: answer, reason: text?.agent },
     );
   }
   return "";

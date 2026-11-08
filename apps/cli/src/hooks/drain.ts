@@ -44,7 +44,15 @@ export interface DrainOptions {
   keep?: boolean;
   /** Bytes already imported per file; --watch keeps it between passes. */
   offsets?: Map<string, number>;
+  /**
+   * Only the lines of calls that asked for or used a one-time exception, and every file is kept:
+   * the inbox reads those in early so the item is on the list, and `selfhost import` later maps
+   * the rest (those lines again as duplicates), with its own prompt setting.
+   */
+  exceptionsOnly?: boolean;
 }
+
+const UUIDV7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 /** A past day's file left untouched this long gets no more lines: hooks write today's file. */
 const SETTLED_MS = 60_000;
@@ -72,7 +80,7 @@ function inputOf(call: PreToolCall): Record<string, unknown> {
 /** The verdict a decision records: what was applied, or for observe what enforcing would do. */
 function verdictOf(guard: GuardRecord): Decision["verdict"] {
   const hit = guard.hit;
-  if (!hit) return "allow";
+  if (!hit || guard.exception?.used) return "allow";
   if (hit.mode === "observe") return hit.verdict;
   return guard.answer === "ask" ? "ask" : "block";
 }
@@ -83,6 +91,11 @@ function verdictOf(guard: GuardRecord): Decision["verdict"] {
  * when the line has one, so the ledger masks secrets in them the same way. decision.mode is
  * enforce when an enforce hit decided, observe when only observe hits fired (the verdict then
  * says what enforcing would do, and the call went ahead), and absent for a plain allow.
+ *
+ * A block carries its one-time exception request in data.exception and links.item_id: the
+ * review list makes the exception item from it. A call an approved exception let through is an
+ * allow under the rule it got past, with data.exception.used, who approved it and the decision.
+ * So the ledger holds the request, the approval (decision.recorded) and the use.
  */
 export function guardEvent(
   agent: HookAgent,
@@ -101,10 +114,16 @@ export function guardEvent(
       ? toolDetails(call.tool, inputOf(call), call.cwd)
       : {};
   const hit = guard.hit;
+  const exception =
+    guard.exception && UUIDV7.test(guard.exception.id) ? guard.exception : undefined;
+  const reason =
+    hit && exception?.used
+      ? `Allowed once: ${exception.approved_by ?? "a person"} approved exception ${exception.id}. ${hit.message}`
+      : hit?.message;
   const decision: Decision = {
     verdict: verdictOf(guard),
     by: POLICY_ACTOR_ID,
-    ...(hit ? { reason: hit.message, rule_id: hit.rule_id, mode: hit.mode } : {}),
+    ...(hit ? { reason, rule_id: hit.rule_id, mode: hit.mode } : {}),
     ...(guard.policy ? { policy_hash: guard.policy.hash } : {}),
   };
   const key = toolEvent?.id ?? createHash("sha256").update(JSON.stringify(payload)).digest("hex");
@@ -118,6 +137,8 @@ export function guardEvent(
     ...(toolEvent ? { tool_event_id: toolEvent.id } : {}),
     ...(call?.toolUseId ? { tool_use_id: call.toolUseId } : {}),
     ...(hit?.irreversible ? { irreversible: true } : {}),
+    ...(hit?.alternative ? { alternative: hit.alternative } : {}),
+    ...(exception ? { exception } : {}),
     ...(guard.policy ? { policy_path: guard.policy.path } : {}),
     ...(guard.failures?.length ? { failures: guard.failures } : {}),
     ...(guard.fail_open ? { fail_open: true } : {}),
@@ -136,6 +157,7 @@ export function guardEvent(
     ...(details.tool ? { tool: details.tool } : {}),
     ...(details.target ? { target: details.target } : {}),
     decision,
+    ...(exception ? { links: { item_id: exception.id } } : {}),
     data: Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined)),
     ...(toolEvent?.redacted ? { redacted: toolEvent.redacted } : {}),
   };
@@ -145,9 +167,14 @@ export function guardEvent(
  * The events for one spool line, or undefined when it is malformed. The event time is the time
  * the hook received the payload, so reading the same line again gives the same ids.
  */
-function mapLine(text: string, ctx: SourceContext): LedgerEvent[] | undefined {
+function mapLine(
+  text: string,
+  ctx: SourceContext,
+  exceptionsOnly = false,
+): LedgerEvent[] | undefined {
   try {
     const line = JSON.parse(text) as Partial<SpoolLine>;
+    if (exceptionsOnly && !line.guard?.exception) return [];
     const agent = line.agent;
     const ms = typeof line.received_at === "string" ? Date.parse(line.received_at) : Number.NaN;
     if (typeof agent !== "string" || !Object.hasOwn(MAPPERS, agent) || Number.isNaN(ms)) {
@@ -230,7 +257,7 @@ export async function drainSpool(
     for (const [n, text] of lines.entries()) {
       if (text.trim() === "") continue;
       report.lines += 1;
-      const events = mapLine(text, ctx);
+      const events = mapLine(text, ctx, options.exceptionsOnly);
       if (!events) {
         report.malformed += 1;
         continue;
@@ -250,6 +277,7 @@ export async function drainSpool(
   report.malformed += rejected.size;
 
   for (const { path, end, settled } of read) {
+    if (options.exceptionsOnly) continue;
     if (settled && !options.keep) {
       await rm(path, { force: true });
       options.offsets?.delete(path);

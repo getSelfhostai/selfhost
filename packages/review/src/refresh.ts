@@ -235,6 +235,12 @@ async function applyDraft(
   };
   for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
     let open = await openItemByKey(tx, team, draft.dedupeKey);
+    // A signal that names its own item replaces an open one with another id: the agent and the
+    // person were told the new id.
+    if (open && draft.id !== undefined && open.item.id !== draft.id) {
+      if (!(await close(tx, open, event.id, run, "dismissed"))) continue;
+      open = undefined;
+    }
     // A wait that ended before this signal is over; the signal starts a new one.
     if (open && draft.blocking && open.item.blocking) {
       const resolver = await firstResolver(tx, open, event.ts);
@@ -244,6 +250,8 @@ async function applyDraft(
       }
     }
     if (!open) {
+      // The item a signal names may exist already, closed; the signal belongs to it.
+      if (draft.id !== undefined && (await getItem(tx, draft.id, {}))) return draft.id;
       const item = newItem(draft, event, ctx);
       await insertItem(tx, {
         item,

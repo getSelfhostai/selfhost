@@ -29,7 +29,9 @@ is the pure command parser. `selfhost packages check "<command>"` runs it by han
 
 ## Rules and verdicts
 
-One hit per rule id per tool call; its message names every package that broke the rule. Hits
+One hit per rule id per tool call; its message names every package that broke the rule, and its
+`alternative` (`PACKAGE_ALTERNATIVES`) what the agent can do instead: another package, the exact
+name from the registry, an older version, an install without scripts. Hits
 take the mode of `[packages]` (`observe` records, `enforce` applies, `off` checks nothing and
 makes no network call).
 

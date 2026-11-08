@@ -164,6 +164,8 @@ describe("selfhost policy test", () => {
           mode: "enforce",
           verdict: "block",
           message: "Platform agents only use the github and acme MCP servers.",
+          alternative:
+            "Use a tool from an MCP server in [mcp] allow, or ask the user to add this server to the list.",
           irreversible: false,
         },
       ],

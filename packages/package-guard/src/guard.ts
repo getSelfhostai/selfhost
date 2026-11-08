@@ -20,6 +20,22 @@ const RULE_ORDER: string[] = [
   PACKAGE_RULE_IDS.unchecked,
 ];
 
+/** What the agent can do instead, for each rule that can stop an install. */
+export const PACKAGE_ALTERNATIVES: Record<string, string> = {
+  [PACKAGE_RULE_IDS.deny]:
+    "Use a different package that does the same job, or ask the user whether the team wants to take it off [packages] deny.",
+  [PACKAGE_RULE_IDS.blocked_registry]:
+    "Install from the default registry or one the team allows, without the blocked registry or URL.",
+  [PACKAGE_RULE_IDS.malicious]:
+    "Do not install it. Check the spelling of the package you meant, or pick a maintained package that does the same job.",
+  [PACKAGE_RULE_IDS.not_found]:
+    "Look up the exact name on the registry and install that, or ask the user which package they mean. Do not guess names.",
+  [PACKAGE_RULE_IDS.too_new]:
+    "Pin an older version, published before [packages] min_age_days, or ask the user to approve this one.",
+  [PACKAGE_RULE_IDS.install_scripts]:
+    "Install without running its code (npm install --ignore-scripts, pip install --only-binary :all:) if it works that way, or ask the user to approve it.",
+};
+
 /** Sentences one hit's message lists before "and N more". */
 const MAX_SENTENCES = 5;
 
@@ -68,12 +84,14 @@ export function packageHits(report: PackageReport, config: ResolvedSelfhostConfi
   return RULE_ORDER.flatMap((ruleId) => {
     const entry = byRule.get(ruleId);
     if (!entry) return [];
+    const alternative = PACKAGE_ALTERNATIVES[ruleId];
     return [
       {
         rule_id: ruleId,
         mode: ruleId === PACKAGE_RULE_IDS.unchecked ? "observe" : mode,
         verdict: entry.verdict,
         message: joined(entry.messages),
+        ...(alternative ? { alternative } : {}),
         irreversible: false,
       },
     ];

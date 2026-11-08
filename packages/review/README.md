@@ -57,18 +57,19 @@ event read so none is applied twice), then closes waits, files the weekly report
 timeouts. Refreshes take turns under an advisory lock, so several servers can run them.
 Approvals, questions and alerts older than seven days open nothing.
 
-| Kind             | Signal                                                                                          | Dedupe key (while open)         | Blocking | Risk     |
-| ---------------- | ----------------------------------------------------------------------------------------------- | ------------------------------- | -------- | -------- |
-| `pr`             | `pr.opened` for an agent PR (`agent` set, not `data.unattributed`)                              | PR URL                          | no       | input    |
-| `approval`       | `approval.requested`: Claude Code permission prompt, Codex `PermissionRequest`                  | session                         | yes      | 50       |
-| `approval`       | `policy.evaluated`, enforce, verdict `ask`                                                      | session (live) or the tool call | if live  | 50 or 90 |
-| `question`       | `approval.requested` with `notification_type` `idle_prompt` or `elicitation_dialog`             | session                         | yes      | 30       |
-| `blocked_action` | `policy.evaluated`, enforce, verdict `block`                                                    | rule, session and call          | no       | 40 or 70 |
-| `stuck_run`      | `alert.raised`: `run_failed`, `run_stuck` (60), `api_error`, `model_request_failed` (30)        | run, else session               | no       | 30 or 60 |
-| `budget`         | `alert.raised`: `limit_forecast` (50), `usage_limit` (60), `budget`, `budget_exceeded`          | alert, person, plan and window  | no       | 50 or 60 |
-| `spend_spike`    | `alert.raised`: `spend_spike`                                                                   | the alarm's series              | no       | 90       |
-| `quality`        | `alert.raised`: `quality`, `quality_alarm`                                                      | metric, else model              | no       | 60       |
-| `policy_report`  | Observe-mode `policy.evaluated` block and ask hits of the last full week (Monday to Monday UTC) | the week                        | no       | 10       |
+| Kind             | Signal                                                                                           | Dedupe key (while open)         | Blocking | Risk     |
+| ---------------- | ------------------------------------------------------------------------------------------------ | ------------------------------- | -------- | -------- |
+| `pr`             | `pr.opened` for an agent PR (`agent` set, not `data.unattributed`)                               | PR URL                          | no       | input    |
+| `approval`       | `approval.requested`: Claude Code permission prompt, Codex `PermissionRequest`                   | session                         | yes      | 50       |
+| `approval`       | `policy.evaluated`, enforce, verdict `ask`                                                       | session (live) or the tool call | if live  | 50 or 90 |
+| `question`       | `approval.requested` with `notification_type` `idle_prompt` or `elicitation_dialog`              | session                         | yes      | 30       |
+| `blocked_action` | `policy.evaluated`, enforce, verdict `block`                                                     | rule, session and call          | no       | 40 or 70 |
+| `exception`      | `policy.evaluated` block from a pre-tool hook with `data.exception` (a one-time exception asked) | the call's fingerprint          | if live  | 50 or 80 |
+| `stuck_run`      | `alert.raised`: `run_failed`, `run_stuck` (60), `api_error`, `model_request_failed` (30)         | run, else session               | no       | 30 or 60 |
+| `budget`         | `alert.raised`: `limit_forecast` (50), `usage_limit` (60), `budget`, `budget_exceeded`           | alert, person, plan and window  | no       | 50 or 60 |
+| `spend_spike`    | `alert.raised`: `spend_spike`                                                                    | the alarm's series              | no       | 90       |
+| `quality`        | `alert.raised`: `quality`, `quality_alarm`                                                       | metric, else model              | no       | 60       |
+| `policy_report`  | Observe-mode `policy.evaluated` block and ask hits of the last full week (Monday to Monday UTC)  | the week                        | no       | 10       |
 
 - A PR's risk score is an input: `data.risk` (`{ score, reasons }`) or `data.risk_score` on
   `pr.opened`. The scoring itself (`ee/risk`) is not imported here. Without one the score is 50.
@@ -81,6 +82,12 @@ Approvals, questions and alerts older than seven days open nothing.
 - The same signal again (a repeated notification, the same rule blocking the same call) adds its
   event to the open item instead of opening another. A signal for a key whose item is closed opens
   a new item.
+- An `exception` item takes the id the hook named in `data.exception.id` (the agent and the
+  person were told it before the item existed), and `why` adds the rule's alternative. A retry of
+  the same call (same fingerprint) names a new id, so it dismisses the open item and opens one
+  under the new id. Approving it lets that exact call through once: the CLI turns the answer into
+  a grant the hook reads (see [the CLI](../../apps/cli/README.md#one-time-exceptions)). It times
+  out like a blocking approval.
 - Items from one run share `group: "run:<run_id>"`, else one session `group: "session:<id>"`.
 - `pr.merged` and `pr.closed` dismiss the PR's item. A `decision.recorded` event from a person
   with `item_id` (or, for a PR, its `pr_url`) answers the open item; a later decision that

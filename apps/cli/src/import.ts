@@ -10,8 +10,10 @@ import {
 import { isPostgresUrl, type Ledger, openLedger, resolveDataDir } from "@selfhost/ledger";
 import { startMonitor } from "./alerts/monitor.js";
 import { defaultConfigPath } from "./config-file.js";
+import { plural } from "./format.js";
 import { drainSpool, type SpoolReport, watchSpool } from "./hooks/drain.js";
 import { spoolDir } from "./hooks/receive.js";
+import { refreshGrants } from "./inbox/grants.js";
 import { type OpenLocalReviewList, watchInbox } from "./inbox/sync.js";
 import type { Fetch } from "./team/client.js";
 import { type Membership, readMembership, readSyncState } from "./team/config.js";
@@ -46,6 +48,11 @@ export interface ImportReport {
   hooks: SpoolReport;
   /** Team mode only: what went to the team server. */
   sync?: SyncReport;
+  /**
+   * Ids of the one-time exceptions approved since the last run, now usable once by this
+   * machine's agents. Solo mode reads the local review list; team mode the server (sync.grants).
+   */
+  grants?: string[];
 }
 
 /** One line per batch from `selfhost import --watch --json`. */
@@ -186,6 +193,18 @@ export async function runImport(
     };
     if (membership) {
       report.sync = await syncLedger(target, teamSyncFor(membership, io), opts.since);
+    } else if (io.localReviewList) {
+      const open = io.localReviewList;
+      let list: Awaited<ReturnType<OpenLocalReviewList>> | undefined;
+      const grants = await refreshGrants(
+        configPathOf(io),
+        async (id) => {
+          list ??= await open(target);
+          return list.get(id);
+        },
+        io.now ?? new Date(),
+      );
+      if (grants) report.grants = grants.issued.map((grant) => grant.id);
     }
     if (options.json) {
       io.write(options.watch ? JSON.stringify(report) : JSON.stringify(report, null, 2));
@@ -202,6 +221,12 @@ export async function runImport(
       }
       io.write(`Ledger: ${report.ledger}`);
       if (report.sync) for (const line of describeSync(report.sync)) io.write(line);
+      const granted = report.grants?.length ?? report.sync?.grants ?? 0;
+      if (granted > 0) {
+        io.write(
+          `${plural(granted, "approved exception")} ready: each lets its blocked call through once.`,
+        );
+      }
     }
     return report;
   } finally {

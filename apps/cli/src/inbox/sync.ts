@@ -1,7 +1,9 @@
 import type { Ledger } from "@selfhost/ledger";
 import { PAGE_LIMIT_MAX, type ReviewItem } from "@selfhost/schema";
-import { type Fetch, TeamApiError } from "../team/client.js";
+import type { LookupItem } from "../hooks/exceptions.js";
+import { type Fetch, TeamApiError, TeamClient } from "../team/client.js";
 import type { Membership } from "../team/config.js";
+import { grantLine, refreshGrants } from "./grants.js";
 import { closedItem, httpReviewList } from "./http.js";
 import type { ReviewList } from "./review-list.js";
 import {
@@ -198,6 +200,11 @@ export interface InboxRefreshOptions {
   /** A refresh runs at most this often while batches keep coming. Default 15 s. */
   minIntervalMs?: number;
   now?: () => Date;
+  /**
+   * Reads one item for the exception grants: each refresh writes a grant for every request of
+   * this machine's hooks a person approved. Without it no grants are written.
+   */
+  lookup?: LookupItem;
 }
 
 export interface InboxRefresh {
@@ -234,6 +241,15 @@ export async function startInboxRefresh(opts: InboxRefreshOptions): Promise<Inbo
       if (replay.results.length > 0) say(replay, replayLines(replay.results));
       if (replay.error !== undefined) throw new Error(replay.error);
       await refreshCache(opts.list, paths.cache, opts.scope, { now: clock(), pid: process.pid });
+      if (opts.lookup) {
+        const grants = await refreshGrants(opts.configPath, opts.lookup, clock());
+        if (grants?.issued.length) {
+          say(
+            { grants: grants.issued.map((grant) => grant.id) },
+            grants.issued.map((grant) => grantLine(grant, clock())),
+          );
+        }
+      }
       failed = undefined;
     } catch (error) {
       const text = message(error);
@@ -289,6 +305,8 @@ export async function watchInbox(
     ? httpReviewList(membership.server, membership.token, options.fetch)
     : await options.localReviewList?.(ledger);
   if (!list) return undefined;
+  const client = membership && new TeamClient(membership.server, membership.token, options.fetch);
+  const lookup: LookupItem = client ? (id) => client.reviewItem(id) : (id) => list.get(id);
   return startInboxRefresh({
     list,
     scope: {
@@ -299,5 +317,6 @@ export async function watchInbox(
     configPath: options.configPath,
     write: options.write,
     json: options.json,
+    lookup,
   });
 }

@@ -41,7 +41,9 @@ schema it checks rule id uniqueness, regex syntax and that team overrides name r
 non-empty list is a block verdict under the built-in rule ids `mcp.allow` and `models.allow`,
 which team overrides can name and which a rule may not reuse while that list is in use.
 Decisions from a policy file carry `policy_commit` and `policy_hash` so each one can be traced
-to the exact file.
+to the exact file. A rule's `message` says why; its optional `alternative` says what the agent
+should do instead and `docs` links a page about it. Pre-tool hooks show all three on every block
+and ask, with the rule's `selfhost.toml` line; team overrides can change `alternative` too.
 
 `json/config.schema.json` is published at `CONFIG_SCHEMA_URL`,
 `https://selfhost.ai/schema/selfhost.toml.v1.json`, which is also its `$id`. Every
@@ -63,7 +65,9 @@ version = 1
 id = "no-force-push"
 match = { tool = "Bash", command = "git\\s+push\\s+.*--force" }
 action = "block"
-message = "Force pushes are blocked. Open a PR instead."
+message = "Force pushes are blocked."
+alternative = "Push to a new branch and open a pull request."   # what to do instead
+docs = "https://wiki.example.com/rules/force-push"               # linked from every block
 # mode defaults to "observe", agents to ["all"], irreversible to false
 
 [mcp]
@@ -159,7 +163,11 @@ snooze, open), `delivery` (`instant` or `digest`), `group` (`run:<id>` or `sessi
 
 `[review]` in `selfhost.toml` routes and times items: `owners` (path glob to people),
 `fallback` (people who get items nobody else owns), `approval_timeout_minutes` (default 30),
+`exception_expiry_minutes` (default 30: how long an approved one-time exception stays usable),
 `high_risk_paths` and `high_risk_threshold` (default 70, also the line for instant delivery).
+
+`kind` `exception` is a tool call a rule blocked, which a person can allow once: approving it
+lets that exact call through one time, within `exception_expiry_minutes`.
 
 ## Hook payloads
 

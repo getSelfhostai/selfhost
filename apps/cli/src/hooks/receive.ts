@@ -30,7 +30,26 @@ export interface GuardHit {
   mode: "observe" | "enforce";
   verdict: "block" | "ask";
   message: string;
+  /** What the agent was told to do instead. */
+  alternative?: string;
   irreversible: boolean;
+}
+
+/**
+ * The one-time exception on a blocked call: the review item the agent and the person were told
+ * to approve, or, with `used`, the approved exception that let this call through.
+ */
+export interface GuardException {
+  /** Review item id: a request's, or the approved one's. */
+  id: string;
+  /** Keyed hash of the call; see hooks/exceptions.ts. Set on a request. */
+  fingerprint?: string;
+  /** Rule ids the exception covers. */
+  rules: string[];
+  used?: boolean;
+  /** Who approved it and the decision.recorded event, when used. */
+  approved_by?: string;
+  decision_event_id?: string;
 }
 
 /** What the pre-tool check decided, kept on the event's spool line for the ledger. */
@@ -47,6 +66,8 @@ export interface GuardRecord {
   failures?: string[];
   /** The check itself failed, so the call was allowed. */
   fail_open?: boolean;
+  /** A blocked call's exception request, or the approved exception that allowed it. */
+  exception?: GuardException;
   /** Time the check took, in milliseconds. */
   ms: number;
 }
@@ -126,7 +147,7 @@ export interface HookIo {
 export type CheckPreTool = (
   agent: HookAgent,
   payload: Record<string, unknown>,
-  io: { env: NodeJS.ProcessEnv; writeError: (line: string) => void },
+  io: { env: NodeJS.ProcessEnv; writeError: (line: string) => void; now?: Date },
 ) => Promise<{ output: string; guard?: GuardRecord }>;
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -155,7 +176,11 @@ export async function runHook(args: string[], io: HookIo): Promise<number> {
     let guard: GuardRecord | undefined;
     if (isPreToolEvent(agent, payload)) {
       const check = io.checkPreTool ?? (await import("./pretool.js")).checkPreTool;
-      const result = await check(agent, payload, { env: io.env, writeError: io.writeError });
+      const result = await check(agent, payload, {
+        env: io.env,
+        writeError: io.writeError,
+        now: io.now,
+      });
       writeOutput(result.output);
       answered = true;
       guard = result.guard;

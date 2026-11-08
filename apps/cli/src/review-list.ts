@@ -18,6 +18,10 @@ import {
 import type { Command } from "commander";
 import { findConfig } from "./find-config.js";
 import { plural, table } from "./format.js";
+import { drainSpool } from "./hooks/drain.js";
+import { spoolDir } from "./hooks/receive.js";
+import { defaultPerson } from "./import.js";
+import { readMembership } from "./team/config.js";
 
 export interface ReviewListIo {
   env: NodeJS.ProcessEnv;
@@ -124,6 +128,13 @@ export async function runReviewList(
     (await openLedger({ url: options.database ?? io.env.DATABASE_URL, dataDir: options.dataDir }));
   try {
     const now = () => io.now ?? new Date();
+    // Blocked calls not imported yet go in first, so their exception items are on the list.
+    const membership = io.configPath ? readMembership(io.configPath) : undefined;
+    await drainSpool(target, spoolDir(io.env), {
+      person: membership?.person ?? defaultPerson(io.env),
+      now: now(),
+      exceptionsOnly: true,
+    });
     const list = openReviewList(target, { config, now });
     const refreshed = await refreshReviewList(target, list);
     const page = await list.list({
@@ -141,16 +152,38 @@ export async function runReviewList(
   }
 }
 
+/** A list used again within this long is not refreshed again: a paged read is one use. */
+const REFRESH_EVERY_MS = 1000;
+
 /**
- * The local review list for solo mode, brought up to date with the ledger before each use, with
- * routing and timeouts from the selfhost.toml the other commands find.
+ * The local review list for solo mode, brought up to date with the ledger before each use (at
+ * most once a second), with routing and timeouts from the selfhost.toml the other commands find.
+ * So `import --watch`, which keeps one list open, sees new items and answers recorded elsewhere.
  */
 export function localReviewList(io: ReviewListIo) {
   return async (ledger: Ledger): Promise<ReviewList> => {
     const config = loadConfig({}, io);
     const list = openReviewList(ledger, { config, now: () => io.now ?? new Date() });
-    await refreshReviewList(ledger, list);
-    return list;
+    let last = Number.NEGATIVE_INFINITY;
+    const fresh = async () => {
+      if (Date.now() - last < REFRESH_EVERY_MS) return;
+      await refreshReviewList(ledger, list);
+      last = Date.now();
+    };
+    const refreshed =
+      <A extends unknown[], R>(fn: (...args: A) => Promise<R>) =>
+      async (...args: A): Promise<R> => {
+        await fresh();
+        return fn(...args);
+      };
+    await fresh();
+    return {
+      ...list,
+      list: refreshed(list.list),
+      get: refreshed(list.get),
+      decide: refreshed(list.decide),
+      snooze: refreshed(list.snooze),
+    };
   };
 }
 

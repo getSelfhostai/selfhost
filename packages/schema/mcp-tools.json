@@ -233,6 +233,16 @@
                       "description": "Shown to the agent and the person when the rule fires.",
                       "type": "string"
                     },
+                    "alternative": {
+                      "minLength": 1,
+                      "description": "What the agent should do instead, shown with the message when the rule blocks or asks, for example \"Open a pull request instead.\"",
+                      "type": "string"
+                    },
+                    "docs": {
+                      "format": "uri",
+                      "description": "Page that explains the rule, linked from every block and ask.",
+                      "type": "string"
+                    },
                     "irreversible": {
                       "default": false,
                       "description": "true when the matched action cannot be undone, which raises review risk.",
@@ -292,6 +302,12 @@
                     "minimum": 1,
                     "default": 30,
                     "description": "Minutes an approval that blocks an agent waits for an answer. Then it is denied and the deny is written to the decision log.",
+                    "type": "integer"
+                  },
+                  "exception_expiry_minutes": {
+                    "minimum": 1,
+                    "default": 30,
+                    "description": "Minutes a one-time exception stays usable once a person approves it. The blocked call is allowed once in that time, then blocked again.",
                     "type": "integer"
                   },
                   "github_logins": {
@@ -677,6 +693,11 @@
                                 "minLength": 1,
                                 "description": "Message for this team.",
                                 "type": "string"
+                              },
+                              "alternative": {
+                                "minLength": 1,
+                                "description": "Alternative for this team.",
+                                "type": "string"
                               }
                             }
                           }
@@ -782,6 +803,16 @@
                 "message": {
                   "minLength": 1,
                   "description": "Shown to the agent and the person when the rule fires.",
+                  "type": "string"
+                },
+                "alternative": {
+                  "minLength": 1,
+                  "description": "What the agent should do instead, shown with the message when the rule blocks or asks, for example \"Open a pull request instead.\"",
+                  "type": "string"
+                },
+                "docs": {
+                  "format": "uri",
+                  "description": "Page that explains the rule, linked from every block and ask.",
                   "type": "string"
                 },
                 "irreversible": {
@@ -989,13 +1020,14 @@
                   "type": "string"
                 },
                 "kind": {
-                  "description": "pr (agent pull request), approval (an agent waits for permission), question (an agent asks a person), blocked_action (a rule blocked something), stuck_run, budget, spend_spike, quality, or policy_report (what an observed rule would have blocked).",
+                  "description": "pr (agent pull request), approval (an agent waits for permission), question (an agent asks a person), blocked_action (a rule blocked something), exception (a rule blocked a tool call and approving allows that exact call once), stuck_run, budget, spend_spike, quality, or policy_report (what an observed rule would have blocked).",
                   "type": "string",
                   "enum": [
                     "pr",
                     "approval",
                     "question",
                     "blocked_action",
+                    "exception",
                     "stuck_run",
                     "budget",
                     "spend_spike",
@@ -2430,13 +2462,14 @@
                 "type": "string"
               },
               "kind": {
-                "description": "pr (agent pull request), approval (an agent waits for permission), question (an agent asks a person), blocked_action (a rule blocked something), stuck_run, budget, spend_spike, quality, or policy_report (what an observed rule would have blocked).",
+                "description": "pr (agent pull request), approval (an agent waits for permission), question (an agent asks a person), blocked_action (a rule blocked something), exception (a rule blocked a tool call and approving allows that exact call once), stuck_run, budget, spend_spike, quality, or policy_report (what an observed rule would have blocked).",
                 "type": "string",
                 "enum": [
                   "pr",
                   "approval",
                   "question",
                   "blocked_action",
+                  "exception",
                   "stuck_run",
                   "budget",
                   "spend_spike",

@@ -96,6 +96,10 @@ export function itemLines(item: ReviewItem, now: Date): string[] {
   if (item.agent) lines.push(`Agent: ${item.agent.name ?? item.agent.vendor}`);
   if (item.owners.length > 0) lines.push(`Owners: ${item.owners.join(", ")}`);
   if (item.url) lines.push(`Link: ${item.url}`);
+  if (item.why) {
+    const rule = item.why.rule_id ? ` (rule ${item.why.rule_id})` : "";
+    lines.push(`Why${rule}: ${item.why.text}`);
+  }
   for (const reason of item.risk.reasons) lines.push(`  - ${reason}`);
   if (item.answer) {
     const why = item.answer.reason ? `: ${item.answer.reason}` : "";

@@ -17,6 +17,7 @@ describe("parseConfig", () => {
           owners: {},
           fallback: [],
           approval_timeout_minutes: 30,
+          exception_expiry_minutes: 30,
           github_logins: {},
           block_merge_on_high: false,
         },

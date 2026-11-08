@@ -8,8 +8,12 @@ import { localPerson } from "../alerts/person.js";
 import { statuslineCachePath } from "../alerts/settings.js";
 import { clock, duration } from "../alerts/text.js";
 import { plural } from "../format.js";
-import type { Fetch } from "../team/client.js";
+import { drainSpool } from "../hooks/drain.js";
+import type { ExceptionGrant, GrantsReport, LookupItem } from "../hooks/exceptions.js";
+import { spoolDir } from "../hooks/receive.js";
+import { type Fetch, TeamClient } from "../team/client.js";
 import { readMembership } from "../team/config.js";
+import { grantLine, refreshGrants } from "./grants.js";
 import { closedItem, httpReviewList } from "./http.js";
 import type { ReviewList } from "./review-list.js";
 import {
@@ -117,6 +121,12 @@ export interface InboxActionReport {
   decision_event: LedgerEvent | null;
   /** The queue entry, when queued. */
   queued: QueuedAction | null;
+  /**
+   * For an approved exception this machine's hook asked for: the grant that lets the agent make
+   * the blocked call once. Null otherwise, also when the request came from another machine,
+   * which writes its grant on its next import or inbox command.
+   */
+  grant: ExceptionGrant | null;
   sync: ReplayReport;
 }
 
@@ -144,6 +154,11 @@ interface Session {
   /** Why the live list cannot be reached. */
   offline?: string;
   sync: ReplayReport;
+  /** Reads one item, for the exception grants: the server's single-item read in team mode. */
+  lookup?: LookupItem;
+  /** The grants this session wrote, once looked for. */
+  grants?: Promise<GrantsReport | undefined>;
+  configPath: string;
   close(): Promise<void>;
 }
 
@@ -167,7 +182,7 @@ function watcherHolds(io: InboxIo, paths: InboxPaths): boolean {
 async function openSolo(
   options: CommonOptions,
   io: InboxIo,
-  base: Omit<Session, "mode" | "scope" | "close">,
+  base: Omit<Session, "mode" | "scope" | "close" | "lookup">,
   given?: Ledger,
 ): Promise<Session> {
   const open = io.localReviewList;
@@ -188,7 +203,15 @@ async function openSolo(
     if (!given) await ledger.close();
   };
   try {
-    return { ...solo, list: await open(ledger), close };
+    // Blocked calls not imported yet go in first, so an exception asked for a moment ago is on
+    // the list.
+    await drainSpool(ledger, spoolDir(io.env), {
+      person: scope.person,
+      now: base.now,
+      exceptionsOnly: true,
+    });
+    const list = await open(ledger);
+    return { ...solo, list, lookup: (id) => list.get(id), close };
   } catch (error) {
     await close();
     throw error;
@@ -204,17 +227,21 @@ async function openSession(options: CommonOptions, io: InboxIo, ledger?: Ledger)
     paths: inboxPaths(io.configPath),
     now: io.now ?? new Date(),
     sync: NOTHING_SYNCED,
+    configPath: io.configPath,
   };
   const membership = readMembership(io.configPath);
-  const session: Session = membership
-    ? {
-        ...base,
-        mode: "team",
-        scope: { server: membership.server, team: membership.team, person: membership.person },
-        list: httpReviewList(membership.server, membership.token, io.fetch),
-        close: async () => {},
-      }
-    : await openSolo(options, io, base, ledger);
+  const client = membership && new TeamClient(membership.server, membership.token, io.fetch);
+  const session: Session =
+    membership && client
+      ? {
+          ...base,
+          mode: "team",
+          scope: { server: membership.server, team: membership.team, person: membership.person },
+          list: httpReviewList(membership.server, membership.token, io.fetch),
+          lookup: (id) => client.reviewItem(id),
+          close: async () => {},
+        }
+      : await openSolo(options, io, base, ledger);
   if (session.list) {
     try {
       session.sync = await replayQueue(session.list, session.paths, session.scope, session.now);
@@ -230,6 +257,17 @@ async function openSession(options: CommonOptions, io: InboxIo, ledger?: Ledger)
   return session;
 }
 
+/**
+ * Writes the grants for this machine's approved exception requests, once per session and only
+ * while the list can be reached. A failure leaves the requests for the next command.
+ */
+function sessionGrants(session: Session): Promise<GrantsReport | undefined> {
+  const { list, lookup } = session;
+  if (!list || !lookup) return Promise.resolve(undefined);
+  session.grants ??= refreshGrants(session.configPath, lookup, session.now).catch(() => undefined);
+  return session.grants;
+}
+
 async function withSession<T>(
   options: CommonOptions,
   io: InboxIo,
@@ -238,7 +276,9 @@ async function withSession<T>(
 ): Promise<T> {
   const session = await openSession(options, io, ledger);
   try {
-    return await fn(session);
+    const result = await fn(session);
+    await sessionGrants(session);
+    return result;
   } finally {
     await session.close();
   }
@@ -366,6 +406,7 @@ async function act(
     item: null,
     decision_event: null,
     queued: null,
+    grant: null,
     sync: session.sync,
   });
   const closed = (item: ReviewItem) => {
@@ -431,6 +472,12 @@ function printAction(
   const done = { approve: "Approved", deny: "Denied", snooze: "Snoozed" }[report.action];
   io.write(`${done} ${report.item_id}${title}.`);
   if (report.decision_event) io.write(`Recorded decision ${report.decision_event.id}.`);
+  if (report.grant) io.write(grantLine(report.grant, session.now));
+  else if (report.action === "approve" && report.item?.kind === "exception") {
+    io.write(
+      "The machine that asked allows the call once it next runs selfhost import or selfhost inbox.",
+    );
+  }
 }
 
 /** `selfhost inbox approve|deny <id>`: answers an item; the list records the decision. */
@@ -449,6 +496,10 @@ export async function runInboxDecide(
       const response = await list.decide(id, { verdict, by, at, ...(reason ? { reason } : {}) });
       return { item: response.item, decision_event: response.decision_event };
     });
+    if (report.outcome === "applied" && report.item?.kind === "exception") {
+      const grants = await sessionGrants(session);
+      report.grant = grants?.issued.find((grant) => grant.id === report.item_id) ?? null;
+    }
     printAction(report, session, options.json, io);
     return report;
   });
@@ -635,7 +686,10 @@ function withLedger(command: Command): Command {
 
 const ID_HELP = "item id, or enough of its start to tell it apart";
 
-/** `selfhost inbox` and its approve, deny, snooze, open and sync commands. */
+/**
+ * `selfhost inbox` and its approve, deny, snooze, open and sync commands, and `selfhost review
+ * approve|deny`, the same answers under the review command.
+ */
 export function registerInbox(program: Command, io: () => InboxIo, fail: Fail): void {
   const inbox = withLedger(
     program
@@ -657,6 +711,25 @@ export function registerInbox(program: Command, io: () => InboxIo, fail: Fail): 
       inbox
         .command(verdict)
         .description(`${verdict} an item; records your decision in the decision log`)
+        .argument("<id>", ID_HELP)
+        .option("--reason <text>", "why, in your own words"),
+    ).action(async (id: string, options: InboxDecideOptions) => {
+      try {
+        await runInboxDecide(verdict, id, options, io());
+      } catch (error) {
+        fail(error, options.json);
+      }
+    });
+  }
+
+  const review =
+    program.commands.find((command) => command.name() === "review") ??
+    program.command("review").description("score and route agent pull requests");
+  for (const verdict of ["approve", "deny"] as const) {
+    withLedger(
+      review
+        .command(verdict)
+        .description(`${verdict} a review item, as selfhost inbox ${verdict} does`)
         .argument("<id>", ID_HELP)
         .option("--reason <text>", "why, in your own words"),
     ).action(async (id: string, options: InboxDecideOptions) => {

@@ -1,7 +1,9 @@
 import { rmSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import type { LedgerWriter } from "@selfhost/importers";
 import type { Ledger } from "@selfhost/ledger";
 import { PAGE_LIMIT_MAX } from "@selfhost/schema";
+import { exceptionsDir, hasRequests, issueGrants } from "../hooks/exceptions.js";
 import { type Fetch, TeamClient } from "./client.js";
 import {
   type Membership,
@@ -25,6 +27,8 @@ export interface SyncReport {
   duplicates: number;
   /** sha256 of the team's selfhost.toml pulled by this sync, null when the team has none. */
   policy_hash?: string | null;
+  /** One-time exceptions people approved on the server, pulled as grants for this machine. */
+  grants?: number;
   /** Why the sync stopped. The events stay in the local ledger and go up on the next sync. */
   error?: string;
 }
@@ -83,6 +87,8 @@ export async function syncLedger(
     await pushLedger(ledger, remote, history ? undefined : since);
     markSynced(configPath, state, history);
     report.policy_hash = await pullPolicy(client, configPath, state);
+    const grants = await pullGrants(client, configPath);
+    if (grants !== undefined) report.grants = grants;
   } catch (error) {
     report.error = error instanceof Error ? error.message : String(error);
   }
@@ -110,6 +116,23 @@ async function pullPolicy(
   state.policy_hash = policy?.hash ?? null;
   writeSyncState(configPath, state);
   return state.policy_hash;
+}
+
+/**
+ * Asks the server about the exceptions this machine's hooks requested (the review item ids they
+ * named) and writes a grant for each one a person approved. Only this machine's own requests are
+ * asked about, so the sync pulls this person's grants and nobody else's. Undefined when there was
+ * nothing to ask; a failed read leaves the rest for the next sync.
+ */
+export async function pullGrants(
+  client: TeamClient,
+  configPath: string,
+  now = new Date(),
+): Promise<number | undefined> {
+  const dir = exceptionsDir(dirname(configPath));
+  if (!hasRequests(dir)) return undefined;
+  const report = await issueGrants(dir, (id) => client.reviewItem(id), now);
+  return report.issued.length;
 }
 
 /**

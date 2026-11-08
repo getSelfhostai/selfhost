@@ -15,6 +15,19 @@ import {
 } from "@selfhost/schema";
 import { findConfig } from "../find-config.js";
 import { extraCheckers } from "./checkers.js";
+import {
+  callFingerprint,
+  claimGrant,
+  type ExceptionGrant,
+  type ExceptionRequest,
+  exceptionKey,
+  exceptionsDir,
+  findGrant,
+  REQUEST_SCHEMA,
+  requestId,
+  writeRequest,
+} from "./exceptions.js";
+import { explain, grantUsedText, ruleLink } from "./explain.js";
 import type { CheckPreTool, GuardHit, GuardRecord } from "./receive.js";
 import {
   AGENT_LABELS,
@@ -40,6 +53,12 @@ import {
  * - An extra checker that throws or runs past its budget: no hits from it (fail open), recorded.
  * - Anything else that throws: receive.ts answers allow (fail open), reports on stderr and
  *   records fail_open.
+ *
+ * A block teaches: the agent and the person get the rule id, why, the alternative and a link to
+ * the rule (explain.ts), and a review item id that allows this exact call once when a person
+ * approves it (exceptions.ts). The hook writes the request and later finds the grant in
+ * ~/.selfhost/exceptions; the item itself is made from the spool line on import. A failure in
+ * the exception files only drops the exception part: the block still holds.
  */
 
 export interface PreToolOptions {
@@ -84,6 +103,8 @@ function defaultConfig(): ResolvedSelfhostConfig {
 interface LoadedPolicy {
   config: ResolvedSelfhostConfig;
   source?: { path: string; hash: string };
+  /** The file's text, to find a rule's line in it. */
+  text?: string;
   failure?: string;
 }
 
@@ -103,8 +124,9 @@ export function loadPolicy(
     return { config: defaultConfig(), failure: `${location.path} could not be read: ${message}` };
   }
   const source = { path: location.path, hash: createHash("sha256").update(bytes).digest("hex") };
-  const result = parseConfig(bytes.toString("utf8"));
-  if (result.ok) return { config: result.config, source };
+  const text = bytes.toString("utf8");
+  const result = parseConfig(text);
+  if (result.ok) return { config: result.config, source, text };
   const first = result.errors[0];
   return {
     config: defaultConfig(),
@@ -149,16 +171,52 @@ const record = (hit: PolicyHit): GuardHit => ({
   mode: hit.mode,
   verdict: hit.verdict,
   message: hit.message,
+  ...(hit.alternative ? { alternative: hit.alternative } : {}),
   irreversible: hit.irreversible,
 });
 
-/** What the agent shows: the rule's message and id, and why an ask became a deny. */
-function reasonFor(hit: PolicyHit, call: PreToolCall, answer: Answer): string {
-  const base = `selfhost: ${hit.message} [${hit.rule_id}]`;
-  if (hit.verdict === "ask" && answer === "deny") {
-    return `${base} This needs a person's approval, and ${AGENT_LABELS[call.vendor]} cannot ask from this hook, so it is blocked. Ask the user to run it.`;
+const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+/** What the exception files say about a blocked call. */
+type ExceptionOutcome =
+  | { grant: ExceptionGrant }
+  | { request: ExceptionRequest }
+  | { failure: string }
+  | Record<string, never>;
+
+/**
+ * For a call about to be denied: an approved grant for it, claimed (only looked at for a call
+ * Cursor's own hook decides next, which claims it), else a new request for a person to approve.
+ */
+function exceptionFor(
+  dir: string | undefined,
+  call: PreToolCall,
+  toolCall: ToolCall,
+  rules: string[],
+  expiryMinutes: number,
+  now: Date,
+): ExceptionOutcome {
+  if (dir === undefined) return {};
+  try {
+    const key = exceptionKey(dir, true);
+    if (!key) return {};
+    const fingerprint = callFingerprint(key, { ...toolCall, agent: call.vendor });
+    const grant = findGrant(dir, key, fingerprint, rules, now);
+    if (grant && (call.deferred || claimGrant(dir, grant))) return { grant };
+    const request: ExceptionRequest = {
+      schema: REQUEST_SCHEMA,
+      id: requestId(now),
+      fingerprint,
+      rules,
+      agent: call.vendor,
+      requested_at: now.toISOString(),
+      expiry_minutes: expiryMinutes,
+    };
+    writeRequest(dir, request);
+    return { request };
+  } catch (error) {
+    return { failure: `no one-time exception for this call: ${errorText(error)}` };
   }
-  return base;
 }
 
 /**
@@ -168,7 +226,7 @@ function reasonFor(hit: PolicyHit, call: PreToolCall, answer: Answer): string {
 export async function checkPreToolCall(
   agent: HookAgent,
   payload: Record<string, unknown>,
-  io: { env: NodeJS.ProcessEnv; writeError: (line: string) => void },
+  io: { env: NodeJS.ProcessEnv; writeError: (line: string) => void; now?: Date },
   options: PreToolOptions = {},
 ): Promise<{ output: string; guard?: GuardRecord }> {
   const started = performance.now();
@@ -198,7 +256,8 @@ export async function checkPreToolCall(
     failures.push(policy.failure);
     io.writeError(`selfhost hook: ${policy.failure}`);
   }
-  const decision = await checkToolCall(policy.config, toToolCall(call, root), {
+  const toolCall = toToolCall(call, root);
+  const decision = await checkToolCall(policy.config, toolCall, {
     env: io.env,
     realpath,
     checkers: options.checkers ?? extraCheckers({ env: io.env, ...(home ? { home } : {}) }),
@@ -220,18 +279,82 @@ export async function checkPreToolCall(
   if (call.deferred && decision.verdict !== "block") {
     return { output: answerText(agent, call.event, "allow") };
   }
-  const reason = decision.hit ? reasonFor(decision.hit, call, answer) : undefined;
-  const guard: GuardRecord = {
-    answer,
-    ...(decision.hit ? { hit: record(decision.hit) } : {}),
+  const now = io.now ?? new Date();
+  const rules = [
+    ...new Set(decision.hits.filter((hit) => hit.mode === "enforce").map((hit) => hit.rule_id)),
+  ];
+  const exception =
+    answer === "deny" && decision.hit
+      ? exceptionFor(
+          home ? exceptionsDir(join(home, ".selfhost")) : undefined,
+          call,
+          toolCall,
+          rules,
+          policy.config.review.exception_expiry_minutes,
+          now,
+        )
+      : {};
+  if ("failure" in exception) {
+    failures.push(exception.failure);
+    io.writeError(`selfhost hook: ${exception.failure}`);
+  }
+  const hit = decision.hit;
+  const guard = (fields: Pick<GuardRecord, "answer" | "exception">): GuardRecord => ({
+    ...fields,
+    ...(hit ? { hit: record(hit) } : {}),
     hits: decision.hits.map(({ rule_id, mode, verdict }) => ({ rule_id, mode, verdict })),
     ...(policy.source ? { policy: policy.source } : {}),
     ...(failures.length > 0 ? { failures } : {}),
     ms: Math.round(performance.now() - started),
-  };
+  });
+
+  if ("grant" in exception && hit) {
+    const { grant } = exception;
+    // Cursor's own hook for the call claims the grant and records the use.
+    if (call.deferred) return { output: answerText(agent, call.event, "allow") };
+    const user = grantUsedText(grant, hit.rule_id);
+    return {
+      output: answerText(agent, call.event, "allow", { agent: user, user }),
+      guard: guard({
+        answer: "allow",
+        exception: {
+          id: grant.id,
+          rules: grant.rules,
+          used: true,
+          approved_by: grant.approved_by,
+          decision_event_id: grant.decision_event_id,
+        },
+      }),
+    };
+  }
+
+  const request = "request" in exception ? exception.request : undefined;
+  const text =
+    hit && answer !== "allow"
+      ? explain({
+          agent: AGENT_LABELS[call.vendor],
+          hit,
+          answer,
+          link: ruleLink(
+            hit.rule_id,
+            policy.config,
+            policy.source && policy.text !== undefined
+              ? { path: policy.source.path, text: policy.text }
+              : undefined,
+          ),
+          ...(request ? { exceptionId: request.id } : {}),
+        })
+      : undefined;
   return {
-    output: answerText(agent, call.event, answer, answer === "allow" ? undefined : reason),
-    guard,
+    output: answerText(agent, call.event, answer, text),
+    guard: guard({
+      answer,
+      ...(request
+        ? {
+            exception: { id: request.id, fingerprint: request.fingerprint, rules: request.rules },
+          }
+        : {}),
+    }),
   };
 }
 

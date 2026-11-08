@@ -7,6 +7,7 @@ import {
   checkCommand,
   type Fetch,
   type GuardDeps,
+  PACKAGE_ALTERNATIVES,
   type PackageReport,
   packageChecker,
   packageGuard,
@@ -76,6 +77,7 @@ describe("npm", () => {
         verdict: "block",
         message:
           "npm has no package named react-hooks-form-validator-pro. Check the name: attackers register the names agents invent.",
+        alternative: PACKAGE_ALTERNATIVES["packages.not_found"],
         irreversible: false,
       },
       {
@@ -84,6 +86,7 @@ describe("npm", () => {
         verdict: "ask",
         message:
           "shell-quote 1.12.0 (npm) was published 36 days ago; [packages] min_age_days is 60.",
+        alternative: PACKAGE_ALTERNATIVES["packages.too_new"],
         irreversible: false,
       },
       {
@@ -91,6 +94,7 @@ describe("npm", () => {
         mode: "enforce",
         verdict: "ask",
         message: "bcrypt 6.0.0 (npm) runs code at install (install).",
+        alternative: PACKAGE_ALTERNATIVES["packages.install_scripts"],
         irreversible: false,
       },
     ]);
@@ -307,6 +311,7 @@ describe("[packages] rules", () => {
         verdict: "block",
         message:
           "npm uses https://npm.evil.example.com/, which [packages] blocked_registries blocks (*.evil.example.com). pip uses https://pypi.org/simple/, which [packages] blocked_registries blocks (https://pypi.org/**). cargo uses crates.io, which [packages] blocked_registries blocks (crates.io). git+https://git.evil.example.com/x.git comes from git.evil.example.com, which [packages] blocked_registries blocks (*.evil.example.com).",
+        alternative: PACKAGE_ALTERNATIVES["packages.blocked_registry"],
         irreversible: false,
       },
     ]);

@@ -19,6 +19,7 @@ export const REVIEW_ITEM_KINDS = [
   "approval",
   "question",
   "blocked_action",
+  "exception",
   "stuck_run",
   "budget",
   "spend_spike",
@@ -108,7 +109,7 @@ export const ReviewItemSchema = Type.Object(
     schema: Type.Literal(REVIEW_ITEM_SCHEMA, { description: "Schema version tag." }),
     kind: StringEnum(REVIEW_ITEM_KINDS, {
       description:
-        "pr (agent pull request), approval (an agent waits for permission), question (an agent asks a person), blocked_action (a rule blocked something), stuck_run, budget, spend_spike, quality, or policy_report (what an observed rule would have blocked).",
+        "pr (agent pull request), approval (an agent waits for permission), question (an agent asks a person), blocked_action (a rule blocked something), exception (a rule blocked a tool call and approving allows that exact call once), stuck_run, budget, spend_spike, quality, or policy_report (what an observed rule would have blocked).",
     }),
     title: NonEmpty({ description: "One line shown in the list." }),
     created_at: DateTime(),

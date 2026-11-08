@@ -118,6 +118,16 @@ export class TeamClient {
     return this.call("GET", `/v1/review-items${search ? `?${search}` : ""}`);
   }
 
+  /** One review item, or undefined when the server has none with this id (or not for this team). */
+  async reviewItem(id: string): Promise<ReviewItem | undefined> {
+    try {
+      return await this.call<ReviewItem>("GET", `/v1/review-items/${encodeURIComponent(id)}`);
+    } catch (error) {
+      if (error instanceof TeamApiError && error.status === 404) return undefined;
+      throw error;
+    }
+  }
+
   /** Answers a review item; 409 when it is no longer open. */
   decideReviewItem(id: string, request: DecisionRequest): Promise<DecisionResponse> {
     return this.call("POST", `/v1/review-items/${encodeURIComponent(id)}/decision`, request);

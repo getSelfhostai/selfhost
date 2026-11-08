@@ -302,8 +302,9 @@ ledger (`--database` / `--data-dir` as for `spend`).
 brings the review list in the local ledger up to date (`--database` / `--data-dir` as for
 `spend`) and prints it: what needs a person, blocking first, then by risk, then oldest first.
 Routing and the approval timeout come from the `selfhost.toml` the other commands find. `--limit`
-and `--cursor` page through. Answer an item with `selfhost decide <item-id> approve|deny|answer`;
-the next `review list` shows it answered. See [`packages/review`](../../packages/review/README.md).
+and `--cursor` page through. Answer an item with `selfhost review approve|deny <id> [--reason
+<text>]` (the same as `selfhost inbox approve|deny`) or `selfhost decide <item-id>
+approve|deny|answer`; the next `review list` shows it answered. See [`packages/review`](../../packages/review/README.md).
 
 ## Inbox
 
@@ -455,10 +456,10 @@ installed and is left in place by `guard uninstall`.
 On a pre-tool event the hook finds `selfhost.toml` from the call's folder (the nearest one up to
 the repository root, else the team policy pulled by the last sync, else the built-in defaults),
 checks the call against its rules, `[mcp]` and `[models]`, the built-in guardrails and any extra
-checkers, and answers in the agent's own format: deny with the rule's message and id, ask, or
-nothing at all for allow on Claude Code and Codex, so selfhost never approves a call the agent
-would otherwise ask about (Cursor gets `{"permission":"allow"}`, since a silent permission hook
-blocks there). Rules and guardrails in observe mode are recorded and never applied. Cursor sends
+checkers, and answers in the agent's own format: deny or ask with the reason (see [Errors that
+teach](#errors-that-teach)), or nothing at all for allow on Claude Code and Codex, so selfhost
+never approves a call the agent would otherwise ask about (Cursor gets `{"permission":"allow"}`,
+since a silent permission hook blocks there). Rules and guardrails in observe mode are recorded and never applied. Cursor sends
 shell, read and MCP calls to `preToolUse` and then to their own event: `preToolUse` blocks them
 but leaves allow and ask, and the record, to the dedicated event.
 
@@ -486,8 +487,71 @@ validate are skipped and the built-in guardrails run with their defaults, so the
 holds; an extra checker that throws or runs past its 2 second budget is skipped; any other error
 answers allow. Each case is printed on stderr and recorded on the decision (`data.failures`,
 `data.fail_open`). The check adds about 20 ms to a pre-tool hook (about 40 ms in all, measured
-cold with the bundled `node dist/main.js`); other events are not slowed, as only pre-tool events
-load it.
+cold with the bundled `node dist/main.js`; a block, which also writes its exception request, is
+about 1 ms more); other events are not slowed, as only pre-tool events load it.
+
+### Errors that teach
+
+Every block and ask says which rule fired, why, and what to do instead, with a link to the rule:
+its line in `selfhost.toml` (`/path/to/selfhost.toml:12`) for a repository rule, `[mcp]` or
+`[models]`, else the docs of the built-in check (the guardrails table in
+[`packages/policy`](../../packages/policy/README.md#guardrails), the rules table in
+[`packages/package-guard`](../../packages/package-guard/README.md#rules-and-verdicts)). The why
+is the rule's `message`, the alternative its `alternative` (every guardrail and package check
+has one), and a rule's `docs` URL is linked too. A block also names a review item that allows
+the call once (below). The agent's text adds: do not retry this call or a variant of it, take
+the alternative, or ask the user to approve the exception and then make the identical call
+again.
+
+| Agent       | What the model reads                   | What the person sees                                      |
+| ----------- | -------------------------------------- | --------------------------------------------------------- |
+| Claude Code | `permissionDecisionReason` of a deny   | `systemMessage`; an ask's reason in the permission prompt |
+| Codex       | `permissionDecisionReason` of a deny   | `systemMessage`, shown as a warning                       |
+| Cursor      | `agent_message`                        | `user_message` (the only text `beforeReadFile` takes)     |
+| OpenCode    | the error the plugin throws (`reason`) | the same error on the tool call                           |
+
+```text
+selfhost blocked this call under rule guard.force_push: Force pushes rewrite shared history and can drop commits other people pushed.
+Instead: Push your commits to a new branch and open a pull request. If this branch really has to be rewritten, ask the user first; git push --force-with-lease is the safer form.
+Do not retry this call, or a variant of it, to get around the rule: it will be blocked again. Take the alternative above, or, if this exact call is needed, ask the user to approve a one-time exception by running: selfhost inbox approve 019a5b01-.... Once they approve, make the identical call again and it is allowed once.
+Rule: https://github.com/getselfhostai/selfhost/blob/main/packages/policy/README.md#guardrails
+```
+
+### One-time exceptions
+
+A person can allow one blocked call, once. Nothing here opens the ledger in the hook:
+
+1. The hook blocks a call and writes a request to `~/.selfhost/exceptions/requests/<id>.json`:
+   the review item id it names to the agent and the person, the call's fingerprint and the rule
+   ids, never the command. The id also goes on the spool line.
+2. `selfhost import` (or `--watch`) maps the line to the `policy.evaluated` block event with
+   `data.exception` and `links.item_id`; the review list (local, or the team server after sync)
+   opens an `exception` item under that id, routed like any other item, titled `Allow once:
+   <call>` with secrets masked. It is blocking and times out after `[review]
+   approval_timeout_minutes`. A retry of the same call replaces it with the new id. In solo mode
+   `selfhost inbox` and `selfhost review list` read blocked calls from the spool first, so the
+   item is there right after the block.
+3. A person approves or denies it: `selfhost inbox approve <id>`, `selfhost review approve <id>`,
+   `selfhost decide <id> approve`, or the server's API. The answer is a `decision.recorded` event.
+4. The machine that asked turns the approval into a grant, `~/.selfhost/exceptions/grants/<id>.json`:
+   right away when the person approves there, else on its next `selfhost inbox`, `selfhost
+   import` (team mode: the sync reads each of its waiting requests with `GET
+   /v1/review-items/{id}`) or `import --watch` refresh. Only this machine's own requests turn into
+   grants. A grant is signed and expires `[review] exception_expiry_minutes` (default 30) after
+   the approval.
+5. The next identical call (same agent, tool, command with white space evened out, file and
+   access, URL, MCP server and repository root), stopped only by rules the exception covers,
+   uses the grant: the hook moves it to `used/`, which only one hook can do, so two calls at once
+   cannot both get through. It answers allow (Claude Code and Codex also show the person a
+   `systemMessage`) and records the use: a `policy.evaluated` allow under the rule, with
+   `data.exception.used` and the decision's id. The call after that is blocked again.
+
+So the ledger holds the request, the approval and the use. The fingerprint is an HMAC-SHA256
+with a per-machine key (`~/.selfhost/exceptions/key`, mode 0600), which also signs grants, so
+neither says anything about the command and a grant cannot be written by hand; reading the key
+is blocked by `guard.secret_read`. An agent that can run any code as you can still read it, as
+with the guardrails' other known bypasses. A failure in these files never loosens a block: the
+call stays blocked, without the exception part.
 
 ## Solo and team modes
 

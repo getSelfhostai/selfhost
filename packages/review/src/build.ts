@@ -83,7 +83,7 @@ export function newItem(draft: Draft, event: LedgerEvent, ctx: BuildContext): Re
   const createdAt = iso(event.ts);
   const group = groupOf(event);
   const item: ReviewItem = {
-    id: itemId(ctx.team, draft.dedupeKey, event),
+    id: draft.id ?? itemId(ctx.team, draft.dedupeKey, event),
     schema: REVIEW_ITEM_SCHEMA,
     kind: draft.kind,
     title: draft.title,

@@ -50,13 +50,14 @@
       "type": "string"
     },
     "kind": {
-      "description": "pr (agent pull request), approval (an agent waits for permission), question (an agent asks a person), blocked_action (a rule blocked something), stuck_run, budget, spend_spike, quality, or policy_report (what an observed rule would have blocked).",
+      "description": "pr (agent pull request), approval (an agent waits for permission), question (an agent asks a person), blocked_action (a rule blocked something), exception (a rule blocked a tool call and approving allows that exact call once), stuck_run, budget, spend_spike, quality, or policy_report (what an observed rule would have blocked).",
       "type": "string",
       "enum": [
         "pr",
         "approval",
         "question",
         "blocked_action",
+        "exception",
         "stuck_run",
         "budget",
         "spend_spike",

@@ -12,7 +12,13 @@ export {
   type PackagesPolicy,
   REGISTRY_NAMES,
 } from "./check.js";
-export { type PackageChecker, packageChecker, packageGuard, packageHits } from "./guard.js";
+export {
+  PACKAGE_ALTERNATIVES,
+  type PackageChecker,
+  packageChecker,
+  packageGuard,
+  packageHits,
+} from "./guard.js";
 export { moduleCandidates } from "./inspect.js";
 export {
   ECOSYSTEMS,

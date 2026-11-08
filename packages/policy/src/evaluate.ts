@@ -18,7 +18,12 @@ export interface PolicyHit {
   /** observe records the verdict only; enforce applies it where hooks run. */
   mode: Exclude<RuleMode, "off">;
   verdict: RuleAction;
+  /** Why the call is stopped, in plain language. */
   message: string;
+  /** What the agent can do instead, when the rule or guardrail says. */
+  alternative?: string;
+  /** Page that explains the rule, from its `docs`. */
+  docs?: string;
   irreversible: boolean;
 }
 
@@ -77,6 +82,7 @@ interface AllowList {
   /** The value of the call the list is about, when the call has one. */
   value: (call: ToolCall) => string | undefined;
   message: (value?: string) => string;
+  alternative: string;
 }
 
 function allowLists(config: ResolvedSelfhostConfig): AllowList[] {
@@ -89,6 +95,8 @@ function allowLists(config: ResolvedSelfhostConfig): AllowList[] {
         server === undefined
           ? "MCP server is not in [mcp] allow."
           : `MCP server "${server}" is not in [mcp] allow.`,
+      alternative:
+        "Use a tool from an MCP server in [mcp] allow, or ask the user to add this server to the list.",
     },
     {
       id: MODELS_ALLOW_RULE_ID,
@@ -98,6 +106,7 @@ function allowLists(config: ResolvedSelfhostConfig): AllowList[] {
         model === undefined
           ? "Model is not in [models] allow."
           : `Model "${model}" is not in [models] allow.`,
+      alternative: "Switch to a model in [models] allow, or ask the user to add this one.",
     },
   ];
   // An empty list allows everything, so it is not a check.
@@ -111,6 +120,7 @@ function allowListCheck(list: AllowList, value?: string): PolicyCheck {
     agents: ["all"],
     action: "block",
     message: list.message(value),
+    alternative: list.alternative,
     irreversible: false,
   };
 }
@@ -158,6 +168,8 @@ function hit(check: PolicyCheck): PolicyHit {
     mode: check.mode === "enforce" ? "enforce" : "observe",
     verdict: check.action,
     message: check.message,
+    ...(check.alternative ? { alternative: check.alternative } : {}),
+    ...(check.docs ? { docs: check.docs } : {}),
     irreversible: check.irreversible,
   };
 }
