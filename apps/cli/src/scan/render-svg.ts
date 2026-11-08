@@ -1,4 +1,4 @@
-import { percent, plural, tokens, usd } from "../format.js";
+import { percent, plural, roiSummary, tokens, usd } from "../format.js";
 import { AGENT_COLORS, escapeXml as e } from "./render-html.js";
 import { listText } from "./render-text.js";
 import type { ScanReport } from "./report.js";
@@ -42,6 +42,12 @@ function provenancePart(report: ScanReport): string {
   const rate = p.totals.agent_revert_rework_rate;
   const text = `Agents wrote ${percent(p.totals.agent_share)} of merged lines${rate === null ? "" : `; ${percent(rate)} of them reverted or reworked within ${p.window_days} days`}`;
   return `<text x="${LEFT}" y="442" class="small">${e(text)}</text>`;
+}
+
+/** One line under the headline: cost per merged agent PR, with a git join. */
+function roiPart(report: ScanReport): string {
+  if (!report.roi || report.git.status !== "joined") return "";
+  return `<text x="${LEFT}" y="300" class="small">${e(`Cost per merged agent PR: ${roiSummary(report.roi)}`)}</text>`;
 }
 
 function contextPart(report: ScanReport): string {
@@ -94,6 +100,7 @@ text { font-family: ${FONT}; fill: #ededea; }
 <text x="${WIDTH - LEFT}" y="84" class="muted" text-anchor="end">${e(report.from)} to ${e(report.to)}</text>
 <text x="${LEFT}" y="210" font-size="104" font-weight="700">${e(usd(totals.usd))}</text>
 <text x="${LEFT}" y="262" class="muted">on coding agents, ${plural(totals.sessions, "session")} from ${e(agents)}</text>
+${roiPart(report)}
 ${stats.join("\n")}
 ${provenancePart(report)}
 ${gitPart(report)}

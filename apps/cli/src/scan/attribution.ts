@@ -54,6 +54,8 @@ export interface AttributionResult {
     sha: string;
     agent?: AgentRef;
     signal?: string;
+    /** The session the commit came from, when the join named one. */
+    sessionId?: string;
     additions: number;
     deletions: number;
   }[];
@@ -64,7 +66,14 @@ export interface AttributionResult {
     unreviewedMerge: boolean;
     additions: number;
     deletions: number;
+    state?: "open" | "merged" | "closed";
+    mergedAt?: string;
+    closedAt?: string;
+    /** SHAs of the pull request's commits. */
+    commits?: string[];
   }[];
+  /** Ids of the sessions given that ran in the repository. */
+  sessions?: string[];
   stats: { byAgent: AgentStats[] };
   /** Ids of the sessions given that produced no commit. */
   sessionsWithoutCommits: string[];

@@ -30,6 +30,7 @@ import { registerPolicyEditing } from "./policy/editing.js";
 import { registerProvenance } from "./provenance.js";
 import { registerReview } from "./review.js";
 import { localReviewList, registerReviewList } from "./review-list.js";
+import { registerRoi } from "./roi.js";
 import type { CollectAttribution } from "./scan/attribution.js";
 import { gitAttribution } from "./scan/git-attribution.js";
 import { runScan, type ScanCommandOptions } from "./scan/index.js";
@@ -414,6 +415,19 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
   registerProvenance(
     program,
     () => ({ env: deps.env, cwd: deps.cwd, write: deps.write, now: deps.now }),
+    fail,
+  );
+
+  registerRoi(
+    program,
+    () => ({
+      env: deps.env,
+      cwd: deps.cwd,
+      write: deps.write,
+      now: deps.now,
+      configPath: deps.configPath ?? defaultConfigPath(),
+      fetch: deps.fetch,
+    }),
     fail,
   );
 

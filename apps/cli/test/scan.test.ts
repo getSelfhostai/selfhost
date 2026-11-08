@@ -209,6 +209,54 @@ describe("selfhost scan", () => {
     expect(lines.findIndex((line) => line.startsWith("Cost by agent"))).toBeGreaterThan(5);
   });
 
+  it("adds the cost per merged agent PR to the text, JSON, HTML and SVG", async () => {
+    const logs = leakyLogs();
+    const { dir, deps } = workspace("scan-roi", true);
+    const [joined, other] = [uuid(1), uuid(2)];
+    // joined made the commit on the merged PR; other ran in the repo with no PR: shared.
+    const collectAttribution = async () => {
+      const base = attributionFor([other]);
+      return {
+        ...base,
+        commits: [{ sha: "e5f6a7b", sessionId: joined, additions: 5, deletions: 0 }],
+        pulls: [
+          {
+            ...(base.pulls[0] as (typeof base.pulls)[number]),
+            state: "merged" as const,
+            mergedAt: "2026-10-25T10:00:00Z",
+            commits: ["e5f6a7b"],
+          },
+        ],
+        sessions: [joined, other],
+      };
+    };
+    const all = { env: envFor(logs), ...deps, collectAttribution };
+    const json = await run(
+      ["scan", "--json", "--since", "2026-10-01", "--report", "r.html", "--share", "c.svg"],
+      all,
+    );
+    const report = JSON.parse(json.out) as ScanReport;
+    const events = await readLocalEvents({ since: new Date("2026-10-01"), ...logs });
+    const spend = (id: string) => summarizeSessions(events).find((s) => s.sessionId === id)?.usd;
+    const [a = -1, b = -1] = [spend(joined), spend(other)];
+    expect(report.roi).toMatchObject({ merged_prs: 1, human_prs: 0, closed_prs: 0 });
+    expect(report.roi?.attributed_usd).toBeCloseTo(a, 6);
+    expect(report.roi?.unattributed_usd).toBeCloseTo(b, 6);
+    expect(report.roi?.shared_usd).toBeCloseTo(b, 6);
+    expect(report.roi?.cost_per_merged_pr).toBeCloseTo(a + b, 6);
+    expect(report.roi?.by_agent.map((row) => [row.agent, row.merged_prs])).toEqual([
+      ["claude_code", 1],
+    ]);
+
+    const value = usd(report.roi?.cost_per_merged_pr ?? -1);
+    const text = await run(["scan", "--since", "2026-10-01"], all);
+    expect(text.out).toContain(`Cost per merged agent PR          ${value} per merged agent PR`);
+    expect(readFileSync(dir.path("r.html"), "utf8")).toContain(value);
+    expect(readFileSync(dir.path("c.svg"), "utf8")).toContain(
+      `Cost per merged agent PR: ${value} per merged agent PR`,
+    );
+  });
+
   it("rejects a --repo that is not a folder", async () => {
     const { deps } = workspace("scan-repo");
     const result = await run(["scan", "--json", "--repo", "missing"], {

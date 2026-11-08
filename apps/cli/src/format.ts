@@ -35,3 +35,13 @@ export function table(rows: string[][], write: (line: string) => void, rightAlig
     );
   }
 }
+
+/** "$13.25 per merged agent PR ($26.50 over 2)", or why there is no value. */
+export function roiSummary(numbers: {
+  merged_prs: number;
+  cost_usd: number;
+  cost_per_merged_pr: number | null;
+}): string {
+  if (numbers.cost_per_merged_pr === null) return "no value: no agent PR merged";
+  return `${usd(numbers.cost_per_merged_pr)} per merged agent PR (${usd(numbers.cost_usd)} over ${numbers.merged_prs})`;
+}

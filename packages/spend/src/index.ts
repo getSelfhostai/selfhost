@@ -54,6 +54,25 @@ export {
   USAGE_LIMIT_ALERT,
   WEEK_MS,
 } from "./plans.js";
+export {
+  costPerMergedPr,
+  prUrlOf,
+  type RoiCost,
+  type RoiInput,
+  type RoiLink,
+  type RoiPullEvent,
+  type RoiReport,
+  roiInputFromEvents,
+} from "./roi.js";
+export {
+  type BaselineOptions,
+  firstActivity,
+  type RoiDatabase,
+  type RoiScope,
+  readRoiInput,
+  roiBaseline,
+  roiReport,
+} from "./roi-query.js";
 export { COST_SOURCE_PREFERENCE, oneSourcePerSession } from "./sources.js";
 export {
   DEFAULT_BASELINE_DAYS,

@@ -35,6 +35,7 @@
     "@selfhost/importers": "workspace:*",
     "@selfhost/ledger": "workspace:*",
     "@types/node": "catalog:",
+    "postgres": "catalog:",
     "tsup": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

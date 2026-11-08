@@ -442,6 +442,30 @@ export const BudgetSchema = Type.Object(
   },
 );
 
+/** A day, YYYY-MM-DD (midnight UTC), or a date-time with a zone. */
+const DAY_OR_TIME_PATTERN =
+  "^\\d{4}-\\d{2}-\\d{2}(?:T\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d+)?)?(?:Z|[+-]\\d{2}:\\d{2}))?$";
+
+const BaselineTime = (description: string) =>
+  Type.Optional(
+    Type.String({
+      pattern: DAY_OR_TIME_PATTERN,
+      description: `${description} A day (YYYY-MM-DD, midnight UTC) or a date-time with a zone, in quotes.`,
+    }),
+  );
+
+export const RoiConfigSchema = Type.Object(
+  {
+    baseline_from: BaselineTime("Start of the baseline period, included."),
+    baseline_to: BaselineTime("End of the baseline period, excluded."),
+  },
+  {
+    additionalProperties: false,
+    description:
+      "Cost per merged pull request. The baseline it is compared with is the team's first 7 days of data unless both baseline_from and baseline_to are set. Either way it is computed once, after the period ends, and frozen.",
+  },
+);
+
 export const ROUTER_TOOLS = ["bifrost", "litellm"] as const;
 export const TRACER_TOOLS = ["langfuse", "phoenix", "datadog", "otlp"] as const;
 export const RUNTIME_TOOLS = ["e2b", "daytona", "modal", "coder"] as const;
@@ -912,6 +936,7 @@ export const SelfhostConfigSchema = Type.Object(
     runtime: Type.Optional(RuntimeSchema),
     receipt: Type.Optional(ReceiptConfigSchema),
     integrations: Type.Optional(IntegrationsSchema),
+    roi: Type.Optional(RoiConfigSchema),
   },
   {
     $id: CONFIG_SCHEMA_URL,
@@ -932,6 +957,7 @@ export type Runtime = Static<typeof RuntimeSchema>;
 export type RunCommand = Static<typeof RunCommandSchema>;
 export type ReceiptConfig = Static<typeof ReceiptConfigSchema>;
 export type Budget = Static<typeof BudgetSchema>;
+export type RoiConfig = Static<typeof RoiConfigSchema>;
 
 type Present<T> = Exclude<T, undefined>;
 
@@ -1055,7 +1081,36 @@ function semanticErrors(
     }
   }
   if (config.runtime) errors.push(...runtimeErrors(config.runtime));
+  if (config.roi) errors.push(...roiErrors(config.roi));
   return errors;
+}
+
+/** The baseline period as dates, when [roi] sets one. */
+export function roiBaselinePeriod(
+  roi: RoiConfig | undefined,
+): { from: Date; to: Date } | undefined {
+  if (roi?.baseline_from === undefined || roi.baseline_to === undefined) return undefined;
+  return { from: new Date(roi.baseline_from), to: new Date(roi.baseline_to) };
+}
+
+function roiErrors(roi: RoiConfig): SegmentError[] {
+  const from = roi.baseline_from;
+  const to = roi.baseline_to;
+  if ((from === undefined) !== (to === undefined)) {
+    const missing = from === undefined ? "baseline_from" : "baseline_to";
+    return [{ segments: ["roi", missing], message: "Set both baseline_from and baseline_to" }];
+  }
+  for (const field of ["baseline_from", "baseline_to"] as const) {
+    const value = roi[field];
+    if (value !== undefined && Number.isNaN(Date.parse(value))) {
+      return [{ segments: ["roi", field], message: `Not a valid date: ${value}` }];
+    }
+  }
+  const period = roiBaselinePeriod(roi);
+  if (period && period.from >= period.to) {
+    return [{ segments: ["roi", "baseline_to"], message: "Expected a time after baseline_from" }];
+  }
+  return [];
 }
 
 function runtimeErrors(runtime: Runtime): SegmentError[] {

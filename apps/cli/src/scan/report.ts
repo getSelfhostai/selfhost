@@ -2,8 +2,11 @@ import { basename } from "node:path";
 import { CCUSAGE_VERSION } from "@selfhost/importers";
 import type { LedgerEvent, ProvenanceReport } from "@selfhost/schema";
 import {
+  costPerMergedPr,
   groupSpend,
   oneSourcePerSession,
+  type RoiPullEvent,
+  type RoiReport,
   type SpendTotals,
   totalSpend,
   utcDay,
@@ -132,6 +135,11 @@ export interface ScanReport {
    * many were reverted or reworked; null without a git join. `selfhost provenance` prints it all.
    */
   provenance: ProvenanceReport | null;
+  /**
+   * Cost per merged agent pull request in the window, from this repo's sessions; null without a
+   * git join or pull requests. No baseline: the scan keeps nothing. `selfhost roi` has one.
+   */
+  roi: RoiReport | null;
   cost: { by_agent: CostRow[]; by_model: CostRow[] };
   leaks: LeakFinding[];
   waste: WasteFlag[];
@@ -203,6 +211,64 @@ function gitNumbers(input: ScanInput, sessions: SessionStats[], totalUsd: number
       sessions: idle.length,
     },
   };
+}
+
+/**
+ * Cost per merged agent PR from the repo's sessions, joined to pull requests by their commits;
+ * null without a git join or with no pull requests read (no GitHub remote or gh login).
+ */
+function roiOf(input: ScanInput, costs: LedgerEvent[]): RoiReport | null {
+  const attribution = input.attribution;
+  if (!attribution || attribution.pulls.length === 0) return null;
+  const repo = attribution.repo?.toLowerCase();
+  const inRepo = new Set(attribution.sessions ?? []);
+  const prOf = new Map<string, string>();
+  for (const pull of attribution.pulls)
+    for (const sha of pull.commits ?? []) prOf.set(sha, pull.url);
+  const links = new Map<string, { session: string; pr: string }>();
+  for (const commit of attribution.commits) {
+    const pr = prOf.get(commit.sha);
+    if (commit.sessionId && pr)
+      links.set(`${commit.sessionId}\n${pr}`, { session: commit.sessionId, pr });
+  }
+  const pulls = attribution.pulls.flatMap((pull): RoiPullEvent[] => {
+    const at =
+      pull.state === "merged" ? pull.mergedAt : pull.state === "closed" ? pull.closedAt : undefined;
+    if (!at) return [];
+    return [
+      {
+        url: pull.url,
+        kind: pull.state === "merged" ? "pr.merged" : "pr.closed",
+        ts: at,
+        ...(repo ? { repo } : {}),
+        ...(pull.agent ? { agent: pull.agent.vendor } : {}),
+        ...(pull.agent?.model ? { model: pull.agent.model } : {}),
+      },
+    ];
+  });
+  const from = input.from.getTime();
+  const to = input.to.getTime();
+  return costPerMergedPr({
+    team: null,
+    from: input.from,
+    to: input.to,
+    links: [...links.values()],
+    pulls,
+    costs: costs
+      .filter((event) => event.session_id && inRepo.has(event.session_id))
+      .map((event) => {
+        const at = Date.parse(event.ts);
+        return {
+          session: event.session_id as string,
+          ...(event.agent ? { agent: event.agent.vendor } : {}),
+          ...(event.model ? { model: event.model } : {}),
+          source: event.source,
+          ...(repo ? { repo } : {}),
+          usd: event.cost?.usd ?? 0,
+          in_window: at >= from && at < to,
+        };
+      }),
+  });
 }
 
 /** Why a session cost what it did, from its leaks first, then its shape. */
@@ -312,6 +378,7 @@ export function buildScanReport(input: ScanInput): ScanReport {
       .sort((a, b) => b.usd - a.usd || a.vendor.localeCompare(b.vendor)),
     git,
     provenance: input.attribution?.provenance ?? null,
+    roi: roiOf(input, costs),
     cost: {
       by_agent: costRows(costs, input, ["agent"]),
       by_model: costRows(costs, input, ["agent", "model"]),

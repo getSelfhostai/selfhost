@@ -987,6 +987,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 20.19.43
+      postgres:
+        specifier: 'catalog:'
+        version: 4.1.0
       tsup:
         specifier: 'catalog:'
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.32)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)

@@ -115,21 +115,27 @@ export function gitAttribution(opts: { github?: boolean } = {}): CollectAttribut
     return {
       repo,
       ...(provenance ? { provenance } : {}),
-      commits: commits.map(({ sha, agent, signal, additions, deletions }) => ({
+      commits: commits.map(({ sha, agent, signal, sessionId, additions, deletions }) => ({
         sha,
         agent,
         signal,
+        ...(sessionId ? { sessionId } : {}),
         additions,
         deletions,
       })),
-      pulls: pulls.map(({ number, url, agent, unreviewedMerge, additions, deletions }) => ({
-        number,
-        url,
-        agent,
-        unreviewedMerge,
-        additions,
-        deletions,
+      pulls: pulls.map((pull) => ({
+        number: pull.number,
+        url: pull.url,
+        agent: pull.agent,
+        unreviewedMerge: pull.unreviewedMerge,
+        additions: pull.additions,
+        deletions: pull.deletions,
+        state: pull.state,
+        ...(pull.mergedAt ? { mergedAt: pull.mergedAt } : {}),
+        ...(pull.closedAt ? { closedAt: pull.closedAt } : {}),
+        commits: pull.commits,
       })),
+      sessions: local.map((session) => session.sessionId),
       stats: attributionStats(commits, pulls),
       sessionsWithoutCommits: sessionsWithoutCommits(local, commits),
     };

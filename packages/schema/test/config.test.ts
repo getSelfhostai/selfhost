@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatConfigError, parseConfig, validateConfig } from "../src/index.js";
+import { formatConfigError, parseConfig, roiBaselinePeriod, validateConfig } from "../src/index.js";
 
 describe("parseConfig", () => {
   it("applies defaults to a minimal file", () => {
@@ -223,6 +223,24 @@ install_scripts = "block"
       blocked_registries: ["*.example.com"],
       install_scripts: "block",
     });
+  });
+
+  it("reads an [roi] baseline period, and refuses half of one or one that runs backwards", () => {
+    const roi = (lines: string) => parseConfig(`version = 1\n[roi]\n${lines}\n`);
+    const ok = roi('baseline_from = "2026-11-02"\nbaseline_to = "2026-11-09T00:00:00Z"');
+    expect(ok.ok && roiBaselinePeriod(ok.config.roi)).toEqual({
+      from: new Date("2026-11-02T00:00:00.000Z"),
+      to: new Date("2026-11-09T00:00:00.000Z"),
+    });
+    expect(roi('baseline_from = "2026-11-02"')).toMatchObject({
+      ok: false,
+      errors: [{ field: "roi.baseline_to", message: "Set both baseline_from and baseline_to" }],
+    });
+    expect(roi('baseline_from = "2026-11-09"\nbaseline_to = "2026-11-02"')).toMatchObject({
+      ok: false,
+      errors: [{ field: "roi.baseline_to", message: "Expected a time after baseline_from" }],
+    });
+    expect(roi('baseline_from = "last week"\nbaseline_to = "2026-11-02"').ok).toBe(false);
   });
 
   it("formats errors as file:line: field: message", () => {

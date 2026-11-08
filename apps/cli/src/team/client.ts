@@ -17,6 +17,8 @@ import type {
   ReviewItemQuery,
   ReviewItemsPage,
   RevokeTokensResponse,
+  RoiQuery,
+  RoiResponse,
   TeamPeopleResponse,
   TeamRepo,
   TeamReposResponse,
@@ -180,6 +182,15 @@ export class TeamClient {
   async snoozeReviewItem(id: string, until: string): Promise<ReviewItem> {
     const path = `/v1/review-items/${encodeURIComponent(id)}/snooze`;
     return (await this.call<{ item: ReviewItem }>("POST", path, { until })).item;
+  }
+
+  /** Cost per merged pull request of a team in a range, with its baseline. */
+  roi(team: string, query: RoiQuery): Promise<RoiResponse> {
+    const search = new URLSearchParams(query as Record<string, string>).toString();
+    return this.call(
+      "GET",
+      `/v1/teams/${encodeURIComponent(team)}/roi${search ? `?${search}` : ""}`,
+    );
   }
 
   private async call<T>(method: string, path: string, body?: unknown): Promise<T> {

@@ -1,4 +1,5 @@
 import { CONTEXT_READER_NAMES } from "@selfhost/agents";
+import type { RoiReport } from "@selfhost/spend";
 import { percent, plural, tokens, usd } from "../format.js";
 import { authorName, REWORK_RULE } from "../provenance-text.js";
 import {
@@ -106,6 +107,17 @@ function tile(label: string, big: string, sub: string, extra = ""): string {
   return `<div class="card"><p class="label">${e(label)}</p><p class="big">${e(big)}</p>${extra}<p class="sub">${e(sub)}</p></div>`;
 }
 
+function roiTile(roi: RoiReport): string {
+  const value = roi.cost_per_merged_pr;
+  return tile(
+    "Cost per merged agent PR",
+    value === null ? "No value" : usd(value),
+    value === null
+      ? "no agent PR merged in this window"
+      : `${usd(roi.cost_usd)} over ${plural(roi.merged_prs, "merged agent PR")}, ${plural(roi.human_prs, "human PR")}`,
+  );
+}
+
 function gitSection(report: ScanReport): string {
   const { git } = report;
   if (git.status !== "joined") {
@@ -141,6 +153,7 @@ function gitSection(report: ScanReport): string {
 ${tile("Commits by agent", lead ? `${percent(lead.share)} ${lead.agent}` : "No agent commits", `${commits} commits in this window`, bar + legend)}
 ${tile("Agent PRs merged with no review", `${merges?.count ?? 0} of ${merges?.merged ?? 0}`, "no approval, or approved with no comments on a large diff", prs ? `<p class="sub">${prs}</p>` : "")}
 ${tile("Spend on sessions with no commit", usd(idle?.usd ?? 0), `${percent(idle?.share ?? 0)} of spend, ${plural(idle?.sessions ?? 0, "session")}`)}
+${report.roi ? roiTile(report.roi) : ""}
 </div></section>`;
 }
 

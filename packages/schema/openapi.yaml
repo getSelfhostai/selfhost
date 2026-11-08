@@ -1076,6 +1076,59 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /v1/teams/{team}/roi:
+    get:
+      operationId: getTeamRoi
+      summary: What each merged pull request cost, by agent and model, next to the baseline.
+      description: The admin token, or a person token of anyone in the team. Computed on read from the ledger. The baseline is the team's first 7 UTC days of data, or [roi] baseline_from and baseline_to in its policy; it is computed the first time it is read after its period ended and then frozen, with the definition it used.
+      parameters:
+        - name: team
+          in: path
+          required: true
+          description: Team id.
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: false
+          description: "Merges at or after this time. Default: 7 days before to."
+          schema:
+            format: date-time
+            type: string
+        - name: to
+          in: query
+          required: false
+          description: "Merges before this time. Default: now."
+          schema:
+            format: date-time
+            type: string
+      responses:
+        "200":
+          description: The report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoiResponse"
+        "400":
+          description: Invalid query or time range.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such team.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /v1/teams/{team}/provenance:
     get:
       operationId: getTeamProvenance
@@ -4045,6 +4098,263 @@ components:
               minimum: 0
               description: Distinct pull requests with a pr.merged event in the range.
               type: integer
+    RoiAgentRow:
+      additionalProperties: false
+      title: RoiAgentRow
+      type: object
+      required:
+        - agent
+        - model
+        - merged_prs
+        - cost_usd
+        - cost_per_merged_pr
+      properties:
+        agent:
+          description: agent.vendor named on the pull request, else of the joined sessions with the most spend, else unknown.
+          type: string
+        model:
+          description: Model named on the pull request, else of the joined spend with the most cost, else unknown.
+          type: string
+        merged_prs:
+          minimum: 0
+          description: Merged agent PRs of this agent and model.
+          type: integer
+        cost_usd:
+          minimum: 0
+          description: Their attributed and shared spend.
+          type: number
+        cost_per_merged_pr:
+          description: cost_usd / merged_prs, rounded to 6 decimals; null when merged_prs is 0.
+          anyOf:
+            - minimum: 0
+              type: number
+            - type: "null"
+    RoiBaseline:
+      additionalProperties: false
+      title: RoiBaseline
+      description: Computed once, the first time it is read after its period ended, then frozen.
+      type: object
+      required:
+        - from
+        - to
+        - merged_prs
+        - cost_usd
+        - cost_per_merged_pr
+        - human_prs
+        - period
+        - definition
+        - computed_at
+      properties:
+        from:
+          format: date-time
+          type: string
+        to:
+          format: date-time
+          type: string
+        merged_prs:
+          minimum: 0
+          description: Merged agent PRs in the baseline period.
+          type: integer
+        cost_usd:
+          minimum: 0
+          description: Their cost, by the same definition.
+          type: number
+        cost_per_merged_pr:
+          description: cost_usd / merged_prs, rounded to 6 decimals; null when merged_prs is 0.
+          anyOf:
+            - minimum: 0
+              type: number
+            - type: "null"
+        human_prs:
+          minimum: 0
+          description: Merged human PRs in the baseline period.
+          type: integer
+        period:
+          description: "first_week: the first 7 UTC days from the day of the team's first cost or pull request event. configured: [roi] baseline_from and baseline_to."
+          type: string
+          enum:
+            - first_week
+            - configured
+        definition:
+          description: The definition the numbers were computed with.
+          type: string
+        computed_at:
+          format: date-time
+          description: When the numbers were computed and frozen. Later data never changes them.
+          type: string
+    RoiResponse:
+      additionalProperties: false
+      title: RoiResponse
+      description: "What each merged pull request cost. Merged PRs: distinct pull requests with a pr.merged event in the range. Agent PRs have a joined agent session or an agent named on the pull request; the rest are human PRs and cost nothing. A session joins a pull request through a commit.created or pr.* event that carries both; a session joined to several splits its spend equally. Spend is cost.recorded, one source per session (otel, local_log, hook, gateway, vendor_api). A joined session's spend counts whenever it was spent. Agent spend in the range joined to no pull request, and the spend of pull requests closed unmerged in the range, is split equally across the merged agent PRs of the same repo; with no repo, across all of them. With none to take it, it is unallocated and left out of cost. cost per merged PR = (attributed + shared) / merged agent PRs; none when no agent PR merged."
+      type: object
+      required:
+        - schema
+        - definition
+        - team
+        - from
+        - to
+        - merged_prs
+        - cost_usd
+        - cost_per_merged_pr
+        - human_prs
+        - closed_prs
+        - attributed_usd
+        - shared_usd
+        - unattributed_usd
+        - closed_usd
+        - unallocated_usd
+        - baseline
+        - by_agent
+      properties:
+        schema:
+          const: selfhost.roi/v1
+          type: string
+        definition:
+          const: cost_per_merged_agent_pr/v1
+          type: string
+        team:
+          description: Team id; null for the whole ledger of a laptop.
+          anyOf:
+            - type: string
+            - type: "null"
+        from:
+          format: date-time
+          type: string
+        to:
+          format: date-time
+          type: string
+        merged_prs:
+          minimum: 0
+          description: Merged agent PRs in the range.
+          type: integer
+        cost_usd:
+          minimum: 0
+          description: attributed_usd + shared_usd, rounded to 6 decimals.
+          type: number
+        cost_per_merged_pr:
+          description: cost_usd / merged_prs, rounded to 6 decimals; null when merged_prs is 0.
+          anyOf:
+            - minimum: 0
+              type: number
+            - type: "null"
+        human_prs:
+          minimum: 0
+          description: "Merged PRs with no joined agent session and no agent named: no cost."
+          type: integer
+        closed_prs:
+          minimum: 0
+          description: Agent PRs closed without merging in the range.
+          type: integer
+        attributed_usd:
+          minimum: 0
+          description: Spend of the sessions joined to the merged agent PRs.
+          type: number
+        shared_usd:
+          minimum: 0
+          description: The part of unattributed_usd and closed_usd split across them.
+          type: number
+        unattributed_usd:
+          minimum: 0
+          description: Agent spend in the range of sessions joined to no pull request.
+          type: number
+        closed_usd:
+          minimum: 0
+          description: Spend of the sessions joined to pull requests closed unmerged in the range.
+          type: number
+        unallocated_usd:
+          minimum: 0
+          description: "unattributed_usd and closed_usd in repos with no merged agent PR in the range: left out of cost_usd."
+          type: number
+        baseline:
+          description: null until the baseline period has ended, or when there is no data yet.
+          anyOf:
+            - additionalProperties: false
+              title: RoiBaseline
+              description: Computed once, the first time it is read after its period ended, then frozen.
+              type: object
+              required:
+                - from
+                - to
+                - merged_prs
+                - cost_usd
+                - cost_per_merged_pr
+                - human_prs
+                - period
+                - definition
+                - computed_at
+              properties:
+                from:
+                  format: date-time
+                  type: string
+                to:
+                  format: date-time
+                  type: string
+                merged_prs:
+                  minimum: 0
+                  description: Merged agent PRs in the baseline period.
+                  type: integer
+                cost_usd:
+                  minimum: 0
+                  description: Their cost, by the same definition.
+                  type: number
+                cost_per_merged_pr:
+                  description: cost_usd / merged_prs, rounded to 6 decimals; null when merged_prs is 0.
+                  anyOf:
+                    - minimum: 0
+                      type: number
+                    - type: "null"
+                human_prs:
+                  minimum: 0
+                  description: Merged human PRs in the baseline period.
+                  type: integer
+                period:
+                  description: "first_week: the first 7 UTC days from the day of the team's first cost or pull request event. configured: [roi] baseline_from and baseline_to."
+                  type: string
+                  enum:
+                    - first_week
+                    - configured
+                definition:
+                  description: The definition the numbers were computed with.
+                  type: string
+                computed_at:
+                  format: date-time
+                  description: When the numbers were computed and frozen. Later data never changes them.
+                  type: string
+            - type: "null"
+        by_agent:
+          description: Merged agent PRs by agent and model, highest cost_usd first.
+          type: array
+          items:
+            additionalProperties: false
+            title: RoiAgentRow
+            type: object
+            required:
+              - agent
+              - model
+              - merged_prs
+              - cost_usd
+              - cost_per_merged_pr
+            properties:
+              agent:
+                description: agent.vendor named on the pull request, else of the joined sessions with the most spend, else unknown.
+                type: string
+              model:
+                description: Model named on the pull request, else of the joined spend with the most cost, else unknown.
+                type: string
+              merged_prs:
+                minimum: 0
+                description: Merged agent PRs of this agent and model.
+                type: integer
+              cost_usd:
+                minimum: 0
+                description: Their attributed and shared spend.
+                type: number
+              cost_per_merged_pr:
+                description: cost_usd / merged_prs, rounded to 6 decimals; null when merged_prs is 0.
+                anyOf:
+                  - minimum: 0
+                    type: number
+                  - type: "null"
     ProvenanceAgentRow:
       additionalProperties: false
       title: ProvenanceAgentRow

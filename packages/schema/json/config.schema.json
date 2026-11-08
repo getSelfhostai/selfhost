@@ -992,6 +992,23 @@
           }
         }
       }
+    },
+    "roi": {
+      "additionalProperties": false,
+      "description": "Cost per merged pull request. The baseline it is compared with is the team's first 7 days of data unless both baseline_from and baseline_to are set. Either way it is computed once, after the period ends, and frozen.",
+      "type": "object",
+      "properties": {
+        "baseline_from": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}(?:T\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d+)?)?(?:Z|[+-]\\d{2}:\\d{2}))?$",
+          "description": "Start of the baseline period, included. A day (YYYY-MM-DD, midnight UTC) or a date-time with a zone, in quotes.",
+          "type": "string"
+        },
+        "baseline_to": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}(?:T\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d+)?)?(?:Z|[+-]\\d{2}:\\d{2}))?$",
+          "description": "End of the baseline period, excluded. A day (YYYY-MM-DD, midnight UTC) or a date-time with a zone, in quotes.",
+          "type": "string"
+        }
+      }
     }
   }
 }
