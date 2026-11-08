@@ -72,7 +72,7 @@ jobs:
           SH
       - name: Smoke test the Node bundle
         run: |
-          pnpm --filter @selfhost/cli build
+          pnpm --filter "@selfhost/cli..." --filter @selfhost/console build
           node apps/cli/dist/main.js --version
           node apps/cli/dist/main.js policy --help
           node apps/cli/dist/main.js policy test presets
@@ -362,7 +362,9 @@ jobs:
           # Every secret was generated on the server.
           [ "$(secrets | grep -c '=.\{32,\}$')" = 4 ]
           wait_https
-          [ "$(status https://localhost/)" = 503 ]
+          # The console page asks for a token; it holds no data itself.
+          [ "$(status https://localhost/)" = 200 ]
+          https -f https://localhost/ | grep -qi '<!doctype html>'
 
       - name: Keep the API and the collector off the network, and route /v1 and /otlp through Caddy
         run: |
@@ -411,6 +413,9 @@ jobs:
           esac
           # The API keeps its bearer tokens, with no sign-in.
           [ "$(status https://localhost/v1/health)" = 200 ]
+          # Sign-in headers a client sends itself are dropped before the server sees them.
+          [ "$(status -H 'X-Selfhost-Email: someone@example.com' -H 'X-Selfhost-Proxy-Secret: guess' \
+            "https://localhost/v1/events?limit=1")" = 401 ]
           # Every image of the three files, as Compose resolves them, has an exact tag.
           for image in $(sudo docker compose config --images); do
             ref=${image##*/}
