@@ -672,6 +672,59 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /v1/policy/observed:
+    get:
+      operationId: getPolicyObserved
+      summary: Get what each rule and guardrail of a team blocked or would have blocked.
+      description: "The admin token, or a person token of anyone in the team. Reads the team's policy.evaluated events in the window (default the last 7 days): per rule, guardrail and allow list, the observe-mode hits (what it would have blocked or sent to a person, one per tool call, with the most frequent calls and likely false positives as in the weekly policy report) and the enforce-mode verdicts (what it blocked or sent to a person), with the rule's mode in the team's policy now. At most the newest 20,000 verdicts are read."
+      parameters:
+        - name: team
+          in: query
+          required: false
+          description: Team id on a team server. Needed with the admin token; a person token reads its own team by default, or another team it is in.
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: false
+          description: "Verdicts at or after this time. Default: 7 days before to."
+          schema:
+            format: date-time
+            type: string
+        - name: to
+          in: query
+          required: false
+          description: "Verdicts before this time. Default: now."
+          schema:
+            format: date-time
+            type: string
+      responses:
+        "200":
+          description: Hits and verdicts per rule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PolicyObservedResponse"
+        "400":
+          description: Invalid query or time range, or no team given with the admin token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such team.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /v1/teams:
     post:
       operationId: createTeam
@@ -1589,6 +1642,38 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
   /v1/teams/{team}/invites:
+    get:
+      operationId: listInvites
+      summary: List a team's open invites.
+      description: "The admin token, or a person token whose role in the team is owner or admin. Invites that still work, newest first: not revoked and not expired. The codes themselves are never stored, so only their ids are listed."
+      parameters:
+        - name: team
+          in: path
+          required: true
+          description: Team id.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The open invites.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamInvitesResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such team.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
     post:
       operationId: createInvite
       summary: Create another invite code for a team.
@@ -2393,6 +2478,261 @@ components:
                   detail:
                     description: Why, and what is left uncovered.
                     type: string
+    PolicyObservedExample:
+      additionalProperties: false
+      title: PolicyObservedExample
+      type: object
+      required:
+        - tool
+        - input
+        - hits
+        - likely_false_positive
+      properties:
+        tool:
+          description: Tool name, or (unknown tool).
+          type: string
+        input:
+          description: "tool.input_summary, else target.value, as stored: redacted values stay redacted. null when none was recorded."
+          anyOf:
+            - type: string
+            - type: "null"
+        hits:
+          minimum: 0
+          description: Observe-mode hits on this call.
+          type: integer
+        likely_false_positive:
+          description: Why this call looks like a false positive, or null.
+          anyOf:
+            - type: string
+            - type: "null"
+    PolicyObservedRule:
+      additionalProperties: false
+      title: PolicyObservedRule
+      type: object
+      required:
+        - rule_id
+        - mode
+        - would_block
+        - would_ask
+        - blocked
+        - asked
+        - sessions
+        - likely_false_positives
+        - examples
+        - more_examples
+      properties:
+        rule_id:
+          description: Rule id from selfhost.toml, a guardrail (guard.*), mcp.allow or models.allow.
+          type: string
+        mode:
+          description: Mode in the team's policy now, after the team's overrides. null when the rule is not in it or the team has no policy.
+          anyOf:
+            - type: string
+              enum:
+                - observe
+                - enforce
+                - off
+            - type: "null"
+        would_block:
+          minimum: 0
+          description: Observe-mode block hits, one per tool call.
+          type: integer
+        would_ask:
+          minimum: 0
+          description: Observe-mode ask hits, one per tool call.
+          type: integer
+        blocked:
+          minimum: 0
+          description: Enforce-mode block verdicts.
+          type: integer
+        asked:
+          minimum: 0
+          description: "Enforce-mode ask verdicts: calls sent to a person."
+          type: integer
+        sessions:
+          minimum: 0
+          description: Agent sessions with any of these hits or verdicts.
+          type: integer
+        likely_false_positives:
+          minimum: 0
+          description: Observe-mode hits that look like false positives.
+          type: integer
+        examples:
+          maxItems: 3
+          description: The most frequent distinct observe-mode calls, most hits first.
+          type: array
+          items:
+            additionalProperties: false
+            title: PolicyObservedExample
+            type: object
+            required:
+              - tool
+              - input
+              - hits
+              - likely_false_positive
+            properties:
+              tool:
+                description: Tool name, or (unknown tool).
+                type: string
+              input:
+                description: "tool.input_summary, else target.value, as stored: redacted values stay redacted. null when none was recorded."
+                anyOf:
+                  - type: string
+                  - type: "null"
+              hits:
+                minimum: 0
+                description: Observe-mode hits on this call.
+                type: integer
+              likely_false_positive:
+                description: Why this call looks like a false positive, or null.
+                anyOf:
+                  - type: string
+                  - type: "null"
+        more_examples:
+          minimum: 0
+          description: Distinct observe-mode calls left out of examples.
+          type: integer
+    PolicyObservedResponse:
+      additionalProperties: false
+      title: PolicyObservedResponse
+      description: What each rule and guardrail of a team would have blocked or asked in observe mode, and blocked or asked in enforce mode, in a window.
+      type: object
+      required:
+        - schema
+        - team
+        - from
+        - to
+        - rules
+        - totals
+      properties:
+        schema:
+          const: selfhost.policy_observed/v1
+          type: string
+        team:
+          description: Team id.
+          type: string
+        from:
+          format: date-time
+          type: string
+        to:
+          format: date-time
+          type: string
+        rules:
+          description: Every rule with a verdict in the window, most hits and verdicts first, then by rule id.
+          type: array
+          items:
+            additionalProperties: false
+            title: PolicyObservedRule
+            type: object
+            required:
+              - rule_id
+              - mode
+              - would_block
+              - would_ask
+              - blocked
+              - asked
+              - sessions
+              - likely_false_positives
+              - examples
+              - more_examples
+            properties:
+              rule_id:
+                description: Rule id from selfhost.toml, a guardrail (guard.*), mcp.allow or models.allow.
+                type: string
+              mode:
+                description: Mode in the team's policy now, after the team's overrides. null when the rule is not in it or the team has no policy.
+                anyOf:
+                  - type: string
+                    enum:
+                      - observe
+                      - enforce
+                      - off
+                  - type: "null"
+              would_block:
+                minimum: 0
+                description: Observe-mode block hits, one per tool call.
+                type: integer
+              would_ask:
+                minimum: 0
+                description: Observe-mode ask hits, one per tool call.
+                type: integer
+              blocked:
+                minimum: 0
+                description: Enforce-mode block verdicts.
+                type: integer
+              asked:
+                minimum: 0
+                description: "Enforce-mode ask verdicts: calls sent to a person."
+                type: integer
+              sessions:
+                minimum: 0
+                description: Agent sessions with any of these hits or verdicts.
+                type: integer
+              likely_false_positives:
+                minimum: 0
+                description: Observe-mode hits that look like false positives.
+                type: integer
+              examples:
+                maxItems: 3
+                description: The most frequent distinct observe-mode calls, most hits first.
+                type: array
+                items:
+                  additionalProperties: false
+                  title: PolicyObservedExample
+                  type: object
+                  required:
+                    - tool
+                    - input
+                    - hits
+                    - likely_false_positive
+                  properties:
+                    tool:
+                      description: Tool name, or (unknown tool).
+                      type: string
+                    input:
+                      description: "tool.input_summary, else target.value, as stored: redacted values stay redacted. null when none was recorded."
+                      anyOf:
+                        - type: string
+                        - type: "null"
+                    hits:
+                      minimum: 0
+                      description: Observe-mode hits on this call.
+                      type: integer
+                    likely_false_positive:
+                      description: Why this call looks like a false positive, or null.
+                      anyOf:
+                        - type: string
+                        - type: "null"
+              more_examples:
+                minimum: 0
+                description: Distinct observe-mode calls left out of examples.
+                type: integer
+        totals:
+          additionalProperties: false
+          description: The rules' counts added up.
+          type: object
+          required:
+            - would_block
+            - would_ask
+            - blocked
+            - asked
+          properties:
+            would_block:
+              minimum: 0
+              description: Observe-mode block hits.
+              type: integer
+            would_ask:
+              minimum: 0
+              description: Observe-mode ask hits.
+              type: integer
+            blocked:
+              minimum: 0
+              description: Enforce-mode blocks.
+              type: integer
+            asked:
+              minimum: 0
+              description: Enforce-mode asks.
+              type: integer
     SetPolicyRequest:
       additionalProperties: false
       title: SetPolicyRequest
@@ -2586,6 +2926,53 @@ components:
           format: date-time
           description: When the invite was revoked.
           type: string
+    TeamInvitesResponse:
+      additionalProperties: false
+      title: TeamInvitesResponse
+      type: object
+      required:
+        - team
+        - invites
+      properties:
+        team:
+          pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+          description: Team id.
+          type: string
+        invites:
+          description: "Invites that still work: not revoked and not expired, newest first."
+          type: array
+          items:
+            additionalProperties: false
+            title: Invite
+            type: object
+            required:
+              - id
+              - team
+              - created_at
+              - expires_at
+            properties:
+              id:
+                pattern: ^[0-9a-f]{64}$
+                description: sha256 of the invite code, in hex. Names the invite in DELETE /v1/invites/{id} without carrying the code.
+                type: string
+              team:
+                pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+                description: Team the invite joins.
+                type: string
+              email:
+                description: The person the invite is for. Joining with it makes this email the person id.
+                type: string
+              created_at:
+                format: date-time
+                type: string
+              expires_at:
+                format: date-time
+                description: When the invite stops working.
+                type: string
+              revoked_at:
+                format: date-time
+                description: When the invite was revoked.
+                type: string
     RevokeTokensResponse:
       additionalProperties: false
       title: RevokeTokensResponse

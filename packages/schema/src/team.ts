@@ -186,6 +186,16 @@ export const CreateInviteResponseSchema = Type.Object(
   { additionalProperties: false, title: "CreateInviteResponse" },
 );
 
+export const TeamInvitesResponseSchema = Type.Object(
+  {
+    team: TeamId("Team id."),
+    invites: Type.Array(InviteSchema, {
+      description: "Invites that still work: not revoked and not expired, newest first.",
+    }),
+  },
+  { additionalProperties: false, title: "TeamInvitesResponse" },
+);
+
 export const RevokeTokensResponseSchema = Type.Object(
   {
     team: TeamId("Team of the person."),
@@ -328,6 +338,7 @@ export type CreateTeamResponse = Static<typeof CreateTeamResponseSchema>;
 export type Invite = Static<typeof InviteSchema>;
 export type CreateInviteRequest = Static<typeof CreateInviteRequestSchema>;
 export type CreateInviteResponse = Static<typeof CreateInviteResponseSchema>;
+export type TeamInvitesResponse = Static<typeof TeamInvitesResponseSchema>;
 export type RevokeTokensResponse = Static<typeof RevokeTokensResponseSchema>;
 export type JoinRequest = Static<typeof JoinRequestSchema>;
 export type JoinResponse = Static<typeof JoinResponseSchema>;

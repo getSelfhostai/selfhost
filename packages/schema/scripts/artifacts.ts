@@ -42,6 +42,10 @@ import {
   PersonSchema,
   PolicyCoverageQuerySchema,
   PolicyCoverageResponseSchema,
+  PolicyObservedExampleSchema,
+  PolicyObservedQuerySchema,
+  PolicyObservedResponseSchema,
+  PolicyObservedRuleSchema,
   PolicyQuerySchema,
   PolicyResponseSchema,
   ProvenanceAgentRowSchema,
@@ -60,6 +64,7 @@ import {
   SetRoleRequestSchema,
   SnoozeRequestSchema,
   TeamInfoSchema,
+  TeamInvitesResponseSchema,
   TeamOverviewSchema,
   TeamPeopleResponseSchema,
   TeamProvenanceModulesSchema,
@@ -158,6 +163,9 @@ const COMPONENT_SCHEMAS: ReadonlyArray<readonly [name: string, schema: TSchema]>
   ["CreateDecisionResponse", CreateDecisionResponseSchema],
   ["PolicyResponse", PolicyResponseSchema],
   ["PolicyCoverageResponse", PolicyCoverageResponseSchema],
+  ["PolicyObservedExample", PolicyObservedExampleSchema],
+  ["PolicyObservedRule", PolicyObservedRuleSchema],
+  ["PolicyObservedResponse", PolicyObservedResponseSchema],
   ["SetPolicyRequest", SetPolicyRequestSchema],
   ["InvalidPolicyError", InvalidPolicyErrorSchema],
   ["CreateTeamRequest", CreateTeamRequestSchema],
@@ -165,6 +173,7 @@ const COMPONENT_SCHEMAS: ReadonlyArray<readonly [name: string, schema: TSchema]>
   ["CreateInviteRequest", CreateInviteRequestSchema],
   ["CreateInviteResponse", CreateInviteResponseSchema],
   ["Invite", InviteSchema],
+  ["TeamInvitesResponse", TeamInvitesResponseSchema],
   ["RevokeTokensResponse", RevokeTokensResponseSchema],
   ["JoinRequest", JoinRequestSchema],
   ["JoinResponse", JoinResponseSchema],
@@ -487,6 +496,26 @@ function openApiDocument(): Json {
           },
         },
       },
+      "/v1/policy/observed": {
+        get: {
+          operationId: "getPolicyObserved",
+          summary: "Get what each rule and guardrail of a team blocked or would have blocked.",
+          description: `${ROLE_NOTE.read} Reads the team's policy.evaluated events in the window (default the last 7 days): per rule, guardrail and allow list, the observe-mode hits (what it would have blocked or sent to a person, one per tool call, with the most frequent calls and likely false positives as in the weekly policy report) and the enforce-mode verdicts (what it blocked or sent to a person), with the rule's mode in the team's policy now. At most the newest 20,000 verdicts are read.`,
+          parameters: queryParameters(PolicyObservedQuerySchema),
+          responses: {
+            "200": {
+              description: "Hits and verdicts per rule.",
+              content: jsonContent("PolicyObservedResponse"),
+            },
+            "400": errorResponse(
+              "Invalid query or time range, or no team given with the admin token.",
+            ),
+            ...authErrors,
+            "403": forbiddenResponse,
+            "404": errorResponse("No such team."),
+          },
+        },
+      },
       "/v1/teams": {
         post: {
           operationId: "createTeam",
@@ -786,6 +815,21 @@ function openApiDocument(): Json {
         },
       },
       "/v1/teams/{team}/invites": {
+        get: {
+          operationId: "listInvites",
+          summary: "List a team's open invites.",
+          description: `${ROLE_NOTE.admin} Invites that still work, newest first: not revoked and not expired. The codes themselves are never stored, so only their ids are listed.`,
+          parameters: [pathParameter("team", "Team id.")],
+          responses: {
+            "200": {
+              description: "The open invites.",
+              content: jsonContent("TeamInvitesResponse"),
+            },
+            ...authErrors,
+            "403": forbiddenResponse,
+            "404": errorResponse("No such team."),
+          },
+        },
         post: {
           operationId: "createInvite",
           summary: "Create another invite code for a team.",

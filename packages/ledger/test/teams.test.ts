@@ -173,6 +173,28 @@ describe.each(BACKENDS)("team store on $name", (backend) => {
     expect(await teams.revokeInvite("0".repeat(64))).toBeUndefined();
   });
 
+  it.skipIf(backend.skip)("lists the invites that still work, newest first", async () => {
+    const created = await teams.createTeam({ id: "listed", name: "Listed" });
+    const first = await teams.createInvite("listed", { email: "dana@example.com" });
+    const gone = await teams.createInvite("listed");
+    const late = await teams.createInvite("listed");
+    await teams.createTeam({ id: "other-list", name: "Other" });
+    await teams.revokeInvite(gone?.id ?? "");
+    await expire(late?.invite ?? "");
+
+    const invites = await teams.listInvites("listed");
+    expect(invites.map((invite) => invite.id).sort()).toEqual(
+      [hashToken(created?.invite ?? ""), first?.id].sort(),
+    );
+    expect(invites.find((invite) => invite.id === first?.id)).toMatchObject({
+      team: "listed",
+      email: "dana@example.com",
+    });
+    expect(invites.every((invite) => invite.revoked_at === undefined)).toBe(true);
+    expect(await teams.listInvites("other-list")).toHaveLength(1);
+    expect(await teams.listInvites("missing")).toEqual([]);
+  });
+
   it.skipIf(backend.skip)("binds the person id to an invite's email", async () => {
     await teams.createTeam({ id: "bound", name: "Bound" });
     const invite = await teams.createInvite("bound", { email: "Carol@Example.com" });

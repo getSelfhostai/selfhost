@@ -16,6 +16,8 @@ catalog:
   "@octokit/webhooks": 14.2.0
   "@sinclair/typebox": 0.34.52
   "@tailwindcss/vite": 4.3.5
+  "@testing-library/dom": 10.4.2
+  "@testing-library/react": 16.3.3
   "@types/node": 20.19.43
   "@types/picomatch": 4.0.3
   "@types/react": 19.3.0
@@ -30,6 +32,7 @@ catalog:
   commander: 14.0.3
   gpt-tokenizer: 4.1.0
   hono: 4.13.17
+  jsdom: 29.1.1
   lucide-react: 1.70.0
   picomatch: 4.0.7
   postgres: 4.1.0

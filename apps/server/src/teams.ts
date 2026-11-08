@@ -33,6 +33,7 @@ import { teamId } from "./ids.js";
 import { createOrgRoute, orgRoutes } from "./orgs.js";
 import { peopleRoutes } from "./people.js";
 import { policyRoutes } from "./policy.js";
+import { policyObservedRoutes } from "./policy-observe.js";
 import { type ProvenanceRouteOptions, provenanceRoutes } from "./provenance.js";
 import { forwardedEmail, type SigninOptions, signedInPerson } from "./signin.js";
 import { usageRoutes } from "./usage.js";
@@ -258,6 +259,7 @@ function sharedRoutes(
   provenance: TeamRouteOptions["provenance"],
 ): void {
   policyRoutes(router, ledger);
+  policyObservedRoutes(router, ledger, now ? { now } : {});
   peopleRoutes(router, ledger);
   orgRoutes(router, ledger, now ? { now } : {});
   usageRoutes(router, ledger, now ? { now } : {});

@@ -101,6 +101,8 @@ export interface TeamStore {
   getInvite(id: string): Promise<Invite | undefined>;
   /** Revokes an invite by its id, the sha256 of the code. undefined when there is no such invite. */
   revokeInvite(id: string): Promise<Invite | undefined>;
+  /** A team's invites that still work (not revoked, not expired), newest first. */
+  listInvites(team: string): Promise<Invite[]>;
   /**
    * Exchanges an invite for a person token. The first person in a team becomes its owner,
    * everyone after a member. A team-wide invite only adds people new to the org: it is refused
@@ -362,6 +364,16 @@ export function createTeamStore(db: Database): TeamStore {
         [id],
       );
       return row ? toInvite(row) : undefined;
+    },
+
+    async listInvites(team) {
+      const rows = await db.query<InviteRow>(
+        `SELECT ${INVITE_COLUMNS} FROM tokens
+         WHERE team_id = $1 AND kind = 'invite' AND revoked_at IS NULL AND expires_at > now()
+         ORDER BY created_at DESC, hash`,
+        [team],
+      );
+      return rows.map(toInvite);
     },
 
     async revokeInvite(id) {

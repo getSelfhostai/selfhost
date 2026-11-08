@@ -128,3 +128,12 @@ in `test/bypasses.test.ts`, which fails if a change starts catching it):
 Known false positives, all on the safe side: heredoc text written to a file can be read as
 commands; `rm -rf $(pwd)/build` asks; public certificates named `*.pem` and `sed -i` on a `.env`
 file are blocked.
+
+## Promote
+
+`promoteRule(text, ruleId, { team?, to? })` changes one rule's mode in selfhost.toml text (by
+default to enforce) and `setGuardrailsMode(text, to?)` sets `[guardrails] mode`. Each changes
+only the mode line, or adds one line, so comments, quoting and key order stay as written, and
+returns `{ text, changed, from, to, line }`. `selfhost policy promote` and the console's "Start
+blocking" both use them. The `@selfhost/policy/promote` entry point imports only
+`@selfhost/schema`, so it loads in a browser.

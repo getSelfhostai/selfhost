@@ -124,6 +124,11 @@ describe.each(BACKENDS)("roles on $name", (backend) => {
       (as) => as("/v1/teams/web/invites", "POST", {}),
     ],
     [
+      "GET /v1/teams/{team}/invites",
+      ALLOWED(200, "owner", "admin", "admin token"),
+      (as) => as("/v1/teams/web/invites"),
+    ],
+    [
       "DELETE /v1/invites/{id}",
       ALLOWED(200, "owner", "admin", "admin token"),
       async (as) => {
@@ -182,6 +187,7 @@ describe.each(BACKENDS)("roles on $name", (backend) => {
       const as = caller(app, tokens[role]);
       for (const path of [
         "/v1/policy?team=web",
+        "/v1/policy/observed?team=web",
         "/v1/teams/web/people",
         "/v1/teams/web/repos",
         "/v1/teams/web/overview",

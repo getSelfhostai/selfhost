@@ -7,7 +7,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./pretool": "./src/pretool.ts"
+    "./pretool": "./src/pretool.ts",
+    "./promote": "./src/promote.ts"
   },
   "publishConfig": {
     "exports": {
@@ -18,6 +19,10 @@
       "./pretool": {
         "types": "./dist/pretool.d.ts",
         "import": "./dist/pretool.js"
+      },
+      "./promote": {
+        "types": "./dist/promote.d.ts",
+        "import": "./dist/promote.js"
       }
     }
   },
@@ -29,7 +34,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsup src/index.ts src/pretool.ts --format esm --dts --clean",
+    "build": "tsup src/index.ts src/pretool.ts src/promote.ts --format esm --dts --clean",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run"
   },

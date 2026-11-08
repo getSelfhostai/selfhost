@@ -29,6 +29,16 @@ describe("the view in the address bar", () => {
   });
 });
 
+describe("screens in the address bar", () => {
+  it("reads and writes the screen and the run, with the overview as the default", () => {
+    const view = parseView("?screen=run&run=sess-1&team=web");
+    expect(view).toMatchObject({ screen: "run", run: "sess-1", filters: { team: "web" } });
+    expect(viewSearch(view)).toBe("?screen=run&run=sess-1&team=web");
+    expect(parseView("?screen=overview").screen).toBeUndefined();
+    expect(parseView("?screen=nowhere").screen).toBeUndefined();
+  });
+});
+
 describe("ranges", () => {
   it("include today in a preset, ending at the next UTC midnight", () => {
     const range = rangeOf(parseView("?range=7d"), NOW);
