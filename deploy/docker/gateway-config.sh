@@ -6,7 +6,12 @@
 #
 # The file holds no secret: every key, password and credential is an env.<NAME> reference that
 # Bifrost reads from its own container environment. A provider is listed only when its keys are
-# set in .env, so an empty key never reaches Bifrost. Teams, virtual keys and budgets are not
+# set in .env, so an empty key never reaches Bifrost.
+#
+# client.enforce_auth_on_inference makes Bifrost's governance refuse a request without a known
+# virtual key (401). Bifrost looks up the request's provider first (v2.4.0 and v2.5.0 alike), so a
+# request for a provider with no keys here is answered 400 before the key is checked; either way
+# nothing reaches a provider. Teams, virtual keys and budgets are not
 # here: the selfhost server writes them through Bifrost's API from selfhost.toml.
 set -eu
 

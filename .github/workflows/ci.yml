@@ -431,17 +431,22 @@ jobs:
         run: |
           . "$RUNNER_TEMP/install-ci.sh"
           before=$(secrets)
-          # No provider keys: nothing here may reach a model provider.
+          # One provider with a dummy key, so a request reaches Bifrost's virtual key check (which
+          # runs after it looks up the provider). Nothing here is let through to a provider, and
+          # the dummy key would not work if it were.
           cat > .env.next <<'EOF'
           COMPOSE_FILE=compose.yml:compose.tls.yml:compose.signin.yml:compose.gateway.yml
+          ANTHROPIC_API_KEY=ci-dummy-not-a-real-key
           EOF
           sudo ./install.sh
           [ "$(secrets)" = "$before" ]
           [ "$(sudo grep -cE '^SELFHOST_GATEWAY_(ADMIN|ENCRYPTION)_KEY=.{32,}$' .env)" = 2 ]
           # bifrost.json names every secret by reference only.
-          if sudo grep -qF "$(sudo sed -n 's/^SELFHOST_GATEWAY_ADMIN_KEY=//p' .env)" bifrost.json; then
-            echo "::error::bifrost.json holds the admin key"; exit 1
+          if sudo grep -qF "$(sudo sed -n 's/^SELFHOST_GATEWAY_ADMIN_KEY=//p' .env)" bifrost.json \
+            || sudo grep -qF ci-dummy-not-a-real-key bifrost.json; then
+            echo "::error::bifrost.json holds a secret"; exit 1
           fi
+          sudo jq -e '.providers.anthropic.keys[0].value == "env.ANTHROPIC_API_KEY"' bifrost.json
           wait_https
           # Bifrost answers its health check behind Caddy, and only on 127.0.0.1 itself.
           https -f https://localhost/llm/health | jq -e '.status == "ok"'
@@ -453,17 +458,14 @@ jobs:
           # Its management API and UI are not routed; model routes refuse requests without a
           # virtual key or with one it does not know.
           [ "$(status https://localhost/llm/api/governance/virtual-keys)" = 404 ]
-          # A well-formed request, so a refusal can only be about the key. Bifrost answers 400, 401
-          # or 403 depending on the case; the body must name the virtual key either way.
+          # A well-formed request to the configured provider, so a refusal can only be about the
+          # key: Bifrost's governance answers 401 for a missing or unknown virtual key.
           refused() {
             body=$(https -s -o - -w '\n%{http_code}' -X POST -H 'Content-Type: application/json' "$@" \
               -d '{"model":"anthropic/claude-haiku-5-5","messages":[{"role":"user","content":"hi"}]}' \
               https://localhost/llm/v1/chat/completions)
             code=${body##*$'\n'}
-            case "$code" in
-              401|403) return 0 ;;
-              400) printf '%s' "${body%$'\n'*}" | grep -qi 'virtual.key\|x-bf-vk\|unauthori' && return 0 ;;
-            esac
+            case "$code" in 401|403) return 0 ;; esac
             echo "::error::the request with '$2' answered $code: ${body%$'\n'*}"; return 1
           }
           refused -H 'X-Selfhost-Check: no-key' || exit 1
