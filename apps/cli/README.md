@@ -12,6 +12,7 @@ pnpm --filter @selfhost/cli dev spend alarms --since 1h
 pnpm --filter @selfhost/cli dev statusline
 pnpm --filter @selfhost/cli dev inbox
 pnpm --filter @selfhost/cli dev policy check
+pnpm --filter @selfhost/cli dev policy test ../../presets
 pnpm --filter @selfhost/cli dev policy test --tool Bash --command "git push --force"
 pnpm --filter @selfhost/cli dev policy observe --since 30d
 pnpm --filter @selfhost/cli dev review risk --base main
@@ -149,10 +150,22 @@ policy that is not.
 - `selfhost policy check [--json]` validates the file and lists every rule and allow-list check
   with its mode. An invalid file exits 1 with one `selfhost.toml:7: rules[0].mode: message` line
   per error.
+- `selfhost policy test [paths...] [--config <path>] [--json]` runs test cases against the
+  policy, like OPA's tests, and exits 1 when a case fails or a file cannot run. Each failing case
+  is printed with its file and line, the decision it expected and the one it got. Paths are test
+  files or folders (every `*.test.toml` in them); with none, `selfhost.test.toml` next to
+  `selfhost.toml` runs. The format is below.
 - `selfhost policy test --tool <name> [--command] [--path] [--url] [--model] [--agent] [--team]`
-  evaluates one made-up tool call and prints the rules that fire, for trying a rule before it
-  ships. `--path` is relative to the repository root; an MCP server is read from an
-  `mcp__<server>__<tool>` name.
+  evaluates one made-up tool call and prints the rules that fire and the decision, for trying a
+  rule before it ships. `--path` is relative to the repository root; an MCP server is read from
+  an `mcp__<server>__<tool>` name.
+- `selfhost policy test --replay <file> [--team]` runs recorded tool calls through the policy and
+  prints how many get each decision, how often each rule fires and the calls it fires on. The
+  file is a JSON array or JSON Lines of tool calls (`{"tool": "Bash", "command": "npm publish"}`,
+  with the same fields as the flags above) or ledger events, of which only `tool.called` counts.
+  `--from-ledger [--since 7d] [--limit 100] [--repo <dir>]` does the same for the newest tool
+  calls of this repository in the ledger (`--database` / `--data-dir` as for `spend`). Replays
+  write nothing.
 - `selfhost policy observe [--since 30d] [--repo <dir>] [--team <name>]` evaluates the tool calls
   already in the ledger (the one `selfhost import` writes, or `--database` / `--data-dir`) that
   belong to the repository and records one `policy.evaluated` event per hit, with the git commit
@@ -180,6 +193,66 @@ a read-only tool, and a command rule matching only inside quotes, a comment or t
 echo, grep or rg. The window is whole UTC days through today. `--json` prints the
 `selfhost.review_item/v1` item of kind `policy_report`; its id depends only on the window, so
 the same week gives the same item.
+
+### Policy test files
+
+A test file is TOML: an optional `config`, the `selfhost.toml` it tests relative to the test file,
+and one `[[cases]]` table per tool call. Without `config`, `strict.test.toml` tests `strict.toml`
+beside it, and otherwise the nearest `selfhost.toml`; `--config` overrides both for every file.
+
+```toml
+config = "selfhost.toml"
+
+[[cases]]
+name = "npm publish waits for a person"
+command = "npm publish --access public"   # tool defaults to Bash
+decision = "ask"                          # allow, ask or block
+mode = "enforce"                          # optional: enforce or observe
+rules = ["package-publish"]               # optional: exactly these rules fire
+
+[[cases]]
+name = "reading source is fine"
+tool = "Read"
+path = "src/app.ts"
+decision = "allow"
+```
+
+A case takes the call fields `tool`, `command`, `path`, `url`, `model` and `agent`, plus `team` to
+apply that team's overrides. The decision is what selfhost decides on the call: enforce hits
+decide first (block when one blocks, else ask, in mode enforce); with none, observe hits decide
+the same way in mode observe, where the call goes through and the verdict is only recorded; with
+no hit at all it is allow. `--json` prints `selfhost.policy_tests/v1` with every case's expected
+and actual decision and its hits.
+
+### Presets
+
+[`presets/`](../../presets) holds four starting points, each with its own test file. Every one
+starts with the editor schema line below and leaves a commented `[guardrails]` line where the
+built-in guardrails are switched on.
+
+| Preset         | What it enforces                                                                                                                                   |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `startup`      | Live payments, production databases and migrations, and tearing down infrastructure. Publishes, deploys, emails and shell habits start in observe. |
+| `strict`       | Every rule: payments, production, publishes, deletes and secret reads are blocked, the rest asks. MCP allow list, 7 day package age, merge check.  |
+| `oss`          | Package publishes, releases and tags, changes to published packages, GitHub comments, merges, workflow runs and repository settings.               |
+| `irreversible` | Only payments, emails, production data, publishes and infrastructure. Everything else is observe.                                                  |
+
+`selfhost init --preset <name>` writes one as `selfhost.toml`; teams fork the file from there.
+The presets are embedded in the CLI by `pnpm --filter @selfhost/cli embed-presets`
+(`src/init/presets.generated.ts`), and a test fails when that file is stale, when a preset does
+not validate against the JSON Schema, or when its test file fails or leaves a rule untested.
+
+### Editor completion
+
+Every `selfhost.toml` selfhost writes starts with
+
+```toml
+#:schema https://selfhost.ai/schema/selfhost.toml.v1.json
+```
+
+which points TOML language servers that read JSON Schema (Taplo, used by the Even Better TOML
+extension for VS Code) at the published schema, `packages/schema/json/config.schema.json`. They
+then complete keys and values and underline invalid ones as you type.
 
 ## Decision log
 
@@ -291,7 +364,7 @@ a fixture home (it also turns off the keychain and version probes). See
 ## Install on a laptop: `selfhost init`
 
 `selfhost init [--since 30d] [--team <invite>] [--server <url> | --hosted] [--agent claude codex]
-[--dry-run] [--json]` goes from nothing to real data on the first screen, with no questions
+[--preset <name>] [--dry-run] [--json]` goes from nothing to real data on the first screen, with no questions
 asked (`--yes` is accepted and changes nothing). [`AGENTS.md`](AGENTS.md) and
 [`llms.txt`](llms.txt) say the same for a coding agent doing the install.
 
@@ -306,7 +379,8 @@ asked (`--yes` is accepted and changes nothing). [`AGENTS.md`](AGENTS.md) and
    left alone, so they are not taken out.
 3. It writes a starter `selfhost.toml` at the git repository root when none is found: four
    rules (`.env` files, force pushes, `rm -rf` on `/` or home, `curl | sh`), all in observe
-   mode. An existing file is kept.
+   mode. `--preset startup|strict|oss|irreversible` writes that preset instead (see
+   [Presets](#presets)). An existing file is kept, also with `--preset`.
 4. It imports the window, runs `policy observe` when there is a `selfhost.toml`, and prints the
    import counts, spend by agent and request type, and the hits per rule. `--json` prints one
    `selfhost.init/v1` object instead.
@@ -383,7 +457,8 @@ vendors directly; no model traffic goes through selfhost.
 Every command takes `--json` and prints one object with a `schema` tag: `selfhost.doctor/v1`,
 `selfhost.init/v1`, `selfhost.init_undo/v1`, `selfhost.import/v1` (plus one `selfhost.import_batch/v1` line per batch with `--watch`),
 `selfhost.ledger_prune/v1`, `selfhost.agents/v1`, `selfhost.agents_configure/v1`, `selfhost.scan/v1`,
-`selfhost.policy_check/v1`, `selfhost.policy_test/v1`, `selfhost.policy_observe/v1`,
+`selfhost.policy_check/v1`, `selfhost.policy_test/v1`, `selfhost.policy_tests/v1`,
+`selfhost.policy_replay/v1`, `selfhost.policy_observe/v1`,
 `selfhost.policy_promote/v1`, `selfhost.review_item/v1` (from `policy report`),
 `selfhost.decide/v1`, `selfhost.review_risk/v1`, `selfhost.review_brief/v1`,
 `selfhost.review_trace/v1`, `selfhost.review_list/v1`, `selfhost.decisions/v1`,

@@ -1179,6 +1179,7 @@ components:
           type: array
           items:
             additionalProperties: false
+            description: "One rule: what it matches, what it does and whether it is enforced yet."
             type: object
             required:
               - id
@@ -1208,6 +1209,7 @@ components:
                   - all
                 type: array
                 items:
+                  description: An agent, or all.
                   type: string
                   enum:
                     - all

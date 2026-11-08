@@ -1,7 +1,7 @@
 import { type Static, Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { parse as parseToml, TomlError } from "smol-toml";
-import { NonEmpty, StringEnum, schemaId, Url } from "./common.js";
+import { NonEmpty, StringEnum, Url } from "./common.js";
 import { AGENT_VENDORS } from "./event.js";
 import { TomlLineIndex } from "./toml-lines.js";
 import {
@@ -13,6 +13,15 @@ import {
 } from "./validate.js";
 
 export const CONFIG_FILE_NAME = "selfhost.toml";
+
+/**
+ * Where the JSON Schema of selfhost.toml is published, and its `$id`. Editors with a TOML
+ * language server (Taplo, Even Better TOML) read it from the first line of the file.
+ */
+export const CONFIG_SCHEMA_URL = "https://selfhost.ai/schema/selfhost.toml.v1.json";
+
+/** First line of every selfhost.toml selfhost writes: the Taplo schema directive. */
+export const CONFIG_SCHEMA_DIRECTIVE = `#:schema ${CONFIG_SCHEMA_URL}`;
 
 export const RULE_MODES = ["observe", "enforce", "off"] as const;
 export const RULE_ACTIONS = ["block", "ask"] as const;
@@ -35,8 +44,10 @@ const GITHUB_TEAM_PATTERN = "^[A-Za-z0-9][A-Za-z0-9_.-]*$";
 const RuleModeSchema = (description: string, withDefault: boolean) =>
   StringEnum(RULE_MODES, withDefault ? { description, default: "observe" } : { description });
 
+const RuleActionSchema = (description: string) => StringEnum(RULE_ACTIONS, { description });
+
 const AgentsSchema = (withDefault: boolean) =>
-  Type.Array(StringEnum(AGENT_SELECTORS), {
+  Type.Array(StringEnum(AGENT_SELECTORS, { description: "An agent, or all." }), {
     minItems: 1,
     description: 'Agents the rule applies to. "all" matches every agent.',
     ...(withDefault ? { default: ["all"] } : {}),
@@ -77,9 +88,7 @@ export const RuleSchema = Type.Object(
     ),
     agents: Type.Optional(AgentsSchema(true)),
     match: RuleMatchSchema,
-    action: StringEnum(RULE_ACTIONS, {
-      description: "block stops the action, ask sends it to a person.",
-    }),
+    action: RuleActionSchema("block stops the action, ask sends it to a person."),
     message: NonEmpty({ description: "Shown to the agent and the person when the rule fires." }),
     irreversible: Type.Optional(
       Type.Boolean({
@@ -88,7 +97,10 @@ export const RuleSchema = Type.Object(
       }),
     ),
   },
-  { additionalProperties: false },
+  {
+    additionalProperties: false,
+    description: "One rule: what it matches, what it does and whether it is enforced yet.",
+  },
 );
 
 export const RedactionSchema = Type.Object(
@@ -102,7 +114,10 @@ export const RedactionSchema = Type.Object(
         "Regular expression whose matches are masked before storage, on top of the built-in secret and email patterns.",
     }),
   },
-  { additionalProperties: false },
+  {
+    additionalProperties: false,
+    description: "A pattern masked in everything the ledger stores.",
+  },
 );
 
 /** [mcp] and [models]: an allow list checked on every tool call, with its own rule id. */
@@ -133,16 +148,23 @@ export const RuleOverrideSchema = Type.Object(
   {
     mode: Type.Optional(RuleModeSchema("Mode for this team.", false)),
     agents: Type.Optional(AgentsSchema(false)),
-    action: Type.Optional(StringEnum(RULE_ACTIONS)),
-    message: Type.Optional(NonEmpty()),
+    action: Type.Optional(RuleActionSchema("Action for this team.")),
+    message: Type.Optional(NonEmpty({ description: "Message for this team." })),
   },
-  { additionalProperties: false, minProperties: 1 },
+  {
+    additionalProperties: false,
+    minProperties: 1,
+    description: "Fields of the rule this team sees differently. The rest come from the rule.",
+  },
 );
 
 export const TeamSchema = Type.Object(
   {
     members: Type.Optional(
-      Type.Array(NonEmpty(), { default: [], description: "People in the team." }),
+      Type.Array(NonEmpty({ description: "Person id, as in [review] owners." }), {
+        default: [],
+        description: "People in the team.",
+      }),
     ),
     rules: Type.Optional(
       Type.Record(Type.String(), RuleOverrideSchema, {
@@ -152,7 +174,11 @@ export const TeamSchema = Type.Object(
     ),
   },
   // The default lets Value.Default fill members and rules inside the teams record.
-  { additionalProperties: false, default: {} },
+  {
+    additionalProperties: false,
+    default: {},
+    description: "A team: its members and the rule overrides that apply to them.",
+  },
 );
 
 const UsdPerWindow = (description: string) =>
@@ -185,9 +211,7 @@ export const SelfhostConfigSchema = Type.Object(
     org: Type.Optional(
       Type.Object(
         { name: NonEmpty({ description: "Organization name." }) },
-        {
-          additionalProperties: false,
-        },
+        { additionalProperties: false, description: "The organization this file belongs to." },
       ),
     ),
     ledger: Type.Optional(
@@ -203,11 +227,27 @@ export const SelfhostConfigSchema = Type.Object(
             }),
           ),
         },
-        { additionalProperties: false, default: {} },
+        {
+          additionalProperties: false,
+          default: {},
+          description: "What the ledger keeps and for how long.",
+        },
       ),
     ),
-    redaction: Type.Optional(Type.Array(RedactionSchema, { default: [] })),
-    rules: Type.Optional(Type.Array(RuleSchema, { default: [] })),
+    redaction: Type.Optional(
+      Type.Array(RedactionSchema, {
+        default: [],
+        description:
+          "Extra patterns to mask before anything is stored, on top of the built-in secret and email patterns.",
+      }),
+    ),
+    rules: Type.Optional(
+      Type.Array(RuleSchema, {
+        default: [],
+        description:
+          "Rules checked on every tool call, in file order. Each starts in observe and moves to enforce with selfhost policy promote.",
+      }),
+    ),
     review: Type.Optional(
       Type.Object(
         {
@@ -226,10 +266,17 @@ export const SelfhostConfigSchema = Type.Object(
             }),
           ),
           owners: Type.Optional(
-            Type.Record(Type.String(), Type.Array(NonEmpty(), { minItems: 1 }), {
-              default: {},
-              description: "Path glob to the people who review changes under it.",
-            }),
+            Type.Record(
+              Type.String(),
+              Type.Array(NonEmpty(), {
+                minItems: 1,
+                description: "People who review changes under this glob.",
+              }),
+              {
+                default: {},
+                description: "Path glob to the people who review changes under it.",
+              },
+            ),
           ),
           fallback: Type.Optional(
             Type.Array(NonEmpty(), {
@@ -275,7 +322,11 @@ export const SelfhostConfigSchema = Type.Object(
             }),
           ),
         },
-        { additionalProperties: false, default: {} },
+        {
+          additionalProperties: false,
+          default: {},
+          description: "How agent work is scored, routed and timed in the review list.",
+        },
       ),
     ),
     packages: Type.Optional(
@@ -303,7 +354,11 @@ export const SelfhostConfigSchema = Type.Object(
             }),
           ),
         },
-        { additionalProperties: false, default: {} },
+        {
+          additionalProperties: false,
+          default: {},
+          description: "Which packages agents may install.",
+        },
       ),
     ),
     mcp: Type.Optional(
@@ -358,7 +413,11 @@ export const SelfhostConfigSchema = Type.Object(
             Url({ description: "Key rotation runbook linked from spend spike alarms." }),
           ),
         },
-        { additionalProperties: false, default: {} },
+        {
+          additionalProperties: false,
+          default: {},
+          description: "When the spend spike alarm and the plan limit forecast speak up.",
+        },
       ),
     ),
     plans: Type.Optional(
@@ -384,7 +443,10 @@ export const SelfhostConfigSchema = Type.Object(
                   description: "Spend cap on that key per calendar month (UTC).",
                 }),
               },
-              { additionalProperties: false },
+              {
+                additionalProperties: false,
+                description: "Team API key suggested when a plan limit is about to run out.",
+              },
             ),
           ),
         },
@@ -400,7 +462,7 @@ export const SelfhostConfigSchema = Type.Object(
     ),
   },
   {
-    $id: schemaId("config.schema.json"),
+    $id: CONFIG_SCHEMA_URL,
     title: "SelfhostConfig",
     description:
       "selfhost.toml: team config compiled into each agent's own config. Rules start in observe and move to enforce.",

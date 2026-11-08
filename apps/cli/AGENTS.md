@@ -20,6 +20,8 @@ node apps/cli/dist/main.js init
 Flags: `--json` prints one `selfhost.init/v1` object, `--since 30d` sets the import window,
 `--agent claude codex` limits the agents, and `--team "selfhost join <server> <invite>"` (the
 line the team admin shared) joins a team first. A refused invite exits 1 and changes no files.
+`--preset startup|strict|oss|irreversible` writes that preset as `selfhost.toml` instead of the
+starter rules; use it only when the person asks for one, since presets enforce some rules.
 
 ## What it changes
 
@@ -30,7 +32,7 @@ line the team admin shared) joins a team first. A refused invite exits 1 and cha
 - `~/.selfhost/`: the ledger (`data/`), hook events waiting for import (`spool/`), the list of
   files init changed (`init.json`) and, with `--team`, the membership (`config.json`).
 - `selfhost.toml` at the git repository root, only when none exists: four starter rules, all in
-  observe mode, so nothing is blocked.
+  observe mode, so nothing is blocked, or the preset given with `--preset`.
 - Nothing else: no shell profile, no API key, no sign-in.
 
 ## Undo

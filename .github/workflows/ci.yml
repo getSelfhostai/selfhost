@@ -75,12 +75,15 @@ jobs:
           pnpm --filter @selfhost/cli build
           node apps/cli/dist/main.js --version
           node apps/cli/dist/main.js policy --help
+          node apps/cli/dist/main.js policy test presets
           sh "$RUNNER_TEMP/ledger-check.sh" node apps/cli/dist/main.js
       - run: pnpm build:cli
       - name: Smoke test the linux-x64 binary
         run: |
           ./apps/cli/dist/selfhost-linux-x64 --version
           ./apps/cli/dist/selfhost-linux-x64 doctor
+          # The presets' own tests, with the binary's regular expression engine.
+          ./apps/cli/dist/selfhost-linux-x64 policy test presets
           sh "$RUNNER_TEMP/ledger-check.sh" ./apps/cli/dist/selfhost-linux-x64
       - name: Run the binary with an empty environment and no Node or Bun on PATH
         run: |

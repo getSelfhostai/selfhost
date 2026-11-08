@@ -20,6 +20,7 @@
     "build": "tsup",
     "build:cli": "tsx scripts/build-binaries.ts",
     "dev": "tsx src/main.ts",
+    "embed-presets": "tsx scripts/embed-presets.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run"
   },

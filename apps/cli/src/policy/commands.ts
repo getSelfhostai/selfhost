@@ -2,7 +2,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { type Ledger, openLedger } from "@selfhost/ledger";
 import {
-  evaluate,
   mcpServerOf,
   normalizePath,
   type ObservedRule,
@@ -16,7 +15,9 @@ import {
   AGENT_VENDORS,
   type AgentVendor,
   type ConfigResult,
+  type DecisionMode,
   formatConfigError,
+  type PolicyDecision,
   parseConfig,
   type ResolvedSelfhostConfig,
   type RuleAction,
@@ -32,6 +33,16 @@ import {
 import { plural, table } from "../format.js";
 import { describeTarget, parseSince } from "../import.js";
 import { repoDir } from "../scan/index.js";
+import { checkCall, decide, describeDecision } from "./decide.js";
+import {
+  type PolicyReplayReport,
+  printReplay,
+  type RecordedCall,
+  readRecordedCalls,
+  recentLedgerCalls,
+  replayCalls,
+} from "./replay.js";
+import { collectTestFiles, defaultTestFile, runPolicyTestFiles } from "./test-files.js";
 
 export interface PolicyIo {
   env: NodeJS.ProcessEnv;
@@ -73,13 +84,17 @@ export interface PolicyCheckReport {
   checks: PolicyCheckLine[];
 }
 
-/** `selfhost policy test --json`. */
+/** `selfhost policy test --tool <name> --json`. */
 export interface PolicyTestReport {
   schema: "selfhost.policy_test/v1";
   config: string;
   team: string | null;
   call: ToolCall;
   hits: PolicyHit[];
+  /** block or ask when a rule fires (enforce hits first, then observe), allow when none does. */
+  decision: PolicyDecision;
+  /** enforce: the decision is applied; observe: only recorded. null for allow. */
+  mode: DecisionMode | null;
 }
 
 /** `selfhost policy observe --json`. */
@@ -222,7 +237,10 @@ export interface PolicyTestOptions extends ConfigOption, JsonOption {
 }
 
 /** Evaluates one hypothetical tool call and prints the rules that fire. */
-export function policyTest(options: PolicyTestOptions, io: PolicyIo): PolicyTestReport {
+export async function policyTest(
+  options: PolicyTestOptions,
+  io: PolicyIo,
+): Promise<PolicyTestReport> {
   const { location, config } = loadPolicy(io.cwd, options.config, io);
   checkTeam(config, options.team);
   const agent = parseAgent(options.agent);
@@ -236,13 +254,16 @@ export function policyTest(options: PolicyTestOptions, io: PolicyIo): PolicyTest
     ...(mcpServer !== undefined ? { mcpServer } : {}),
     ...(options.model !== undefined ? { model: options.model } : {}),
   };
-  const hits = evaluate(config, call, { team: options.team });
+  const hits = await checkCall(config, call, { team: options.team });
+  const { decision, mode } = decide(hits);
   const report: PolicyTestReport = {
     schema: "selfhost.policy_test/v1",
     config: location.path,
     team: options.team ?? null,
     call,
     hits,
+    decision,
+    mode,
   };
   if (options.json) {
     io.write(JSON.stringify(report, null, 2));
@@ -254,8 +275,129 @@ export function policyTest(options: PolicyTestOptions, io: PolicyIo): PolicyTest
       hits.map((hit) => [`  ${hit.rule_id}`, hit.mode, hit.verdict, hit.message]),
       io.write,
     );
+    const outcome = mode === "observe" ? ": recorded only, nothing is stopped" : "";
+    io.write(`Decision: ${describeDecision({ decision, mode })}${outcome}.`);
   }
   return report;
+}
+
+export interface PolicyReplayOptions extends ConfigOption, JsonOption {
+  replay?: string;
+  fromLedger?: boolean;
+  team?: string;
+  since?: string;
+  limit?: string;
+  repo?: string;
+  database?: string;
+  dataDir?: string;
+}
+
+function parseLimit(value: string | undefined): number {
+  if (value === undefined) return 100;
+  const limit = Number(value);
+  if (!Number.isInteger(limit) || limit < 1) {
+    throw new Error(`--limit: expected a whole number of calls, got "${value}"`);
+  }
+  return limit;
+}
+
+/**
+ * Runs recorded tool calls (a JSON file with --replay, or the newest tool calls in the ledger
+ * with --from-ledger) through the policy and prints what each rule decides. Writes nothing.
+ */
+export async function policyReplay(
+  options: PolicyReplayOptions,
+  io: PolicyIo,
+  ledger?: Ledger,
+): Promise<PolicyReplayReport> {
+  const { location, config } = loadPolicy(io.cwd, options.config, io);
+  checkTeam(config, options.team);
+  let recorded: { calls: RecordedCall[]; skipped: number };
+  let source: PolicyReplayReport["source"];
+  let from: string;
+  if (options.replay !== undefined) {
+    const path = resolve(io.cwd, options.replay);
+    recorded = readRecordedCalls(path);
+    source = { kind: "file", path };
+    from = shown(io.cwd, path);
+  } else {
+    const since = parseSince(options.since ?? "7d", io.now ?? new Date());
+    const repoRoot =
+      (options.repo === undefined ? undefined : repoDir(options.repo, io.cwd)) ??
+      repoDir(undefined, io.cwd) ??
+      dirname(location.path);
+    const target =
+      ledger ??
+      (await openLedger({
+        url: options.database ?? io.env.DATABASE_URL,
+        dataDir: options.dataDir,
+      }));
+    try {
+      recorded = await recentLedgerCalls(target, {
+        repoRoot,
+        since,
+        limit: parseLimit(options.limit),
+      });
+    } finally {
+      if (!ledger) await target.close();
+    }
+    const where = describeTarget({ database: options.database, dataDir: options.dataDir }, io);
+    source = { kind: "ledger", ledger: where, repo: repoRoot, since: since?.toISOString() ?? null };
+    from = `the ledger (${repoRoot}${since ? ` since ${since.toISOString().slice(0, 10)}` : ""})`;
+  }
+  const report: PolicyReplayReport = {
+    schema: "selfhost.policy_replay/v1",
+    config: location.path,
+    team: options.team ?? null,
+    source,
+    skipped: recorded.skipped,
+    ...(await replayCalls(config, recorded.calls, { team: options.team })),
+  };
+  if (options.json) io.write(JSON.stringify(report, null, 2));
+  else printReplay(report, `${from} against ${shown(io.cwd, location.path)}`, io.write);
+  return report;
+}
+
+type PolicyTestCommandOptions = Omit<PolicyTestOptions, "tool"> &
+  PolicyReplayOptions & { tool?: string };
+
+/**
+ * `selfhost policy test`: test files by default, one made-up call with --tool, or recorded
+ * calls with --replay or --from-ledger. Returns the exit code.
+ */
+export async function runPolicyTest(
+  paths: string[],
+  options: PolicyTestCommandOptions,
+  io: PolicyIo,
+): Promise<number> {
+  const replay = options.replay !== undefined || options.fromLedger === true;
+  if (options.replay !== undefined && options.fromLedger) {
+    throw new Error("pass --replay <file> or --from-ledger, not both");
+  }
+  if (options.tool !== undefined) {
+    if (paths.length > 0 || replay) {
+      throw new Error(
+        "--tool checks one call: pass it without test files, --replay or --from-ledger",
+      );
+    }
+    await policyTest({ ...options, tool: options.tool }, io);
+    return 0;
+  }
+  const callFlags = (["command", "path", "url", "model", "agent"] as const).filter(
+    (flag) => options[flag] !== undefined,
+  );
+  if (callFlags.length > 0) throw new Error(`--${callFlags[0]} needs --tool <name>`);
+  if (replay) {
+    if (paths.length > 0) throw new Error("pass test files or a replay, not both");
+    await policyReplay(options, io);
+    return 0;
+  }
+  if (options.team !== undefined) {
+    throw new Error("--team applies to --tool and replays; test cases set team themselves");
+  }
+  const files = paths.length > 0 ? collectTestFiles(paths, io.cwd) : [defaultTestFile(io)];
+  const { code } = await runPolicyTestFiles(files, options, io);
+  return code;
 }
 
 export interface PolicyObserveOptions extends ConfigOption, JsonOption {
@@ -368,19 +510,39 @@ export function registerPolicy(
 
   policy
     .command("test")
-    .description("evaluate one tool call against selfhost.toml and print the rules that fire")
-    .requiredOption("--tool <name>", "tool name, like Bash, exec_command or mcp__github__get_issue")
-    .option("--command <command>", "shell command")
-    .option("--path <path>", "file path relative to the repository root")
-    .option("--url <url>", "URL the agent requests")
-    .option("--model <id>", "model id")
-    .option("--agent <name>", "claude, codex, opencode, goose, cursor, copilot or other")
-    .option("--team <name>", "apply this team's overrides")
-    .option("-c, --config <path>", "path to selfhost.toml")
+    .description(
+      "run test cases against selfhost.toml and exit 1 on a mismatch, or check one call (--tool) or recorded calls (--replay, --from-ledger)",
+    )
+    .argument(
+      "[paths...]",
+      "test files or folders of *.test.toml (default: selfhost.test.toml next to selfhost.toml)",
+    )
+    .option(
+      "--tool <name>",
+      "check one call: tool name, like Bash, exec_command or mcp__github__get_issue",
+    )
+    .option("--command <command>", "with --tool: shell command")
+    .option("--path <path>", "with --tool: file path relative to the repository root")
+    .option("--url <url>", "with --tool: URL the agent requests")
+    .option("--model <id>", "with --tool: model id")
+    .option(
+      "--agent <name>",
+      "with --tool: claude, codex, opencode, goose, cursor, copilot or other",
+    )
+    .option("--team <name>", "with --tool or a replay: apply this team's overrides")
+    .option("--replay <file>", "replay tool calls from a JSON or JSON Lines file")
+    .option("--from-ledger", "replay the newest tool calls in this repository from the ledger")
+    .option("--since <when>", "with --from-ledger: how far back to read, like 7d or a date", "7d")
+    .option("--limit <n>", "with --from-ledger: at most this many calls", "100")
+    .option("--repo <dir>", "with --from-ledger: repository the calls must belong to")
+    .option("--database <url>", "Postgres url (default: DATABASE_URL, else the embedded ledger)")
+    .option("--data-dir <path>", "embedded ledger folder (default: ~/.selfhost/data)")
+    .option("-c, --config <path>", "path to selfhost.toml, for every test file")
     .option("--json", "print JSON")
-    .action((options: PolicyTestOptions) => {
+    .action(async (paths: string[], options: PolicyTestCommandOptions) => {
+      const deps = io();
       try {
-        policyTest(options, io());
+        deps.setExitCode(await runPolicyTest(paths, options, deps));
       } catch (error) {
         fail(error, options.json);
       }

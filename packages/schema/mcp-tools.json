@@ -78,6 +78,7 @@
               },
               "org": {
                 "additionalProperties": false,
+                "description": "The organization this file belongs to.",
                 "type": "object",
                 "required": [
                   "name"
@@ -93,6 +94,7 @@
               "ledger": {
                 "additionalProperties": false,
                 "default": {},
+                "description": "What the ledger keeps and for how long.",
                 "type": "object",
                 "properties": {
                   "retention_days": {
@@ -110,9 +112,11 @@
               },
               "redaction": {
                 "default": [],
+                "description": "Extra patterns to mask before anything is stored, on top of the built-in secret and email patterns.",
                 "type": "array",
                 "items": {
                   "additionalProperties": false,
+                  "description": "A pattern masked in everything the ledger stores.",
                   "type": "object",
                   "required": [
                     "name",
@@ -134,9 +138,11 @@
               },
               "rules": {
                 "default": [],
+                "description": "Rules checked on every tool call, in file order. Each starts in observe and moves to enforce with selfhost policy promote.",
                 "type": "array",
                 "items": {
                   "additionalProperties": false,
+                  "description": "One rule: what it matches, what it does and whether it is enforced yet.",
                   "type": "object",
                   "required": [
                     "id",
@@ -172,6 +178,7 @@
                       ],
                       "type": "array",
                       "items": {
+                        "description": "An agent, or all.",
                         "type": "string",
                         "enum": [
                           "all",
@@ -237,6 +244,7 @@
               "review": {
                 "additionalProperties": false,
                 "default": {},
+                "description": "How agent work is scored, routed and timed in the review list.",
                 "type": "object",
                 "properties": {
                   "high_risk_paths": {
@@ -262,6 +270,7 @@
                     "patternProperties": {
                       "^(.*)$": {
                         "minItems": 1,
+                        "description": "People who review changes under this glob.",
                         "type": "array",
                         "items": {
                           "minLength": 1,
@@ -312,6 +321,7 @@
               "packages": {
                 "additionalProperties": false,
                 "default": {},
+                "description": "Which packages agents may install.",
                 "type": "object",
                 "properties": {
                   "mode": {
@@ -406,6 +416,7 @@
               "alerts": {
                 "additionalProperties": false,
                 "default": {},
+                "description": "When the spend spike alarm and the plan limit forecast speak up.",
                 "type": "object",
                 "properties": {
                   "spike_factor": {
@@ -502,6 +513,7 @@
                   },
                   "overflow": {
                     "additionalProperties": false,
+                    "description": "Team API key suggested when a plan limit is about to run out.",
                     "type": "object",
                     "required": [
                       "key",
@@ -530,6 +542,7 @@
                   "^(.*)$": {
                     "additionalProperties": false,
                     "default": {},
+                    "description": "A team: its members and the rule overrides that apply to them.",
                     "type": "object",
                     "properties": {
                       "members": {
@@ -538,6 +551,7 @@
                         "type": "array",
                         "items": {
                           "minLength": 1,
+                          "description": "Person id, as in [review] owners.",
                           "type": "string"
                         }
                       },
@@ -549,6 +563,7 @@
                           "^(.*)$": {
                             "additionalProperties": false,
                             "minProperties": 1,
+                            "description": "Fields of the rule this team sees differently. The rest come from the rule.",
                             "type": "object",
                             "properties": {
                               "mode": {
@@ -565,6 +580,7 @@
                                 "description": "Agents the rule applies to. \"all\" matches every agent.",
                                 "type": "array",
                                 "items": {
+                                  "description": "An agent, or all.",
                                   "type": "string",
                                   "enum": [
                                     "all",
@@ -579,6 +595,7 @@
                                 }
                               },
                               "action": {
+                                "description": "Action for this team.",
                                 "type": "string",
                                 "enum": [
                                   "block",
@@ -587,6 +604,7 @@
                               },
                               "message": {
                                 "minLength": 1,
+                                "description": "Message for this team.",
                                 "type": "string"
                               }
                             }
@@ -604,6 +622,7 @@
             "type": "array",
             "items": {
               "additionalProperties": false,
+              "description": "One rule: what it matches, what it does and whether it is enforced yet.",
               "type": "object",
               "required": [
                 "id",
@@ -639,6 +658,7 @@
                   ],
                   "type": "array",
                   "items": {
+                    "description": "An agent, or all.",
                     "type": "string",
                     "enum": [
                       "all",

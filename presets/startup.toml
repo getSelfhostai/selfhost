@@ -1,0 +1,225 @@
+#:schema https://selfhost.ai/schema/selfhost.toml.v1.json
+# selfhost.toml preset: startup default.
+#
+# For a small team that ships fast. Enforced from day one: moving real money, touching
+# production data and tearing infrastructure down. Everything else (publishes, deploys,
+# emails, risky shell habits) starts in observe: selfhost records what each rule would have
+# done and stops nothing. Read the hits with `selfhost policy report` and promote a rule
+# with `selfhost policy promote <rule id>` once it catches only what it should.
+#
+# Tests for this file: presets/startup.test.toml. Run them with `selfhost policy test`.
+version = 1
+
+# [guardrails]: built-in guardrails for force pushes, rm -rf and .env reads go here.
+
+# Payments
+
+# The Stripe CLI in live mode (--live or a live key) moves real money. Test mode, the CLI's
+# default, is not matched.
+[[rules]]
+id = "stripe-live"
+mode = "enforce"
+action = "block"
+irreversible = true
+message = "Live Stripe calls move real money. Use test mode, or ask a person to run it."
+match.command = '(^|[^\w.-])stripe\s[^|;&]*(--live\b|\b[rs]k_live_)|\b[rs]k_live_[^|;&]*(^|[^\w.-])stripe\s'
+
+# HTTP calls to the live APIs of Stripe, PayPal, Razorpay, Square, Adyen, Braintree, Paddle,
+# Lemon Squeezy and Checkout.com. Sandbox hosts are not matched.
+[[rules]]
+id = "payment-api"
+mode = "enforce"
+action = "ask"
+irreversible = true
+message = "Calls to a payment provider's live API can move money. A person runs these."
+match.command = '(^|[^\w.-])(curl|wget|http|https|xh)\s[^|;&]*(api\.stripe\.com|api(-m)?\.paypal\.com|api\.razorpay\.com|connect\.squareup\.com|[\w-]+-live\.adyenpayments\.com|api\.braintreegateway\.com|api\.paddle\.com|api\.lemonsqueezy\.com|api\.checkout\.com)'
+
+# Emails
+
+# Sends email or SMS: sendmail, mail -s, mutt, msmtp, swaks, aws ses send-*, curl --mail-rcpt, the
+# Twilio CLI, and the send endpoints of SendGrid, Mailgun, Postmark, Resend, Mandrill, SparkPost,
+# Brevo, Mailjet and Twilio.
+[[rules]]
+id = "email-send"
+mode = "observe"
+action = "ask"
+irreversible = true
+message = "Sent email and SMS cannot be taken back. A person sends these."
+match.command = '(^|[^\w.-])(sendmail|mailx|mutt|msmtp|swaks|ssmtp)(?![\w.-])|(^|[^\w.-])mail\s+-s\s|(^|[^\w.-])aws\s+(ses|sesv2)\s+send-|\s--mail-rcpt\b|(^|[^\w.-])twilio\s+api:core:messages:create\b|api\.sendgrid\.com/v3/mail/send|api(\.eu)?\.mailgun\.net/v3/\S+/messages|api\.postmarkapp\.com/email|api\.resend\.com/emails|mandrillapp\.com/api/1\.0/messages/send|api\.sparkpost\.com/api/v1/transmissions|api\.(brevo|sendinblue)\.com/v3/smtp/email|api\.mailjet\.com/v3(\.1)?/send|api\.twilio\.com/2010-04-01/Accounts/\S+/Messages'
+
+# Production data
+
+# Database shells, dumps and restores (psql, mysql, mongosh, redis-cli, pg_dump and the like) with
+# production in the same command: a host, URL, variable or app name containing prod or production.
+# Names with staging, preprod or nonprod are not matched.
+[[rules]]
+id = "prod-db"
+mode = "enforce"
+action = "ask"
+irreversible = true
+message = "This touches a production database. Use a staging copy, or ask a person to run it."
+match.command = '(^|[|;&])(?=[^|;&]*(^|[^A-Za-z])([Pp]rod|PROD)(uction|UCTION)?([^A-Za-z]|$))[^|;&]*(^|[^\w.-])(psql|pgcli|mysql|mariadb|mongosh|mongo|redis-cli|clickhouse-client|sqlcmd|cqlsh|pg_dump|pg_dumpall|pg_restore|mysqldump|mongodump|mongorestore|mongoexport|mongoimport)(?![\w.-])'
+
+# Migrations, schema pushes and app consoles run against production (prisma, rails, rake, alembic,
+# django, knex, sequelize, typeorm, drizzle-kit, flyway, liquibase, diesel, goose, dbmate, atlas),
+# plus supabase db push, supabase db reset --linked, heroku pg:* and heroku run.
+[[rules]]
+id = "prod-migrations"
+mode = "enforce"
+action = "ask"
+irreversible = true
+message = "Schema and data changes in production go through a person or the deploy pipeline."
+match.command = '(^|[|;&])(?=[^|;&]*(^|[^A-Za-z])([Pp]rod|PROD)(uction|UCTION)?([^A-Za-z]|$))[^|;&]*(^|[^\w.-])(prisma\s+(migrate\s+(deploy|reset|resolve)|db\s+(push|execute|seed))|rails\s+(db:\S+|dbconsole|console|runner|c|r)|rake\s+db:\S+|alembic(?![\w.-])[^|;&]*\s(upgrade|downgrade|stamp)|manage\.py\s+(migrate|flush|loaddata|dbshell|shell)|knex\s+(migrate|seed):\S+|sequelize(-cli)?\s+db:\S+|typeorm\s+(migration:run|migration:revert|schema:drop|schema:sync)|drizzle-kit\s+(push|migrate)|flyway\s+(migrate|clean|repair|undo)|liquibase\s+(update|rollback|drop-all)|diesel\s+(migration\s+(run|revert|redo)|database\s+reset)|goose\s+(up|down|reset|redo)|dbmate\s+(up|down|rollback|drop|migrate)|atlas\s+(schema|migrate)\s+apply)(?![\w.-])|(^|[^\w.-])supabase\s+db\s+push\b|(^|[^\w.-])supabase\s+db\s+reset\b[^|;&]*\s--linked\b|(^|[^\w.-])heroku\s+(pg:(reset|push|killall|promote|psql)|run)\b'
+
+# Connections with ssh, scp, sftp, rsync and mosh to a production host. Not matched: ssh-keygen,
+# and hosts without prod in the name.
+[[rules]]
+id = "prod-ssh"
+mode = "observe"
+action = "ask"
+message = "Shell access to production goes through a person."
+match.command = '(^|[|;&])(?=[^|;&]*(^|[^A-Za-z])([Pp]rod|PROD)(uction|UCTION)?([^A-Za-z]|$))[^|;&]*(^|[^\w.-])(ssh|scp|sftp|rsync|mosh)(?![\w.-])'
+
+# Publishes
+
+# Publishes a package version, which can never be published again under the same number: npm,
+# pnpm, yarn, bun, cargo, poetry, uv, flit, hatch, jsr, deno, vsce, ovsx, changesets, lerna, dart,
+# twine, gem, mvn deploy, gradle publish, nuget, CocoaPods, Hex, helm push, goreleaser and
+# semantic-release. Dry runs and snapshots are not matched.
+[[rules]]
+id = "package-publish"
+mode = "observe"
+action = "ask"
+irreversible = true
+message = "Publishing a package version is permanent. Release from CI, or ask a person."
+match.command = '(^|[^\w.-])(npm|pnpm|yarn|bun|cargo|poetry|uv|flit|hatch|jsr|deno|vsce|ovsx|lerna|changeset|dart|flutter)(?![\w.-])[^|;&]*\spublish(?![\w-])(?![^|;&]*--dry-run)|(^|[^\w.-])twine\s+upload\b|(^|[^\w.-])gem\s+push\b|(^|[^\w.-])mvn(?![\w.-])[^|;&]*\sdeploy\b|(^|[^\w.-])gradlew?(?![\w.-])[^|;&]*\spublish(?!ToMavenLocal)\w*|(^|[^\w.-])nuget\s+push\b|(^|[^\w.-])pod\s+trunk\s+push\b|(^|[^\w.-])mix\s+hex\.publish\b|(^|[^\w.-])helm\s+push\b|(^|[^\w.-])goreleaser\s+release\b(?![^|;&]*--snapshot)|(^|[^\w.-])semantic-release(?![\w.-])(?![^|;&]*--dry-run)'
+
+# GitHub releases and pushed version tags (git push --tags, git push origin v1.2.3), which start
+# release workflows.
+[[rules]]
+id = "release-publish"
+mode = "observe"
+action = "ask"
+irreversible = true
+message = "Releases and version tags start release workflows. A person cuts releases."
+match.command = '(^|[^\w.-])gh\s+release\s+(create|upload|edit|delete)\b|(^|[^\w.-])git(?![\w.-])[^|;&]*\spush\b[^|;&]*\s(--tags|--follow-tags|refs/tags/\S+|v?\d+\.\d+\.\d+)(?![\w.-])'
+
+# Pushes container images to a registry: docker, podman and nerdctl push, docker buildx --push,
+# crane and skopeo.
+[[rules]]
+id = "container-push"
+mode = "observe"
+action = "ask"
+irreversible = true
+message = "Pushing an image can replace a tag other people pull. Push from CI, or ask a person."
+match.command = '(^|[^\w.-])(docker|podman|nerdctl)\s+(image\s+|compose\s+)?push\b|(^|[^\w.-])docker\s+buildx\s+(build|bake)\b[^|;&]*\s--push\b|(^|[^\w.-])(crane|skopeo)\s+(push|copy)\b'
+
+# Infrastructure
+
+# Tears infrastructure down: terraform, tofu and terragrunt destroy (or apply -destroy), pulumi
+# destroy and stack rm, cdk destroy, sam delete, serverless remove, cloudformation delete-stack.
+# Not matched: terraform plan -destroy.
+[[rules]]
+id = "infra-destroy"
+mode = "enforce"
+action = "block"
+irreversible = true
+message = "Destroying infrastructure is not done by agents. A person runs it."
+match.command = '(^|[^\w.-])(terraform|tofu|terragrunt)(?![\w.-])[^|;&]*(\sdestroy|\sapply(?![\w.-])[^|;&]*\s-destroy)(?![\w.-])|(^|[^\w.-])pulumi(?![\w.-])[^|;&]*\s(destroy|stack\s+rm)(?![\w.-])|(^|[^\w.-])cdk(?![\w.-])[^|;&]*\sdestroy(?![\w.-])|(^|[^\w.-])sam(?![\w.-])[^|;&]*\sdelete(?![\w.-])|(^|[^\w.-])(serverless|sls)(?![\w.-])[^|;&]*\sremove(?![\w.-])|(^|[^\w.-])aws\s+cloudformation\s+delete-stack\b'
+
+# Changes real infrastructure: terraform, tofu and terragrunt apply, import, taint and state
+# edits, pulumi up and refresh, cdk, sam and serverless deploy, cloudformation deploys. Not
+# matched: plan, preview, diff, init and state list.
+[[rules]]
+id = "infra-apply"
+mode = "observe"
+action = "ask"
+irreversible = true
+message = "Infrastructure changes need a person. Run plan and share the output instead."
+match.command = '(^|[^\w.-])(terraform|tofu|terragrunt)(?![\w.-])[^|;&]*\s(apply|import|taint|untaint|force-unlock|state\s+(rm|mv|push|replace-provider)|workspace\s+delete)(?![\w.-])|(^|[^\w.-])pulumi(?![\w.-])[^|;&]*\s(up|update|refresh|import|cancel|state\s+(delete|unprotect))(?![\w.-])|(^|[^\w.-])(cdk|sam|serverless|sls)(?![\w.-])[^|;&]*\sdeploy(?![\w.-])|(^|[^\w.-])aws\s+cloudformation\s+(deploy|create-stack|update-stack|execute-change-set)\b'
+
+# Deletes cloud resources from the command line: aws delete-*, terminate-*, deregister-*, s3 rm,
+# s3 rb and s3 sync --delete, gcloud, az and doctl delete, gsutil and gcloud storage rm,
+# fly destroy, heroku destroy, vercel remove.
+[[rules]]
+id = "cloud-delete"
+mode = "enforce"
+action = "ask"
+irreversible = true
+message = "Deleting cloud resources needs a person."
+match.command = '(^|[^\w.-])aws\s+([^|;&\s]+\s+)*?(delete-[\w-]+|terminate-[\w-]+|deregister-[\w-]+|purge-queue|schedule-key-deletion|rb|rm)(?![\w.-])|(^|[^\w.-])aws\s+s3\s+sync\b[^|;&]*\s--delete\b|(^|[^\w.-])(gcloud|az|doctl)\s+([^|;&\s]+\s+)*?delete(?![\w.-])|(^|[^\w.-])gcloud\s+storage\s+rm\b|(^|[^\w.-])gsutil\s+(-m\s+)?(rm|rb)\b|(^|[^\w.-])fly(ctl)?\s+(apps\s+destroy|destroy|volumes\s+(destroy|delete))\b|(^|[^\w.-])heroku\s+(apps|addons):destroy\b|(^|[^\w.-])vercel\s+(remove|rm)\b'
+
+# Changes through kubectl, helm and oc (apply, delete, patch, scale, exec, rollout, install,
+# upgrade and the like) with a production context, namespace or kubeconfig in the command. Not
+# matched: get, describe and logs.
+[[rules]]
+id = "kubectl-prod"
+mode = "observe"
+action = "ask"
+irreversible = true
+message = "Changes to a production cluster need a person."
+match.command = '(^|[|;&])(?=[^|;&]*(^|[^A-Za-z])([Pp]rod|PROD)(uction|UCTION)?([^A-Za-z]|$))[^|;&]*(^|[^\w.-])(kubectl|helm|oc)(?![\w.-])[^|;&]*\s(delete|apply|replace|patch|scale|drain|cordon|uncordon|edit|create|set|annotate|label|taint|exec|cp|rollout\s+(restart|undo)|install|upgrade|uninstall|rollback)(?![\w.-])'
+
+# Production deploys: vercel --prod, netlify deploy --prod, fly deploy, wrangler deploy,
+# firebase deploy, gcloud app, run and functions deploy, eb deploy, git push heroku, kamal and
+# railway up. Preview deploys are not matched.
+[[rules]]
+id = "prod-deploy"
+mode = "observe"
+action = "ask"
+message = "Production deploys go through a person or the deploy pipeline."
+match.command = '(^|[^\w.-])vercel(?![\w.-])[^|;&]*\s--prod\b|(^|[^\w.-])netlify\s+deploy\b[^|;&]*\s--prod\b|(^|[^\w.-])fly(ctl)?\s+deploy\b|(^|[^\w.-])wrangler\s+(deploy|publish)\b|(^|[^\w.-])firebase\s+deploy\b|(^|[^\w.-])gcloud\s+(app|run|functions)\s+deploy\b|(^|[^\w.-])eb\s+deploy\b|(^|[^\w.-])git\s+push\s+heroku\b|(^|[^\w.-])kamal\s+(deploy|redeploy|rollback)\b|(^|[^\w.-])railway\s+up\b'
+
+# Everyday risks
+
+# Piping a download straight into a shell runs code nobody has read.
+[[rules]]
+id = "curl-pipe-shell"
+mode = "observe"
+action = "ask"
+message = "Download the script and read it before running it."
+match.command = '\b(curl|wget)\b[^|]*\|\s*(sudo\s+)?(ba|z|da)?sh\b'
+
+# Throws away local work: git reset --hard, clean -f, checkout -- ., stash drop and clear,
+# branch -D. Not matched: git branch -d and reset --soft.
+[[rules]]
+id = "git-discard-work"
+mode = "observe"
+action = "ask"
+message = "This discards uncommitted or unmerged work. Commit or stash it first."
+match.command = '(^|[^\w.-])git(?![\w.-])[^|;&]*\s(reset\s[^|;&]*--hard|clean\s+-[A-Za-z]*[fx][A-Za-z]*|stash\s+(drop|clear)|branch\s+(-D|--delete\s+--force)|checkout\s+--\s+\.)(?![\w-])'
+
+# Reads secrets from a secret manager: AWS Secrets Manager and SSM with decryption, gcloud
+# secrets, Azure Key Vault, Vault, 1Password, Doppler, vercel env pull, kubectl get secret.
+[[rules]]
+id = "secrets-read"
+mode = "observe"
+action = "ask"
+message = "Agents do not read secrets. Ask a person to set what the task needs."
+match.command = '(^|[^\w.-])aws\s+secretsmanager\s+get-secret-value\b|(^|[^\w.-])aws\s+ssm\s+get-parameters?\b[^|;&]*\s--with-decryption\b|(^|[^\w.-])gcloud\s+secrets\s+versions\s+access\b|(^|[^\w.-])az\s+keyvault\s+secret\s+show\b|(^|[^\w.-])vault\s+(kv\s+get|read)\b|(^|[^\w.-])op\s+(read|item\s+get|inject)\b|(^|[^\w.-])doppler\s+secrets\b|(^|[^\w.-])vercel\s+env\s+pull\b|(^|[^\w.-])kubectl(?![\w.-])[^|;&]*\sget\s+secrets?\b'
+
+# Installs code from a URL, a git repository or an extra package index instead of the registry,
+# and go install @latest.
+[[rules]]
+id = "deps-from-url"
+mode = "observe"
+action = "ask"
+message = "Install from the registry with a pinned version, or ask a person."
+match.command = '(^|[^\w.-])(npm|pnpm|yarn|bun)\s+(i|install|add)\b[^|;&]*\s(git\+|git:|github:|https?://)|(^|[^\w.-])(pip3?|pipx|uv\s+pip)\s+install\b[^|;&]*\s(git\+|https?://|--index-url|--extra-index-url|-i\s)|(^|[^\w.-])cargo\s+install\b[^|;&]*\s--git\b|(^|[^\w.-])go\s+install\b[^|;&]*@(latest|main|master)\b'
+
+[review]
+# Changes here always rank as high risk in the review list.
+high_risk_paths = [
+  "**/migrations/**",
+  "**/*.tf",
+  "infra/**",
+  ".github/workflows/**",
+  "**/auth/**",
+  "**/billing/**",
+  "**/payments/**",
+]
+
+[packages]
+# Flags package versions published in the last 3 days, the window most supply chain attacks use.
+mode = "observe"
+min_age_days = 3

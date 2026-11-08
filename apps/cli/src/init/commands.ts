@@ -40,6 +40,7 @@ import { runSpend, type SpendReport } from "../spend.js";
 import { type Fetch, serverUrl } from "../team/client.js";
 import { joinTeam } from "../team/commands.js";
 import { readMembership } from "../team/config.js";
+import { PRESET_NAMES, type PresetName } from "./presets.generated.js";
 import {
   readRecord,
   recordApplied,
@@ -48,7 +49,13 @@ import {
   type UndoReport,
   undoInit,
 } from "./record.js";
-import { STARTER_RULES, writeStarterConfig } from "./starter.js";
+import {
+  configText,
+  parsePreset,
+  presetModes,
+  STARTER_RULES,
+  writeStarterConfig,
+} from "./starter.js";
 
 /** The hosted team server, until SELFHOST_HOSTED_URL says otherwise. */
 export const HOSTED_URL = "https://app.selfhost.ai";
@@ -77,6 +84,8 @@ export interface InitOptions {
   undo?: boolean;
   yes?: boolean;
   json?: boolean;
+  /** Write this preset as selfhost.toml instead of the starter rules. */
+  preset?: string;
   /** Treat this folder as the home directory; for fixtures and tests. */
   home?: string;
 }
@@ -108,7 +117,8 @@ export interface InitReport {
   agents: InitAgent[];
   /** How to put the agent config files back, byte for byte. */
   undo: string;
-  config: { path: string | null; action: "created" | "kept" | "none" };
+  /** preset: the preset written, null for the starter rules or when nothing was written. */
+  config: { path: string | null; action: "created" | "kept" | "none"; preset: PresetName | null };
   /** Dry run: what would be imported. */
   sources: { log_files: number; hook_lines: number; ledger: string } | null;
   import: ImportReport | null;
@@ -309,7 +319,15 @@ function printHeader(
   const { config } = report;
   const file = config.path ? shown(cwd, config.path) : "";
   if (config.action === "kept") write(`Policy: kept ${file}.`);
-  else if (config.action === "created") {
+  else if (config.action === "created" && config.preset) {
+    const verb = report.dry_run ? "would write" : "wrote";
+    const modes = presetModes(config.preset);
+    const rules = modes.enforce + modes.observe + modes.off;
+    write(
+      `Policy: ${verb} ${file} from the ${config.preset} preset, ${rules} rules ` +
+        `(${modes.enforce} enforce, ${modes.observe} observe).`,
+    );
+  } else if (config.action === "created") {
     const verb = report.dry_run ? "would write" : "wrote";
     write(`Policy: ${verb} ${file}, ${STARTER_RULES} rules, all in observe mode.`);
   } else write("Policy: not in a git repository, so no selfhost.toml was written.");
@@ -420,6 +438,7 @@ export async function runInit(options: InitOptions, io: InitIo): Promise<number>
   const since = options.since ?? "30d";
   const sinceDate = parseSince(since, now) ?? now;
   const invite = parseInvite(options, io.env);
+  const preset = parsePreset(options.preset);
   const where = paths(options, io);
   const { command, warning } = hookCommand(io.probes.which);
   const warnings = warning ? [warning] : [];
@@ -441,10 +460,17 @@ export async function runInit(options: InitOptions, io: InitIo): Promise<number>
   const repo = repoDir(undefined, io.cwd);
   const config: InitReport["config"] =
     found && existsSync(found.path)
-      ? { path: found.path, action: "kept" }
+      ? { path: found.path, action: "kept", preset: null }
       : repo
-        ? { path: join(repo, CONFIG_FILE_NAME), action: "created" }
-        : { path: null, action: "none" };
+        ? { path: join(repo, CONFIG_FILE_NAME), action: "created", preset: preset ?? null }
+        : { path: null, action: "none", preset: null };
+  if (preset && config.action === "kept") {
+    warnings.push(
+      `${shown(io.cwd, config.path ?? "")} already exists, so the ${preset} preset was not written. Move it away and run init again to start from the preset.`,
+    );
+  } else if (preset && config.action === "none") {
+    warnings.push(`not in a git repository, so the ${preset} preset was not written.`);
+  }
 
   // The team comes first: it is the first write, so a refused invite leaves every file as it was.
   const membership = readMembership(where.configPath);
@@ -532,7 +558,9 @@ export async function runInit(options: InitOptions, io: InitIo): Promise<number>
     for (const file of entry.files) backups.set(file.path, file.backup);
   if (apply.some((plan) => plan.changes.length > 0))
     recordApplied(recordPath(where.home), apply, backups);
-  if (config.action === "created" && config.path) writeStarterConfig(config.path);
+  if (config.action === "created" && config.path) {
+    writeStarterConfig(config.path, configText(preset));
+  }
   printHeader(report, write, io.cwd, readRecord(recordPath(where.home)).length > 0);
 
   const ledger = await openLedger({
@@ -620,6 +648,10 @@ export function registerInit(
       "join on the hosted server (SELFHOST_HOSTED_URL, else https://app.selfhost.ai)",
     )
     .option("--agent <name...>", "claude or codex (default: the ones found)")
+    .option(
+      "--preset <name>",
+      `write selfhost.toml from a preset: ${PRESET_NAMES.join(", ")} (default: starter rules, all in observe)`,
+    )
     .option("--person <id>", "who the sessions belong to (default: git email)")
     .option("--database <url>", "Postgres url (default: DATABASE_URL, else the embedded ledger)")
     .option("--data-dir <path>", "embedded ledger folder (default: ~/.selfhost/data)")

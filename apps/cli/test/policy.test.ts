@@ -6,7 +6,7 @@ import { type Ledger, openLedger, stableEventId } from "@selfhost/ledger";
 import { EVENT_SCHEMA, type LedgerEvent } from "@selfhost/schema";
 import { Command } from "commander";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { parseAgent, policyObserve, registerPolicy } from "../src/policy/commands.js";
+import { parseAgent, policyObserve, policyReplay, registerPolicy } from "../src/policy/commands.js";
 import { createProgram } from "../src/program.js";
 import { run, tempDir } from "./run.js";
 
@@ -120,6 +120,7 @@ describe("selfhost policy test", () => {
     expect(result.out).toContain("2 rules fire:");
     expect(result.out).toMatch(/no-force-push\s+observe\s+block\s+Force pushes are blocked/);
     expect(result.out).toMatch(/models\.allow\s+observe\s+block\s+Model "o3" is not/);
+    expect(result.out).toContain("Decision: block (observe): recorded only, nothing is stopped.");
     const none = await run(["policy", "test", "--tool", "Read", "--path", "src/a.ts"], {
       cwd: dir.root,
     });
@@ -146,6 +147,8 @@ describe("selfhost policy test", () => {
           irreversible: false,
         },
       ],
+      decision: "block",
+      mode: "enforce",
     });
   });
 
@@ -174,6 +177,237 @@ describe("selfhost policy test", () => {
     const result = await run(["policy", "test", "--tool", "Bash"], { cwd: dir.root });
     expect(result.code).toBe(1);
     expect(result.err).toContain("selfhost.toml:3: mcp.mode: Expected one of");
+  });
+});
+
+describe("selfhost policy test with test files", () => {
+  const CASES = `[[cases]]
+name = "force push is recorded"
+command = "git push --force origin main"
+decision = "block"
+mode = "observe"
+rules = ["no-force-push"]
+
+[[cases]]
+name = "migrations wait for a person"
+tool = "Edit"
+path = "./db/migrations/002.sql"
+decision = "ask"
+mode = "enforce"
+
+[[cases]]
+name = "platform force push is enforced"
+command = "git push --force"
+team = "platform"
+decision = "block"
+mode = "enforce"
+rules = ["no-force-push"]
+
+[[cases]]
+name = "reading source is fine"
+tool = "Read"
+path = "src/app.ts"
+decision = "allow"
+rules = []
+`;
+
+  it("runs selfhost.test.toml next to selfhost.toml when given no paths", async () => {
+    const dir = repo({
+      "selfhost.toml": CATEGORIES,
+      "selfhost.test.toml": CASES,
+      "src/.keep": "",
+    });
+    const result = await run(["policy", "test"], { cwd: dir.path("src") });
+    expect(result.err).toBe("");
+    expect(result.code).toBe(0);
+    expect(result.out.split("\n")).toEqual([
+      "../selfhost.test.toml (../selfhost.toml): 4 passed",
+      "PASS: 4 of 4 cases passed in 1 file.",
+    ]);
+  });
+
+  it("exits 1 and shows expected and actual for each mismatch", async () => {
+    const dir = repo({
+      "selfhost.toml": CATEGORIES,
+      "policy/edge.test.toml": `config = "../selfhost.toml"
+
+[[cases]]
+name = "force push"
+command = "git push --force"
+decision = "block"
+mode = "enforce"
+rules = ["no-force-push"]
+
+[[cases]]
+name = "paste site"
+tool = "WebFetch"
+url = "https://pastebin.com/raw/x"
+decision = "allow"
+
+[[cases]]
+name = "unknown team"
+command = "ls"
+team = "nope"
+decision = "allow"
+`,
+    });
+    const result = await run(["policy", "test", "policy"], { cwd: dir.root });
+    expect(result.code).toBe(1);
+    expect(result.out.split("\n")).toEqual([
+      "policy/edge.test.toml (selfhost.toml): 0 passed, 3 failed",
+      "  FAIL force push (policy/edge.test.toml:3)",
+      "    expected block (enforce), rules no-force-push",
+      "    got      block (observe), rules no-force-push",
+      "  FAIL paste site (policy/edge.test.toml:10)",
+      "    expected allow",
+      "    got      block (observe), rules no-paste-sites",
+      "  FAIL unknown team (policy/edge.test.toml:16)",
+      '    team: "nope" has no [teams.nope] table in the policy',
+      "FAIL: 0 of 3 cases passed in 1 file.",
+    ]);
+    const json = await run(["policy", "test", "policy/edge.test.toml", "--json"], {
+      cwd: dir.root,
+    });
+    const report = JSON.parse(json.out);
+    expect(json.code).toBe(1);
+    expect(report).toMatchObject({
+      schema: "selfhost.policy_tests/v1",
+      passed: 0,
+      failed: 3,
+      invalid_files: 0,
+    });
+    expect(report.files[0].cases[0]).toMatchObject({
+      name: "force push",
+      line: 3,
+      passed: false,
+      call: { tool: "Bash", command: "git push --force" },
+      expected: { decision: "block", mode: "enforce", rules: ["no-force-push"] },
+      actual: { decision: "block", mode: "observe", rules: ["no-force-push"] },
+      problems: ["mode: expected enforce, got observe"],
+    });
+    expect(report.files[0].cases[1].problems).toEqual([
+      "decision: expected allow, got block (observe)",
+    ]);
+  });
+
+  it("names the file, line and field when a test file or its policy is invalid", async () => {
+    const dir = repo({
+      "selfhost.toml": CATEGORIES,
+      "bad.test.toml": '[[cases]]\nname = "x"\ndecision = "maybe"\n',
+      "broken.toml": 'version = 1\n[mcp]\nmode = "strict"\n',
+      "broken.test.toml": '[[cases]]\nname = "x"\ndecision = "allow"\n',
+    });
+    const result = await run(["policy", "test", "bad.test.toml", "broken.test.toml"], {
+      cwd: dir.root,
+    });
+    expect(result.code).toBe(1);
+    expect(result.out.split("\n")).toEqual([
+      "bad.test.toml: not run, 1 error",
+      "  bad.test.toml:3: cases[0].decision: Expected one of: allow, ask, block",
+      "broken.test.toml: not run, 1 error",
+      "  broken.toml:3: mcp.mode: Expected one of: observe, enforce, off",
+      "FAIL: 0 of 0 cases passed in 2 files, 2 files not run.",
+    ]);
+  });
+
+  it("runs every file in a folder against the policy each one names, or --config", async () => {
+    const dir = repo({
+      "selfhost.toml": CATEGORIES,
+      "tests/a.test.toml": `config = "../selfhost.toml"\n${CASES}`,
+      "tests/b.test.toml": CASES,
+      "tests/notes.toml": "not a test file",
+    });
+    const result = await run(["policy", "test", "tests", "--json"], { cwd: dir.root });
+    expect(result.code).toBe(0);
+    const report = JSON.parse(result.out);
+    // b has no config and no b.toml beside it, so the nearest selfhost.toml is used.
+    expect(report.files.map((f: { path: string; config: string }) => [f.path, f.config])).toEqual([
+      [dir.path("tests", "a.test.toml"), dir.path("selfhost.toml")],
+      [dir.path("tests", "b.test.toml"), dir.path("selfhost.toml")],
+    ]);
+    dir.write("other.toml", "version = 1\n");
+    const other = await run(["policy", "test", "tests/b.test.toml", "--config", "other.toml"], {
+      cwd: dir.root,
+    });
+    expect(other.code).toBe(1);
+    expect(other.out).toContain("b.test.toml (other.toml): 1 passed, 3 failed");
+  });
+
+  it("explains what is missing or contradictory", async () => {
+    const dir = repo({ "selfhost.toml": CATEGORIES, "a.test.toml": CASES });
+    const cases: [string[], RegExp][] = [
+      [[], /No test files given and no selfhost\.test\.toml/],
+      [["missing.test.toml"], /missing\.test\.toml does not exist/],
+      [["a.test.toml", "--tool", "Bash"], /--tool checks one call/],
+      [["--command", "ls"], /--command needs --tool <name>/],
+      [["--replay", "x.json", "--from-ledger"], /not both/],
+      [["a.test.toml", "--team", "platform"], /test cases set team themselves/],
+    ];
+    for (const [args, message] of cases) {
+      const result = await run(["policy", "test", ...args], { cwd: dir.root });
+      expect(result.code, args.join(" ")).toBe(1);
+      expect(result.err).toMatch(message);
+    }
+  });
+});
+
+describe("selfhost policy test --replay", () => {
+  it("runs recorded calls from JSON Lines and JSON, ledger events included", async () => {
+    const dir = repo({ "selfhost.toml": CATEGORIES });
+    const lines = [
+      { tool: "Bash", command: "git push --force origin main" },
+      { tool: "Read", path: "src/app.ts" },
+      {
+        id: "0190f5a0-0000-7000-8000-000000000001",
+        schema: "selfhost.event/v1",
+        ts: "2026-11-01T09:01:00.000Z",
+        source: "hook",
+        kind: "tool.called",
+        actor: { kind: "agent", id: "codex:session:s1" },
+        agent: { vendor: "codex" },
+        model: "o3",
+        tool: { name: "apply_patch" },
+        target: { type: "file", value: "db/migrations/003.sql" },
+      },
+      { kind: "session.started", ts: "2026-11-01T09:00:00.000Z" },
+    ];
+    dir.write("calls.jsonl", `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`);
+    const text = await run(["policy", "test", "--replay", "calls.jsonl"], { cwd: dir.root });
+    expect(text.err).toBe("");
+    expect(text.code).toBe(0);
+    const out = text.out.split("\n");
+    expect(out[0]).toBe(
+      "Replayed 3 tool calls from calls.jsonl against selfhost.toml (1 skipped).",
+    );
+    expect(text.out).toMatch(/^ {2}ask \(enforce\) +1$/m);
+    expect(text.out).toMatch(/^ {2}block \(observe\) +1$/m);
+    expect(text.out).toMatch(/^ {2}allow +1$/m);
+    expect(text.out).toMatch(
+      /^ {2}2026-11-01 09:01 +ask \(enforce\) +protect-migrations,models\.allow +apply_patch +db\/migrations\/003\.sql$/m,
+    );
+
+    dir.write("calls.json", JSON.stringify(lines.slice(0, 2)));
+    const json = await run(["policy", "test", "--replay", "calls.json", "--json"], {
+      cwd: dir.root,
+    });
+    expect(JSON.parse(json.out)).toMatchObject({
+      schema: "selfhost.policy_replay/v1",
+      source: { kind: "file", path: dir.path("calls.json") },
+      calls: 2,
+      skipped: 0,
+      decisions: [
+        { decision: "block", mode: "observe", calls: 1 },
+        { decision: "allow", mode: null, calls: 1 },
+      ],
+      rules: [{ rule_id: "no-force-push", calls: 1 }],
+    });
+  });
+
+  it("refuses entries that are not tool calls", async () => {
+    const dir = repo({ "selfhost.toml": CATEGORIES, "calls.json": '[{"command": "ls"}]' });
+    const result = await run(["policy", "test", "--replay", "calls.json"], { cwd: dir.root });
+    expect(result.code).toBe(1);
+    expect(result.err).toMatch(/entry 1: expected a tool call with a tool name/);
   });
 });
 
@@ -314,6 +548,35 @@ allow = ["claude-opus-*"]
     expect(report).toMatchObject({ tool_calls: 2, evaluated: 0, recorded: 0 });
     expect(report.policy.commit).toBeNull();
     expect(JSON.parse(lines.join("\n")).schema).toBe("selfhost.policy_observe/v1");
+  });
+
+  it("replays the newest tool calls of this repository with --from-ledger", async () => {
+    const { dir } = await seeded();
+    const lines: string[] = [];
+    const report = await policyReplay({ fromLedger: true }, io(dir.root, lines), ledger);
+    expect(report).toMatchObject({
+      schema: "selfhost.policy_replay/v1",
+      source: { kind: "ledger", repo: dir.root, since: "2026-11-01T00:00:00.000Z" },
+      calls: 2,
+      skipped: 0,
+      rules: [
+        { rule_id: "models.allow", calls: 1 },
+        { rule_id: "no-force-push", calls: 1 },
+      ],
+    });
+    // Newest first, as the ledger returns them.
+    expect(report.results.map((r) => [r.ts, r.decision, r.mode, r.rules])).toEqual([
+      ["2026-11-01T09:02:00.000Z", "block", "observe", ["models.allow"]],
+      ["2026-11-01T09:01:00.000Z", "block", "observe", ["no-force-push"]],
+    ]);
+    expect(lines[0]).toMatch(/^Replayed 2 tool calls from the ledger \(.+ since 2026-11-01\)/);
+    expect(await ledger.query({ kind: "policy.evaluated" })).toMatchObject({ events: [] });
+
+    const one = await policyReplay({ fromLedger: true, limit: "1" }, io(dir.root, []), ledger);
+    expect(one.calls).toBe(1);
+    const elsewhere = repo({ "selfhost.toml": POLICY });
+    const none = await policyReplay({ fromLedger: true }, io(elsewhere.root, []), ledger);
+    expect(none).toMatchObject({ calls: 0, skipped: 2 });
   });
 
   it("works through the command line on an empty embedded ledger", async () => {

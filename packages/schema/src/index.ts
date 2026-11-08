@@ -5,6 +5,7 @@ export * from "./event.js";
 export * from "./hooks/claude-code.js";
 export * from "./hooks/codex.js";
 export * from "./mcp.js";
+export * from "./policy-test.js";
 export * from "./redact.js";
 export * from "./request-type.js";
 export * from "./review-item.js";

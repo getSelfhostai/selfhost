@@ -1,10 +1,14 @@
 import { writeFileSync } from "node:fs";
+import { CONFIG_SCHEMA_DIRECTIVE, parseConfig, type RuleMode } from "@selfhost/schema";
+import { PRESET_NAMES, PRESETS, type PresetName } from "./presets.generated.js";
 
 /**
  * The selfhost.toml `selfhost init` writes at the repository root when there is none. Every
- * rule is in observe mode, so nothing is blocked until someone promotes it.
+ * rule is in observe mode, so nothing is blocked until someone promotes it. The first line
+ * points editors at the JSON Schema, for completion and inline errors.
  */
-export const STARTER_CONFIG = `# selfhost.toml: rules for every coding agent working in this repository.
+export const STARTER_CONFIG = `${CONFIG_SCHEMA_DIRECTIVE}
+# selfhost.toml: rules for every coding agent working in this repository.
 #
 # Every rule starts in observe mode: selfhost records what the rule would have done and blocks
 # nothing. See the hits with \`selfhost policy report\`. When a rule catches only what it should,
@@ -51,7 +55,32 @@ message = "Download the script and read it before running it."
 /** Rules in the starter file, for the summary line. */
 export const STARTER_RULES = 4;
 
-/** Writes the starter file; never replaces a file that appeared in the meantime. */
-export function writeStarterConfig(path: string): void {
-  writeFileSync(path, STARTER_CONFIG, { flag: "wx" });
+/** A preset by the name --preset takes. */
+export function parsePreset(value: string | undefined): PresetName | undefined {
+  if (value === undefined) return undefined;
+  const name = value.trim().toLowerCase();
+  const preset = PRESET_NAMES.find((candidate) => candidate === name);
+  if (!preset) {
+    throw new Error(`--preset: expected one of ${PRESET_NAMES.join(", ")}, got "${value}"`);
+  }
+  return preset;
+}
+
+/** The text init writes: the starter, or a preset as it is in the repository's presets/. */
+export function configText(preset: PresetName | undefined): string {
+  return preset === undefined ? STARTER_CONFIG : PRESETS[preset];
+}
+
+/** Rule count per mode of a preset, for the summary line. */
+export function presetModes(preset: PresetName): Record<RuleMode, number> {
+  const result = parseConfig(PRESETS[preset]);
+  if (!result.ok) throw new Error(`preset ${preset} is invalid: ${result.errors[0]?.message}`);
+  const counts: Record<RuleMode, number> = { enforce: 0, observe: 0, off: 0 };
+  for (const rule of result.config.rules) counts[rule.mode] += 1;
+  return counts;
+}
+
+/** Writes the starter file or a preset; never replaces a file that appeared in the meantime. */
+export function writeStarterConfig(path: string, text = STARTER_CONFIG): void {
+  writeFileSync(path, text, { flag: "wx" });
 }

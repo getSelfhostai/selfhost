@@ -10,12 +10,13 @@ import {
 import { dirname, join } from "node:path";
 import { openLedger } from "@selfhost/ledger";
 import { evaluate } from "@selfhost/policy";
-import { parseConfig } from "@selfhost/schema";
+import { CONFIG_SCHEMA_DIRECTIVE, parseConfig } from "@selfhost/schema";
 import { createApp } from "@selfhost/server/app";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { appendToSpool } from "../src/hooks/receive.js";
 import { runImport } from "../src/import.js";
 import { HOSTED_URL, parseInvite } from "../src/init/commands.js";
+import { PRESETS } from "../src/init/presets.generated.js";
 import { STARTER_CONFIG } from "../src/init/starter.js";
 import { runSpend } from "../src/spend.js";
 import { blockNetwork } from "./network.js";
@@ -220,6 +221,43 @@ describe("selfhost init", () => {
       probes: onPath,
     });
     expect(none.out).toContain("Policy: not in a git repository, so no selfhost.toml was written.");
+  });
+
+  it("--preset writes that preset as selfhost.toml, and never over an existing file", async () => {
+    const { repo, init } = laptop();
+    const path = repo.path("selfhost.toml");
+    const dry = await init("--preset", "strict", "--dry-run");
+    expect(dry.out).toMatch(
+      /^Policy: would write selfhost\.toml from the strict preset, 25 rules \(25 enforce, 0 observe\)\.$/m,
+    );
+    expect(existsSync(path)).toBe(false);
+
+    const first = await init("--preset", "Irreversible", "--data-dir", "memory://", "--json");
+    expect(first.code).toBe(0);
+    expect(JSON.parse(first.out).config).toEqual({
+      path,
+      action: "created",
+      preset: "irreversible",
+    });
+    expect(readFileSync(path, "utf8")).toBe(PRESETS.irreversible);
+
+    const again = await init("--preset", "strict", "--data-dir", "memory://");
+    expect(again.out).toContain("Policy: kept selfhost.toml.");
+    expect(again.out).toContain(
+      "Note: selfhost.toml already exists, so the strict preset was not written.",
+    );
+    expect(readFileSync(path, "utf8")).toBe(PRESETS.irreversible);
+  });
+
+  it("refuses an unknown preset before changing any file", async () => {
+    const { home, repo, init } = laptop();
+    const before = snapshot(home.root, repo.root);
+    const result = await init("--preset", "paranoid");
+    expect(result.code).toBe(1);
+    expect(result.err).toMatch(
+      /--preset: expected one of irreversible, oss, startup, strict, got "paranoid"/,
+    );
+    expect(snapshot(home.root, repo.root)).toEqual(before);
   });
 
   it("imports the window and prints imported counts, spend by agent and request type and observe hits", async () => {
@@ -493,6 +531,7 @@ describe("parseInvite", () => {
 
 describe("starter selfhost.toml", () => {
   it("parses, keeps every rule in observe mode and catches what its comments say", () => {
+    expect(STARTER_CONFIG.split("\n")[0]).toBe(CONFIG_SCHEMA_DIRECTIVE);
     const result = parseConfig(STARTER_CONFIG);
     if (!result.ok) throw new Error(JSON.stringify(result.errors));
     expect(result.config.rules.map((rule) => [rule.id, rule.mode])).toEqual([

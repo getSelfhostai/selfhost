@@ -43,6 +43,19 @@ which team overrides can name and which a rule may not reuse while that list is 
 Decisions from a policy file carry `policy_commit` and `policy_hash` so each one can be traced
 to the exact file.
 
+`json/config.schema.json` is published at `CONFIG_SCHEMA_URL`,
+`https://selfhost.ai/schema/selfhost.toml.v1.json`, which is also its `$id`. Every
+`selfhost.toml` selfhost writes starts with `CONFIG_SCHEMA_DIRECTIVE`, the line
+`#:schema https://selfhost.ai/schema/selfhost.toml.v1.json`, so TOML language servers that read
+JSON Schema (Taplo, Even Better TOML) complete keys and flag errors in the editor. Taplo reads a
+2020-12 schema as draft-07; a test checks the presets and fixtures mean the same both ways.
+
+`parsePolicyTestFile(text)` parses the test files `selfhost policy test` runs: an optional
+`config` path and `[[cases]]`, each a tool call (`tool`, default `Bash`, `command`, `path`, `url`,
+`model`, `agent`, `team`) with the expected `decision` (`allow`, `ask`, `block`) and optionally
+its `mode` (`enforce`, `observe`) and the exact `rules` that fire. Errors carry field and line,
+like `parseConfig`.
+
 ```toml
 version = 1
 

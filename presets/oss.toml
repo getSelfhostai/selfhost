@@ -1,0 +1,171 @@
+#:schema https://selfhost.ai/schema/selfhost.toml.v1.json
+# selfhost.toml preset: open-source maintainer.
+#
+# For maintainers of public projects, where the risky actions are the ones users see:
+# publishing packages and releases, changing what is already published, posting on GitHub
+# in your name, running release workflows and changing repository settings. Those are
+# enforced; the rest stays in observe. Changes to workflows, ownership and package
+# manifests rank as high risk in review.
+#
+# Tests for this file: presets/oss.test.toml. Run them with `selfhost policy test`.
+version = 1
+
+# [guardrails]: built-in guardrails for force pushes, rm -rf and .env reads go here.
+
+# Publishes
+
+# Publishes a package version, which can never be published again under the same number: npm,
+# pnpm, yarn, bun, cargo, poetry, uv, flit, hatch, jsr, deno, vsce, ovsx, changesets, lerna, dart,
+# twine, gem, mvn deploy, gradle publish, nuget, CocoaPods, Hex, helm push, goreleaser and
+# semantic-release. Dry runs and snapshots are not matched.
+[[rules]]
+id = "package-publish"
+mode = "enforce"
+action = "ask"
+irreversible = true
+message = "Publishing a package version is permanent. Release from CI, or ask a person."
+match.command = '(^|[^\w.-])(npm|pnpm|yarn|bun|cargo|poetry|uv|flit|hatch|jsr|deno|vsce|ovsx|lerna|changeset|dart|flutter)(?![\w.-])[^|;&]*\spublish(?![\w-])(?![^|;&]*--dry-run)|(^|[^\w.-])twine\s+upload\b|(^|[^\w.-])gem\s+push\b|(^|[^\w.-])mvn(?![\w.-])[^|;&]*\sdeploy\b|(^|[^\w.-])gradlew?(?![\w.-])[^|;&]*\spublish(?!ToMavenLocal)\w*|(^|[^\w.-])nuget\s+push\b|(^|[^\w.-])pod\s+trunk\s+push\b|(^|[^\w.-])mix\s+hex\.publish\b|(^|[^\w.-])helm\s+push\b|(^|[^\w.-])goreleaser\s+release\b(?![^|;&]*--snapshot)|(^|[^\w.-])semantic-release(?![\w.-])(?![^|;&]*--dry-run)'
+
+# GitHub releases and pushed version tags (git push --tags, git push origin v1.2.3), which start
+# release workflows.
+[[rules]]
+id = "release-publish"
+mode = "enforce"
+action = "ask"
+irreversible = true
+message = "Releases and version tags start release workflows. A person cuts releases."
+match.command = '(^|[^\w.-])gh\s+release\s+(create|upload|edit|delete)\b|(^|[^\w.-])git(?![\w.-])[^|;&]*\spush\b[^|;&]*\s(--tags|--follow-tags|refs/tags/\S+|v?\d+\.\d+\.\d+)(?![\w.-])'
+
+# Pushes container images to a registry: docker, podman and nerdctl push, docker buildx --push,
+# crane and skopeo.
+[[rules]]
+id = "container-push"
+mode = "enforce"
+action = "ask"
+irreversible = true
+message = "Pushing an image can replace a tag other people pull. Push from CI, or ask a person."
+match.command = '(^|[^\w.-])(docker|podman|nerdctl)\s+(image\s+|compose\s+)?push\b|(^|[^\w.-])docker\s+buildx\s+(build|bake)\b[^|;&]*\s--push\b|(^|[^\w.-])(crane|skopeo)\s+(push|copy)\b'
+
+# Changes published packages for everyone who depends on them: npm unpublish, deprecate, dist-tag,
+# owner, access and token create, cargo and gem yank and owner changes.
+[[rules]]
+id = "registry-admin"
+mode = "enforce"
+action = "block"
+irreversible = true
+message = "This changes a published package for everyone who depends on it. A maintainer does this."
+match.command = '(^|[^\w.-])npm\s+(unpublish|deprecate|dist-tag\s+(add|rm)|owner\s+(add|rm)|access\s+(grant|revoke|set)|token\s+create|team\s+(add|rm))\b|(^|[^\w.-])(cargo|gem)\s+yank\b|(^|[^\w.-])(cargo|gem)\s+owner\b[^|;&]*\s(--add|--remove|-a|-r)\b'
+
+# Infrastructure
+
+# Production deploys: vercel --prod, netlify deploy --prod, fly deploy, wrangler deploy,
+# firebase deploy, gcloud app, run and functions deploy, eb deploy, git push heroku, kamal and
+# railway up. Preview deploys are not matched.
+[[rules]]
+id = "prod-deploy"
+mode = "observe"
+action = "ask"
+message = "Production deploys go through a person or the deploy pipeline."
+match.command = '(^|[^\w.-])vercel(?![\w.-])[^|;&]*\s--prod\b|(^|[^\w.-])netlify\s+deploy\b[^|;&]*\s--prod\b|(^|[^\w.-])fly(ctl)?\s+deploy\b|(^|[^\w.-])wrangler\s+(deploy|publish)\b|(^|[^\w.-])firebase\s+deploy\b|(^|[^\w.-])gcloud\s+(app|run|functions)\s+deploy\b|(^|[^\w.-])eb\s+deploy\b|(^|[^\w.-])git\s+push\s+heroku\b|(^|[^\w.-])kamal\s+(deploy|redeploy|rollback)\b|(^|[^\w.-])railway\s+up\b'
+
+# GitHub
+
+# Comments, reviews and issue changes posted on GitHub in your name: gh pr and gh issue comment,
+# review, close, reopen, edit, lock, transfer and delete, gh issue create, public gists. Not
+# matched: gh pr create.
+[[rules]]
+id = "gh-public-writes"
+mode = "enforce"
+action = "ask"
+message = "Comments and reviews on GitHub go out in your name. A person posts them."
+match.command = '(^|[^\w.-])gh\s+(pr|issue)\s+(comment|review|close|reopen|edit|lock|unlock|transfer|delete)\b|(^|[^\w.-])gh\s+issue\s+create\b|(^|[^\w.-])gh\s+gist\s+create\b[^|;&]*\s(--public|-p)\b'
+
+# Merges a pull request with gh pr merge.
+[[rules]]
+id = "gh-merge"
+mode = "enforce"
+action = "ask"
+message = "A person merges pull requests."
+match.command = '(^|[^\w.-])gh\s+pr\s+merge\b'
+
+# Repository settings, secrets and variables, and writes through gh api
+# (POST, PATCH, PUT, DELETE).
+[[rules]]
+id = "gh-repo-admin"
+mode = "enforce"
+action = "block"
+message = "Repository settings and secrets are changed by a maintainer."
+match.command = '(^|[^\w.-])gh\s+repo\s+(delete|archive|rename|edit)\b|(^|[^\w.-])gh\s+(secret|variable)\s+(set|delete|remove)\b|(^|[^\w.-])gh\s+api\b[^|;&]*\s(-X|--method)\s*(POST|PATCH|PUT|DELETE)\b'
+
+# Starts, enables or disables a GitHub Actions workflow, such as a release workflow.
+[[rules]]
+id = "gh-workflow-run"
+mode = "enforce"
+action = "ask"
+message = "Workflows can publish or deploy. A person starts them."
+match.command = '(^|[^\w.-])gh\s+workflow\s+(run|enable|disable)\b'
+
+# Everyday risks
+
+# Piping a download straight into a shell runs code nobody has read.
+[[rules]]
+id = "curl-pipe-shell"
+mode = "observe"
+action = "ask"
+message = "Download the script and read it before running it."
+match.command = '\b(curl|wget)\b[^|]*\|\s*(sudo\s+)?(ba|z|da)?sh\b'
+
+# Throws away local work: git reset --hard, clean -f, checkout -- ., stash drop and clear,
+# branch -D. Not matched: git branch -d and reset --soft.
+[[rules]]
+id = "git-discard-work"
+mode = "observe"
+action = "ask"
+message = "This discards uncommitted or unmerged work. Commit or stash it first."
+match.command = '(^|[^\w.-])git(?![\w.-])[^|;&]*\s(reset\s[^|;&]*--hard|clean\s+-[A-Za-z]*[fx][A-Za-z]*|stash\s+(drop|clear)|branch\s+(-D|--delete\s+--force)|checkout\s+--\s+\.)(?![\w-])'
+
+# Pushes straight to main or master, which skips review.
+[[rules]]
+id = "git-push-main"
+mode = "observe"
+action = "ask"
+message = "Push a branch and open a pull request instead."
+match.command = '(^|[^\w.-])git(?![\w.-])[^|;&]*\spush\s+([^|;&\s]+\s+)*?([^|;&\s:]+:)?(main|master)(?![\w./-])'
+
+# Reads secrets from a secret manager: AWS Secrets Manager and SSM with decryption, gcloud
+# secrets, Azure Key Vault, Vault, 1Password, Doppler, vercel env pull, kubectl get secret.
+[[rules]]
+id = "secrets-read"
+mode = "observe"
+action = "ask"
+message = "Agents do not read secrets. Ask a person to set what the task needs."
+match.command = '(^|[^\w.-])aws\s+secretsmanager\s+get-secret-value\b|(^|[^\w.-])aws\s+ssm\s+get-parameters?\b[^|;&]*\s--with-decryption\b|(^|[^\w.-])gcloud\s+secrets\s+versions\s+access\b|(^|[^\w.-])az\s+keyvault\s+secret\s+show\b|(^|[^\w.-])vault\s+(kv\s+get|read)\b|(^|[^\w.-])op\s+(read|item\s+get|inject)\b|(^|[^\w.-])doppler\s+secrets\b|(^|[^\w.-])vercel\s+env\s+pull\b|(^|[^\w.-])kubectl(?![\w.-])[^|;&]*\sget\s+secrets?\b'
+
+# Installs code from a URL, a git repository or an extra package index instead of the registry,
+# and go install @latest.
+[[rules]]
+id = "deps-from-url"
+mode = "observe"
+action = "ask"
+message = "Install from the registry with a pinned version, or ask a person."
+match.command = '(^|[^\w.-])(npm|pnpm|yarn|bun)\s+(i|install|add)\b[^|;&]*\s(git\+|git:|github:|https?://)|(^|[^\w.-])(pip3?|pipx|uv\s+pip)\s+install\b[^|;&]*\s(git\+|https?://|--index-url|--extra-index-url|-i\s)|(^|[^\w.-])cargo\s+install\b[^|;&]*\s--git\b|(^|[^\w.-])go\s+install\b[^|;&]*@(latest|main|master)\b'
+
+[packages]
+# A dependency you add ships to everyone who installs your package: flag brand new versions.
+mode = "observe"
+min_age_days = 7
+
+[review]
+block_merge_on_high = true
+high_risk_paths = [
+  ".github/**",
+  "**/CODEOWNERS",
+  "LICENSE*",
+  "SECURITY.md",
+  "package.json",
+  "pnpm-lock.yaml",
+  "package-lock.json",
+  "Cargo.toml",
+  "pyproject.toml",
+  "go.mod",
+]

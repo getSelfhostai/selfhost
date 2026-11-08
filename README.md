@@ -82,11 +82,14 @@ See where the spend goes and which overhead started growing (request types are l
 pnpm --filter @selfhost/cli dev spend --since 7d --by request_type,model --threshold 10
 ```
 
-Check `selfhost.toml`, try a rule on a made-up tool call, and record what each rule would have
-blocked in the tool calls already in the ledger (observe mode: nothing is stopped):
+Check `selfhost.toml`, run its test cases, try a rule on a made-up tool call, and record what
+each rule would have blocked in the tool calls already in the ledger (observe mode: nothing is
+stopped). [`presets/`](./presets) holds four starting policies with their tests, which
+`selfhost init --preset <name>` writes as `selfhost.toml`:
 
 ```sh
 pnpm --filter @selfhost/cli dev policy check
+pnpm --filter @selfhost/cli dev policy test ../../presets
 pnpm --filter @selfhost/cli dev policy test --tool Bash --command "git push --force"
 pnpm --filter @selfhost/cli dev policy observe --since 30d
 ```
