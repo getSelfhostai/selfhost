@@ -57,6 +57,8 @@ describe("openapi.yaml", () => {
         "GET /v1/review-items/{id}",
         "GET /v1/teams/{team}/overview",
         "GET /v1/teams/{team}/people",
+        "GET /v1/teams/{team}/provenance",
+        "GET /v1/teams/{team}/provenance/modules",
         "GET /v1/teams/{team}/repos",
         "PATCH /v1/teams/{team}",
         "POST /v1/decisions",

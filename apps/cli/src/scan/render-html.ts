@@ -1,5 +1,6 @@
 import { CONTEXT_READER_NAMES } from "@selfhost/agents";
 import { percent, plural, tokens, usd } from "../format.js";
+import { authorName, REWORK_RULE } from "../provenance-text.js";
 import {
   bothText,
   CONTEXT_ROWS,
@@ -143,6 +144,45 @@ ${tile("Spend on sessions with no commit", usd(idle?.usd ?? 0), `${percent(idle?
 </div></section>`;
 }
 
+/** How many modules the HTML table shows; selfhost provenance lists them all. */
+const MODULE_ROWS = 10;
+
+function provenanceSection(report: ScanReport): string {
+  const p = report.provenance;
+  if (!p) return "";
+  const { totals } = p;
+  if (totals.lines === 0) {
+    return `<section><h2>Agent-written code</h2><p class="note">No merges to ${e(p.branch ?? "the main branch")} in this window.</p></section>`;
+  }
+  const rate = (value: number | null) => (value === null ? "-" : percent(value));
+  const agents = p.by_agent
+    .map(
+      (row) =>
+        `<tr><td><i class="dot" style="background:${color(row.vendor)}"></i>${e(authorName(row.vendor, row.model))}</td><td class="num">${row.lines}</td><td class="num">${percent(row.share)}</td><td class="num">${row.reverted_lines ?? "-"}</td><td class="num">${row.reworked_lines ?? "-"}</td><td class="num">${rate(row.revert_rework_rate)}</td></tr>`,
+    )
+    .join("");
+  const modules = p.modules
+    .slice(0, MODULE_ROWS)
+    .map(
+      (row) =>
+        `<tr><td>${row.rank}</td><td><code>${e(row.module)}</code></td><td class="num">${row.agent_lines}</td><td class="num">${percent(row.agent_share)}<span class="mini"><span style="width:${(row.agent_share * 100).toFixed(2)}%"></span></span></td><td class="num">${rate(row.agent_revert_rework_rate)}</td><td>${row.above_threshold ? "above threshold" : ""}</td></tr>`,
+    )
+    .join("");
+  const more =
+    p.modules.length > MODULE_ROWS
+      ? `<p class="sub">And ${p.modules.length - MODULE_ROWS} more modules; selfhost provenance lists them all.</p>`
+      : "";
+  const churned = (totals.agent_reverted_lines ?? 0) + (totals.agent_reworked_lines ?? 0);
+  return `<section><h2>Agent-written code on ${e(p.branch ?? "the main branch")}</h2><div class="grid">
+${tile("Merged lines by agents", percent(totals.agent_share), `${totals.agent_lines} of ${plural(totals.lines, "line")} in ${plural(totals.landings, "merge")}`)}
+${tile(`Reverted or reworked within ${p.window_days} days`, rate(totals.agent_revert_rework_rate), `${churned} of ${totals.agent_lines} agent lines`)}
+${tile("Modules above the threshold", String(p.modules.filter((row) => row.above_threshold).length), `over ${percent(p.threshold)} of agent lines reverted or reworked, with ${p.min_module_lines} agent lines or more`)}
+</div>
+<div class="scroll" style="margin-top:12px"><table><thead><tr><th>Agent</th><th class="num">Lines</th><th class="num">Share</th><th class="num">Reverted</th><th class="num">Reworked</th><th class="num">Rate</th></tr></thead><tbody>${agents}</tbody></table></div>
+${modules ? `<div class="scroll" style="margin-top:12px"><table><thead><tr><th>#</th><th>Module</th><th class="num">Agent lines</th><th class="num">Agent share</th><th class="num">Rate</th><th></th></tr></thead><tbody>${modules}</tbody></table></div>${more}` : ""}
+<p class="sub">${e(REWORK_RULE)}</p></section>`;
+}
+
 function costSection(report: ScanReport): string {
   const { totals, cost } = report;
   const rows = cost.by_model
@@ -253,6 +293,7 @@ export function renderHtml(report: ScanReport): string {
   const body = [
     `<header><p class="eyebrow">selfhost scan</p><h1>Coding agent audit, <span class="nw">${e(report.from)}</span> to <span class="nw">${e(report.to)}</span></h1><p class="meta">${plural(totals.sessions, "session")} from ${e(agents)} · ${usd(totals.usd)} spend · totals and file paths only, no prompts or code</p></header>`,
     gitSection(report),
+    provenanceSection(report),
     totals.sessions > 0 ? costSection(report) : "",
     totals.sessions > 0 ? leakSection(report) : "",
     topSection(report),

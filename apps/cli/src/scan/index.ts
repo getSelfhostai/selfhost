@@ -107,7 +107,9 @@ export async function runScan(options: ScanCommandOptions, io: ScanIo): Promise<
   const costs = oneSourcePerSession(events.filter((event) => event.kind === "cost.recorded"));
   const waste = detectWaste(groupSpend(costs, { by: ["request_type"], from: since, to: now }));
   const collect = io.collectAttribution ?? noAttribution;
-  const attribution = repo ? await collect(repo, sessionHintsFromEvents(events)) : undefined;
+  const attribution = repo
+    ? await collect(repo, sessionHintsFromEvents(events), { since, until: now })
+    : undefined;
   const context = await scanContext({
     home,
     env: io.env,

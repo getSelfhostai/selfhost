@@ -289,7 +289,9 @@ batches of up to 1000), `GET /v1/events`, `GET /v1/review-items`, `GET /v1/revie
 `GET /v1/me`, whose bodies are in `src/team.ts`, plus roles and people
 (`/v1/teams/{team}/people`, `.../role`, `PATCH /v1/teams/{team}`), orgs, repos and overviews
 (`/v1/orgs`, `/v1/orgs/{org}/policy`, `/v1/orgs/{org}/overview`, `/v1/teams/{team}/repos`,
-`/v1/teams/{team}/overview`, `/v1/budget`), whose bodies are in `src/org.ts`. It references the JSON Schema files for events,
+`/v1/teams/{team}/overview`, `/v1/budget`), whose bodies are in `src/org.ts`, and agent-written
+code (`/v1/teams/{team}/provenance` and `.../provenance/modules`), whose bodies are in
+`src/provenance.ts` with the `selfhost provenance --json` report and the `VendorLineStat` input. It references the JSON Schema files for events,
 review items and the config. `mcp-tools.json` lists `get_policy`, `get_budget`,
 `list_review_items`, `search_events`, `search_decisions` and `record_decision` with
 self-contained input and output schemas.

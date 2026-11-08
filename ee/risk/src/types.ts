@@ -16,6 +16,7 @@ export const RISK_INPUTS = [
   "tests",
   "guardrails",
   "reverts",
+  "module_reverts",
 ] as const;
 
 export type RiskInput = (typeof RISK_INPUTS)[number];
@@ -40,6 +41,23 @@ export interface RevertHistory {
   days: number;
 }
 
+/** One module the change touches, with how its agent-written lines fared after merge. */
+export interface ModuleRevertRate {
+  module: string;
+  /** Agent-written lines merged into the module in the look-back window. */
+  agentLines: number;
+  /** Share of them reverted or reworked within [review] revert_window_days; null with none. */
+  rate: number | null;
+}
+
+/** Revert and rework rates of the modules the change touches, from `@selfhost/provenance`. */
+export interface ModuleReverts {
+  /** Days of merges the rates were read from. */
+  days: number;
+  /** Every module the change touches, by name. */
+  modules: ModuleRevertRate[];
+}
+
 /**
  * Everything `scoreRisk` reads besides selfhost.toml. An input left undefined is missing: the
  * score uses the rest and the result names it, with the reason from `unavailable` when given.
@@ -50,6 +68,7 @@ export interface RiskInputs {
   tests?: TestStatus;
   run?: RunInput;
   reverts?: RevertHistory;
+  modules?: ModuleReverts;
   /** The agent and model the pull request is attributed to. */
   agent?: AgentRef;
   /** Why an input is missing, for the check result. */

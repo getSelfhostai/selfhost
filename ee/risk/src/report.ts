@@ -1,6 +1,7 @@
 import type { AgentRef } from "@selfhost/attribution";
 import type { Ledger } from "@selfhost/ledger";
 import { parseChangeTarget, type Runner } from "@selfhost/pr";
+import { settingsFromConfig } from "@selfhost/provenance";
 import type { ResolvedSelfhostConfig } from "@selfhost/schema";
 import { type RiskCheck, riskCheck, riskLabel } from "./check.js";
 import { type GatheredTarget, gatherRiskInputs } from "./gather.js";
@@ -64,6 +65,7 @@ export async function reviewRisk(options: ReviewRiskOptions): Promise<ReviewRisk
     ...(options.now ? { now: options.now } : {}),
     ...(options.gh ? { gh: options.gh } : {}),
     ...(options.ghCacheDir ? { ghCacheDir: options.ghCacheDir } : {}),
+    provenance: settingsFromConfig(options.config),
   });
   const risk = scoreRisk(gathered.inputs, options.config);
   return {

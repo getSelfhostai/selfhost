@@ -1,6 +1,6 @@
 {
   "synthetic": true,
-  "description": "Risk score cases for ee/risk, scored against selfhost.toml in this folder. Each case gives the inputs scoreRisk reads (changed files, new dependencies, sandbox test status, the agent run's tool calls and guardrail hits, and the agent and model's revert history) and the level, score and missing inputs it must give. `ordering` lists pairs where the first case must score above the second.",
+  "description": "Risk score cases for ee/risk, scored against selfhost.toml in this folder. Each case gives the inputs scoreRisk reads (changed files, new dependencies, sandbox test status, the agent run's tool calls and guardrail hits, the agent and model's revert history, and the revert and rework rates of the modules the change touches) and the level, score and missing inputs it must give. `ordering` lists pairs where the first case must score above the second.",
   "cases": [
     {
       "name": "irreversible-change-small-tested",
@@ -38,6 +38,16 @@
           "commits": 40,
           "reverted": 1,
           "days": 90
+        },
+        "modules": {
+          "days": 90,
+          "modules": [
+            {
+              "module": "emails",
+              "agentLines": 200,
+              "rate": 0.05
+            }
+          ]
         },
         "agent": {
           "vendor": "claude_code",
@@ -86,6 +96,16 @@
           "commits": 40,
           "reverted": 1,
           "days": 90
+        },
+        "modules": {
+          "days": 90,
+          "modules": [
+            {
+              "module": "src",
+              "agentLines": 200,
+              "rate": 0.05
+            }
+          ]
         },
         "agent": {
           "vendor": "claude_code",
@@ -140,6 +160,16 @@
           "commits": 40,
           "reverted": 1,
           "days": 90
+        },
+        "modules": {
+          "days": 90,
+          "modules": [
+            {
+              "module": "docs",
+              "agentLines": 200,
+              "rate": 0.05
+            }
+          ]
         },
         "agent": {
           "vendor": "claude_code",
@@ -221,6 +251,16 @@
           "reverted": 6,
           "days": 90
         },
+        "modules": {
+          "days": 90,
+          "modules": [
+            {
+              "module": "src",
+              "agentLines": 400,
+              "rate": 0.6
+            }
+          ]
+        },
         "agent": {
           "vendor": "claude_code",
           "model": "claude-sonnet-4-5"
@@ -268,6 +308,16 @@
           "commits": 40,
           "reverted": 1,
           "days": 90
+        },
+        "modules": {
+          "days": 90,
+          "modules": [
+            {
+              "module": "src",
+              "agentLines": 200,
+              "rate": 0.05
+            }
+          ]
         },
         "agent": {
           "vendor": "claude_code",
@@ -319,7 +369,8 @@
           "outside_effects",
           "tests",
           "guardrails",
-          "reverts"
+          "reverts",
+          "module_reverts"
         ]
       }
     },
@@ -359,6 +410,16 @@
           "commits": 40,
           "reverted": 1,
           "days": 90
+        },
+        "modules": {
+          "days": 90,
+          "modules": [
+            {
+              "module": "src",
+              "agentLines": 200,
+              "rate": 0.05
+            }
+          ]
         },
         "agent": {
           "vendor": "claude_code",
@@ -426,6 +487,21 @@
           "reverted": 6,
           "days": 90
         },
+        "modules": {
+          "days": 90,
+          "modules": [
+            {
+              "module": "(root)",
+              "agentLines": 200,
+              "rate": 0.05
+            },
+            {
+              "module": "src",
+              "agentLines": 200,
+              "rate": 0.05
+            }
+          ]
+        },
         "agent": {
           "vendor": "claude_code",
           "model": "claude-sonnet-4-5"
@@ -473,6 +549,16 @@
           "commits": 40,
           "reverted": 1,
           "days": 90
+        },
+        "modules": {
+          "days": 90,
+          "modules": [
+            {
+              "module": "(root)",
+              "agentLines": 200,
+              "rate": 0.05
+            }
+          ]
         },
         "agent": {
           "vendor": "claude_code",

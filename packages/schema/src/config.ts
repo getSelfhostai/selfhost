@@ -480,6 +480,47 @@ export const SelfhostConfigSchema = Type.Object(
                 "Fail the selfhost/review check on high risk pull requests. It blocks a merge only once branch protection or a ruleset makes the check required.",
             }),
           ),
+          revert_rate_threshold: Type.Optional(
+            Type.Number({
+              minimum: 0,
+              maximum: 1,
+              default: 0.25,
+              description:
+                "Share of a module's agent-written lines reverted or reworked within revert_window_days of merge (fix-forward edits count as rework), from 0 to 1. New pull requests that touch a module above it score higher risk.",
+            }),
+          ),
+          revert_window_days: Type.Optional(
+            Type.Integer({
+              minimum: 1,
+              maximum: 90,
+              default: 14,
+              description:
+                "Days after a merge in which a later commit that changes or deletes the merged lines counts as a revert or rework.",
+            }),
+          ),
+          modules: Type.Optional(
+            Type.Record(
+              Type.String({ minLength: 1 }),
+              Type.Array(NonEmpty(), {
+                minItems: 1,
+                description: "Path globs of the files in this module.",
+              }),
+              {
+                default: {},
+                description:
+                  "Module name to path globs, for agent-written code share and revert rates. The first module whose glob matches a file holds it; other files belong to their top folder (module_depth folders deep).",
+              },
+            ),
+          ),
+          module_depth: Type.Optional(
+            Type.Integer({
+              minimum: 1,
+              maximum: 5,
+              default: 1,
+              description:
+                "How many leading folders name the module of a file no modules glob matches: 1 gives apps, 2 gives apps/server. Files at the top of the repository are in the module (root).",
+            }),
+          ),
         },
         {
           additionalProperties: false,

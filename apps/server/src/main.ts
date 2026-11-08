@@ -4,6 +4,7 @@ import { redactionSettings } from "@selfhost/schema";
 import pkg from "../package.json" with { type: "json" };
 import { createApp } from "./app.js";
 import { githubAppFromEnv, githubConfig } from "./github.js";
+import { clonesUnder } from "./provenance.js";
 import { serverConfig, startRetentionJob } from "./retention.js";
 import { startReviewRefreshJob } from "./review.js";
 import { loadApiToken } from "./token.js";
@@ -33,9 +34,21 @@ const github = {
   ...(publicUrl ? { publicUrl } : {}),
 };
 
+// Clones of the teams' repos at <dir>/<owner>/<name>, for line-level provenance and module
+// revert rates. The server only reads them; keep them current with git fetch.
+const clonesDir = process.env.SELFHOST_GIT_CLONES?.trim() || undefined;
+const clones = clonesDir ? clonesUnder(clonesDir) : undefined;
+
 const server = serve(
   {
-    fetch: createApp({ version: pkg.version, ledger, token, config, github }).fetch,
+    fetch: createApp({
+      version: pkg.version,
+      ledger,
+      token,
+      config,
+      github,
+      ...(clones ? { clones } : {}),
+    }).fetch,
     port,
     hostname,
   },

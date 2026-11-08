@@ -152,6 +152,10 @@ describe("criterion 5: missing inputs", () => {
         input: "reverts",
         reason: "only 2 commits by claude_code claude-sonnet-4-5 in the last 90 days (needs 5)",
       },
+      {
+        input: "module_reverts",
+        reason: "no module revert rates: they need the repository's git history",
+      },
     ]);
     expect(result.factors.map((f) => f.input)).toEqual([
       "irreversible_rules",
@@ -182,7 +186,78 @@ describe("criterion 5: missing inputs", () => {
       "tests",
       "guardrails",
       "reverts",
+      "module_reverts",
     ]);
+  });
+});
+
+describe("module revert rates", () => {
+  const base: RiskInputs = {
+    files: [
+      { path: "src/billing/invoice.ts", additions: 20, deletions: 4 },
+      { path: "lib/money.ts", additions: 6, deletions: 0 },
+    ],
+    dependencies: [],
+    tests: "passed",
+  };
+  const withModules = (modules: NonNullable<RiskInputs["modules"]>["modules"]) =>
+    scoreRisk({ ...base, modules: { days: 90, modules } }, policy);
+  const factor = (result: ReturnType<typeof scoreRisk>) =>
+    result.factors.find((f) => f.input === "module_reverts");
+
+  it("adds nothing when every touched module is at or under [review] revert_rate_threshold", () => {
+    const result = withModules([
+      { module: "src", agentLines: 400, rate: 0.25 },
+      { module: "lib", agentLines: 90, rate: 0.1 },
+    ]);
+    expect(factor(result)).toEqual({
+      input: "module_reverts",
+      points: 0,
+      forcesHigh: false,
+      detail:
+        "No touched module above [review] revert_rate_threshold (25%) in the last 90 days (lib, src)",
+    });
+  });
+
+  it("raises the score for each touched module above the threshold, up to 20", () => {
+    const one = withModules([
+      { module: "src", agentLines: 400, rate: 0.4 },
+      { module: "lib", agentLines: 90, rate: 0.1 },
+    ]);
+    expect(factor(one)?.points).toBe(10);
+    expect(factor(one)?.detail).toBe(
+      "1 touched module above [review] revert_rate_threshold (25%) in the last 90 days: src 40% of 400 agent lines reverted or reworked",
+    );
+    expect(one.score - scoreRisk(base, policy).score).toBe(10);
+    expect(one.reasons).toContain(factor(one)?.detail);
+
+    const three = withModules([
+      { module: "src", agentLines: 400, rate: 0.4 },
+      { module: "lib", agentLines: 90, rate: 0.9 },
+      { module: "web", agentLines: 60, rate: 0.3 },
+    ]);
+    expect(factor(three)?.points).toBe(20);
+  });
+
+  it("does not flag a module with too few agent lines to judge, or none", () => {
+    const result = withModules([
+      { module: "src", agentLines: 49, rate: 1 },
+      { module: "lib", agentLines: 0, rate: null },
+    ]);
+    expect(factor(result)?.points).toBe(0);
+  });
+
+  it("follows the threshold set in selfhost.toml", () => {
+    expect(policy.review.revert_rate_threshold).toBe(0.25);
+    const lowered = config(
+      FIXTURE_TOML.replace("[review]\n", "[review]\nrevert_rate_threshold = 0.05\n"),
+    );
+    const result = scoreRisk(
+      { ...base, modules: { days: 90, modules: [{ module: "lib", agentLines: 90, rate: 0.1 }] } },
+      lowered,
+    );
+    expect(factor(result)?.points).toBe(10);
+    expect(riskCheck(result, lowered).text).toContain("| Module revert rate | 10 |");
   });
 });
 

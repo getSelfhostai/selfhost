@@ -34,6 +34,7 @@ const INPUT_NAMES: Record<RiskInput, string> = {
   tests: "Tests",
   guardrails: "Guardrail blocks",
   reverts: "Revert rate",
+  module_reverts: "Module revert rate",
 };
 
 const LEVEL_NAMES: Record<RiskLevel, string> = { low: "Low", medium: "Medium", high: "High" };

@@ -20,6 +20,10 @@ describe("parseConfig", () => {
           exception_expiry_minutes: 30,
           github_logins: {},
           block_merge_on_high: false,
+          revert_rate_threshold: 0.25,
+          revert_window_days: 14,
+          modules: {},
+          module_depth: 1,
         },
         packages: {
           mode: "observe",

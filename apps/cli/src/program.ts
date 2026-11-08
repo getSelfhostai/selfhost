@@ -25,6 +25,7 @@ import { registerPackages } from "./packages.js";
 import { registerPolicy } from "./policy/commands.js";
 import { registerPolicyCompile } from "./policy/compile.js";
 import { registerPolicyEditing } from "./policy/editing.js";
+import { registerProvenance } from "./provenance.js";
 import { registerReview } from "./review.js";
 import { localReviewList, registerReviewList } from "./review-list.js";
 import type { CollectAttribution } from "./scan/attribution.js";
@@ -399,6 +400,12 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
   );
 
   registerReview(
+    program,
+    () => ({ env: deps.env, cwd: deps.cwd, write: deps.write, now: deps.now }),
+    fail,
+  );
+
+  registerProvenance(
     program,
     () => ({ env: deps.env, cwd: deps.cwd, write: deps.write, now: deps.now }),
     fail,

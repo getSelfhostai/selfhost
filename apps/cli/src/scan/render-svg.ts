@@ -35,6 +35,15 @@ function gitPart(report: ScanReport): string {
   return `<clipPath id="bar"><rect x="${LEFT}" y="460" width="${BAR_WIDTH}" height="16" rx="8"/></clipPath><rect x="${LEFT}" y="460" width="${BAR_WIDTH}" height="16" rx="8" fill="#2c2c29"/><g clip-path="url(#bar)">${segments}</g><text x="${LEFT}" y="520" class="small">${e(legend)} of commits${git.repo ? ` in ${e(git.repo)}` : ""}</text>`;
 }
 
+/** One line under the commit share: merged lines by agents and their revert and rework rate. */
+function provenancePart(report: ScanReport): string {
+  const p = report.provenance;
+  if (!p || p.totals.lines === 0 || report.git.status !== "joined") return "";
+  const rate = p.totals.agent_revert_rework_rate;
+  const text = `Agents wrote ${percent(p.totals.agent_share)} of merged lines${rate === null ? "" : `; ${percent(rate)} of them reverted or reworked within ${p.window_days} days`}`;
+  return `<text x="${LEFT}" y="442" class="small">${e(text)}</text>`;
+}
+
 function contextPart(report: ScanReport): string {
   const section = report.context;
   if (section.files.length === 0) return "";
@@ -86,6 +95,7 @@ text { font-family: ${FONT}; fill: #ededea; }
 <text x="${LEFT}" y="210" font-size="104" font-weight="700">${e(usd(totals.usd))}</text>
 <text x="${LEFT}" y="262" class="muted">on coding agents, ${plural(totals.sessions, "session")} from ${e(agents)}</text>
 ${stats.join("\n")}
+${provenancePart(report)}
 ${gitPart(report)}
 ${contextPart(report)}
 <text x="${LEFT}" y="590" class="foot">Totals only, no prompts or code. Token counts and prices via ccusage.</text>

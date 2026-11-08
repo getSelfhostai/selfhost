@@ -33,6 +33,7 @@ which the review brief shares, and the revert history from git.
 | Tests              | `passed`, `failed` or `not_run` from the sandbox. Sandbox runs come later, so this is usually missing; `selfhost review risk --tests` passes a CI result                                                                                                                                              |
 | Guardrail blocks   | `policy.evaluated` events with a block verdict on the run's sessions, once per tool call and rule, observe or enforce                                                                                                                                                                                 |
 | Revert rate        | The agent and model's commits on the repository in the last 90 days, and how many a later `This reverts commit <sha>` line names                                                                                                                                                                      |
+| Module revert rate | The modules the change touches ([`@selfhost/provenance`](../../packages/provenance/README.md): `[review] modules` globs, else top folders), with the share of their agent-written lines merged in the last 90 days that was reverted or reworked within `[review] revert_window_days`                 |
 
 The run is the set of ledger sessions behind the change: sessions with a `commit.created` event
 for one of its commits, and sessions `readCommits` matches to its commits by session link or by
@@ -42,20 +43,27 @@ head SHAs); `--base <ref>` reads the local commits since the merge base.
 
 An input that cannot be read is left out of the score and named in `missing` with the reason:
 no ledger, no session that made the commits, no sandbox run, no `high_risk_paths`, no agent
-attributed, or fewer than 5 commits by the agent and model.
+attributed, fewer than 5 commits by the agent and model, or no git history to read module revert
+rates from (the GitHub App on a server with no clone of the repo; see `SELFHOST_GIT_CLONES` in
+[`apps/server`](../../apps/server/README.md)).
 
 ## Weights
 
-| Input              | Points                                                      |
-| ------------------ | ----------------------------------------------------------- |
-| Irreversible rules | 60, and the level is high                                   |
-| Outside effects    | 60, and the level is high                                   |
-| Protected paths    | 40, and the level is high                                   |
-| Size               | 0 up to 50 lines, 5 to 200, 10 to 500, 15 to 1000, 20 above |
-| New dependencies   | 10 for the first, 5 for each more, at most 20               |
-| Tests              | failed 30, not run 15, passed 0                             |
-| Guardrail blocks   | 10 each, at most 20                                         |
-| Revert rate        | 10 from 10%, 20 from 25%                                    |
+| Input              | Points                                                               |
+| ------------------ | -------------------------------------------------------------------- |
+| Irreversible rules | 60, and the level is high                                            |
+| Outside effects    | 60, and the level is high                                            |
+| Protected paths    | 40, and the level is high                                            |
+| Size               | 0 up to 50 lines, 5 to 200, 10 to 500, 15 to 1000, 20 above          |
+| New dependencies   | 10 for the first, 5 for each more, at most 20                        |
+| Tests              | failed 30, not run 15, passed 0                                      |
+| Guardrail blocks   | 10 each, at most 20                                                  |
+| Revert rate        | 10 from 10%, 20 from 25%                                             |
+| Module revert rate | 10 for the first module above the threshold, 5 each more, at most 20 |
+
+A module is above the threshold when more than `[review] revert_rate_threshold` (default 25%) of
+its agent-written lines were reverted or reworked and it holds at least 50 of them
+(`MIN_MODULE_LINES` in `@selfhost/provenance`).
 
 The score is the sum, held in bands so that what cannot be undone sorts above what can:
 

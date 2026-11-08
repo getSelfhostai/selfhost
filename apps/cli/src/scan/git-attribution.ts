@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { relative, resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import {
   attributionStats,
@@ -8,6 +9,8 @@ import {
   readPulls,
   sessionsWithoutCommits,
 } from "@selfhost/attribution";
+import { DEFAULT_SETTINGS, readProvenance, settingsFromConfig } from "@selfhost/provenance";
+import { CONFIG_FILE_NAME, type ProvenanceReport, parseConfig } from "@selfhost/schema";
 import type { AttributionResult, CollectAttribution, SessionHint } from "./attribution.js";
 
 const run = promisify(execFile);
@@ -56,12 +59,20 @@ export function sessionInRepo(session: SessionHint, repoDir: string): SessionHin
   return { ...session, cwd: root, files };
 }
 
+/** `[review]` provenance settings from the repository's own selfhost.toml, else the defaults. */
+function repoSettings(repoDir: string) {
+  const path = join(repoDir, CONFIG_FILE_NAME);
+  if (!existsSync(path)) return DEFAULT_SETTINGS;
+  const parsed = parseConfig(readFileSync(path, "utf8"));
+  return parsed.ok ? settingsFromConfig(parsed.config) : DEFAULT_SETTINGS;
+}
+
 /**
  * Joins local sessions with the repository's git history, and with its pull requests when the
  * remote is on GitHub and the developer's own gh login works. Nothing else leaves the machine.
  */
 export function gitAttribution(opts: { github?: boolean } = {}): CollectAttribution {
-  return async (repoDir, sessions): Promise<AttributionResult> => {
+  return async (repoDir, sessions, window): Promise<AttributionResult> => {
     const local = sessions
       .map((session) => sessionInRepo(session, repoDir))
       .filter((session): session is SessionHint => session !== undefined);
@@ -83,8 +94,27 @@ export function gitAttribution(opts: { github?: boolean } = {}): CollectAttribut
       }
     }
 
+    let provenance: ProvenanceReport | undefined;
+    if (window) {
+      try {
+        provenance = await readProvenance(repoDir, {
+          since: window.since,
+          until: window.until,
+          settings: repoSettings(repoDir),
+          sessions: local,
+          pulls: pulls
+            .filter((pull) => pull.state === "merged")
+            .map((pull) => ({ number: pull.number, ...(pull.agent ? { agent: pull.agent } : {}) })),
+          ...(repo ? { repo } : {}),
+        });
+      } catch {
+        provenance = undefined;
+      }
+    }
+
     return {
       repo,
+      ...(provenance ? { provenance } : {}),
       commits: commits.map(({ sha, agent, signal, additions, deletions }) => ({
         sha,
         agent,
