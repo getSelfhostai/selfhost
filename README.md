@@ -29,28 +29,29 @@ from the same code.
 
 ## Repository layout
 
-| Path                   | What                                                                                        |
-| ---------------------- | ------------------------------------------------------------------------------------------- |
-| `packages/schema`      | v1 contracts: ledger event, `selfhost.toml`, review item, hook payloads, OpenAPI, MCP tools |
-| `packages/ledger`      | Append-only ledger store on Postgres or PGlite, plus a mapper per event source              |
-| `packages/importers`   | Local session log importers for Claude Code and Codex (pricing ported from ccusage, MIT)    |
-| `packages/spend`       | Spend by request type, agent, model and person, and the waste detector                      |
-| `packages/policy`      | Evaluates `selfhost.toml` rules against tool calls and records would-block events           |
-| `packages/compile`     | Compiles `selfhost.toml` into each vendor's native controls, with coverage per rule         |
-| `packages/review`      | The review list: items from ledger signals, deduped, routed, ranked, with approval timeouts |
-| `packages/agents`      | Agent and login detection, context file listing, and config writing for five agent CLIs     |
-| `packages/attribution` | Links commits and pull requests to the agent and model that produced them, with merge stats |
-| `packages/pr`          | Reads a pull request or local commits: hunks, new dependencies, test changes, the agent run |
-| `packages/brief`       | The review brief comment on agent pull requests, as data and as Markdown                    |
-| `packages/github`      | Labels, review check run, review requests and brief comment on agent PRs, via a GitHub App  |
-| `packages/sdk`         | API client (placeholder)                                                                    |
-| `apps/server`          | HTTP API server (Hono)                                                                      |
-| `apps/cli`             | `selfhost` command line                                                                     |
-| `apps/console`         | Web console (placeholder)                                                                   |
-| `adapters/`            | Per-agent and per-system integrations (none yet)                                            |
-| `deploy/docker`        | Docker Compose install: Postgres, the OpenTelemetry collector and the server, with backups  |
-| `ee/risk`              | PR risk score and its label and check result (commercial license, see `ee/`)                |
-| `docs/build-plan`      | Milestones and acceptance criteria                                                          |
+| Path                     | What                                                                                        |
+| ------------------------ | ------------------------------------------------------------------------------------------- |
+| `packages/schema`        | v1 contracts: ledger event, `selfhost.toml`, review item, hook payloads, OpenAPI, MCP tools |
+| `packages/ledger`        | Append-only ledger store on Postgres or PGlite, plus a mapper per event source              |
+| `packages/importers`     | Local session log importers for Claude Code and Codex (pricing ported from ccusage, MIT)    |
+| `packages/spend`         | Spend by request type, agent, model and person, and the waste detector                      |
+| `packages/policy`        | Evaluates `selfhost.toml` rules against tool calls and records would-block events           |
+| `packages/compile`       | Compiles `selfhost.toml` into each vendor's native controls, with coverage per rule         |
+| `packages/review`        | The review list: items from ledger signals, deduped, routed, ranked, with approval timeouts |
+| `packages/agents`        | Agent and login detection, context file listing, and config writing for five agent CLIs     |
+| `packages/attribution`   | Links commits and pull requests to the agent and model that produced them, with merge stats |
+| `packages/pr`            | Reads a pull request or local commits: hunks, new dependencies, test changes, the agent run |
+| `packages/brief`         | The review brief comment on agent pull requests, as data and as Markdown                    |
+| `packages/github`        | Labels, review check run, review requests and brief comment on agent PRs, via a GitHub App  |
+| `packages/sdk`           | API client (placeholder) and the event schema versions it sends                             |
+| `packages/vendor-compat` | Scheduled checks of new vendor CLI releases, and the page in `docs/compatibility`           |
+| `apps/server`            | HTTP API server (Hono)                                                                      |
+| `apps/cli`               | `selfhost` command line                                                                     |
+| `apps/console`           | Web console (placeholder)                                                                   |
+| `adapters/`              | Per-agent and per-system integrations (none yet)                                            |
+| `deploy/docker`          | Docker Compose install: Postgres, the OpenTelemetry collector and the server, with backups  |
+| `ee/risk`                | PR risk score and its label and check result (commercial license, see `ee/`)                |
+| `docs/build-plan`        | Milestones and acceptance criteria                                                          |
 
 ## Development
 

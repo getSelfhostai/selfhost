@@ -34,6 +34,12 @@ export const HealthResponseSchema = Type.Object(
   {
     ok: Type.Literal(true),
     version: Type.String({ description: "Server version." }),
+    event_schemas: Type.Optional(
+      Type.Array(Type.String(), {
+        description:
+          "Event schema versions POST /v1/events accepts, newest first. Older ones are upgraded at ingest. Absent on servers older than event schema versioning, which accept selfhost.event/v1 only.",
+      }),
+    ),
   },
   { additionalProperties: false, title: "HealthResponse" },
 );

@@ -1,0 +1,44 @@
+{
+  "schema": "selfhost.vendor_compat/v1",
+  "updated": null,
+  "run_url": null,
+  "event_schemas": {
+    "schema": "selfhost.event_versions/v1",
+    "support_months": 12,
+    "current": "selfhost.event/v1",
+    "versions": [
+      {
+        "tag": "selfhost.event/v1",
+        "released": "2026-11-07",
+        "superseded": null,
+        "supported_until": null
+      }
+    ]
+  },
+  "vendors": [
+    {
+      "id": "claude_code",
+      "name": "Claude Code",
+      "source": "@anthropic-ai/claude-code",
+      "versions": []
+    },
+    {
+      "id": "codex",
+      "name": "Codex",
+      "source": "@openai/codex",
+      "versions": []
+    },
+    {
+      "id": "cursor",
+      "name": "Cursor CLI",
+      "source": "https://cursor.com/install",
+      "versions": []
+    },
+    {
+      "id": "opencode",
+      "name": "OpenCode",
+      "source": "opencode-ai",
+      "versions": []
+    }
+  ]
+}

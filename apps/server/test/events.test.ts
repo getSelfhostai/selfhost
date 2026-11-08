@@ -1,6 +1,9 @@
+import { type Ledger, openLedger } from "@selfhost/ledger";
 import {
   type ApiError,
   createValidator,
+  EVENT_SCHEMA,
+  type EventSchemaVersion,
   type EventsPage,
   EventsPageSchema,
   type IngestEventsError,
@@ -9,7 +12,8 @@ import {
   type LedgerEvent,
 } from "@selfhost/schema";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { startTestServer, type TestServer } from "./helpers.js";
+import { createApp } from "../src/app.js";
+import { startTestServer, type TestServer, TOKEN } from "./helpers.js";
 
 let server: TestServer;
 
@@ -184,5 +188,86 @@ describe("GET /v1/events", () => {
     expect(status).toBe(400);
     expect(body.error.code).toBe("invalid_query");
     expect(body.error.message).toMatch(new RegExp(`^${field}: `));
+  });
+});
+
+describe("POST /v1/events with older event schema versions", () => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const daysAgo = (n: number) => new Date(Date.now() - n * DAY_MS).toISOString().slice(0, 10);
+  // example.event/v1 named the actor `who` and was replaced 13 months ago; example.event/v2
+  // named the kind `type`, was released 13 months ago and replaced 30 days ago.
+  const versions: EventSchemaVersion[] = [
+    {
+      tag: "example.event/v1",
+      released: daysAgo(800),
+      upgrade: ({ who, ...rest }) => ({ ...rest, actor: who }),
+    },
+    {
+      tag: "example.event/v2",
+      released: daysAgo(395),
+      upgrade: ({ type, ...rest }) => ({ ...rest, kind: type }),
+    },
+    { tag: EVENT_SCHEMA, released: daysAgo(30) },
+  ];
+  let ledger: Ledger;
+  let app: ReturnType<typeof createApp>;
+
+  beforeAll(async () => {
+    ledger = await openLedger({ dataDir: "memory://", eventSchemas: versions });
+    app = createApp({ version: "1.2.3", ledger, token: TOKEN });
+  });
+
+  afterAll(async () => {
+    await ledger.close();
+  });
+
+  const send = (events: unknown[]) =>
+    app.request("/v1/events", {
+      method: "POST",
+      headers: { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" },
+      body: JSON.stringify({ events }),
+    });
+
+  it("stores events in a version still supported, upgraded to the current one", async () => {
+    const { kind, ...rest } = makeEvent({ kind: "session.ended" });
+    const res = await send([{ ...rest, schema: "example.event/v2", type: kind }]);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ accepted: 1, duplicates: 0 });
+    const read = await app.request(`/v1/events?kind=session.ended`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    const page = (await read.json()) as EventsPage;
+    expect(page.events).toEqual([{ ...rest, schema: EVENT_SCHEMA, kind: "session.ended" }]);
+  });
+
+  it("rejects events in a version past its 12 month window and writes nothing", async () => {
+    const { actor, ...rest } = makeEvent();
+    const res = await send([makeEvent(), { ...rest, schema: "example.event/v1", who: actor }]);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as IngestEventsError;
+    matches(IngestEventsErrorSchema, body);
+    expect(body.errors).toEqual([
+      {
+        index: 1,
+        field: "schema",
+        message: expect.stringMatching(
+          /^example\.event\/v1 is no longer accepted: support ended on .+ Update the importer or SDK that sent it to one that writes selfhost\.event\/v1$/,
+        ),
+      },
+    ]);
+  });
+
+  it("rejects an unknown version, listing the accepted ones", async () => {
+    const res = await send([{ ...makeEvent(), schema: "selfhost.event/v2" }]);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as IngestEventsError;
+    expect(body.errors).toEqual([
+      {
+        index: 0,
+        field: "schema",
+        message:
+          'Unknown event schema "selfhost.event/v2". Accepted: selfhost.event/v1, example.event/v2',
+      },
+    ]);
   });
 });

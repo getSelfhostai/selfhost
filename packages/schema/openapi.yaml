@@ -26,7 +26,7 @@ paths:
     post:
       operationId: ingestEvents
       summary: Append a batch of ledger events.
-      description: "Atomic: if any event is invalid, nothing is written and the response lists every error by index and field. Event ids are idempotency keys, so retrying a batch is safe. With a person token, events whose actor is a person must carry that person's id (an event with no actor gets it), system actors are refused, and team is set to the person's team."
+      description: "Atomic: if any event is invalid, nothing is written and the response lists every error by index and field. Events in an older schema version are upgraded to the current one before they are stored, for 12 months after the version that replaced it was released (GET /v1/health lists the accepted versions); an unknown or expired version is an error on schema. Event ids are idempotency keys, so retrying a batch is safe. With a person token, events whose actor is a person must carry that person's id (an event with no actor gets it), system actors are refused, and team is set to the person's team."
       requestBody:
         required: true
         content:
@@ -1504,6 +1504,11 @@ components:
         version:
           description: Server version.
           type: string
+        event_schemas:
+          description: Event schema versions POST /v1/events accepts, newest first. Older ones are upgraded at ingest. Absent on servers older than event schema versioning, which accept selfhost.event/v1 only.
+          type: array
+          items:
+            type: string
     ApiError:
       additionalProperties: false
       title: ApiError

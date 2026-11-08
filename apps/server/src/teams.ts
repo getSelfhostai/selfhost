@@ -13,6 +13,7 @@ import {
   type Person,
   type RevokeTokensResponse,
   TEAM_ACTIONS,
+  upgradeEvent,
 } from "@selfhost/schema";
 import { type Context, Hono } from "hono";
 import {
@@ -245,7 +246,8 @@ function sharedRoutes(router: Router, ledger: Ledger, now: (() => Date) | undefi
  * as the person, a person actor must be that person, system actors are refused, and team is
  * set to the person's team. The ledger then moves each event to the team that owns its run's
  * repo, if another team of the org does. A body that is not a JSON object with an events array
- * is passed on as it is, for the events route to report.
+ * is passed on as it is, for the events route to report. Events in an older accepted schema
+ * version are upgraded first, so the checks read the current shape.
  */
 export function stampEvents(
   text: string,
@@ -259,7 +261,9 @@ export function stampEvents(
   }
   if (!isObject(body) || !Array.isArray(body.events)) return { body: text };
   const errors: BatchError[] = [];
-  const stamped = body.events.map((event: unknown, index) => {
+  const stamped = body.events.map((value: unknown, index) => {
+    const upgraded = upgradeEvent(value);
+    const event = upgraded.ok ? upgraded.value : value;
     if (!isObject(event)) return event;
     const actor = event.actor ?? { kind: "person", id: person.id };
     if (isObject(actor) && actor.kind === "person" && actor.id !== person.id) {

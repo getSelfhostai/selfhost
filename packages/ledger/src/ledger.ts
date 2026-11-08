@@ -1,12 +1,14 @@
 import {
   createValidator,
   DEFAULT_REDACTION,
+  EVENT_SCHEMA_VERSIONS,
   EventQuerySchema,
+  type EventSchemaVersion,
+  ingestEvent,
   type LedgerEvent,
   MAX_EVENT_BATCH,
   PAGE_LIMIT_DEFAULT,
   type RedactionSettings,
-  validateEvent,
 } from "@selfhost/schema";
 import { decodeCursor, encodeCursor, TS_KEY } from "./cursor.js";
 import { type ConnectOptions, connect, type Database, migrate } from "./db.js";
@@ -68,7 +70,9 @@ export interface EventPage {
 export interface Ledger {
   /**
    * Validates every event, then writes them in one transaction. If any event is invalid, nothing
-   * is written and LedgerValidationError lists every error. Ids are idempotency keys: an id that
+   * is written and LedgerValidationError lists every error. An event in an older schema version
+   * that is still supported is upgraded to the current one first and stored upgraded; an unknown
+   * or expired version is an error on schema (see LedgerOptions.eventSchemas). Ids are idempotency keys: an id that
    * is already stored is reported under duplicates and the stored event is left as it was.
    * Every event is redacted before it is written (see LedgerOptions.redaction).
    */
@@ -92,6 +96,12 @@ export interface LedgerOptions {
    * response text, built-in secret and email patterns only.
    */
   redaction?: RedactionSettings;
+  /**
+   * Event schema versions append accepts, oldest first, with the upgrade from each to the next.
+   * Default: EVENT_SCHEMA_VERSIONS, which accepts a version for 12 months after the version
+   * that replaced it was released.
+   */
+  eventSchemas?: readonly EventSchemaVersion[];
 }
 
 export type OpenLedgerOptions = ConnectOptions & LedgerOptions;
@@ -137,9 +147,10 @@ export function createLedger(db: Database, options: LedgerOptions = {}): Ledger 
   const teams = createTeamStore(db);
   const orgs = createOrgStore(db);
   const settingsFor = teamRedaction(orgs, options.redaction ?? DEFAULT_REDACTION);
+  const eventSchemas = options.eventSchemas ?? EVENT_SCHEMA_VERSIONS;
   const ledger: Ledger = {
     async append(events, appendOptions = {}) {
-      const valid = validateForAppend(events);
+      const valid = validateForAppend(events, eventSchemas);
       if (valid.length === 0) return { accepted: [], duplicates: [] };
       const writer = appendOptions.team;
       const assigned = await orgs.assignTeams(db, valid, writer);
@@ -218,14 +229,18 @@ export function createLedger(db: Database, options: LedgerOptions = {}): Ledger 
   return ledger;
 }
 
-function validateForAppend(events: unknown): LedgerEvent[] {
+function validateForAppend(
+  events: unknown,
+  versions: readonly EventSchemaVersion[],
+): LedgerEvent[] {
   if (!Array.isArray(events)) {
     throw new LedgerValidationError([{ index: -1, path: "events", message: "Expected an array" }]);
   }
   const errors: LedgerFieldError[] = [];
   const firstIndexById = new Map<string, number>();
+  const valid: LedgerEvent[] = [];
   events.forEach((value, index) => {
-    const result = validateEvent(value);
+    const result = ingestEvent(value, { versions });
     if (!result.ok) {
       for (const error of result.errors)
         errors.push({ index, path: error.field, message: error.message });
@@ -242,10 +257,11 @@ function validateForAppend(events: unknown): LedgerEvent[] {
       return;
     }
     firstIndexById.set(key, index);
+    valid.push(result.value);
     for (const problem of unstorable(result.value)) errors.push({ index, ...problem });
   });
   if (errors.length > 0) throw new LedgerValidationError(errors);
-  return events as LedgerEvent[];
+  return valid;
 }
 
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;

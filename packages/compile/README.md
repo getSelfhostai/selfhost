@@ -74,4 +74,7 @@ Ruler rewrites a project's `.codex/config.toml`, which is why selfhost puts no h
 
 `VENDOR_VERSIONS` lists the vendor config versions with a golden fixture in
 `fixtures/compile/<vendor>/<version>/`; the newest is the default target. See
-`fixtures/README.md` for adding a version when a vendor ships one.
+`fixtures/README.md` for adding a version when a vendor ships one. The vendor compatibility
+workflow ([`packages/vendor-compat`](../vendor-compat/README.md)) reruns the golden tests on each
+new Claude Code and Codex release, checks that the CLI itself loads the files compiled for that
+release, and notes a release that has no golden folder yet.

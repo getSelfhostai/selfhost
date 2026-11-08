@@ -7,7 +7,7 @@ files below. A test fails when those files drift from the source.
 
 | Contract            | Version tag               | Source                               | Generated                                                                                           |
 | ------------------- | ------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------------------- |
-| Ledger event        | `selfhost.event/v1`       | `src/event.ts`                       | `json/event.schema.json`                                                                            |
+| Ledger event        | `selfhost.event/v1`       | `src/event.ts`                       | `json/event.schema.json`, `event-versions.json`                                                     |
 | `selfhost.toml`     | `version = 1`             | `src/config.ts`                      | `json/config.schema.json`                                                                           |
 | Review item         | `selfhost.review_item/v1` | `src/review-item.ts`                 | `json/review-item.schema.json`                                                                      |
 | Agent hook payloads | per vendor                | `src/hooks/`                         | `json/claude-code-hook.schema.json`, `json/codex-hook.schema.json`, `json/codex-notify.schema.json` |
@@ -30,6 +30,32 @@ import { validateEvent, validateEventBatch } from "@selfhost/schema";
 
 const result = validateEventBatch(body.events); // atomic: every error, with index and field
 ```
+
+## Event schema versions
+
+`src/event-versions.ts` lists every event schema version, oldest first, with its release day
+(`EVENT_SCHEMA_VERSIONS`); the last is the one every writer here produces. A version stays
+accepted at ingest while it is current and for 12 months after the version that replaced it was
+released, so every version released in the last 12 months is accepted. Older accepted events are
+upgraded to the current version (each version has an `upgrade` to the next) before they are
+validated and stored, so readers only see the current shape. `ledger.append`, which every ingest
+path goes through (`POST /v1/events`, the OTLP receiver, webhooks, the CLI), rejects an unknown
+or expired version with an error on `schema` that says when support ended and which version to
+write. `GET /v1/health` lists the
+accepted versions in `event_schemas`, and `event-versions.json` publishes the list as data.
+
+```ts
+import { eventSchemaSupport, ingestEvent } from "@selfhost/schema";
+
+eventSchemaSupport("selfhost.event/v1"); // { status: "current", released: "2026-11-07" }
+ingestEvent(body); // upgrade, then validateEvent; validateEvent alone takes the current version
+```
+
+Writers declare what they write: `EVENT_SCHEMAS` in `@selfhost/importers` and `@selfhost/sdk`,
+`SOURCE_EVENT_SCHEMAS` in `@selfhost/ledger`. Their tests fail once a declared version is past its
+window. To add a version, append it with its release day, give the previous version an `upgrade`,
+freeze its events in `compat/<version>/event/`, and keep every older `compat/` folder: the compat
+test ingests each accepted version's frozen events.
 
 ## selfhost.toml
 

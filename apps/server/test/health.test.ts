@@ -12,10 +12,14 @@ afterAll(async () => {
 });
 
 describe("GET /v1/health", () => {
-  it("returns ok and the version without a token", async () => {
+  it("returns ok, the version and the accepted event schemas without a token", async () => {
     const res = await server.app.request("/v1/health");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, version: "1.2.3" });
+    expect(await res.json()).toEqual({
+      ok: true,
+      version: "1.2.3",
+      event_schemas: ["selfhost.event/v1"],
+    });
   });
 });
 

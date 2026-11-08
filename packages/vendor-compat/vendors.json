@@ -1,0 +1,8 @@
+{
+  "vendors": [
+    { "id": "claude_code", "name": "Claude Code", "npm": "@anthropic-ai/claude-code" },
+    { "id": "codex", "name": "Codex", "npm": "@openai/codex" },
+    { "id": "cursor", "name": "Cursor CLI", "installer": "https://cursor.com/install" },
+    { "id": "opencode", "name": "OpenCode", "npm": "opencode-ai" }
+  ]
+}

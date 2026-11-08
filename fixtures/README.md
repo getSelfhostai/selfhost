@@ -50,7 +50,11 @@ Days are grouped in UTC. Bump the pinned ccusage version only on purpose and rec
 
 `packages/compile/test/golden.test.ts` compiles `compile/selfhost.toml` for every version in
 `VENDOR_VERSIONS` (`packages/compile/src/versions.ts`) and fails when a generated file drifts from
-its folder. When a vendor CLI ships a release that changes its config:
+its folder. The vendor compatibility workflow (`.github/workflows/vendor-compat.yml`,
+[`packages/vendor-compat`](../packages/vendor-compat/README.md)) reruns these tests, and the
+context ones, on every new Claude Code, Codex, Cursor and OpenCode release, has the new CLI load
+what selfhost compiles for it, and notes a release with no golden folder yet. When a vendor CLI
+ships a release that changes its config:
 
 1. Check the vendor's docs (cited at the top of `packages/compile/src/vendors/<vendor>.ts`) and
    update the mapping, gating new syntax on the version with `atLeast(version, "x.y.z")`.

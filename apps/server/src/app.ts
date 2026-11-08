@@ -1,5 +1,10 @@
 import type { Ledger } from "@selfhost/ledger";
-import type { ApiError, HealthResponse, ResolvedSelfhostConfig } from "@selfhost/schema";
+import {
+  type ApiError,
+  acceptedEventSchemas,
+  type HealthResponse,
+  type ResolvedSelfhostConfig,
+} from "@selfhost/schema";
 import { Hono } from "hono";
 import { requireBearerToken } from "./auth.js";
 import { decisionRoutes } from "./decisions.js";
@@ -45,7 +50,9 @@ export function createApp({ version, ledger, token, config, now, github = {} }: 
   });
   app.use("*", requireBearerToken(token));
 
-  app.get("/v1/health", (c) => c.json({ ok: true, version } satisfies HealthResponse));
+  app.get("/v1/health", (c) =>
+    c.json({ ok: true, version, event_schemas: acceptedEventSchemas() } satisfies HealthResponse),
+  );
 
   eventRoutes(app, ledger);
   decisionRoutes(app, ledger);

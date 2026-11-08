@@ -1,0 +1,154 @@
+name: Vendor compatibility
+
+# Installs the newest Claude Code, Codex, Cursor and OpenCode CLIs and checks them against
+# selfhost's hooks, log importers and compilers, then updates docs/compatibility/ and opens an
+# issue for a release that broke. See packages/vendor-compat/README.md.
+#
+# Weekly every check runs. Every six hours a release check (one short job, no install) looks up
+# the newest release of each CLI and runs the checks only for one the page has not tested, or
+# lists as broken.
+
+on:
+  schedule:
+    # The weekly run. The FORCE expression in the releases job names it again.
+    - cron: "17 5 * * 1"
+    - cron: "47 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Run every check even when no CLI shipped a release
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vendor-compat
+  cancel-in-progress: false
+
+jobs:
+  releases:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.latest.outputs.run }}
+      versions: ${{ steps.latest.outputs.versions }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: |
+            packages/vendor-compat
+            docs/compatibility
+      - id: latest
+        env:
+          FORCE: ${{ (github.event_name == 'workflow_dispatch' && inputs.force) || github.event.schedule == '17 5 * * 1' }}
+        run: node packages/vendor-compat/scripts/latest.mjs --github-output
+
+  compat:
+    needs: releases
+    if: needs.releases.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Set paths
+        run: |
+          echo "COMPAT_RESULTS=$RUNNER_TEMP/compat/results.json" >> "$GITHUB_ENV"
+          echo "COMPAT_ISSUES=$RUNNER_TEMP/compat/issues.json" >> "$GITHUB_ENV"
+          echo "COMPAT_VENDORS=$RUNNER_TEMP/compat/vendors" >> "$GITHUB_ENV"
+
+      # Each step records failures in the results file and exits 0, so one broken CLI does not
+      # stop the others from being checked. A non-zero exit here is a bug in the checks.
+      - name: Install the newest CLIs
+        env:
+          VERSIONS: ${{ needs.releases.outputs.versions }}
+        run: >-
+          pnpm --silent --filter @selfhost/vendor-compat compat install
+          --versions "$VERSIONS" --dir "$COMPAT_VENDORS" --results "$COMPAT_RESULTS"
+      - name: Check the CLIs offline
+        run: pnpm --silent --filter @selfhost/vendor-compat compat probe --results "$COMPAT_RESULTS"
+      - name: Run the fixture sessions through the hooks, importers and compilers
+        run: pnpm --silent --filter @selfhost/vendor-compat compat suites --results "$COMPAT_RESULTS"
+      # Skipped per CLI when its secret is not set; nothing is marked broken for a skip.
+      - name: Run live sessions
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          COMPAT_CLAUDE_MODEL: ${{ vars.COMPAT_CLAUDE_MODEL }}
+          COMPAT_CODEX_MODEL: ${{ vars.COMPAT_CODEX_MODEL }}
+        run: pnpm --silent --filter @selfhost/vendor-compat compat live --results "$COMPAT_RESULTS"
+
+      - name: Update the compatibility page
+        if: ${{ !cancelled() }}
+        run: >-
+          pnpm --silent --filter @selfhost/vendor-compat compat report
+          --results "$COMPAT_RESULTS" --issues "$COMPAT_ISSUES"
+          --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: vendor-compat-results
+          path: ${{ runner.temp }}/compat/*.json
+          if-no-files-found: warn
+      - name: Commit the page
+        if: ${{ !cancelled() }}
+        run: |
+          git add docs/compatibility
+          if git diff --cached --quiet; then
+            echo "No change to the page"
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "Update the vendor compatibility page"
+          for attempt in 1 2 3; do
+            git push origin "HEAD:$GITHUB_REF_NAME" && exit 0
+            git pull -q --rebase origin "$GITHUB_REF_NAME" || break
+          done
+          echo "::error::Could not push the compatibility page"
+          exit 1
+      - name: Open, update and close issues
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ -f "$COMPAT_ISSUES" ] || exit 0
+          count=$(jq length "$COMPAT_ISSUES")
+          for i in $(seq 0 $((count - 1))); do
+            action=$(jq -r ".[$i].action" "$COMPAT_ISSUES")
+            title=$(jq -r ".[$i].title" "$COMPAT_ISSUES")
+            jq -r ".[$i].body" "$COMPAT_ISSUES" > "$RUNNER_TEMP/issue-body.txt"
+            number=$(gh issue list --state open --search "\"$title\" in:title" --json number,title \
+              | jq -r --arg t "$title" 'map(select(.title == $t)) | .[0].number // empty')
+            case "$action" in
+              open|update)
+                if [ -n "$number" ]; then
+                  gh issue comment "$number" --body-file "$RUNNER_TEMP/issue-body.txt"
+                else
+                  gh issue create --title "$title" --body-file "$RUNNER_TEMP/issue-body.txt"
+                fi
+                ;;
+              close)
+                if [ -n "$number" ]; then
+                  gh issue close "$number" --comment "$(cat "$RUNNER_TEMP/issue-body.txt")"
+                fi
+                ;;
+            esac
+          done
+      - name: Fail when a release is broken
+        if: ${{ !cancelled() }}
+        run: |
+          jq -e 'map(select(.action != "close")) | length == 0' "$COMPAT_ISSUES" > /dev/null || {
+            jq -r '.[] | select(.action != "close") | "::error::\(.title)"' "$COMPAT_ISSUES"
+            exit 1
+          }

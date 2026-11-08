@@ -13,6 +13,8 @@
       "!packages/schema/json",
       "!packages/schema/compat",
       "!packages/schema/mcp-tools.json",
+      "!packages/schema/event-versions.json",
+      "!docs/compatibility",
       "!deploy/src/stack.generated.ts"
     ]
   },

@@ -3,6 +3,12 @@ import { EVENT_SCHEMA, type LedgerEvent } from "@selfhost/schema";
 import { deterministicUuidv7 } from "./ids.js";
 import type { EventInput, ParsedEvent, Vendor } from "./types.js";
 
+/**
+ * Event schema versions the importers write, newest first. The ledger must accept each one (see
+ * EVENT_SCHEMA_VERSIONS in @selfhost/schema); a test fails once one is past its support window.
+ */
+export const EVENT_SCHEMAS: readonly string[] = [EVENT_SCHEMA];
+
 export const DAY_MS = 24 * 60 * 60 * 1000;
 export const DEFAULT_WINDOW_DAYS = 30;
 /** A session with no new lines for this long is reported as ended. */

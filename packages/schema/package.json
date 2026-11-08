@@ -9,7 +9,8 @@
     ".": "./src/index.ts",
     "./json/*": "./json/*",
     "./openapi.yaml": "./openapi.yaml",
-    "./mcp-tools.json": "./mcp-tools.json"
+    "./mcp-tools.json": "./mcp-tools.json",
+    "./event-versions.json": "./event-versions.json"
   },
   "publishConfig": {
     "exports": {
@@ -19,7 +20,8 @@
       },
       "./json/*": "./json/*",
       "./openapi.yaml": "./openapi.yaml",
-      "./mcp-tools.json": "./mcp-tools.json"
+      "./mcp-tools.json": "./mcp-tools.json",
+      "./event-versions.json": "./event-versions.json"
     }
   },
   "files": [
@@ -27,6 +29,7 @@
     "json",
     "openapi.yaml",
     "mcp-tools.json",
+    "event-versions.json",
     "README.md"
   ],
   "engines": {

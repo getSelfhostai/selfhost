@@ -1,4 +1,5 @@
 export {
+  SOURCE_EVENT_SCHEMAS,
   type SourceContext,
   SourcePayloadError,
   stableEventId,

@@ -1,8 +1,8 @@
 import { appendFileSync, cpSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { validateEvent } from "@selfhost/schema";
+import { eventSchemaSupport, validateEvent } from "@selfhost/schema";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { discoverLogFiles, importAll, parseLogFile } from "../src/index.js";
+import { discoverLogFiles, EVENT_SCHEMAS, importAll, parseLogFile } from "../src/index.js";
 import {
   ALL_TIME,
   assistantToolLine,
@@ -138,7 +138,15 @@ describe("importAll", () => {
         const result = validateEvent(event);
         expect(result.ok ? [] : result.errors, event.kind).toEqual([]);
         expect(event.source).toBe("local_log");
+        expect(EVENT_SCHEMAS).toContain(event.schema);
       }
+    }
+  });
+
+  it("declares only event schema versions the ledger still accepts", () => {
+    expect(EVENT_SCHEMAS.length).toBeGreaterThan(0);
+    for (const tag of EVENT_SCHEMAS) {
+      expect(["current", "supported"], tag).toContain(eventSchemaSupport(tag).status);
     }
   });
 

@@ -22,6 +22,7 @@ import {
   DecisionsPageSchema,
   EventQuerySchema,
   EventsPageSchema,
+  eventVersionsFile,
   HealthResponseSchema,
   IngestEventsErrorSchema,
   IngestEventsRequestSchema,
@@ -271,7 +272,7 @@ function openApiDocument(): Json {
           operationId: "ingestEvents",
           summary: "Append a batch of ledger events.",
           description:
-            "Atomic: if any event is invalid, nothing is written and the response lists every error by index and field. Event ids are idempotency keys, so retrying a batch is safe. With a person token, events whose actor is a person must carry that person's id (an event with no actor gets it), system actors are refused, and team is set to the person's team.",
+            "Atomic: if any event is invalid, nothing is written and the response lists every error by index and field. Events in an older schema version are upgraded to the current one before they are stored, for 12 months after the version that replaced it was released (GET /v1/health lists the accepted versions); an unknown or expired version is an error on schema. Event ids are idempotency keys, so retrying a batch is safe. With a person token, events whose actor is a person must carry that person's id (an event with no actor gets it), system actors are refused, and team is set to the person's team.",
           requestBody: { required: true, content: jsonContent("IngestEventsRequest") },
           responses: {
             "200": {
@@ -825,5 +826,6 @@ export function buildArtifacts(): Artifact[] {
       content: `# ${GENERATED}\n${stringify(openApiDocument(), { lineWidth: 0, aliasDuplicateObjects: false })}`,
     },
     { path: "mcp-tools.json", content: jsonText(mcpTools()) },
+    { path: "event-versions.json", content: jsonText(eventVersionsFile()) },
   ];
 }

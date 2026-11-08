@@ -1,0 +1,13 @@
+{
+  "schema": "selfhost.event_versions/v1",
+  "support_months": 12,
+  "current": "selfhost.event/v1",
+  "versions": [
+    {
+      "tag": "selfhost.event/v1",
+      "released": "2026-11-07",
+      "superseded": null,
+      "supported_until": null
+    }
+  ]
+}

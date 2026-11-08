@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vendor compatibility</title>
+<meta name="description" content="Coding agent CLI releases tested against selfhost's hooks, log importers and policy compiler.">
+<style>
+:root {
+  --bg: #ffffff;
+  --fg: #1d1f23;
+  --muted: #5d6470;
+  --line: #e3e5e8;
+  --soft: #f5f6f7;
+  --pass: #17663a;
+  --pass-bg: #e3f4e9;
+  --fail: #a3201c;
+  --fail-bg: #fbe5e3;
+  --skip: #5d6470;
+  --skip-bg: #eef0f2;
+  --link: #1f5fbf;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15171a;
+    --fg: #e6e8eb;
+    --muted: #9aa1ab;
+    --line: #2c3036;
+    --soft: #1d2024;
+    --pass: #7fd6a0;
+    --pass-bg: #163222;
+    --fail: #f3a39d;
+    --fail-bg: #3a1a18;
+    --skip: #9aa1ab;
+    --skip-bg: #23272c;
+    --link: #8ab4f8;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: 980px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-size: 28px; margin: 0 0 8px; }
+h2 { font-size: 20px; margin: 40px 0 8px; }
+a { color: var(--link); }
+code, pre { font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
+.muted { color: var(--muted); }
+.scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+th { font-weight: 600; font-size: 13px; color: var(--muted); }
+table.checks { background: var(--soft); }
+table.checks td:first-child { white-space: nowrap; }
+.status { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 13px; font-weight: 600; }
+.status-pass, .status-passing { color: var(--pass); background: var(--pass-bg); }
+.status-fail, .status-broken { color: var(--fail); background: var(--fail-bg); }
+.status-skip, .status-not-run { color: var(--skip); background: var(--skip-bg); }
+details summary { cursor: pointer; color: var(--link); }
+dt { margin-top: 10px; }
+dd { margin: 2px 0 0 0; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+<h1>Vendor compatibility</h1>
+<p>Each new release of the coding agent CLIs selfhost supports is installed in CI and checked against selfhost's hooks, log importers and policy compiler: every week, and within hours of a release. A failing run marks that release broken here and opens an issue. No run yet.</p>
+<div class="scroll"><table>
+<thead><tr><th>CLI</th><th>Newest tested</th><th>Status</th><th>Live session</th></tr></thead>
+<tbody>
+<tr><td><a href="#claude_code">Claude Code</a></td><td colspan="3" class="muted">Not tested yet</td></tr>
+<tr><td><a href="#codex">Codex</a></td><td colspan="3" class="muted">Not tested yet</td></tr>
+<tr><td><a href="#cursor">Cursor CLI</a></td><td colspan="3" class="muted">Not tested yet</td></tr>
+<tr><td><a href="#opencode">OpenCode</a></td><td colspan="3" class="muted">Not tested yet</td></tr>
+</tbody></table></div>
+<section id="claude_code"><h2>Claude Code</h2>
+<p class="muted">Source: <code>@anthropic-ai/claude-code</code>. Not tested yet.</p></section>
+<section id="codex"><h2>Codex</h2>
+<p class="muted">Source: <code>@openai/codex</code>. Not tested yet.</p></section>
+<section id="cursor"><h2>Cursor CLI</h2>
+<p class="muted">Source: <code>https://cursor.com/install</code>. Not tested yet.</p></section>
+<section id="opencode"><h2>OpenCode</h2>
+<p class="muted">Source: <code>opencode-ai</code>. Not tested yet.</p></section>
+<section id="event-schemas"><h2>Event schema versions</h2>
+<p>Every event carries a schema version. The server accepts the current version, and an older one for 12 months after the version that replaced it was released; older events are upgraded on the way in.</p>
+<div class="scroll"><table>
+<thead><tr><th>Event schema</th><th>Released</th><th>Accepted</th></tr></thead>
+<tbody>
+<tr><td><code>selfhost.event/v1</code></td><td>2026-11-07</td><td>Current</td></tr>
+</tbody></table></div>
+</section>
+<section id="checks"><h2>What each check covers</h2>
+<dl>
+<dt><code>install</code></dt><dd>The release installs from its npm package or the vendor's download, on Linux x64.</dd>
+<dt><code>version</code></dt><dd>The installed CLI runs and reports the version that was installed.</dd>
+<dt><code>hook-events</code></dt><dd>Every hook event selfhost installs hooks for is still offered. For Claude Code the list comes from claude doctor; the events it offers that selfhost has no schema for are listed as not modeled.</dd>
+<dt><code>hook-fields</code></dt><dd>The payload fields selfhost reads and the answer fields it writes still appear in the CLI.</dd>
+<dt><code>tool-inputs</code></dt><dd>Claude Code's own sdk-tools.d.ts still declares the tool input fields the pre-tool check reads.</dd>
+<dt><code>config</code></dt><dd>The CLI loads the configuration selfhost policy compile writes for that release: claude doctor for Claude Code settings, codex features list for Codex requirements.toml.</dd>
+<dt><code>suite:*</code></dt><dd>Fixture sessions and hook payloads through selfhost's schemas, hook mappers, log importers, the selfhost hook command, and the policy and context compilers.</dd>
+<dt><code>live-*</code></dt><dd>With an API key in CI: a short real session with every hook capturing its payload, checked against the schemas, mapped to ledger events, and the session log imported.</dd>
+</dl>
+<p class="muted">A skipped check could not run in that environment, for example a live session without an API key. Skipped checks never mark a release broken. The same data is in <a href="compatibility.json">compatibility.json</a>.</p>
+</section>
+</main>
+</body>
+</html>

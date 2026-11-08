@@ -11,6 +11,12 @@ import {
   type LedgerEvent,
 } from "@selfhost/schema";
 
+/**
+ * Event schema versions the source mappers (hooks, OpenTelemetry, gateway and vendor audit logs)
+ * write, newest first. Each must be one the ledger accepts.
+ */
+export const SOURCE_EVENT_SCHEMAS: readonly string[] = [EVENT_SCHEMA];
+
 /** What a source payload does not say about itself, supplied by the caller. */
 export interface SourceContext {
   /**

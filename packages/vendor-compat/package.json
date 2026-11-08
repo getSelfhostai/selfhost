@@ -1,0 +1,30 @@
+{
+  "name": "@selfhost/vendor-compat",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Checks each new Claude Code, Codex, Cursor and OpenCode release against selfhost's hooks, importers and compilers, and writes the compatibility page.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "compat": "tsx src/main.ts",
+    "latest": "node scripts/latest.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@selfhost/compile": "workspace:*",
+    "@selfhost/importers": "workspace:*",
+    "@selfhost/ledger": "workspace:*",
+    "@selfhost/schema": "workspace:*",
+    "smol-toml": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
