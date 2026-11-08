@@ -453,12 +453,21 @@ jobs:
           # Its management API and UI are not routed; model routes refuse requests without a
           # virtual key or with one it does not know.
           [ "$(status https://localhost/llm/api/governance/virtual-keys)" = 404 ]
-          code=$(status -X POST -H 'Content-Type: application/json' -d '{"model":"anthropic/claude-haiku-5-5","messages":[]}' \
-            https://localhost/llm/v1/chat/completions)
-          case "$code" in 401|403) ;; *) echo "::error::no virtual key answered $code"; exit 1 ;; esac
-          code=$(status -X POST -H 'Authorization: Bearer sk-bf-not-a-key' -H 'Content-Type: application/json' \
-            -d '{"model":"anthropic/claude-haiku-5-5","messages":[]}' https://localhost/llm/v1/chat/completions)
-          case "$code" in 401|403) ;; *) echo "::error::an unknown virtual key answered $code"; exit 1 ;; esac
+          # A well-formed request, so a refusal can only be about the key. Bifrost answers 400, 401
+          # or 403 depending on the case; the body must name the virtual key either way.
+          refused() {
+            body=$(https -s -o - -w '\n%{http_code}' -X POST -H 'Content-Type: application/json' "$@" \
+              -d '{"model":"anthropic/claude-haiku-5-5","messages":[{"role":"user","content":"hi"}]}' \
+              https://localhost/llm/v1/chat/completions)
+            code=${body##*$'\n'}
+            case "$code" in
+              401|403) return 0 ;;
+              400) printf '%s' "${body%$'\n'*}" | grep -qi 'virtual.key\|x-bf-vk\|unauthori' && return 0 ;;
+            esac
+            echo "::error::the request with '$2' answered $code: ${body%$'\n'*}"; return 1
+          }
+          refused -H 'X-Selfhost-Check: no-key' || exit 1
+          refused -H 'Authorization: Bearer sk-bf-not-a-key' || exit 1
 
           # The server writes a team and a person's key with its budget, and syncs again cleanly.
           admin=$(sudo sed -n 's/^SELFHOST_TOKEN=//p' .env)
