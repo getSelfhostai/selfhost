@@ -1,4 +1,12 @@
+import { CONTEXT_READER_NAMES, type ContextReader } from "@selfhost/agents";
 import { percent, plural, tokens, usd } from "../format.js";
+import type {
+  ContextConflict,
+  ContextDuplicate,
+  ContextFileRow,
+  ContextSection,
+  SingleAgentRule,
+} from "./context/index.js";
 import type { ScanReport } from "./report.js";
 
 export const GIT_NUMBERS =
@@ -126,7 +134,123 @@ function forecastLines(report: ScanReport): string[] {
   ];
 }
 
-/** Terminal text: the git numbers first, then cost, leaks and the most expensive sessions. */
+/** How many context files the text and HTML tables show; --json lists them all. */
+export const CONTEXT_ROWS = 12;
+
+export const readerNames = (readers: readonly ContextReader[]) =>
+  readers.length === 0
+    ? "no agent"
+    : readers.map((reader) => CONTEXT_READER_NAMES[reader]).join(", ");
+
+export const LOAD_WORDS: Record<ContextFileRow["load"], string> = {
+  always: "always",
+  description: "description",
+  on_demand: "on demand",
+};
+
+/** Costliest first, then the most tokens in every session, then by path. */
+export function contextRows(section: ContextSection): ContextFileRow[] {
+  return [...section.files].sort(
+    (a, b) =>
+      b.usd_per_week - a.usd_per_week ||
+      b.always_tokens - a.always_tokens ||
+      a.path.localeCompare(b.path),
+  );
+}
+
+export function contextPath(file: ContextFileRow): string {
+  return file.mcp_servers ? `${file.path} (MCP: ${file.mcp_servers.join(", ")})` : file.path;
+}
+
+/** "Cursor gets both", "Codex and Cursor get both". */
+export function bothText(readers: readonly ContextReader[], verb: "get" | "load"): string {
+  if (readers.length === 0) return "";
+  const names = listText(readers.map((reader) => CONTEXT_READER_NAMES[reader]));
+  return `${names} ${readers.length === 1 ? `${verb}s` : verb} both`;
+}
+
+export function conflictText(conflict: ContextConflict): string {
+  const both = bothText(conflict.same_agent, "get");
+  return `${conflict.title}: ${conflict.detail}.${both ? ` ${both}.` : ""}`;
+}
+
+export function singleAgentText(rule: SingleAgentRule): string {
+  const what = rule.server ? `MCP server ${rule.server} in ${rule.path}` : rule.path;
+  return `${what}: ${CONTEXT_READER_NAMES[rule.reader]} only`;
+}
+
+export function duplicateText(dup: ContextDuplicate): string {
+  const how =
+    dup.match === "exact"
+      ? "exact copies"
+      : `${dup.shared_lines} shared lines, ${percent(dup.overlap)} of the shorter file`;
+  const twice = bothText(dup.loaded_twice_by, "load");
+  return `${listText(dup.files)}: ${how}${twice ? `; ${twice}` : ""}`;
+}
+
+export function contextSummary(section: ContextSection): string {
+  return (
+    `${plural(section.totals.files, "file")}, ${section.totals.always_loaded} in every session, ` +
+    `${usd(section.totals.usd_per_week)} a week, ${plural(section.conflicts.length, "conflict")}, ` +
+    `${plural(section.duplicates.length, "duplicate")}`
+  );
+}
+
+function contextLines(report: ScanReport): string[] {
+  const section = report.context;
+  if (section.files.length === 0) {
+    return [
+      "Context: no CLAUDE.md, AGENTS.md, rules, skills or MCP configs found in the repository or the home folder.",
+    ];
+  }
+  const rows = contextRows(section);
+  const lines = [`Context: ${contextSummary(section)}`];
+  const grid = [
+    ["PATH", "LOAD", "TOKENS/SESSION", "SESSIONS/WK", "USD/WK", "READ BY"],
+    ...rows
+      .slice(0, CONTEXT_ROWS)
+      .map((file) => [
+        contextPath(file),
+        LOAD_WORDS[file.load],
+        file.mcp_servers || file.always_tokens === 0 ? "-" : tokens(file.always_tokens),
+        file.sessions_per_week.toFixed(1),
+        usd(file.usd_per_week),
+        readerNames(file.readers),
+      ]),
+  ];
+  lines.push(...table(grid, new Set([2, 3, 4])).map((line) => `  ${line}`));
+  if (rows.length > CONTEXT_ROWS) {
+    lines.push(`  and ${rows.length - CONTEXT_ROWS} more (selfhost scan --json lists them all)`);
+  }
+  if (section.duplicates.length > 0) {
+    lines.push("  Duplicates");
+    for (const dup of section.duplicates) lines.push(`    ${duplicateText(dup)}`);
+  }
+  if (section.conflicts.length > 0) {
+    lines.push("  Conflicts");
+    for (const conflict of section.conflicts) {
+      lines.push(`    ${conflictText(conflict)}`, `      Rule: ${conflict.rule}.`);
+    }
+  }
+  if (section.single_agent.length > 0) {
+    lines.push(
+      `  Seen by one agent only (agents here: ${readerNames(section.agents_in_use)})`,
+      ...section.single_agent.map((rule) => `    ${singleAgentText(rule)}`),
+    );
+  }
+  if (section.unpriced_agents.length > 0) {
+    lines.push(
+      `  ${listText(section.unpriced_agents.map((reader) => CONTEXT_READER_NAMES[reader]))} also read some of these files but keep no logs selfhost reads, so their sessions are not counted.`,
+    );
+  }
+  lines.push(`  Tokens: ${section.tokenizer}.`, `  Price: ${section.pricing}.`);
+  return lines;
+}
+
+/**
+ * Terminal text: the git numbers first, then cost, leaks, the most expensive sessions and the
+ * context files.
+ */
 export function renderText(report: ScanReport, written: string[] = []): string[] {
   const { totals } = report;
   const agents = listText(report.agents.map((agent) => agent.agent));
@@ -141,6 +265,7 @@ export function renderText(report: ScanReport, written: string[] = []): string[]
     totals.sessions === 0 ? [] : leakLines(report),
     topLines(report),
     forecastLines(report),
+    contextLines(report),
     [...written, report.credit, report.next],
   ].filter((section) => section.length > 0);
   return sections.flatMap((section, index) => (index === 0 ? section : ["", ...section]));

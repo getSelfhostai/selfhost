@@ -52,6 +52,8 @@ export interface CliDeps {
   collectAttribution?: CollectAttribution;
   /** Asks a yes or no question; undefined when stdin is not a terminal. */
   ask?: Ask;
+  /** Where `selfhost scan` looks for personal context files. Default: the home directory. */
+  home?: string;
   /** Where one-time answers and the team membership are kept. Default: ~/.selfhost/config.json. */
   configPath?: string;
   /** HTTP for the team server, used only in team mode. Default: the global fetch. */
@@ -238,6 +240,8 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
         await runScan(options, {
           env: deps.env,
           cwd: deps.cwd,
+          home: deps.home,
+          platform: deps.platform,
           write: deps.write,
           now: deps.now,
           collectAttribution: deps.collectAttribution,
@@ -277,6 +281,7 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       configPath: deps.configPath,
       fetch: deps.fetch,
       retry: deps.retry,
+      ask: deps.ask,
     }),
     fail,
   );

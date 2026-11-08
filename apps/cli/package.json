@@ -41,7 +41,9 @@
     "@selfhost/schema": "workspace:*",
     "@selfhost/spend": "workspace:*",
     "commander": "catalog:",
-    "smol-toml": "catalog:"
+    "gpt-tokenizer": "catalog:",
+    "smol-toml": "catalog:",
+    "yaml": "catalog:"
   },
   "devDependencies": {
     "@selfhost/server": "workspace:*",

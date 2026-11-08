@@ -71,7 +71,14 @@ added counts as already set and is left to that profile.
 
 ## Context files
 
-`findContextFiles` lists `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, skills
-(`.claude/skills`, `.agents/skills`, `.codex/skills`, `.opencode/skill(s)`, `.cursor/skills`),
-subagents, commands, Cursor rules and `.goosehints`, in the repository and the home config,
-with path, kind and size. It does not read them.
+`findContextFiles` lists `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `AGENTS.override.md`,
+`GEMINI.md`, Copilot instructions (`.github/copilot-instructions.md`, `.github/instructions`,
+`~/.copilot`), skills (`.claude/skills`, `.agents/skills`, `.codex/skills`, `.opencode/skill(s)`,
+`.cursor/skills`), subagents, commands, Claude Code and Cursor rules, `.goosehints` and MCP
+configs (`.mcp.json`, `~/.claude.json`, `.cursor/mcp.json`, `.codex/config.toml`, `opencode.json`,
+`.vscode/mcp.json`, Goose `config.yaml`, Gemini `settings.json`, `~/.copilot/mcp-config.json`), in
+the repository and the home config, with path, kind, size and `readers`: every agent that reads
+the file with default settings, after one file hides another (Claude Code skips `AGENTS.md`
+under a `CLAUDE.md`, OpenCode skips `CLAUDE.md` next to an `AGENTS.md`, Codex reads
+`AGENTS.override.md` instead of `AGENTS.md`). The sources are cited in `src/context.ts`. It does
+not read the files.

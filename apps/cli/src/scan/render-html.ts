@@ -1,5 +1,17 @@
+import { CONTEXT_READER_NAMES } from "@selfhost/agents";
 import { percent, plural, tokens, usd } from "../format.js";
-import { GIT_NUMBERS, listText } from "./render-text.js";
+import {
+  bothText,
+  CONTEXT_ROWS,
+  contextPath,
+  contextRows,
+  duplicateText,
+  GIT_NUMBERS,
+  LOAD_WORDS,
+  listText,
+  readerNames,
+  singleAgentText,
+} from "./render-text.js";
 import type { ScanReport } from "./report.js";
 
 const ESCAPES: Record<string, string> = {
@@ -66,7 +78,7 @@ section { margin-top: 32px; }
 .bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--track); margin: 12px 0 10px; }
 .bar span { display: block; height: 100%; }
 .legend { list-style: none; margin: 0; padding: 0; font-size: 13px; }
-.legend li { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 2px 0; }
+.legend li { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 2px 0; overflow-wrap: anywhere; }
 .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 6px; flex: none; }
 .scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
 table { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums; }
@@ -187,7 +199,54 @@ function forecastSection(report: ScanReport): string {
   return `<section><h2>Plan forecast</h2><div class="grid">${tile(forecast.plan, percent(forecast.used_share), `of the limit used; ${runsOut} (period ends ${forecast.period_end.slice(0, 10)})`)}</div></section>`;
 }
 
-/** One self-contained HTML page: agent share, unreviewed merges, cost and waste. */
+function contextSection(report: ScanReport): string {
+  const section = report.context;
+  if (section.files.length === 0) {
+    return `<section><h2>Context files</h2><p class="note">No CLAUDE.md, AGENTS.md, rules, skills or MCP configs found in the repository or the home folder.</p></section>`;
+  }
+  const rows = contextRows(section);
+  const body = rows
+    .slice(0, CONTEXT_ROWS)
+    .map(
+      (file) =>
+        `<tr><td><code>${e(contextPath(file))}</code></td><td>${e(LOAD_WORDS[file.load])}</td><td class="num">${file.mcp_servers || file.always_tokens === 0 ? "-" : tokens(file.always_tokens)}</td><td class="num">${file.sessions_per_week.toFixed(1)}</td><td class="num">${usd(file.usd_per_week)}</td><td class="wrap">${e(readerNames(file.readers))}</td></tr>`,
+    )
+    .join("");
+  const more =
+    rows.length > CONTEXT_ROWS
+      ? `<p class="sub">And ${rows.length - CONTEXT_ROWS} more; selfhost scan --json lists them all.</p>`
+      : "";
+  const conflicts = section.conflicts
+    .map((conflict) => {
+      const both = bothText(conflict.same_agent, "get");
+      return `<div class="card leak"><h3>${e(conflict.title)}</h3><p>${e(conflict.detail)}.${both ? ` ${e(both)}.` : ""}</p><p class="rule">Rule: ${e(conflict.rule)}.</p></div>`;
+    })
+    .join("");
+  const items = (list: string[]) =>
+    `<ul class="legend">${list.map((item) => `<li>${e(item)}</li>`).join("")}</ul>`;
+  const duplicates = section.duplicates.length
+    ? `<div class="card"><p class="label">Duplicates</p>${items(section.duplicates.map(duplicateText))}</div>`
+    : "";
+  const single = section.single_agent.length
+    ? `<div class="card"><p class="label">Seen by one agent only (agents here: ${e(readerNames(section.agents_in_use))})</p>${items(
+        section.single_agent.map(singleAgentText),
+      )}</div>`
+    : "";
+  const unpriced = section.unpriced_agents.length
+    ? ` ${listText(section.unpriced_agents.map((reader) => CONTEXT_READER_NAMES[reader]))} also read some of these files but keep no logs selfhost reads, so their sessions are not counted.`
+    : "";
+  return `<section><h2>Context files</h2><div class="grid">
+${tile("Always-loaded context", `${usd(section.totals.usd_per_week)} a week`, `${tokens(Math.round(section.totals.tokens_per_week))} tokens a week across ${plural(section.totals.always_loaded, "file")}`)}
+${tile("Conflicts", String(section.conflicts.length), "files that tell agents different things")}
+${tile("Duplicates", String(section.duplicates.length), "copies of the same text that drift apart")}
+</div>
+<div class="scroll" style="margin-top:12px"><table><thead><tr><th>File</th><th>Load</th><th class="num">Tokens per session</th><th class="num">Sessions a week</th><th class="num">USD a week</th><th>Read by</th></tr></thead><tbody>${body}</tbody></table></div>${more}
+${conflicts ? `<div class="leaks" style="margin-top:12px">${conflicts}</div>` : ""}
+${duplicates || single ? `<div class="grid" style="margin-top:12px">${duplicates}${single}</div>` : ""}
+<p class="sub">Tokens: ${e(section.tokenizer)}. Price: ${e(section.pricing)}.${e(unpriced)}</p></section>`;
+}
+
+/** One self-contained HTML page: agent share, unreviewed merges, cost, waste and context. */
 export function renderHtml(report: ScanReport): string {
   const { totals } = report;
   const agents = listText(report.agents.map((agent) => agent.agent)) || "no agents";
@@ -198,6 +257,7 @@ export function renderHtml(report: ScanReport): string {
     totals.sessions > 0 ? leakSection(report) : "",
     topSection(report),
     forecastSection(report),
+    contextSection(report),
     `<footer><p>${e(report.credit)}</p><p><strong>${e(report.next)}</strong></p></footer>`,
   ]
     .filter((part) => part !== "")

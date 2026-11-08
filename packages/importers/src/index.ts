@@ -18,5 +18,6 @@ export type {
   Vendor,
   WatchOptions,
 } from "./types.js";
+export { findPricing, type Pricing } from "./vendor/ccusage/pricing.js";
 export { CCUSAGE_VERSION } from "./vendor/ccusage/pricing-snapshot.js";
 export { watchLogs } from "./watch.js";

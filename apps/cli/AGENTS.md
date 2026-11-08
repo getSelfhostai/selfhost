@@ -1,6 +1,8 @@
 # Installing selfhost on a laptop
 
-For a coding agent asked to set up selfhost. It is one command and it never asks a question.
+For a coding agent asked to set up selfhost. It is one command. Without a terminal it asks
+nothing; pass `--import-context` or `--no-import-context` to decide the one question it asks in a
+terminal.
 
 ## Install
 
@@ -22,6 +24,9 @@ Flags: `--json` prints one `selfhost.init/v1` object, `--since 30d` sets the imp
 line the team admin shared) joins a team first. A refused invite exits 1 and changes no files.
 `--preset startup|strict|oss|irreversible` writes that preset as `selfhost.toml` instead of the
 starter rules; use it only when the person asks for one, since presets enforce some rules.
+`--import-context` copies the repository's CLAUDE.md, AGENTS.md, rules, skills, commands,
+subagents and MCP servers into `.selfhost/context/`; ask the person first, since it adds files to
+the repository.
 
 ## What it changes
 
@@ -36,13 +41,16 @@ starter rules; use it only when the person asks for one, since presets enforce s
   before each tool call: force pushes, `git reset --hard`, `rm -rf` outside the workspace and reads
   of `.env` and key files are blocked unless `[guardrails] mode` in `selfhost.toml` is `observe`
   or `off`.
+- With `--import-context`: new files in `.selfhost/context/` at the repository root. The context
+  files they come from are not changed.
 - Nothing else: no shell profile, no API key, no sign-in.
 
 ## Undo
 
-`selfhost init --undo` puts every agent config file back byte for byte from its backup, unless
-the file was edited since; it then says which one and where its backup is. It keeps the ledger,
-`selfhost.toml` and any team membership (`selfhost team leave` ends that).
+`selfhost init --undo` puts every agent config file back byte for byte from its backup and
+deletes the context files init imported, unless the file was edited since; it then says which
+one and where its backup is. It keeps the ledger, `selfhost.toml`, the context files init copied
+from and any team membership (`selfhost team leave` ends that).
 
 ## Where data goes
 

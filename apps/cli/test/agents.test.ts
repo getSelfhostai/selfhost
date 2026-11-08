@@ -50,12 +50,20 @@ describe("selfhost agents", () => {
       expect(Object.keys(agent.login)).toEqual(["status", "method", "source", "hint"]);
     }
     expect(report.context).toEqual([
-      { path: repo.path("AGENTS.md"), kind: "agents_md", scope: "repo", agent: "shared", size: 9 },
+      {
+        path: repo.path("AGENTS.md"),
+        kind: "agents_md",
+        scope: "repo",
+        agent: "shared",
+        readers: ["claude_code", "codex", "cursor", "copilot", "opencode", "goose"],
+        size: 9,
+      },
       {
         path: home.path(".claude", "skills", "review", "SKILL.md"),
         kind: "skill",
         scope: "home",
         agent: "claude_code",
+        readers: ["claude_code", "opencode"],
         size: 6,
       },
     ]);

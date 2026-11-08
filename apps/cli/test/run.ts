@@ -28,6 +28,8 @@ export async function run(args: string[], deps: Partial<CliDeps> = {}): Promise<
     ask: undefined,
     // Never read or write the real ~/.selfhost/config.json.
     configPath: tempDir("config").path("config.json"),
+    // Never read the real home directory's context files.
+    home: tempDir("home").root,
     ...deps,
   });
   program.exitOverride();

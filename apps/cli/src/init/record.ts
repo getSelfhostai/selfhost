@@ -1,18 +1,20 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { mkdirSync, readdirSync, readFileSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import type { AgentConfigPlan, AgentId } from "@selfhost/agents";
 
 /**
- * What `selfhost init` changed in agent config files, so `selfhost init --undo` can put each
- * file back byte for byte. `agents configure --remove` takes selfhost's keys out instead,
- * which rewrites the file in its own layout.
+ * What `selfhost init` changed in agent config files and the context files it imported, so
+ * `selfhost init --undo` can put each file back byte for byte. `agents configure --remove` takes
+ * selfhost's keys out instead, which rewrites the file in its own layout.
  */
 export interface RecordedFile {
-  agent: AgentId;
+  /** null for a context file. */
+  agent: AgentId | null;
   path: string;
-  /** config is the agent's own file; state is selfhost's record of what it owns there. */
-  role: "config" | "state";
+  /** config is the agent's own file; state is selfhost's record of what it owns there; context
+   * is a file init imported into `.selfhost/context/`. */
+  role: "config" | "state" | "context";
   /** config: copy of the file from before init first changed it; null when init created it. */
   backup: string | null;
   /** state: selfhost's record from before init, null when there was none. */
@@ -102,10 +104,41 @@ export function recordApplied(
   writeRecord(path, files);
 }
 
+/** Adds files init created in `.selfhost/context/`; undo deletes them while they are unchanged. */
+export function recordCreated(path: string, created: string[]): void {
+  const files = readRecord(path).filter((file) => !created.includes(file.path));
+  for (const file of created) {
+    files.push({
+      agent: null,
+      path: file,
+      role: "context",
+      backup: null,
+      before: null,
+      sha256: hashOf(readBytes(file)),
+    });
+  }
+  writeRecord(path, files);
+}
+
+/** Removes the folders a deleted context file leaves empty, up to the `.selfhost` folder. */
+function pruneEmpty(file: string): void {
+  let dir = dirname(file);
+  while (dir.includes(".selfhost")) {
+    try {
+      if (readdirSync(dir).length > 0) return;
+      rmdirSync(dir);
+    } catch {
+      return;
+    }
+    if (basename(dir) === ".selfhost") return;
+    dir = dirname(dir);
+  }
+}
+
 export interface UndoFile {
-  agent: AgentId;
+  agent: AgentId | null;
   path: string;
-  role: "config" | "state";
+  role: RecordedFile["role"];
   action: "restored" | "deleted" | "left";
   /** The backup the bytes came from. */
   backup: string | null;
@@ -125,17 +158,19 @@ export interface UndoReport {
 
 /**
  * Puts back every file `selfhost init` changed, byte for byte, as long as it still holds what
- * init wrote. selfhost's own record for an agent goes back only with that agent's files.
+ * init wrote, and deletes the context files it imported. selfhost's own record for an agent goes
+ * back only with that agent's files.
  */
 export function undoInit(home: string, dryRun: boolean): UndoReport {
   const path = recordPath(home);
   const files = readRecord(path);
   const results: UndoFile[] = [];
   const kept: RecordedFile[] = [];
-  const blocked = new Set<AgentId>();
+  const blocked = new Set<AgentId | null>();
   const order = [
     ...files.filter((file) => file.role === "config"),
     ...files.filter((file) => file.role === "state"),
+    ...files.filter((file) => file.role === "context"),
   ];
   for (const file of order) {
     const result = (action: UndoFile["action"], message: string | null = null): UndoFile => ({
@@ -174,6 +209,7 @@ export function undoInit(home: string, dryRun: boolean): UndoReport {
     if (!dryRun) {
       if (original === null) rmSync(file.path, { force: true });
       else writeFileSync(file.path, original);
+      if (file.role === "context") pruneEmpty(file.path);
     }
     results.push(result(original === null ? "deleted" : "restored"));
   }

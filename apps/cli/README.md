@@ -134,6 +134,37 @@ Leak rules (thresholds in `src/scan/leaks.ts`):
 | Retry loops                      | 2 or more requests in a session are re-sent after API errors, or the detector flags `retry` on a day              |
 | Oversized context                | 3 or more requests in a session carry 150k or more tokens of context                                              |
 
+The scan also lists every agent context file in the repository and the home folder:
+`CLAUDE.md` at any depth, `CLAUDE.local.md`, `AGENTS.md` and `AGENTS.override.md`, `GEMINI.md`,
+Copilot instructions, Cursor and Claude Code rules, `.cursorrules`, `.goosehints`, skills,
+subagents, commands and MCP configs. Each row has the agents that read it (from
+[`@selfhost/agents`](../../packages/agents/README.md)), whether every session loads all of it,
+only its name and description (skills, subagents, commands, Cursor rules applied by
+description) or nothing until the agent works on matching files, its tokens per session, sessions
+a week and USD a week. Tokens are counted with the o200k_base encoding from
+[gpt-tokenizer](https://github.com/niieani/gpt-tokenizer) (MIT): exact for Codex's GPT-5 models
+and an estimate for Claude and the others, which publish no offline tokenizer. A file costs, for
+each session of an agent that reads it in the window (in the repository for repository files,
+anywhere for home files), one cache write and then a cache read on every later main or subagent
+request, at that session's model rates from the ccusage price table. Agents without local logs
+(Cursor, Copilot, Gemini CLI, OpenCode, Goose) are named but not priced, and MCP tool lists are
+not counted, since that needs the servers running. Drift rules (in `src/scan/context/drift.ts`):
+
+| Finding                                                         | Fires when                                                                                                                                  |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Duplicate                                                       | two files have the same lines (list markers, case and spacing aside), or 80% of the shorter file's lines (3 or more) are in the other       |
+| Package manager, test runner, formatter, linter (JS and Python) | two files name tools with none in common (pnpm only, npm only), or one says not to use a tool another uses                                  |
+| Node and Python version                                         | two files name versions no one version satisfies (`>=`, `+` and "or later" are minimums)                                                    |
+| Do and don't                                                    | one file forbids force pushes, rebases, squash merges, default exports, semicolons, Docker or mocks and another asks for them               |
+| MCP server                                                      | one server name has a different command, args, url, env names or header names in two configs                                                |
+| Seen by one agent only                                          | a file or MCP server only one agent reads, and more than one agent has context files or sessions here; a copy another agent reads clears it |
+
+A tool counts as used when a command names it (`pnpm install`, `vitest run`) or the bare name
+appears; `npx`, global installs and the bare word npm (often the registry) do not. It counts as
+forbidden after never, don't, do not, avoid, not, no or "migrated from", or after "instead of"
+and "rather than". Each finding gives the file and line of each side and the words that matched,
+never the line itself.
+
 After the text report, `selfhost scan` asks once whether to send an anonymous count of the agents
 it found (the number only). The answer is kept in `~/.selfhost/config.json` and defaults to no.
 It is never asked with `--json` or when stdin is not a terminal, and nothing is sent unless the
@@ -389,8 +420,10 @@ a fixture home (it also turns off the keychain and version probes). See
 ## Install on a laptop: `selfhost init`
 
 `selfhost init [--since 30d] [--team <invite>] [--server <url> | --hosted] [--agent claude codex]
-[--preset <name>] [--dry-run] [--json]` goes from nothing to real data on the first screen, with no questions
-asked (`--yes` is accepted and changes nothing). [`AGENTS.md`](AGENTS.md) and
+[--preset <name>] [--import-context | --no-import-context] [--dry-run] [--json]` goes from nothing
+to real data on the first screen. Its one question, asked only in a terminal, is whether to import
+the context files; `--import-context` and `--no-import-context` answer it, and `--yes`, `--json`
+and `--dry-run` never ask (the files are then only listed). [`AGENTS.md`](AGENTS.md) and
 [`llms.txt`](llms.txt) say the same for a coding agent doing the install.
 
 1. With `--team`, it joins first. The invite is `--team <invite>` with `--server <url>` or
@@ -406,13 +439,22 @@ asked (`--yes` is accepted and changes nothing). [`AGENTS.md`](AGENTS.md) and
    rules (`.env` files, force pushes, `rm -rf` on `/` or home, `curl | sh`), all in observe
    mode. `--preset startup|strict|oss|irreversible` writes that preset instead (see
    [Presets](#presets)). An existing file is kept, also with `--preset`.
-4. It imports the window, runs `policy observe` when there is a `selfhost.toml`, and prints the
+4. It lists the context files the scan finds and offers to copy the repository's into the one
+   context source, `.selfhost/context/` (`rules/`, `skills/`, `commands/`, `agents/`,
+   `mcp.json`). Each rule keeps the agents that read it today in its `agents` front matter, a
+   nested `CLAUDE.md` or `AGENTS.md` becomes a rule with a `globs` for its folder, and exact
+   copies become one rule. The originals are never edited or deleted, a file already in
+   `.selfhost/context/` is never replaced, and home files and `CLAUDE.local.md` stay where they
+   are. Secret-looking MCP env and header values are written as `${NAME}` references, and a
+   server with a secret in its command, args or url is left out.
+5. It imports the window, runs `policy observe` when there is a `selfhost.toml`, and prints the
    import counts, spend by agent and request type, and the hits per rule. `--json` prints one
    `selfhost.init/v1` object instead.
 
 `--dry-run` prints the same plan, with the number of log files and hook events it would import,
 and writes nothing. `selfhost init --undo` puts every agent config file init changed back byte
-for byte from its backup (recorded in `~/.selfhost/init.json`), unless it was edited since;
+for byte from its backup (recorded in `~/.selfhost/init.json`) and deletes the context files it
+imported, unless a file was edited since;
 `agents configure --remove` takes the same settings out but writes the file in its own layout.
 The ledger, `selfhost.toml` and a team membership are kept.
 

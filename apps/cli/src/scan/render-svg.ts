@@ -35,6 +35,13 @@ function gitPart(report: ScanReport): string {
   return `<clipPath id="bar"><rect x="${LEFT}" y="460" width="${BAR_WIDTH}" height="16" rx="8"/></clipPath><rect x="${LEFT}" y="460" width="${BAR_WIDTH}" height="16" rx="8" fill="#2c2c29"/><g clip-path="url(#bar)">${segments}</g><text x="${LEFT}" y="520" class="small">${e(legend)} of commits${git.repo ? ` in ${e(git.repo)}` : ""}</text>`;
 }
 
+function contextPart(report: ScanReport): string {
+  const section = report.context;
+  if (section.files.length === 0) return "";
+  const text = `Always-loaded context ${usd(section.totals.usd_per_week)} a week  ·  ${plural(section.conflicts.length, "conflict")}  ·  ${plural(section.duplicates.length, "duplicate")} across ${plural(section.totals.files, "context file")}`;
+  return `<text x="${LEFT}" y="556" class="small">${e(text)}</text>`;
+}
+
 /** An SVG image card with the scan's totals, for sharing. */
 export function renderSvg(report: ScanReport): string {
   const { totals, git } = report;
@@ -80,6 +87,7 @@ text { font-family: ${FONT}; fill: #ededea; }
 <text x="${LEFT}" y="262" class="muted">on coding agents, ${plural(totals.sessions, "session")} from ${e(agents)}</text>
 ${stats.join("\n")}
 ${gitPart(report)}
+${contextPart(report)}
 <text x="${LEFT}" y="590" class="foot">Totals only, no prompts or code. Token counts and prices via ccusage.</text>
 </svg>
 `;

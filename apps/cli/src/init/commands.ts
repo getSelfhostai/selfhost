@@ -24,7 +24,7 @@ import {
   tilde,
 } from "../agents.js";
 import { findConfig } from "../find-config.js";
-import { table } from "../format.js";
+import { plural, table } from "../format.js";
 import { drainSpool } from "../hooks/drain.js";
 import { spoolDir } from "../hooks/receive.js";
 import {
@@ -35,15 +35,26 @@ import {
   runImport,
 } from "../import.js";
 import { type PolicyObserveReport, policyObserve } from "../policy/commands.js";
+import { readContext } from "../scan/context/files.js";
 import { repoDir } from "../scan/index.js";
+import { listText } from "../scan/render-text.js";
+import type { Ask } from "../scan/telemetry.js";
 import { runSpend, type SpendReport } from "../spend.js";
 import { type Fetch, serverUrl } from "../team/client.js";
 import { joinTeam } from "../team/commands.js";
 import { readMembership } from "../team/config.js";
+import {
+  applyContextImport,
+  CONTEXT_SOURCE_DIR,
+  type ContextImportPlan,
+  type ImportFile,
+  planContextImport,
+} from "./context-import.js";
 import { PRESET_NAMES, type PresetName } from "./presets.generated.js";
 import {
   readRecord,
   recordApplied,
+  recordCreated,
   recordPath,
   sameBytes,
   type UndoReport,
@@ -69,6 +80,8 @@ export interface InitIo extends AgentsIo {
   configPath?: string;
   fetch?: Fetch;
   retry?: ImportIo["retry"];
+  /** Asks whether to import the context files; undefined when stdin is not a terminal. */
+  ask?: Ask;
 }
 
 export interface InitOptions {
@@ -86,6 +99,8 @@ export interface InitOptions {
   json?: boolean;
   /** Write this preset as selfhost.toml instead of the starter rules. */
   preset?: string;
+  /** true: import the context files without asking; false: do not import or ask. */
+  importContext?: boolean;
   /** Treat this folder as the home directory; for fixtures and tests. */
   home?: string;
 }
@@ -104,6 +119,23 @@ export interface InitAgent {
   files: ConfigureReport["agents"][number]["files"];
 }
 
+/** The offer to import the context files into `.selfhost/context/`. */
+export interface InitContext {
+  /** Context files found in the repository and the home folder. */
+  found: number;
+  dir: string;
+  /**
+   * imported: written now. would_import: --dry-run with --import-context. offered: found, not
+   * imported; --import-context imports them. declined: the answer was no, or
+   * --no-import-context. nothing: nothing new to import.
+   */
+  status: "imported" | "would_import" | "offered" | "declined" | "nothing";
+  /** What the import writes (or wrote), and the files each came from. */
+  files: { path: string; from: string[]; action: ImportFile["action"] }[];
+  skipped: ContextImportPlan["skipped"];
+  notes: string[];
+}
+
 /** `selfhost init --json`. */
 export interface InitReport {
   schema: "selfhost.init/v1";
@@ -119,6 +151,8 @@ export interface InitReport {
   undo: string;
   /** preset: the preset written, null for the starter rules or when nothing was written. */
   config: { path: string | null; action: "created" | "kept" | "none"; preset: PresetName | null };
+  /** Context files and the offer to import them; null outside a git repository. */
+  context: InitContext | null;
   /** Dry run: what would be imported. */
   sources: { log_files: number; hook_lines: number; ledger: string } | null;
   import: ImportReport | null;
@@ -367,7 +401,111 @@ function printUndo(report: UndoReport, home: string, write: (line: string) => vo
       write(`Left ${path} as is: ${file.message}.`);
     }
   }
-  write("Kept: the ledger, selfhost.toml and any team membership (selfhost team leave ends it).");
+  const imported = report.files.filter((entry) => entry.role === "context");
+  const deleted = imported.filter((entry) => entry.action === "deleted");
+  if (deleted.length > 0) {
+    write(
+      `${dry ? "Would delete" : "Deleted"} ${plural(deleted.length, "context file")} selfhost init imported into ${CONTEXT_SOURCE_DIR}/.`,
+    );
+  }
+  for (const file of imported.filter((entry) => entry.action === "left")) {
+    write(`Left ${file.path} as is: ${file.message}.`);
+  }
+  write(
+    "Kept: the ledger, selfhost.toml, the context files init copied from and any team membership (selfhost team leave ends it).",
+  );
+}
+
+const contextQuestion = (count: number) =>
+  `Import ${plural(count, "file")} of agent context from this repository into ${CONTEXT_SOURCE_DIR}/? The originals stay as they are. [y/N] `;
+
+/**
+ * The offer to import the repository's context files into `.selfhost/context/`: --import-context
+ * imports, --no-import-context does not, and otherwise init asks in a terminal. It never asks
+ * with --json, --yes or --dry-run, or without a terminal; then the files are only listed.
+ */
+async function offerContext(
+  plan: ContextImportPlan,
+  found: number,
+  options: InitOptions,
+  io: InitIo,
+  home: string,
+): Promise<InitContext> {
+  const creates = plan.files.filter((file) => file.action === "create");
+  let status: InitContext["status"];
+  if (creates.length === 0) status = "nothing";
+  else if (options.importContext === false) status = "declined";
+  else if (options.importContext === true) status = options.dryRun ? "would_import" : "imported";
+  else if (options.dryRun || options.json || options.yes || !io.ask) status = "offered";
+  else status = (await io.ask(contextQuestion(creates.length))) ? "imported" : "declined";
+  if (status === "imported") {
+    const written = applyContextImport(plan);
+    if (written.length > 0) recordCreated(recordPath(home), written);
+  }
+  return {
+    found,
+    dir: plan.dir,
+    status,
+    files: plan.files.map((file) => ({ path: file.path, from: file.from, action: file.action })),
+    skipped: plan.skipped,
+    notes: plan.notes,
+  };
+}
+
+/** "4 rules, 1 skill and mcp.json". */
+function sourceSummary(context: InitContext): string {
+  const created = context.files.filter((file) => file.action === "create");
+  const parts = created.map((file) => relative(context.dir, file.path).split(/[\\/]/));
+  const count = (folder: string, word: string) => {
+    const names = new Set(parts.filter((part) => part[0] === folder).map((part) => part[1]));
+    return names.size > 0 ? [plural(names.size, word)] : [];
+  };
+  return listText([
+    ...count("rules", "rule"),
+    ...count("skills", "skill"),
+    ...count("commands", "command"),
+    ...count("agents", "subagent"),
+    ...(parts.some((part) => part[0] === "mcp.json") ? ["mcp.json"] : []),
+  ]);
+}
+
+function printContext(context: InitContext, cwd: string, write: (line: string) => void): void {
+  const dir = `${shown(cwd, context.dir)}/`;
+  const what = sourceSummary(context);
+  const found = plural(context.found, "context file");
+  const lines: Record<InitContext["status"], string> = {
+    nothing: `Context: ${found} found; nothing new to import into ${dir}.`,
+    offered: `Context: ${found} found. selfhost init --import-context copies ${what} into ${dir}; the originals stay as they are.`,
+    would_import: `Context: would import ${what} into ${dir}; the originals stay as they are.`,
+    imported: `Context: imported ${what} into ${dir}. The originals are unchanged; ${UNDO_COMMAND} deletes the copies.`,
+    declined: `Context: not imported. selfhost init --import-context copies ${what} into ${dir} later.`,
+  };
+  write(lines[context.status]);
+  if (context.status !== "declined") {
+    table(
+      context.files.map((file) => [
+        `  ${shown(cwd, file.path)}`,
+        file.action === "create"
+          ? ""
+          : file.action === "same"
+            ? "(already there)"
+            : "(kept, a different file is there)",
+        file.from.length > 0 ? `from ${file.from.join(", ")}` : "",
+      ]),
+      write,
+    );
+  }
+  const home = context.skipped.filter((entry) => entry.path.startsWith("~"));
+  for (const entry of context.skipped.filter((item) => !item.path.startsWith("~"))) {
+    write(`  Left out: ${entry.path} (${entry.reason})`);
+  }
+  if (home.length > 0) {
+    write(
+      `  Left out: ${plural(home.length, "file")} in the home folder (personal, they stay there)`,
+    );
+  }
+  for (const note of context.notes) write(`  Note: ${note}`);
+  write("");
 }
 
 interface Paths {
@@ -423,8 +561,10 @@ async function countSources(options: InitOptions, io: InitIo, where: Paths, sinc
  * `selfhost init`: from nothing to real data on the first screen. Joins the team first when
  * --team is given (a refused invite changes no files), adds `selfhost hook` to each agent's
  * own config with a backup of every file, writes a starter selfhost.toml at the repository
- * root when there is none, imports the window, runs policy observe and prints spend by agent
- * and request type. Never asks a question.
+ * root when there is none, offers to copy the repository's context files into
+ * `.selfhost/context/`, imports the window, runs policy observe and prints spend by agent and
+ * request type. The context offer is the only question, asked only in a terminal; flags answer
+ * it for scripts.
  */
 export async function runInit(options: InitOptions, io: InitIo): Promise<number> {
   if (options.undo) {
@@ -471,6 +611,16 @@ export async function runInit(options: InitOptions, io: InitIo): Promise<number>
   } else if (preset && config.action === "none") {
     warnings.push(`not in a git repository, so the ${preset} preset was not written.`);
   }
+  // Read only: the context files and what importing them into .selfhost/context/ would write.
+  const contextDocs = repo
+    ? readContext({
+        home: where.home,
+        env: agentScope(options.home, io).env,
+        platform: io.platform,
+        cwd: repo,
+      })
+    : [];
+  const contextPlan = repo ? planContextImport(contextDocs, repo) : undefined;
 
   // The team comes first: it is the first write, so a refused invite leaves every file as it was.
   const membership = readMembership(where.configPath);
@@ -518,6 +668,7 @@ export async function runInit(options: InitOptions, io: InitIo): Promise<number>
     ),
     undo: UNDO_COMMAND,
     config,
+    context: null,
     sources: null,
     import: null,
     spend: null,
@@ -542,6 +693,10 @@ export async function runInit(options: InitOptions, io: InitIo): Promise<number>
       io.cwd,
       apply.some((plan) => plan.changes.length > 0),
     );
+    if (contextPlan) {
+      report.context = await offerContext(contextPlan, contextDocs.length, options, io, where.home);
+      printContext(report.context, io.cwd, write);
+    }
     const { log_files, hook_lines, ledger } = report.sources;
     const window = /^\d+[dh]$/.test(since.trim()) ? `the last ${since}` : `since ${since}`;
     write(
@@ -562,6 +717,10 @@ export async function runInit(options: InitOptions, io: InitIo): Promise<number>
     writeStarterConfig(config.path, configText(preset));
   }
   printHeader(report, write, io.cwd, readRecord(recordPath(where.home)).length > 0);
+  if (contextPlan) {
+    report.context = await offerContext(contextPlan, contextDocs.length, options, io, where.home);
+    printContext(report.context, io.cwd, write);
+  }
 
   const ledger = await openLedger({
     url: options.database ?? io.env.DATABASE_URL,
@@ -635,7 +794,7 @@ export function registerInit(
   program
     .command("init")
     .description(
-      "set up this laptop: hooks in each agent, a starter selfhost.toml, the last 30 days imported",
+      "set up this laptop: hooks in each agent, a starter selfhost.toml, the context files offered for .selfhost/context/, the last 30 days imported",
     )
     .option("--since <when>", "how far back to import, like 30d, 12h or a date", "30d")
     .option(
@@ -656,8 +815,19 @@ export function registerInit(
     .option("--database <url>", "Postgres url (default: DATABASE_URL, else the embedded ledger)")
     .option("--data-dir <path>", "embedded ledger folder (default: ~/.selfhost/data)")
     .option("--dry-run", "print what would change and write nothing")
-    .option("--undo", "put back the agent config files init changed, byte for byte")
-    .option("-y, --yes", "accepted for scripts; init never asks a question")
+    .option(
+      "--import-context",
+      "copy the repository's CLAUDE.md, AGENTS.md, rules, skills, commands, subagents and MCP servers into .selfhost/context/ without asking",
+    )
+    .option("--no-import-context", "do not import the context files and do not ask")
+    .option(
+      "--undo",
+      "put back the agent config files init changed, byte for byte, and delete the context files it imported",
+    )
+    .option(
+      "-y, --yes",
+      "never ask; the context files are then imported only with --import-context",
+    )
     .option("--json", "print one selfhost.init/v1 object")
     .option("--home <dir>", "use this folder as the home directory (for testing)")
     .action(async (options: InitOptions) => {

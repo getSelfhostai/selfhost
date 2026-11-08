@@ -1,10 +1,13 @@
 import { existsSync, statSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { locate } from "@selfhost/agents";
 import { importAll } from "@selfhost/importers";
 import type { LedgerEvent } from "@selfhost/schema";
 import { detectWaste, groupSpend, oneSourcePerSession } from "@selfhost/spend";
 import { parseSince } from "../import.js";
 import { type CollectAttribution, noAttribution } from "./attribution.js";
+import { scanContext } from "./context/index.js";
 import { renderHtml } from "./render-html.js";
 import { renderSvg } from "./render-svg.js";
 import { renderText } from "./render-text.js";
@@ -27,6 +30,10 @@ export interface ScanCommandOptions {
 export interface ScanIo {
   env: NodeJS.ProcessEnv;
   cwd: string;
+  /** Where the agent logs (unless CLAUDE_CONFIG_DIR or CODEX_HOME say otherwise) and the
+   * personal context files are. Default: the home directory. */
+  home?: string;
+  platform?: NodeJS.Platform;
   write: (line: string) => void;
   now?: Date;
   collectAttribution?: CollectAttribution;
@@ -35,9 +42,6 @@ export interface ScanIo {
   configPath?: string;
   sendTelemetry?: SendPing;
 }
-
-const nonEmpty = (value: string | undefined) =>
-  value !== undefined && value.trim() !== "" ? value : undefined;
 
 /**
  * Reads the local Claude Code and Codex logs for the window straight into memory, with no
@@ -83,29 +87,40 @@ export function repoDir(option: string | undefined, cwd: string): string | undef
 }
 
 /**
- * `selfhost scan`: reads the local agent logs, joins them with git when attribution is wired in,
- * and prints the report or writes it as JSON, HTML or an SVG card. Nothing leaves the machine
+ * `selfhost scan`: reads the local agent logs and the context files of the repository and the
+ * home config, joins the logs with git when attribution is wired in, and prints the report or
+ * writes it as JSON, HTML or an SVG card. Nothing leaves the machine
  * unless the person said yes to the agent count and an endpoint is configured.
  */
 export async function runScan(options: ScanCommandOptions, io: ScanIo): Promise<ScanReport> {
   const now = io.now ?? new Date();
   const since = parseSince(options.since ?? "30d", now) ?? now;
   const repo = repoDir(options.repo, io.cwd);
+  const home = io.home ?? homedir();
+  // CLAUDE_CONFIG_DIR and CODEX_HOME when set, else the folders in this home.
+  const loc = locate({ home, env: io.env, platform: io.platform });
   const events = await readLocalEvents({
     since,
-    claudeDir: nonEmpty(io.env.CLAUDE_CONFIG_DIR),
-    codexDir: nonEmpty(io.env.CODEX_HOME),
+    claudeDir: loc.claude_code.configDir,
+    codexDir: loc.codex.home,
   });
   const costs = oneSourcePerSession(events.filter((event) => event.kind === "cost.recorded"));
   const waste = detectWaste(groupSpend(costs, { by: ["request_type"], from: since, to: now }));
   const collect = io.collectAttribution ?? noAttribution;
   const attribution = repo ? await collect(repo, sessionHintsFromEvents(events)) : undefined;
+  const context = await scanContext({
+    home,
+    env: io.env,
+    platform: io.platform,
+    repo,
+  });
   const report = buildScanReport({
     events,
     waste,
     attribution,
     forecast: io.forecast,
     repoDir: repo,
+    context,
     from: since,
     to: now,
   });
