@@ -33,4 +33,9 @@ export {
   weekStart,
 } from "./refresh.js";
 export { type RouteInput, type Routing, routeItem } from "./routing.js";
-export { type Draft, draftFor } from "./signals.js";
+export {
+  type Draft,
+  draftFor,
+  MCP_EXCEPTION_REQUEST,
+  MCP_QUESTION_REQUEST,
+} from "./signals.js";

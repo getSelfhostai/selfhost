@@ -10,6 +10,7 @@
 - Join a team while installing: `init --team "selfhost join <server> <invite>"`. A refused invite exits 1 and changes no files.
 - Start from a preset instead of the starter rules: `init --preset startup|strict|oss|irreversible`. Only when the person asks for one.
 - Moving from Conductor: `selfhost migrate conductor --dry-run` shows how each repository's Conductor setup, run and archive scripts land in `[runtime]` of selfhost.toml; without `--dry-run` it writes them (Conductor's files are never changed). `--history <unpacked export>` also imports workspace history into the ledger.
+- The MCP server for agents (team rules, budget left, pending review items, who else works on a file, past decisions, and asking a person or for a one-time exception): `selfhost mcp install` adds `selfhost mcp` to Claude Code, Codex, Cursor, OpenCode and Goose (`--agent` to choose, `--dry-run` to preview, `selfhost mcp uninstall` to remove). Solo it reads the local ledger; in a team it talks to the team server as the person.
 - Only the guardrails (pre-tool hooks that block destructive and secret-leaking calls in Claude Code, Codex, Cursor and OpenCode; Goose has no hooks): `selfhost guard install`, then `selfhost guard status`. No account or server.
 
 ## What it changes

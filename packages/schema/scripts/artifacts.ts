@@ -908,7 +908,13 @@ function mcpTools(): Json {
     tools: MCP_TOOLS.map((tool) => {
       const { title: _inTitle, ...inputSchema } = withRefs(tool.inputSchema, new Map());
       const { title: _outTitle, ...outputSchema } = withRefs(tool.outputSchema, new Map());
-      return { name: tool.name, description: tool.description, inputSchema, outputSchema };
+      return {
+        name: tool.name,
+        description: tool.description,
+        annotations: { readOnlyHint: tool.readOnly },
+        inputSchema,
+        outputSchema,
+      };
     }),
   };
 }

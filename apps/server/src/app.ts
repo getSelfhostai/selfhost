@@ -11,6 +11,7 @@ import { consoleRoutes } from "./console.js";
 import { decisionRoutes } from "./decisions.js";
 import { eventRoutes } from "./events.js";
 import { type GitHubRouteOptions, githubRoutes } from "./github.js";
+import { adminMcpRoute, mcpRoutes } from "./mcp.js";
 import { otlpRoutes } from "./otlp.js";
 import type { GitClones } from "./provenance.js";
 import { reviewRoutes } from "./review.js";
@@ -64,7 +65,7 @@ export function createApp({
     ...(now ? { now } : {}),
     ...(signin ? { signin } : {}),
     provenance: { ...(clones ? { clones } : {}), ...(config ? { config } : {}) },
-    personRoutes: (person) =>
+    personRoutes: (person) => {
       reviewRoutes(person, ledger, {
         ...review,
         person: (c) => (c.env as PersonEnv["Bindings"]).person,
@@ -73,7 +74,9 @@ export function createApp({
           const { memberships } = await caller.scope();
           return [own.team, ...memberships.map((m) => m.team).filter((t) => t !== own.team)];
         },
-      }),
+      });
+      mcpRoutes(person, ledger, { version, ...review });
+    },
   });
   // The console's files hold no data, so they need no token; what they read from /v1 does.
   if (web) consoleRoutes(app, web.dir);
@@ -87,6 +90,7 @@ export function createApp({
   decisionRoutes(app, ledger);
   reviewRoutes(app, ledger, review);
   otlpRoutes(app, ledger);
+  adminMcpRoute(app);
 
   app.notFound((c) =>
     c.json(

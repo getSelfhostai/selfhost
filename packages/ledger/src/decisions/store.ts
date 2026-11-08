@@ -26,6 +26,14 @@ export interface DecisionPage {
   replacedBy: Record<string, string[]>;
 }
 
+export interface DecisionSearchOptions {
+  /**
+   * Only events stored with one of these teams: the teams a person token may read. An empty
+   * list matches nothing. Default: every event.
+   */
+  teams?: readonly string[];
+}
+
 export interface DecisionStore {
   /** The decision.recorded or policy.evaluated event with this id, if there is one. */
   get(id: string): Promise<LedgerEvent | undefined>;
@@ -34,7 +42,7 @@ export interface DecisionStore {
    * file, the files under a folder and the folders that hold it; `topic` needs every word in
    * the question or reason. The HTTP API, the CLI and the MCP tool all call this.
    */
-  search(query: DecisionQuery): Promise<DecisionPage>;
+  search(query: DecisionQuery, options?: DecisionSearchOptions): Promise<DecisionPage>;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -64,7 +72,7 @@ function words(field: string, value: string): string[] {
  * the other, or one is the other seen from a deeper root (an absolute path in a tool call).
  * Matching is on whole path segments, so "db" does not match "dbx/file".
  */
-function pathMatches(column: string, n: number): string {
+export function pathMatches(column: string, n: number): string {
   const p = `$${n}::text`;
   return `(${column} = ${p}
     OR starts_with(${column}, ${p} || '/')
@@ -73,7 +81,12 @@ function pathMatches(column: string, n: number): string {
     OR strpos(${column}, '/' || ${p} || '/') > 0)`;
 }
 
-function buildSearch(query: DecisionQuery) {
+/** `team IN (...)` for a JSON array parameter: the teams a person token reads. */
+export function teamIn(n: number): string {
+  return `team IN (SELECT jsonb_array_elements_text($${n}::text::jsonb))`;
+}
+
+function buildSearch(query: DecisionQuery, options: DecisionSearchOptions) {
   const defined = Object.fromEntries(
     Object.entries(query ?? {}).filter(([, value]) => value !== undefined),
   );
@@ -130,6 +143,8 @@ function buildSearch(query: DecisionQuery) {
   if (query.person !== undefined) {
     conditions.push(`coalesce(body#>>'{decision,by}', actor_id) = $${param(query.person)}::text`);
   }
+  if (query.team !== undefined) conditions.push(`team = $${param(query.team)}::text`);
+  if (options.teams !== undefined) conditions.push(teamIn(param(JSON.stringify(options.teams))));
   if (query.item_id !== undefined) {
     const n = param(query.item_id.toLowerCase());
     conditions.push(
@@ -174,8 +189,8 @@ export function createDecisionStore(db: Database): DecisionStore {
       return rows[0] ? parseBody(rows[0].body) : undefined;
     },
 
-    async search(query) {
-      const { limit, conditions, params } = buildSearch(query);
+    async search(query, options = {}) {
+      const { limit, conditions, params } = buildSearch(query, options);
       params.push(limit + 1);
       const rows = await db.query<{ body: unknown; ts_key: string; id: string }>(
         `SELECT body, ${TS_KEY} AS ts_key, id::text AS id FROM events

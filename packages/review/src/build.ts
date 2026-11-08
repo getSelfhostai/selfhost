@@ -109,6 +109,7 @@ export function newItem(draft: Draft, event: LedgerEvent, ctx: BuildContext): Re
       : {}),
     actions: actionsFor(draft.kind, draft.url),
     ...(group ? { group } : {}),
+    ...(draft.brief ? { brief: draft.brief } : {}),
   };
   return routed(item, draft.paths, ctx, draft);
 }
@@ -116,7 +117,8 @@ export function newItem(draft: Draft, event: LedgerEvent, ctx: BuildContext): Re
 /**
  * Adds a later signal to an open item. Its id joins source_event_ids; a higher risk, or a PR's
  * own new score, replaces the risk and the reason; the deadline stays, since the agent has been
- * waiting since the first signal.
+ * waiting since the first signal. A signal with a brief replaces the brief, and one that attaches
+ * to the item while an agent waits makes it blocking.
  */
 export function mergeItem(
   item: ReviewItem,
@@ -137,6 +139,8 @@ export function mergeItem(
     ...(higher ? { risk: { score: draft.score, reasons: draft.reasons }, why: draft.why } : {}),
     ...(!item.repo && event.repo ? { repo: event.repo } : {}),
     ...(!item.run_id && event.run_id ? { run_id: event.run_id } : {}),
+    ...(draft.brief ? { brief: draft.brief } : {}),
+    ...(draft.attach && draft.blocking ? { blocking: true } : {}),
   };
   return routed(merged, paths, ctx, draft);
 }

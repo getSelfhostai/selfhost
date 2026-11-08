@@ -4,7 +4,10 @@
   "tools": [
     {
       "name": "get_policy",
-      "description": "Get the team rules that apply to you: selfhost.toml with team overrides resolved for a person and agent.",
+      "description": "Get the team rules that apply to you in this repo: selfhost.toml with team overrides resolved for you and your agent. Check it before an action a rule may block.",
+      "annotations": {
+        "readOnlyHint": true
+      },
       "inputSchema": {
         "additionalProperties": false,
         "type": "object",
@@ -34,6 +37,11 @@
             "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
             "description": "A repo the team owns, as owner/name: the policy with the repo's own rules on top.",
             "type": "string"
+          },
+          "full": {
+            "default": false,
+            "description": "Also return the selfhost.toml text and config.rules. By default both are left out: effective_rules holds the rules after overrides.",
+            "type": "boolean"
           }
         }
       },
@@ -990,7 +998,10 @@
     },
     {
       "name": "get_budget",
-      "description": "Get spend so far, the budget and the forecast for a person or team.",
+      "description": "Get spend so far, the budget and what is left (remaining_usd) for your team or for you, this day, week or month.",
+      "annotations": {
+        "readOnlyHint": true
+      },
       "inputSchema": {
         "additionalProperties": false,
         "type": "object",
@@ -1089,7 +1100,10 @@
     },
     {
       "name": "list_review_items",
-      "description": "List review items, ranked: blocking first, then by risk.",
+      "description": "List your pending review items: open items you own or your sessions raised, blocking first, then by risk.",
+      "annotations": {
+        "readOnlyHint": true
+      },
       "inputSchema": {
         "additionalProperties": false,
         "type": "object",
@@ -1112,16 +1126,26 @@
             "description": "Team id on a team server: items built from that team's events. A person token reads only its own team.",
             "type": "string"
           },
-          "limit": {
-            "minimum": 1,
-            "maximum": 1000,
-            "default": 100,
-            "description": "Maximum number of results.",
-            "type": "integer"
-          },
           "cursor": {
             "description": "Opaque cursor from next_cursor of the previous page.",
             "type": "string"
+          },
+          "limit": {
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "Maximum number of results. Default 10.",
+            "type": "integer"
+          },
+          "mine": {
+            "default": true,
+            "description": "Only items you own or your own sessions raised. false: every item of the team you can read.",
+            "type": "boolean"
+          },
+          "full": {
+            "default": false,
+            "description": "Keep each item's brief and every source event id. By default the brief is left out and only the 5 newest source event ids are kept.",
+            "type": "boolean"
           }
         }
       },
@@ -1475,6 +1499,9 @@
     {
       "name": "search_events",
       "description": "Search the ledger by person, agent, model, session, kind and time range.",
+      "annotations": {
+        "readOnlyHint": true
+      },
       "inputSchema": {
         "additionalProperties": false,
         "type": "object",
@@ -1536,16 +1563,16 @@
             "description": "Events before this time.",
             "type": "string"
           },
-          "limit": {
-            "minimum": 1,
-            "maximum": 1000,
-            "default": 100,
-            "description": "Maximum number of results.",
-            "type": "integer"
-          },
           "cursor": {
             "description": "Opaque cursor from next_cursor of the previous page.",
             "type": "string"
+          },
+          "limit": {
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "Maximum number of results. Default 10.",
+            "type": "integer"
           }
         }
       },
@@ -2011,7 +2038,10 @@
     },
     {
       "name": "search_decisions",
-      "description": "Search past rule verdicts and human decisions by file path, topic, rule or person, for example to check whether a person already decided a similar case before asking again.",
+      "description": "Search past human decisions and rule verdicts by file path, topic, rule or person. Check here before asking a person something they may have answered already.",
+      "annotations": {
+        "readOnlyHint": true
+      },
       "inputSchema": {
         "additionalProperties": false,
         "type": "object",
@@ -2056,6 +2086,10 @@
             "description": "Who decided.",
             "type": "string"
           },
+          "team": {
+            "description": "Team id on a team server: decisions and verdicts stored with that team's events. The MCP tool reads every team of the person's by default.",
+            "type": "string"
+          },
           "item_id": {
             "type": "string"
           },
@@ -2067,16 +2101,16 @@
             "format": "date-time",
             "type": "string"
           },
-          "limit": {
-            "minimum": 1,
-            "maximum": 1000,
-            "default": 100,
-            "description": "Maximum number of results.",
-            "type": "integer"
-          },
           "cursor": {
             "description": "Opaque cursor from next_cursor of the previous page.",
             "type": "string"
+          },
+          "limit": {
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "Maximum number of results. Default 10.",
+            "type": "integer"
           }
         }
       },
@@ -2541,8 +2575,716 @@
       }
     },
     {
+      "name": "list_file_runs",
+      "description": "List past agent runs that touched a file or folder: who, which agent, when and with which tools.",
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "path": {
+            "minLength": 1,
+            "maxLength": 1024,
+            "description": "File or folder path relative to the repository root. Matches that file, files under that folder, and the same path seen from a deeper root.",
+            "type": "string"
+          },
+          "repo": {
+            "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+            "description": "Only runs in this repository, as owner/name.",
+            "type": "string"
+          },
+          "team": {
+            "description": "Team id on a team server. Default: every team you are in.",
+            "type": "string"
+          },
+          "since": {
+            "format": "date-time",
+            "description": "Only runs with a call at or after this time.",
+            "type": "string"
+          },
+          "limit": {
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "Maximum number of results. Default 10.",
+            "type": "integer"
+          }
+        }
+      },
+      "outputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "runs",
+          "more"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "runs": {
+            "description": "Newest last call first.",
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "title": "FileRun",
+              "type": "object",
+              "required": [
+                "person",
+                "first_at",
+                "last_at",
+                "calls",
+                "tools"
+              ],
+              "properties": {
+                "session_id": {
+                  "description": "Vendor session id.",
+                  "type": "string"
+                },
+                "run_id": {
+                  "type": "string"
+                },
+                "person": {
+                  "description": "Whose session it was.",
+                  "type": "string"
+                },
+                "agent": {
+                  "additionalProperties": false,
+                  "description": "Which coding agent was involved.",
+                  "type": "object",
+                  "required": [
+                    "vendor"
+                  ],
+                  "properties": {
+                    "vendor": {
+                      "description": "Agent product.",
+                      "type": "string",
+                      "enum": [
+                        "claude_code",
+                        "codex",
+                        "opencode",
+                        "goose",
+                        "cursor",
+                        "copilot",
+                        "other"
+                      ]
+                    },
+                    "version": {
+                      "description": "Agent CLI or app version, for example 2.1.0.",
+                      "type": "string"
+                    },
+                    "name": {
+                      "description": "Agent or subagent name when the vendor reports one, for example a Claude Code subagent type.",
+                      "type": "string"
+                    }
+                  }
+                },
+                "repo": {
+                  "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+                  "type": "string"
+                },
+                "first_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "last_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "calls": {
+                  "minimum": 1,
+                  "description": "Tool calls on the path in this run.",
+                  "type": "integer"
+                },
+                "tools": {
+                  "description": "Tools used on the path, most used first.",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "more": {
+            "description": "true when older runs were left out. Narrow with since or repo.",
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "name": "list_active_on_file",
+      "description": "Who else is working on a file or folder right now: sessions with tool calls on it in the last minutes. Check before a large change to avoid collisions.",
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "path": {
+            "minLength": 1,
+            "maxLength": 1024,
+            "description": "File or folder path relative to the repository root. Matches that file, files under that folder, and the same path seen from a deeper root.",
+            "type": "string"
+          },
+          "repo": {
+            "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+            "description": "Only work in this repository, as owner/name.",
+            "type": "string"
+          },
+          "team": {
+            "description": "Team id on a team server. Default: every team you are in.",
+            "type": "string"
+          },
+          "within_minutes": {
+            "minimum": 1,
+            "maximum": 1440,
+            "default": 120,
+            "description": "How far back counts as working now. Default 120.",
+            "type": "integer"
+          }
+        }
+      },
+      "outputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "since",
+          "sessions"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "since": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "sessions": {
+            "description": "Sessions with tool calls on the path since `since`, newest first.",
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "person",
+                "you",
+                "last_at",
+                "calls",
+                "tools"
+              ],
+              "properties": {
+                "person": {
+                  "type": "string"
+                },
+                "you": {
+                  "description": "true for your own sessions.",
+                  "type": "boolean"
+                },
+                "agent": {
+                  "additionalProperties": false,
+                  "description": "Which coding agent was involved.",
+                  "type": "object",
+                  "required": [
+                    "vendor"
+                  ],
+                  "properties": {
+                    "vendor": {
+                      "description": "Agent product.",
+                      "type": "string",
+                      "enum": [
+                        "claude_code",
+                        "codex",
+                        "opencode",
+                        "goose",
+                        "cursor",
+                        "copilot",
+                        "other"
+                      ]
+                    },
+                    "version": {
+                      "description": "Agent CLI or app version, for example 2.1.0.",
+                      "type": "string"
+                    },
+                    "name": {
+                      "description": "Agent or subagent name when the vendor reports one, for example a Claude Code subagent type.",
+                      "type": "string"
+                    }
+                  }
+                },
+                "session_id": {
+                  "type": "string"
+                },
+                "repo": {
+                  "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+                  "type": "string"
+                },
+                "last_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "calls": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "tools": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "ask_human",
+      "description": "Ask a person a question. Creates a question on the review list and returns its item_id at once; call get_answer with wait_seconds for the answer. Search past decisions first.",
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "question"
+        ],
+        "properties": {
+          "question": {
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "The question, in one or two lines. It becomes the review item's title.",
+            "type": "string"
+          },
+          "context": {
+            "maxLength": 4000,
+            "description": "What the person needs to answer quickly: options, trade-offs, links.",
+            "type": "string"
+          },
+          "paths": {
+            "maxItems": 50,
+            "description": "Files the question is about, relative to the repository root. They route the item to the files' owners, and path search finds the answer later.",
+            "type": "array",
+            "items": {
+              "minLength": 1,
+              "maxLength": 1024,
+              "type": "string"
+            }
+          },
+          "repo": {
+            "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+            "description": "Repository as owner/name.",
+            "type": "string"
+          }
+        }
+      },
+      "outputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "item_id",
+          "kind",
+          "state",
+          "title",
+          "blocking",
+          "owners",
+          "next"
+        ],
+        "properties": {
+          "item_id": {
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "pr",
+              "approval",
+              "question",
+              "blocked_action",
+              "exception",
+              "stuck_run",
+              "budget",
+              "spend_spike",
+              "quality",
+              "policy_report"
+            ]
+          },
+          "state": {
+            "description": "open until a person answers; answered; dismissed when it was closed unanswered; expired when it timed out.",
+            "type": "string",
+            "enum": [
+              "open",
+              "answered",
+              "dismissed",
+              "expired"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "blocking": {
+            "type": "boolean"
+          },
+          "owners": {
+            "description": "Who is asked to answer.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "answer": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "verdict",
+              "by",
+              "at"
+            ],
+            "properties": {
+              "verdict": {
+                "description": "allow, block and ask come from a rule. approve, deny, answer and override come from a person.",
+                "type": "string",
+                "enum": [
+                  "allow",
+                  "block",
+                  "ask",
+                  "approve",
+                  "deny",
+                  "answer",
+                  "override"
+                ]
+              },
+              "by": {
+                "type": "string"
+              },
+              "reason": {
+                "description": "For a question, the answer text.",
+                "type": "string"
+              },
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              }
+            }
+          },
+          "grant": {
+            "additionalProperties": false,
+            "description": "An approved exception's one-time grant on this machine: the identical call is allowed once until expires_at.",
+            "type": "object",
+            "required": [
+              "expires_at"
+            ],
+            "properties": {
+              "expires_at": {
+                "format": "date-time",
+                "type": "string"
+              }
+            }
+          },
+          "next": {
+            "description": "What to do now, in one or two sentences.",
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "request_exception",
+      "description": "Ask a person to allow one blocked call once. Pass the exception id from selfhost's block message and why the call is needed. Returns at once; call get_answer with wait_seconds, and once approved make the identical call again.",
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "exception_id",
+          "reason"
+        ],
+        "properties": {
+          "exception_id": {
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+            "description": "The exception id from selfhost's block message (selfhost inbox approve <id>). It names the blocked call.",
+            "type": "string"
+          },
+          "reason": {
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "Why this exact call is needed and why the rule's alternative does not work.",
+            "type": "string"
+          }
+        }
+      },
+      "outputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "item_id",
+          "kind",
+          "state",
+          "title",
+          "blocking",
+          "owners",
+          "next"
+        ],
+        "properties": {
+          "item_id": {
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "pr",
+              "approval",
+              "question",
+              "blocked_action",
+              "exception",
+              "stuck_run",
+              "budget",
+              "spend_spike",
+              "quality",
+              "policy_report"
+            ]
+          },
+          "state": {
+            "description": "open until a person answers; answered; dismissed when it was closed unanswered; expired when it timed out.",
+            "type": "string",
+            "enum": [
+              "open",
+              "answered",
+              "dismissed",
+              "expired"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "blocking": {
+            "type": "boolean"
+          },
+          "owners": {
+            "description": "Who is asked to answer.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "answer": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "verdict",
+              "by",
+              "at"
+            ],
+            "properties": {
+              "verdict": {
+                "description": "allow, block and ask come from a rule. approve, deny, answer and override come from a person.",
+                "type": "string",
+                "enum": [
+                  "allow",
+                  "block",
+                  "ask",
+                  "approve",
+                  "deny",
+                  "answer",
+                  "override"
+                ]
+              },
+              "by": {
+                "type": "string"
+              },
+              "reason": {
+                "description": "For a question, the answer text.",
+                "type": "string"
+              },
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              }
+            }
+          },
+          "grant": {
+            "additionalProperties": false,
+            "description": "An approved exception's one-time grant on this machine: the identical call is allowed once until expires_at.",
+            "type": "object",
+            "required": [
+              "expires_at"
+            ],
+            "properties": {
+              "expires_at": {
+                "format": "date-time",
+                "type": "string"
+              }
+            }
+          },
+          "next": {
+            "description": "What to do now, in one or two sentences.",
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_answer",
+      "description": "Get the answer to a question or exception request: open while nobody has answered, else the person's verdict and reason. wait_seconds waits for it.",
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "item_id"
+        ],
+        "properties": {
+          "item_id": {
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+            "description": "The item_id ask_human or request_exception returned.",
+            "type": "string"
+          },
+          "wait_seconds": {
+            "minimum": 0,
+            "maximum": 55,
+            "default": 0,
+            "description": "Wait up to this long for an answer before returning. Default 0: return at once. At most 55.",
+            "type": "integer"
+          }
+        }
+      },
+      "outputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "item_id",
+          "kind",
+          "state",
+          "title",
+          "blocking",
+          "owners",
+          "next"
+        ],
+        "properties": {
+          "item_id": {
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "pr",
+              "approval",
+              "question",
+              "blocked_action",
+              "exception",
+              "stuck_run",
+              "budget",
+              "spend_spike",
+              "quality",
+              "policy_report"
+            ]
+          },
+          "state": {
+            "description": "open until a person answers; answered; dismissed when it was closed unanswered; expired when it timed out.",
+            "type": "string",
+            "enum": [
+              "open",
+              "answered",
+              "dismissed",
+              "expired"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "blocking": {
+            "type": "boolean"
+          },
+          "owners": {
+            "description": "Who is asked to answer.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "answer": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "verdict",
+              "by",
+              "at"
+            ],
+            "properties": {
+              "verdict": {
+                "description": "allow, block and ask come from a rule. approve, deny, answer and override come from a person.",
+                "type": "string",
+                "enum": [
+                  "allow",
+                  "block",
+                  "ask",
+                  "approve",
+                  "deny",
+                  "answer",
+                  "override"
+                ]
+              },
+              "by": {
+                "type": "string"
+              },
+              "reason": {
+                "description": "For a question, the answer text.",
+                "type": "string"
+              },
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              }
+            }
+          },
+          "grant": {
+            "additionalProperties": false,
+            "description": "An approved exception's one-time grant on this machine: the identical call is allowed once until expires_at.",
+            "type": "object",
+            "required": [
+              "expires_at"
+            ],
+            "properties": {
+              "expires_at": {
+                "format": "date-time",
+                "type": "string"
+              }
+            }
+          },
+          "next": {
+            "description": "What to do now, in one or two sentences.",
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
       "name": "record_decision",
-      "description": "Record a human decision on a review item. Writes a decision.recorded event.",
+      "description": "Record your person's own decision on a review item they asked you to answer, such as a pull request. Items an agent waits on (approvals, questions, exceptions, blocked actions) need a person and are refused. Writes a decision.recorded event.",
+      "annotations": {
+        "readOnlyHint": false
+      },
       "inputSchema": {
         "additionalProperties": false,
         "type": "object",

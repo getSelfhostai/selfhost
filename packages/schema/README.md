@@ -318,9 +318,12 @@ batches of up to 1000), `GET /v1/events`, `GET /v1/review-items`, `GET /v1/revie
 `/v1/teams/{team}/overview`, `/v1/budget`), whose bodies are in `src/org.ts`, and agent-written
 code (`/v1/teams/{team}/provenance` and `.../provenance/modules`), whose bodies are in
 `src/provenance.ts` with the `selfhost provenance --json` report and the `VendorLineStat` input. It references the JSON Schema files for events,
-review items and the config. `mcp-tools.json` lists `get_policy`, `get_budget`,
-`list_review_items`, `search_events`, `search_decisions` and `record_decision` with
-self-contained input and output schemas.
+review items and the config. `mcp-tools.json` lists the tools of the selfhost MCP server
+(`packages/mcp`) with self-contained input and output schemas and a `readOnlyHint`: the read
+tools `get_policy`, `get_budget`, `list_review_items`, `search_events`, `search_decisions`,
+`list_file_runs`, `list_active_on_file` and `get_answer`, and the writing tools `ask_human`,
+`request_exception` and `record_decision`. List tools default to 10 items (`MCP_LIMIT_DEFAULT`)
+and no answer goes over `MCP_RESPONSE_TOKEN_BUDGET` tokens.
 
 ## Versioning
 

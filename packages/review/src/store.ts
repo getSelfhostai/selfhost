@@ -255,12 +255,33 @@ export async function snoozeItem(
 
 const queryValidator = createValidator(ReviewItemQuerySchema);
 
-/** One page of items in rank order (see rank.ts). */
+/**
+ * Items `$n` owns, or whose signals it wrote: a source event, or any event of the item's
+ * session, with that person as actor.
+ */
+function ownOrRaisedBy(n: number): string {
+  const person = `lower($${n}::text)`;
+  return `(EXISTS (SELECT 1 FROM jsonb_array_elements_text(body->'owners') AS o(person)
+      WHERE lower(o.person) = ${person})
+    OR EXISTS (SELECT 1 FROM events e
+      WHERE e.id IN (SELECT s.id::uuid FROM jsonb_array_elements_text(review_items.body->'source_event_ids') AS s(id))
+        AND e.actor_kind = 'person' AND lower(e.actor_id) = ${person})
+    OR (review_items.session_id IS NOT NULL AND EXISTS (SELECT 1 FROM events e
+      WHERE e.session_id = review_items.session_id
+        AND coalesce(e.team, '') = coalesce(review_items.team, '')
+        AND e.actor_kind = 'person' AND lower(e.actor_id) = ${person})))`;
+}
+
+/**
+ * One page of items in rank order (see rank.ts). With `person`, only the items they own or
+ * raised (see ownOrRaisedBy).
+ */
 export async function listItems(
   q: Queryable,
   scope: Scope,
   query: ReviewItemQuery,
   now: Date,
+  person?: string,
 ): Promise<ReviewItemsPage> {
   const defined = Object.fromEntries(
     Object.entries(query ?? {}).filter(([, value]) => value !== undefined),
@@ -281,6 +302,10 @@ export async function listItems(
   if (query.team !== undefined) {
     params.push(query.team);
     conditions.push(`team = $${params.length}`);
+  }
+  if (person !== undefined) {
+    params.push(person);
+    conditions.push(ownOrRaisedBy(params.length));
   }
   const team = scoped(scope, params);
   if (query.cursor !== undefined) {

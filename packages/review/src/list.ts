@@ -34,6 +34,8 @@ import {
 export interface ReviewListQuery {
   state?: ReviewItemState;
   owner?: string;
+  /** Only items this person owns or whose signals came from their own events or sessions. */
+  for?: string;
   limit?: number;
   cursor?: string;
 }
@@ -161,7 +163,10 @@ export function openReviewList(ledger: Ledger, options: ReviewListOptions = {}):
   }
 
   const list: ReviewList = {
-    list: (query) => listItems(db, scope, query ?? {}, now()),
+    list: (query) => {
+      const { for: person, ...rest } = query ?? {};
+      return listItems(db, scope, rest, now(), person);
+    },
 
     async get(id) {
       return (await getItem(db, id, scope))?.item;

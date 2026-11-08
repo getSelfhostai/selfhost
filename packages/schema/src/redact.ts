@@ -30,9 +30,17 @@ export function redactionSettings(
 
 /**
  * Keys under `data` that hold person ids (an email or login, like `actor.id`). They route alerts
- * and review items to people, so they are kept like `actor`, not masked as free text.
+ * and review items to people, or (sent_by) name the person token that sent a laptop's own
+ * system event, so they are kept like `actor`, not masked as free text.
  */
-export const IDENTITY_DATA_KEYS = ["owner", "owners", "budget_owner", "person", "people"] as const;
+export const IDENTITY_DATA_KEYS = [
+  "owner",
+  "owners",
+  "budget_owner",
+  "person",
+  "people",
+  "sent_by",
+] as const;
 
 /** Keys under `data` that hold prompt or response text, dropped unless prompts are logged. */
 export const PROMPT_DATA_KEYS = ["prompt", "messages", "response", "completion"] as const;
