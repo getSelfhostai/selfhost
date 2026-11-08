@@ -25,6 +25,25 @@ await ledger.close();
   recorded in `schema_migrations`. `src/migrations.generated.ts` embeds them so bundles and
   compiled binaries need no files on disk; after changing a migration run
   `pnpm --filter @selfhost/ledger embed-migrations` (a test fails if you forget).
+- Every `NNNN_name.sql` ships with `NNNN_name.down.sql`, which undoes it. The embed script refuses
+  a migration without one, and `test/upgrade.test.ts` checks that each down gives back the exact
+  schema of the version before (tables, columns, indexes, constraints, triggers, functions) and
+  that rows survive an upgrade from the last two migration sets, its rollback and the upgrade
+  again, on data from `fixtures/ledger/seed.ts` (a new table needs a seed row there).
+- Pending migrations run in one transaction, so a failed one leaves the database at the version
+  it had and the release that was running keeps working on it. Nothing in a migration may end
+  the transaction or need to run outside one (`CREATE INDEX CONCURRENTLY`, `VACUUM`); a test
+  checks. A database with a migration this release does not know (a newer release applied it)
+  is refused with `SchemaTooNewError` before anything changes, so an older server never runs on a
+  newer schema.
+- `migrate(db, migrations, { to })` applies up to a version, `rollback(db, to)` runs the downs of
+  every applied migration after `to` (`0` for none) in one transaction, and `schemaStatus(db)`
+  reports `current`, `latest`, `pending` and `unknown` (applied by a newer release). The server
+  image runs them as `node dist/migrate.js [--to <version>] [--status]`, the CLI as
+  `selfhost ledger migrate|status`.
+- `dumpDataDir(dataDir)` and `loadDataDir(dataDir, archive)` back up and restore the embedded
+  database as a gzipped tar of its folder (PGlite's own dump); `rowCounts(db)` counts the rows of
+  every table, for checking a restore.
 
 ## Append
 

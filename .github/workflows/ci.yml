@@ -144,6 +144,120 @@ jobs:
         env:
           SELFHOST_RECEIPT_E2E: "1"
 
+  # Upgrade and rollback on seeded data, on the Postgres version the Docker Compose install pins.
+  # There are no tagged releases yet, so the previous release is this checkout without its
+  # newest migration: its server writes the data, this release's migrate entry (the one
+  # upgrade.sh runs) upgrades and rolls back, and the row counts must match at every step. Then
+  # the migration tests, a forced failure included, run on the same Postgres.
+  upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16.15
+        env:
+          POSTGRES_DB: selfhost
+          POSTGRES_USER: selfhost
+          POSTGRES_PASSWORD: selfhost
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U selfhost -d selfhost"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://selfhost:selfhost@localhost:5432/selfhost
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build this release's server, and the previous one without the newest migration
+        run: |
+          pnpm --filter @selfhost/console build
+          pnpm --filter @selfhost/server build
+          mv apps/server/dist apps/server/dist-current
+          newest=$(ls packages/ledger/migrations/*.sql | grep -v '[.]down[.]sql$' | sort | tail -n 1)
+          rm "$newest" "${newest%.sql}.down.sql"
+          pnpm --filter @selfhost/ledger embed-migrations
+          pnpm --filter @selfhost/server build
+          mv apps/server/dist apps/server/dist-previous
+          git checkout -- packages/ledger
+          git diff --exit-code
+      - name: Seed through the previous release, upgrade, roll back and upgrade again
+        run: |
+          eval "$(grep '^ROWS_SQL=' deploy/docker/backup.sh)"
+          rows() { psql "$DATABASE_URL" -tAc "$ROWS_SQL"; }
+          # Every table=count of $1 is in $2, schema_migrations aside: no row lost or added.
+          kept() {
+            for pair in $1; do
+              case "$pair" in schema_migrations=*) continue ;; esac
+              case " $2 " in *" $pair "*) ;; *) echo "::error::$pair is not in: $2"; return 1 ;; esac
+            done
+          }
+          # Starts a release's server on the database in the background; no job writes on its own.
+          serve() {
+            SELFHOST_CONSOLE=off SELFHOST_TOKEN=ci-token SELFHOST_RETENTION_SWEEP=off \
+              SELFHOST_REVIEW_REFRESH=off SELFHOST_TRACE_EXPORT=off PORT=4400 \
+              node "apps/server/$1/main.js" > "$RUNNER_TEMP/$1.log" 2>&1 &
+            pid=$!
+            for _ in $(seq 1 30); do
+              curl -fsS http://127.0.0.1:4400/v1/health > /dev/null 2>&1 && return 0
+              sleep 1
+            done
+            cat "$RUNNER_TEMP/$1.log"; return 1
+          }
+          stop() { kill "$pid"; while kill -0 "$pid" 2> /dev/null; do sleep 0.2; done; }
+          api() { curl -fsS -H "Authorization: Bearer ci-token" -H 'Content-Type: application/json' "$@"; }
+          events() { api "http://127.0.0.1:4400/v1/events?limit=1000" | jq '.events | length'; }
+          migrate() { node "apps/server/$1/migrate.js" "${@:2}"; }
+
+          previous=$(migrate dist-previous --status | jq -r .latest)
+          latest=$(migrate dist-current --status | jq -r .latest)
+          echo "previous release: $previous, this release: $latest"
+
+          serve dist-previous
+          jq -s '{events: .}' packages/schema/fixtures/event/valid/*.json > "$RUNNER_TEMP/events.json"
+          fixtures=$(jq '.events | length' "$RUNNER_TEMP/events.json")
+          api -X POST --data-binary @"$RUNNER_TEMP/events.json" http://127.0.0.1:4400/v1/events \
+            | jq -e --argjson n "$fixtures" '.accepted == $n'
+          invite=$(api -X POST -d '{"name":"CI"}' http://127.0.0.1:4400/v1/teams | jq -r .invite)
+          curl -fsS -H 'Content-Type: application/json' -X POST \
+            -d "{\"invite\":\"$invite\",\"person\":\"ci@example.com\"}" http://127.0.0.1:4400/v1/join > /dev/null
+          [ "$(events)" = "$fixtures" ]
+          stop
+          before=$(rows)
+          echo "rows at $previous: $before"
+
+          migrate dist-current
+          kept "$before" "$(rows)"
+          # The previous release now refuses to start against the newer schema.
+          code=0
+          SELFHOST_CONSOLE=off SELFHOST_TOKEN=ci-token PORT=4400 timeout 30 \
+            node apps/server/dist-previous/main.js > "$RUNNER_TEMP/refused.log" 2>&1 || code=$?
+          cat "$RUNNER_TEMP/refused.log"
+          [ "$code" = 1 ] || { echo "::error::the previous release did not refuse the newer schema ($code)"; exit 1; }
+          grep -q "newer than this release" "$RUNNER_TEMP/refused.log"
+
+          migrate dist-current --to "$previous"
+          [ "$(rows)" = "$before" ] || { echo "::error::rows after the rollback: $(rows)"; exit 1; }
+          serve dist-previous
+          [ "$(events)" = "$fixtures" ]
+          stop
+
+          migrate dist-current
+          kept "$before" "$(rows)"
+          serve dist-current
+          [ "$(events)" = "$fixtures" ]
+          stop
+          migrate dist-current --status | jq -e --arg v "$latest" '.current == $v and .pending == [] and .unknown == []'
+      - name: Down migrations, a forced failure and a newer schema on the same Postgres
+        run: pnpm --filter @selfhost/ledger exec vitest run test/upgrade.test.ts test/migrations.test.ts
+
   # The Docker Compose install end to end: build, health checks, writes through the API and the
   # collector, an upgrade, then a backup restored into a fresh volume.
   compose:
@@ -263,32 +377,65 @@ jobs:
         run: |
           . "$RUNNER_TEMP/compose-ci.sh"
           before=$(event_count)
-          sed -i "s/^SELFHOST_VERSION=.*/SELFHOST_VERSION=ci-2/" .env
           # Stands in for publishing the next release.
-          docker compose build selfhost
-          docker compose pull --ignore-buildable && docker compose up -d
+          SELFHOST_VERSION=ci-2 docker compose build selfhost
+          ./upgrade.sh ci-2
           wait_healthy
           docker compose ps selfhost --format '{{.Image}}' | grep -qx 'selfhost-ci:ci-2'
+          grep -qx 'SELFHOST_VERSION=ci-2' .env
           after=$(event_count)
           echo "events before upgrade: $before, after: $after"
           [ "$before" -gt 0 ] && [ "$after" = "$before" ]
 
-      - name: Back up, restore into a fresh volume, and compare event counts
+      - name: Roll back with the same command, and keep running when the next release's migrations fail
         run: |
           . "$RUNNER_TEMP/compose-ci.sh"
           before=$(event_count)
-          ./backup.sh "$RUNNER_TEMP/selfhost.dump"
+          ./upgrade.sh ci-1
+          wait_healthy
+          docker compose ps selfhost --format '{{.Image}}' | grep -qx 'selfhost-ci:ci-1'
+          [ "$(event_count)" = "$before" ]
+
+          # A release whose migrate step fails. The failing SQL itself, rolled back in its
+          # transaction, is tested on this Postgres version in the upgrade job.
+          docker build -t selfhost-ci:ci-bad - <<'EOF'
+          FROM selfhost-ci:ci-1
+          USER root
+          RUN mv dist/migrate.js dist/migrate-real.js && printf '%s\n' \
+            'if (!process.argv.includes("--status")) { console.error("forced migration failure"); process.exit(1); }' \
+            'await import("./migrate-real.js");' > dist/migrate.js
+          USER node
+          EOF
+          if ./upgrade.sh ci-bad 2> "$RUNNER_TEMP/bad.log"; then
+            echo "::error::upgrade.sh switched to a release whose migrations failed"; exit 1
+          fi
+          cat "$RUNNER_TEMP/bad.log"
+          grep -q 'and ci-1 keeps running' "$RUNNER_TEMP/bad.log"
+          grep -qx 'SELFHOST_VERSION=ci-1' .env
+          wait_healthy
+          docker compose ps selfhost --format '{{.Image}}' | grep -qx 'selfhost-ci:ci-1'
+          [ "$(event_count)" = "$before" ]
+
+      - name: Back up, restore into a fresh volume, and compare event and row counts
+        run: |
+          . "$RUNNER_TEMP/compose-ci.sh"
+          before=$(event_count)
+          ./backup.sh "$RUNNER_TEMP/selfhost.dump" | tee "$RUNNER_TEMP/backup.log"
 
           docker compose down --volumes
           docker compose up -d
           wait_healthy
           [ "$(event_count)" = 0 ]
 
-          ./restore.sh "$RUNNER_TEMP/selfhost.dump"
+          ./restore.sh "$RUNNER_TEMP/selfhost.dump" | tee "$RUNNER_TEMP/restore.log"
           wait_healthy
           after=$(event_count)
           echo "events backed up: $before, restored: $after"
           [ "$after" = "$before" ]
+          backed=$(sed -n 's/^rows: //p' "$RUNNER_TEMP/backup.log")
+          restored=$(sed -n 's/^rows: //p' "$RUNNER_TEMP/restore.log")
+          case "$backed" in *events=*) ;; *) echo "::error::backup.sh printed no row counts"; exit 1 ;; esac
+          [ "$backed" = "$restored" ] || { echo "::error::rows backed up: $backed, restored: $restored"; exit 1; }
 
           if ./restore.sh "$RUNNER_TEMP/selfhost.dump"; then
             echo "::error::restore.sh replaced a database with events without --force"; exit 1

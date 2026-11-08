@@ -12,6 +12,8 @@ here=$(cd "$(dirname "$0")" && pwd)
 # when unset), as for docker compose run by hand here.
 compose() { (cd "$here" && docker compose "$@"); }
 pg() { compose exec -T postgres sh -c "$1"; }
+# Rows in each table, as "table=count" words, for comparing a backup with its restore.
+ROWS_SQL="SELECT string_agg(table_name || '=' || (xpath('/row/c/text()', query_to_xml(format('SELECT count(*) AS c FROM public.%I', table_name), false, true, '')))[1]::text, ' ' ORDER BY table_name) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'"
 
 force=false
 if [ "${1:-}" = "--force" ]; then
@@ -44,10 +46,11 @@ if ! pg 'pg_restore -U "$POSTGRES_USER" -d "${POSTGRES_DB}_restore" --no-owner -
   echo "pg_restore failed. The live database was not changed." >&2
   exit 1
 fi
-restored=$(pg 'psql -U "$POSTGRES_USER" -d "${POSTGRES_DB}_restore" -tAc "SELECT count(*) FROM events"')
+rows=$(printf '%s\n' "$ROWS_SQL" | pg 'psql -U "$POSTGRES_USER" -d "${POSTGRES_DB}_restore" -tAq')
 
 compose stop selfhost otel-collector
 pg 'dropdb -U "$POSTGRES_USER" --force --if-exists "$POSTGRES_DB" &&
   psql -U "$POSTGRES_USER" -d postgres -qc "ALTER DATABASE \"${POSTGRES_DB}_restore\" RENAME TO \"$POSTGRES_DB\""'
 compose up -d
-echo "Restored $restored events from $file"
+echo "Restored $file"
+echo "rows: $rows"
