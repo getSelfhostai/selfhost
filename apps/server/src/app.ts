@@ -11,6 +11,7 @@ import { consoleRoutes } from "./console.js";
 import { decisionRoutes } from "./decisions.js";
 import { eventRoutes } from "./events.js";
 import { type GitHubRouteOptions, githubRoutes } from "./github.js";
+import { githubRepos, type IntegrationRouteOptions } from "./integrations.js";
 import { adminMcpRoute, mcpRoutes } from "./mcp.js";
 import { otlpRoutes } from "./otlp.js";
 import type { GitClones } from "./provenance.js";
@@ -44,6 +45,11 @@ export interface AppOptions {
   clones?: GitClones;
   /** How POST /v1/receipts checks the CI job's OIDC token. It uses the GitHub App above. */
   receipts?: Pick<ReceiptRouteOptions, "oidc" | "load">;
+  /**
+   * How GET /v1/integrations checks each tool. Reviewer checks read the team's repositories
+   * through the GitHub App above unless repos is given.
+   */
+  integrations?: IntegrationRouteOptions;
 }
 
 export function createApp({
@@ -57,6 +63,7 @@ export function createApp({
   signin,
   clones,
   receipts = {},
+  integrations = {},
 }: AppOptions): Hono {
   const app = new Hono();
   const review = { ...(config ? { config } : {}), ...(now ? { now } : {}) };
@@ -76,6 +83,11 @@ export function createApp({
     ...(now ? { now } : {}),
     ...(signin ? { signin } : {}),
     provenance: { ...(clones ? { clones } : {}), ...(config ? { config } : {}) },
+    integrations: {
+      ...(github.app ? { repos: githubRepos(github.app, ledger) } : {}),
+      ...(now ? { now } : {}),
+      ...integrations,
+    },
     personRoutes: (person) => {
       reviewRoutes(person, ledger, {
         ...review,

@@ -54,7 +54,8 @@ from and any team membership (`selfhost team leave` ends that).
 
 ## Where data goes
 
-Solo mode, the default: nothing leaves the laptop and no command makes a network request. Logs
+Solo mode, the default: nothing leaves the laptop and no command makes a network request, except
+`selfhost integrations check`, which calls the tools named in `[integrations]` to test them. Logs
 and hook events go into the local ledger only, which keeps no prompt text. Raw hook payloads wait
 in `~/.selfhost/spool` (readable by this user only) until the next import. With `--team`, each
 `selfhost import` also sends the ledger to the team's server.

@@ -767,8 +767,42 @@ Every command takes `--json` and prints one object with a `schema` tag: `selfhos
 `selfhost.limit_forecast/v1`, `selfhost.plan_tiers/v1`, `selfhost.spend_alarms/v1`,
 `selfhost.team_init/v1`, `selfhost.team_invite/v1`, `selfhost.team_revoke/v1`,
 `selfhost.team_role/v1`, `selfhost.team_add/v1`, `selfhost.team_people/v1`, `selfhost.team_repos/v1`,
-`selfhost.join/v1`, `selfhost.status/v1`, `selfhost.team_leave/v1` and `selfhost.up/v1`. Errors print `selfhost.error/v1` and exit 1. In solo mode no command
-needs a network connection.
+`selfhost.join/v1`, `selfhost.status/v1`, `selfhost.team_leave/v1`, `selfhost.integrations/v1` and `selfhost.up/v1`. Errors print `selfhost.error/v1` and exit 1. In solo mode no command
+needs a network connection, except `selfhost integrations check`, which calls the tools named in
+`[integrations]` to test them.
+
+## Integrations: `selfhost integrations`
+
+The router, tracer, runtime and reviewer the team picked, from `[integrations]` in
+`selfhost.toml`, and whether each one is connected:
+
+```sh
+selfhost integrations                                  # list (same as: selfhost integrations list)
+selfhost integrations check                            # test each tool; exits 1 on a failure
+selfhost integrations set runtime e2b --setting template=base
+selfhost integrations set router litellm --setting url=http://litellm:4000 --setting admin_key_env=LITELLM_MASTER_KEY
+selfhost integrations set tracer langfuse --setting endpoint=https://cloud.langfuse.com/api/public/otel --setting headers_env.Authorization=LANGFUSE_OTLP_AUTH
+selfhost integrations set reviewer none                # remove the reviewer
+```
+
+- In team mode the team server keeps the choice and runs the checks with its own environment, so
+  `list` already shows each status. `set` needs the owner or admin role; a member gets the
+  server's permission error and exit 1.
+- In solo mode (or with `--config <path>`) the choice is the `selfhost.toml` found here. `list`
+  reads the file only. `check` calls each tool from this machine, with the variables in this
+  shell, and reads `.github/workflows` of this checkout for PR-Agent and the Claude Code action;
+  CodeRabbit's installation cannot be seen from a laptop, so its check fails here with a link to
+  check by hand. `set` rewrites only that table of the file and refuses settings that would make
+  it invalid.
+- A failing check says what to fix, for example `Set the environment variable E2B_API_KEY
+  (api_key_env) where selfhost runs, to an E2B API key. It is not set.` Secrets are named by
+  variable in `selfhost.toml`, never written there, and never printed.
+- `--setting key=value` repeats; a dotted key such as `headers_env.Authorization=VAR` sets one
+  entry of a table. `--json` prints `selfhost.integrations/v1`: `team` (null in solo mode),
+  `source` (the server or the file) and per job `tool`, `status`, `detail` and `settings`;
+  `status` and `detail` are null for a solo `list`, which checks nothing.
+
+Each tool and its check are in [`packages/integrations`](../../packages/integrations).
 
 ## Team server: `selfhost up`
 

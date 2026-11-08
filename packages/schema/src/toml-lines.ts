@@ -93,6 +93,8 @@ function scanLine(line: string): Scan {
  */
 export class TomlLineIndex {
   private readonly lines = new Map<string, number>();
+  /** Every `[table]` and `[[array]]` header, in file order, with its key split into parts. */
+  readonly headers: { line: number; key: string[]; array: boolean }[] = [];
 
   constructor(text: string) {
     const rows = text.split(/\r?\n/);
@@ -127,6 +129,7 @@ export class TomlLineIndex {
 
       if (trimmed.startsWith("[[")) {
         const plain = splitKey(trimmed.slice(2, trimmed.indexOf("]]")));
+        this.headers.push({ line: lineNo, key: plain, array: true });
         const parent = resolve(plain.slice(0, -1));
         const countKey = keyOf([...parent, plain[plain.length - 1] as string]);
         const index = (arrayCounts.get(countKey) ?? -1) + 1;
@@ -142,7 +145,9 @@ export class TomlLineIndex {
         return;
       }
       if (trimmed.startsWith("[")) {
-        table = resolve(splitKey(trimmed.slice(1, trimmed.indexOf("]"))));
+        const plain = splitKey(trimmed.slice(1, trimmed.indexOf("]")));
+        this.headers.push({ line: lineNo, key: plain, array: false });
+        table = resolve(plain);
         this.record(table, lineNo);
         return;
       }

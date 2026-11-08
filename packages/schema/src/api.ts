@@ -289,6 +289,84 @@ export const PolicyCoverageResponseSchema = Type.Object(
   },
 );
 
+export const INTEGRATION_STATUSES = ["connected", "not_configured", "error"] as const;
+export type IntegrationStatus = (typeof INTEGRATION_STATUSES)[number];
+export const INTEGRATIONS_SCHEMA = "selfhost.integrations/v1";
+
+const TeamQuery = Type.Optional(
+  Type.String({
+    description:
+      "Team id on a team server. Needed with the admin token; a person token uses its own team by default, or another team it is in.",
+  }),
+);
+
+export const IntegrationsQuerySchema = Type.Object(
+  { team: TeamQuery },
+  { additionalProperties: false, title: "IntegrationsQuery" },
+);
+
+export const IntegrationStateSchema = Type.Object(
+  {
+    tool: Type.Union([Type.String(), Type.Null()], {
+      description: "The tool picked for this job in [integrations.<kind>], or null when none is.",
+    }),
+    status: StringEnum(INTEGRATION_STATUSES, {
+      description:
+        "connected: the check reached the tool and its credentials work. not_configured: no tool is picked. error: the check failed; detail says what to fix.",
+    }),
+    detail: Type.String({
+      description:
+        "One or two plain sentences: what the check found, and on error what to change. Never holds a secret.",
+    }),
+    settings: Type.Record(Type.String(), Type.Unknown(), {
+      description:
+        "The tool's settings from [integrations.<kind>] without tool. Secrets are only ever named by environment variable, and credentials in a URL are masked.",
+    }),
+    checked_at: DateTime({
+      description:
+        "When this check ran. The server keeps a team's results for 60 seconds while its [integrations] stay the same.",
+    }),
+  },
+  { additionalProperties: false, title: "IntegrationState" },
+);
+
+export const IntegrationsResponseSchema = Type.Object(
+  {
+    schema: Type.Literal(INTEGRATIONS_SCHEMA),
+    team: Type.String({ description: "Team id." }),
+    integrations: Type.Object(
+      {
+        router: IntegrationStateSchema,
+        tracer: IntegrationStateSchema,
+        runtime: IntegrationStateSchema,
+        reviewer: IntegrationStateSchema,
+      },
+      { additionalProperties: false },
+    ),
+  },
+  {
+    additionalProperties: false,
+    title: "IntegrationsResponse",
+    description:
+      "The tool the team picked for each job, from [integrations] in the policy in use (the org's, then the team's), each checked from the server just now.",
+  },
+);
+
+export const SetIntegrationRequestSchema = Type.Object(
+  {
+    tool: Type.Union([NonEmpty(), Type.Null()], {
+      description: "The tool to use for this job, or null to remove [integrations.<kind>].",
+    }),
+    settings: Type.Optional(
+      Type.Record(Type.String(), Type.Unknown(), {
+        description:
+          "The rest of [integrations.<kind>], such as url or api_key_env. Secrets go in environment variables on the server and are named here, never sent.",
+      }),
+    ),
+  },
+  { additionalProperties: false, title: "SetIntegrationRequest" },
+);
+
 export const BUDGET_PERIODS = ["day", "week", "month"] as const;
 export type BudgetPeriod = (typeof BUDGET_PERIODS)[number];
 
@@ -492,3 +570,7 @@ export type DecisionsPage = Static<typeof DecisionsPageSchema>;
 export type RecordDecisionInput = Static<typeof RecordDecisionInputSchema>;
 export type CreateDecisionRequest = Static<typeof CreateDecisionRequestSchema>;
 export type CreateDecisionResponse = Static<typeof CreateDecisionResponseSchema>;
+export type IntegrationsQuery = Static<typeof IntegrationsQuerySchema>;
+export type IntegrationState = Static<typeof IntegrationStateSchema>;
+export type IntegrationsResponse = Static<typeof IntegrationsResponseSchema>;
+export type SetIntegrationRequest = Static<typeof SetIntegrationRequestSchema>;

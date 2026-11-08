@@ -672,6 +672,107 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /v1/integrations:
+    get:
+      operationId: getIntegrations
+      summary: The router, tracer, runtime and reviewer the team picked, each checked now.
+      description: "The admin token, or a person token of anyone in the team. Reads [integrations] from the policy in use (the org's, then the team's; a team's table for a job replaces the org's) and checks each tool from the server with the cheapest call its docs give: the gateway's health and admin key, the tracer's API key, the runtime's API key, and for a reviewer its workflow file or GitHub App through the selfhost GitHub App. A team with no policy gets every job not_configured. Checks time out after a few seconds each."
+      parameters:
+        - name: team
+          in: query
+          required: false
+          description: Team id on a team server. Needed with the admin token; a person token uses its own team by default, or another team it is in.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Each job's tool and status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntegrationsResponse"
+        "400":
+          description: Invalid query, or no team given with the admin token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such team.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/integrations/{kind}:
+    put:
+      operationId: setIntegration
+      summary: Pick the tool for one job, writing [integrations.<kind>] in the team's selfhost.toml.
+      description: The admin token, or a person token whose role in the team is owner or admin. Replaces the [integrations.<kind>] table of the team's own selfhost.toml with tool and settings (tool null removes it) and leaves the rest of the file as it was, comments included. The new file is validated like PUT /v1/policy, against the org floor too, and an invalid one changes nothing. Answers with the same body as GET /v1/integrations.
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          description: The job.
+          schema:
+            type: string
+            enum:
+              - router
+              - tracer
+              - runtime
+              - reviewer
+        - name: team
+          in: query
+          required: false
+          description: Team id. Needed with the admin token; a person token writes its own team by default, or another team it is in.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetIntegrationRequest"
+      responses:
+        "200":
+          description: Stored, with each job checked again.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntegrationsResponse"
+        "400":
+          description: "The tool is not one for this job, or the settings make selfhost.toml invalid or relax the org floor: an InvalidPolicyError naming each field. An unknown kind or a body that is not JSON answers an ApiError. Nothing was stored."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvalidPolicyError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such team.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: "[integrations.<kind>] is written in a way that cannot be replaced safely, such as an inline table. Change it with PUT /v1/policy."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /v1/teams:
     post:
       operationId: createTeam
@@ -2446,6 +2547,224 @@ components:
               org_rule:
                 description: The org rule or setting this would relax, such as rule "no-force-push" or [mcp] allow. Set only for errors against the org floor.
                 type: string
+    IntegrationState:
+      additionalProperties: false
+      title: IntegrationState
+      type: object
+      required:
+        - tool
+        - status
+        - detail
+        - settings
+        - checked_at
+      properties:
+        tool:
+          description: The tool picked for this job in [integrations.<kind>], or null when none is.
+          anyOf:
+            - type: string
+            - type: "null"
+        status:
+          description: "connected: the check reached the tool and its credentials work. not_configured: no tool is picked. error: the check failed; detail says what to fix."
+          type: string
+          enum:
+            - connected
+            - not_configured
+            - error
+        detail:
+          description: "One or two plain sentences: what the check found, and on error what to change. Never holds a secret."
+          type: string
+        settings:
+          description: The tool's settings from [integrations.<kind>] without tool. Secrets are only ever named by environment variable, and credentials in a URL are masked.
+          type: object
+          patternProperties:
+            ^(.*)$: {}
+        checked_at:
+          format: date-time
+          description: When this check ran. The server keeps a team's results for 60 seconds while its [integrations] stay the same.
+          type: string
+    IntegrationsResponse:
+      additionalProperties: false
+      title: IntegrationsResponse
+      description: The tool the team picked for each job, from [integrations] in the policy in use (the org's, then the team's), each checked from the server just now.
+      type: object
+      required:
+        - schema
+        - team
+        - integrations
+      properties:
+        schema:
+          const: selfhost.integrations/v1
+          type: string
+        team:
+          description: Team id.
+          type: string
+        integrations:
+          additionalProperties: false
+          type: object
+          required:
+            - router
+            - tracer
+            - runtime
+            - reviewer
+          properties:
+            router:
+              additionalProperties: false
+              title: IntegrationState
+              type: object
+              required:
+                - tool
+                - status
+                - detail
+                - settings
+                - checked_at
+              properties:
+                tool:
+                  description: The tool picked for this job in [integrations.<kind>], or null when none is.
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                status:
+                  description: "connected: the check reached the tool and its credentials work. not_configured: no tool is picked. error: the check failed; detail says what to fix."
+                  type: string
+                  enum:
+                    - connected
+                    - not_configured
+                    - error
+                detail:
+                  description: "One or two plain sentences: what the check found, and on error what to change. Never holds a secret."
+                  type: string
+                settings:
+                  description: The tool's settings from [integrations.<kind>] without tool. Secrets are only ever named by environment variable, and credentials in a URL are masked.
+                  type: object
+                  patternProperties:
+                    ^(.*)$: {}
+                checked_at:
+                  format: date-time
+                  description: When this check ran. The server keeps a team's results for 60 seconds while its [integrations] stay the same.
+                  type: string
+            tracer:
+              additionalProperties: false
+              title: IntegrationState
+              type: object
+              required:
+                - tool
+                - status
+                - detail
+                - settings
+                - checked_at
+              properties:
+                tool:
+                  description: The tool picked for this job in [integrations.<kind>], or null when none is.
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                status:
+                  description: "connected: the check reached the tool and its credentials work. not_configured: no tool is picked. error: the check failed; detail says what to fix."
+                  type: string
+                  enum:
+                    - connected
+                    - not_configured
+                    - error
+                detail:
+                  description: "One or two plain sentences: what the check found, and on error what to change. Never holds a secret."
+                  type: string
+                settings:
+                  description: The tool's settings from [integrations.<kind>] without tool. Secrets are only ever named by environment variable, and credentials in a URL are masked.
+                  type: object
+                  patternProperties:
+                    ^(.*)$: {}
+                checked_at:
+                  format: date-time
+                  description: When this check ran. The server keeps a team's results for 60 seconds while its [integrations] stay the same.
+                  type: string
+            runtime:
+              additionalProperties: false
+              title: IntegrationState
+              type: object
+              required:
+                - tool
+                - status
+                - detail
+                - settings
+                - checked_at
+              properties:
+                tool:
+                  description: The tool picked for this job in [integrations.<kind>], or null when none is.
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                status:
+                  description: "connected: the check reached the tool and its credentials work. not_configured: no tool is picked. error: the check failed; detail says what to fix."
+                  type: string
+                  enum:
+                    - connected
+                    - not_configured
+                    - error
+                detail:
+                  description: "One or two plain sentences: what the check found, and on error what to change. Never holds a secret."
+                  type: string
+                settings:
+                  description: The tool's settings from [integrations.<kind>] without tool. Secrets are only ever named by environment variable, and credentials in a URL are masked.
+                  type: object
+                  patternProperties:
+                    ^(.*)$: {}
+                checked_at:
+                  format: date-time
+                  description: When this check ran. The server keeps a team's results for 60 seconds while its [integrations] stay the same.
+                  type: string
+            reviewer:
+              additionalProperties: false
+              title: IntegrationState
+              type: object
+              required:
+                - tool
+                - status
+                - detail
+                - settings
+                - checked_at
+              properties:
+                tool:
+                  description: The tool picked for this job in [integrations.<kind>], or null when none is.
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                status:
+                  description: "connected: the check reached the tool and its credentials work. not_configured: no tool is picked. error: the check failed; detail says what to fix."
+                  type: string
+                  enum:
+                    - connected
+                    - not_configured
+                    - error
+                detail:
+                  description: "One or two plain sentences: what the check found, and on error what to change. Never holds a secret."
+                  type: string
+                settings:
+                  description: The tool's settings from [integrations.<kind>] without tool. Secrets are only ever named by environment variable, and credentials in a URL are masked.
+                  type: object
+                  patternProperties:
+                    ^(.*)$: {}
+                checked_at:
+                  format: date-time
+                  description: When this check ran. The server keeps a team's results for 60 seconds while its [integrations] stay the same.
+                  type: string
+    SetIntegrationRequest:
+      additionalProperties: false
+      title: SetIntegrationRequest
+      type: object
+      required:
+        - tool
+      properties:
+        tool:
+          description: The tool to use for this job, or null to remove [integrations.<kind>].
+          anyOf:
+            - minLength: 1
+              type: string
+            - type: "null"
+        settings:
+          description: The rest of [integrations.<kind>], such as url or api_key_env. Secrets go in environment variables on the server and are named here, never sent.
+          type: object
+          patternProperties:
+            ^(.*)$: {}
     CreateTeamRequest:
       additionalProperties: false
       title: CreateTeamRequest

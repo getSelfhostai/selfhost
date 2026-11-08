@@ -27,7 +27,7 @@
 
 ## Privacy
 
-- Solo mode: nothing leaves the laptop and no network request is made. The ledger keeps no prompt text; raw hook payloads wait in ~/.selfhost/spool (mode 0600) until the next import.
+- Solo mode: nothing leaves the laptop and no network request is made, except by `selfhost integrations check`, which calls the tools named in `[integrations]` to test them. The ledger keeps no prompt text; raw hook payloads wait in ~/.selfhost/spool (mode 0600) until the next import.
 - Team mode: each `selfhost import` sends the ledger to the team's server.
 
 ## Team server

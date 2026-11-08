@@ -6,6 +6,8 @@ import type {
   DecisionRequest,
   DecisionResponse,
   IngestEventsResponse,
+  IntegrationKind,
+  IntegrationsResponse,
   Invite,
   JoinResponse,
   LedgerEvent,
@@ -17,6 +19,7 @@ import type {
   ReviewItemQuery,
   ReviewItemsPage,
   RevokeTokensResponse,
+  SetIntegrationRequest,
   TeamPeopleResponse,
   TeamRepo,
   TeamReposResponse,
@@ -144,6 +147,19 @@ export class TeamClient {
       if (error instanceof TeamApiError && error.code === "no_policy") return undefined;
       throw error;
     }
+  }
+
+  /** The team's router, tracer, runtime and reviewer, each checked by the server. */
+  integrations(): Promise<IntegrationsResponse> {
+    return this.call("GET", "/v1/integrations");
+  }
+
+  /** Picks the tool for one job; only the team's owners and admins can. */
+  setIntegration(
+    kind: IntegrationKind,
+    request: SetIntegrationRequest,
+  ): Promise<IntegrationsResponse> {
+    return this.call("PUT", `/v1/integrations/${kind}`, request);
   }
 
   /** One POST /v1/events, at most 1000 events. RemoteWriter adds batching and retries. */
