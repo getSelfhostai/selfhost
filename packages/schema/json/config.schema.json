@@ -856,6 +856,142 @@
           "type": "integer"
         }
       }
+    },
+    "integrations": {
+      "additionalProperties": false,
+      "default": {},
+      "description": "The tool selfhost plugs in for each job. Pick the best one and swap it any time; selfhost connects it and keeps the record. Secrets are named by environment variable, never written here.",
+      "type": "object",
+      "properties": {
+        "router": {
+          "additionalProperties": false,
+          "description": "The AI gateway (model router).",
+          "type": "object",
+          "required": [
+            "tool"
+          ],
+          "properties": {
+            "tool": {
+              "description": "The AI gateway agents' model traffic goes through: bifrost (bundled with the selfhost server) or litellm (one the team already runs).",
+              "type": "string",
+              "enum": [
+                "bifrost",
+                "litellm"
+              ]
+            },
+            "url": {
+              "pattern": "^https?://",
+              "description": "The gateway's address. Unset uses the bundled Bifrost at http://bifrost:8080.",
+              "type": "string"
+            },
+            "admin_key_env": {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+              "description": "Environment variable on the server that holds the gateway's admin key.",
+              "type": "string"
+            }
+          }
+        },
+        "tracer": {
+          "additionalProperties": false,
+          "description": "The tracing tool the team already uses.",
+          "type": "object",
+          "required": [
+            "tool",
+            "endpoint"
+          ],
+          "properties": {
+            "tool": {
+              "description": "Where selfhost sends agent traces: langfuse, phoenix, datadog, or otlp for any OpenTelemetry endpoint.",
+              "type": "string",
+              "enum": [
+                "langfuse",
+                "phoenix",
+                "datadog",
+                "otlp"
+              ]
+            },
+            "endpoint": {
+              "pattern": "^https?://",
+              "description": "The tracer's OTLP over HTTP endpoint.",
+              "type": "string"
+            },
+            "headers_env": {
+              "description": "Headers to send, by name, each read from an environment variable on the server (for API keys).",
+              "type": "object",
+              "patternProperties": {
+                "^(.*)$": {
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                  "description": "Environment variable that holds the header value.",
+                  "type": "string"
+                }
+              }
+            },
+            "run_url": {
+              "description": "Link template to one run in the tracer's own UI, with {run_id} replaced, for the console's run view.",
+              "type": "string"
+            }
+          }
+        },
+        "runtime": {
+          "additionalProperties": false,
+          "description": "The runtime for background agents.",
+          "type": "object",
+          "required": [
+            "tool"
+          ],
+          "properties": {
+            "tool": {
+              "description": "Where background agents run: e2b, daytona, modal or coder.",
+              "type": "string",
+              "enum": [
+                "e2b",
+                "daytona",
+                "modal",
+                "coder"
+              ]
+            },
+            "url": {
+              "pattern": "^https?://",
+              "description": "The provider's API address, for coder and self-hosted providers.",
+              "type": "string"
+            },
+            "api_key_env": {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+              "description": "Environment variable on the server that holds the provider's API key.",
+              "type": "string"
+            },
+            "template": {
+              "minLength": 1,
+              "description": "The provider's template, snapshot or image to start from.",
+              "type": "string"
+            }
+          }
+        },
+        "reviewer": {
+          "additionalProperties": false,
+          "description": "The AI code reviewer.",
+          "type": "object",
+          "required": [
+            "tool"
+          ],
+          "properties": {
+            "tool": {
+              "description": "The AI reviewer whose findings join the review list: pr-agent, claude-code-action or coderabbit.",
+              "type": "string",
+              "enum": [
+                "pr-agent",
+                "claude-code-action",
+                "coderabbit"
+              ]
+            },
+            "api_key_env": {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+              "description": "Environment variable that holds the reviewer's model API key, in CI or on the server.",
+              "type": "string"
+            }
+          }
+        }
+      }
     }
   }
 }

@@ -442,6 +442,111 @@ export const BudgetSchema = Type.Object(
   },
 );
 
+export const ROUTER_TOOLS = ["bifrost", "litellm"] as const;
+export const TRACER_TOOLS = ["langfuse", "phoenix", "datadog", "otlp"] as const;
+export const RUNTIME_TOOLS = ["e2b", "daytona", "modal", "coder"] as const;
+export const REVIEWER_TOOLS = ["pr-agent", "claude-code-action", "coderabbit"] as const;
+export type RouterTool = (typeof ROUTER_TOOLS)[number];
+export type TracerTool = (typeof TRACER_TOOLS)[number];
+export type RuntimeTool = (typeof RUNTIME_TOOLS)[number];
+export type ReviewerTool = (typeof REVIEWER_TOOLS)[number];
+
+const EnvName = (description: string) => Type.String({ pattern: ENV_NAME_PATTERN, description });
+const HttpUrl = (description: string) => Type.String({ pattern: "^https?://", description });
+
+export const IntegrationsSchema = Type.Object(
+  {
+    router: Type.Optional(
+      Type.Object(
+        {
+          tool: StringEnum(ROUTER_TOOLS, {
+            description:
+              "The AI gateway agents' model traffic goes through: bifrost (bundled with the selfhost server) or litellm (one the team already runs).",
+          }),
+          url: Type.Optional(
+            HttpUrl(
+              "The gateway's address. Unset uses the bundled Bifrost at http://bifrost:8080.",
+            ),
+          ),
+          admin_key_env: Type.Optional(
+            EnvName("Environment variable on the server that holds the gateway's admin key."),
+          ),
+        },
+        { additionalProperties: false, description: "The AI gateway (model router)." },
+      ),
+    ),
+    tracer: Type.Optional(
+      Type.Object(
+        {
+          tool: StringEnum(TRACER_TOOLS, {
+            description:
+              "Where selfhost sends agent traces: langfuse, phoenix, datadog, or otlp for any OpenTelemetry endpoint.",
+          }),
+          endpoint: HttpUrl("The tracer's OTLP over HTTP endpoint."),
+          headers_env: Type.Optional(
+            Type.Record(
+              Type.String(),
+              EnvName("Environment variable that holds the header value."),
+              {
+                description:
+                  "Headers to send, by name, each read from an environment variable on the server (for API keys).",
+              },
+            ),
+          ),
+          run_url: Type.Optional(
+            Type.String({
+              description:
+                "Link template to one run in the tracer's own UI, with {run_id} replaced, for the console's run view.",
+            }),
+          ),
+        },
+        { additionalProperties: false, description: "The tracing tool the team already uses." },
+      ),
+    ),
+    runtime: Type.Optional(
+      Type.Object(
+        {
+          tool: StringEnum(RUNTIME_TOOLS, {
+            description: "Where background agents run: e2b, daytona, modal or coder.",
+          }),
+          url: Type.Optional(
+            HttpUrl("The provider's API address, for coder and self-hosted providers."),
+          ),
+          api_key_env: Type.Optional(
+            EnvName("Environment variable on the server that holds the provider's API key."),
+          ),
+          template: Type.Optional(
+            NonEmpty({ description: "The provider's template, snapshot or image to start from." }),
+          ),
+        },
+        { additionalProperties: false, description: "The runtime for background agents." },
+      ),
+    ),
+    reviewer: Type.Optional(
+      Type.Object(
+        {
+          tool: StringEnum(REVIEWER_TOOLS, {
+            description:
+              "The AI reviewer whose findings join the review list: pr-agent, claude-code-action or coderabbit.",
+          }),
+          api_key_env: Type.Optional(
+            EnvName(
+              "Environment variable that holds the reviewer's model API key, in CI or on the server.",
+            ),
+          ),
+        },
+        { additionalProperties: false, description: "The AI code reviewer." },
+      ),
+    ),
+  },
+  {
+    additionalProperties: false,
+    default: {},
+    description:
+      "The tool selfhost plugs in for each job. Pick the best one and swap it any time; selfhost connects it and keeps the record. Secrets are named by environment variable, never written here.",
+  },
+);
+
 export const SelfhostConfigSchema = Type.Object(
   {
     version: Type.Literal(1, { description: "selfhost.toml format version." }),
@@ -806,6 +911,7 @@ export const SelfhostConfigSchema = Type.Object(
     ),
     runtime: Type.Optional(RuntimeSchema),
     receipt: Type.Optional(ReceiptConfigSchema),
+    integrations: Type.Optional(IntegrationsSchema),
   },
   {
     $id: CONFIG_SCHEMA_URL,
@@ -845,6 +951,7 @@ export type ResolvedSelfhostConfig = Omit<
   | "alerts"
   | "guardrails"
   | "teams"
+  | "integrations"
 > & {
   ledger: Required<Present<SelfhostConfig["ledger"]>>;
   redaction: Present<SelfhostConfig["redaction"]>;
@@ -863,6 +970,7 @@ export type ResolvedSelfhostConfig = Omit<
   alerts: Present<SelfhostConfig["alerts"]> &
     Required<Omit<Present<SelfhostConfig["alerts"]>, "runbook_url">>;
   guardrails: Required<Present<SelfhostConfig["guardrails"]>>;
+  integrations: Present<SelfhostConfig["integrations"]>;
   teams: Record<string, ResolvedTeam>;
 };
 

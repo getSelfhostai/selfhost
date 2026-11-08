@@ -1,0 +1,18 @@
+version = 1
+
+[integrations.router]
+tool = "bifrost"
+
+[integrations.tracer]
+tool = "langfuse"
+endpoint = "https://cloud.langfuse.com/api/public/otel"
+headers_env = { Authorization = "LANGFUSE_OTLP_AUTH" }
+run_url = "https://cloud.langfuse.com/trace/{run_id}"
+
+[integrations.runtime]
+tool = "e2b"
+api_key_env = "E2B_API_KEY"
+
+[integrations.reviewer]
+tool = "pr-agent"
+api_key_env = "OPENAI_API_KEY"

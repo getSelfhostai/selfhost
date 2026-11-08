@@ -42,6 +42,7 @@ describe("parseConfig", () => {
         },
         guardrails: { mode: "enforce", disable: [], prod_connections: [], prod_credentials: [] },
         teams: {},
+        integrations: {},
       },
     });
   });
