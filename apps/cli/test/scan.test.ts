@@ -375,7 +375,7 @@ describe("outputs", () => {
     const started = performance.now();
     const report = await runScan(
       { since: "30d", json: true, report: "r.html", share: "c.svg" },
-      { env: envFor(logs), cwd: dir.root, write: () => {}, now: NOW },
+      { env: envFor(logs), cwd: dir.root, home: dir.path("home"), write: () => {}, now: NOW },
     );
     const elapsed = performance.now() - started;
     expect(report.totals.sessions).toBe(50);

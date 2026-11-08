@@ -11,6 +11,7 @@ import {
 } from "@selfhost/spend";
 import { percent, usd } from "../format.js";
 import type { AgentRef, AgentVendor, AttributionResult } from "./attribution.js";
+import { type ContextSection, contextSection, type ScannedContext } from "./context/index.js";
 import { findLeaks, type LeakFinding, sessionKey } from "./leaks.js";
 import { type SessionStats, summarizeSessions } from "./sessions.js";
 
@@ -53,6 +54,8 @@ export interface ScanInput {
   forecast?: PlanForecast;
   /** The git repository the scan tried to join, when there was one. */
   repoDir?: string;
+  /** Context files found in the repository and the home config, with token counts. */
+  context?: ScannedContext;
   from: Date;
   to: Date;
 }
@@ -129,6 +132,8 @@ export interface ScanReport {
   waste: WasteFlag[];
   top_sessions: TopSession[];
   forecast: PlanForecast | null;
+  /** Context files: who reads each, duplicates, conflicts and what always-loaded context costs. */
+  context: ContextSection;
   credit: string;
   next: string;
 }
@@ -234,9 +239,9 @@ function costRows(costs: LedgerEvent[], input: ScanInput, by: ("agent" | "model"
 }
 
 /**
- * The scan report: cost by agent and model, leak findings, the most expensive sessions and, with
- * a git join, who wrote the commits, what merged with no review and what spend left no commit.
- * Pure: the same input gives the same report.
+ * The scan report: cost by agent and model, leak findings, the most expensive sessions, the
+ * context files and their drift and, with a git join, who wrote the commits, what merged with no
+ * review and what spend left no commit. Pure: the same input gives the same report.
  */
 export function buildScanReport(input: ScanInput): ScanReport {
   const costs = oneSourcePerSession(input.events.filter((e) => e.kind === "cost.recorded"));
@@ -309,6 +314,7 @@ export function buildScanReport(input: ScanInput): ScanReport {
     waste: input.waste,
     top_sessions: top,
     forecast: input.forecast ?? null,
+    context: contextSection(input.context, sessions, { from: input.from, to: input.to }),
     credit: CCUSAGE_CREDIT,
     next: NEXT_STEP,
   };

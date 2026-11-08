@@ -1,6 +1,6 @@
 # selfhost
 
-> One ledger, one review list and one team config for every coding agent on a laptop. `selfhost init` sets it up in one command with no prompts: hooks in Claude Code and Codex, a starter selfhost.toml in observe mode, and the last 30 days of local agent logs imported. Solo mode sends nothing anywhere.
+> One ledger, one review list and one team config for every coding agent on a laptop. `selfhost init` sets it up in one command: hooks in Claude Code and Codex, a starter selfhost.toml in observe mode, the repository's context files offered for `.selfhost/context/`, and the last 30 days of local agent logs imported. Without a terminal it asks nothing; `--import-context` or `--no-import-context` answers its one question. Solo mode sends nothing anywhere.
 
 ## Install, for a coding agent
 

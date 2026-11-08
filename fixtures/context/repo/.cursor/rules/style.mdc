@@ -1,0 +1,6 @@
+---
+description: Formatting
+alwaysApply: true
+---
+
+Format every file with Prettier before committing.

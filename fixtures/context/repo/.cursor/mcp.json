@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "docs": {
+      "command": "npx",
+      "args": ["-y", "@acme/docs-mcp@2"],
+      "env": { "LOG_LEVEL": "debug" }
+    },
+    "search": {
+      "url": "https://search.example.com/mcp"
+    }
+  }
+}

@@ -20,9 +20,12 @@ export {
 } from "./config/vendors.js";
 export {
   CONTEXT_KIND_LABELS,
+  CONTEXT_READER_NAMES,
+  CONTEXT_READERS,
   type ContextFile,
   type ContextKind,
   type ContextOptions,
+  type ContextReader,
   findContextFiles,
   repoRoot,
 } from "./context.js";

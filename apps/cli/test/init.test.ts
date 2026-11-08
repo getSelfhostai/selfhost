@@ -297,6 +297,7 @@ describe("selfhost init", () => {
       "agents",
       "undo",
       "config",
+      "context",
       "sources",
       "import",
       "spend",

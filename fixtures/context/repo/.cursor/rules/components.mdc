@@ -1,0 +1,8 @@
+---
+description: React component conventions
+globs: src/components/**/*.tsx
+alwaysApply: false
+---
+
+- Name components in PascalCase, one component per file.
+- Keep component state local unless two siblings need it.

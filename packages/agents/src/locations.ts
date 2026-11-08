@@ -11,6 +11,8 @@ import type { Env, LocateOptions } from "./types.js";
  * - OpenCode: https://opencode.ai/docs/config/, /mcp-servers/, /cli/providers/
  * - Goose: https://block.github.io/goose/docs/guides/config-files
  * - Cursor CLI: https://cursor.com/docs/cli/reference/configuration, /docs/hooks
+ * - Copilot CLI: https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot
+ * - Gemini CLI: https://geminicli.com/docs/cli/gemini-md/, /docs/get-started/configuration
  */
 export interface AgentLocations {
   claude_code: {
@@ -53,6 +55,16 @@ export interface AgentLocations {
     auth: string;
     keychainService: string;
     keychainAccount: string;
+  };
+  /** Copilot CLI reads no selfhost settings; its folder holds personal instructions and MCP. */
+  copilot: {
+    dir: string;
+    instructions: string;
+    mcp: string;
+  };
+  gemini: {
+    dir: string;
+    settings: string;
   };
 }
 
@@ -130,6 +142,11 @@ export function locate({
         ? join(cursorDir, "auth.json")
         : join(xdgConfig, "cursor", "auth.json");
 
+  // Copilot CLI: COPILOT_HOME, default ~/.copilot.
+  const copilotEnv = set(env, "COPILOT_HOME");
+  const copilotDir = copilotEnv ? expand(copilotEnv, home) : join(home, ".copilot");
+  const geminiDir = join(home, ".gemini");
+
   return {
     claude_code: {
       configDir: claudeDir,
@@ -170,6 +187,12 @@ export function locate({
       keychainService: "cursor-access-token",
       keychainAccount: "cursor-user",
     },
+    copilot: {
+      dir: copilotDir,
+      instructions: join(copilotDir, "copilot-instructions.md"),
+      mcp: join(copilotDir, "mcp-config.json"),
+    },
+    gemini: { dir: geminiDir, settings: join(geminiDir, "settings.json") },
   };
 }
 
@@ -183,4 +206,5 @@ export const PATH_ENV_VARS = [
   "LOCALAPPDATA",
   "GOOSE_PATH_ROOT",
   "CURSOR_CONFIG_DIR",
+  "COPILOT_HOME",
 ] as const;
