@@ -29,6 +29,8 @@ import {
   MCP_TOOLS,
   MCP_TOOLS_SCHEMA,
   MeResponseSchema,
+  PolicyCoverageQuerySchema,
+  PolicyCoverageResponseSchema,
   PolicyQuerySchema,
   PolicyResponseSchema,
   ReviewItemConflictSchema,
@@ -123,6 +125,7 @@ const COMPONENT_SCHEMAS: ReadonlyArray<readonly [name: string, schema: TSchema]>
   ["CreateDecisionRequest", CreateDecisionRequestSchema],
   ["CreateDecisionResponse", CreateDecisionResponseSchema],
   ["PolicyResponse", PolicyResponseSchema],
+  ["PolicyCoverageResponse", PolicyCoverageResponseSchema],
   ["SetPolicyRequest", SetPolicyRequestSchema],
   ["InvalidPolicyError", InvalidPolicyErrorSchema],
   ["CreateTeamRequest", CreateTeamRequestSchema],
@@ -382,6 +385,25 @@ function openApiDocument(): Json {
             ...authErrors,
             "403": errorResponse("The person token's role is not owner or admin."),
             "404": errorResponse("No such team."),
+          },
+        },
+      },
+      "/v1/policy/coverage": {
+        get: {
+          operationId: "getPolicyCoverage",
+          summary: "Get what each vendor's native controls cover of the team's rules.",
+          description:
+            "Compiles the team's selfhost.toml the way selfhost policy compile does and returns the coverage of every rule per vendor: compiled, partial, not_expressible or not_applicable, and whether the selfhost hook covers the rest.",
+          parameters: queryParameters(PolicyCoverageQuerySchema),
+          responses: {
+            "200": {
+              description: "Coverage per rule and vendor.",
+              content: jsonContent("PolicyCoverageResponse"),
+            },
+            "400": errorResponse("Invalid query, or no team given with the admin token."),
+            ...authErrors,
+            "403": errorResponse("A person token asked for another team's policy."),
+            "404": errorResponse("No such team, or the team has no policy yet."),
           },
         },
       },

@@ -19,6 +19,7 @@ import type { OpenLocalReviewList } from "./inbox/sync.js";
 import { registerInit } from "./init/commands.js";
 import { registerLedger } from "./ledger.js";
 import { registerPolicy } from "./policy/commands.js";
+import { registerPolicyCompile } from "./policy/compile.js";
 import { registerPolicyEditing } from "./policy/editing.js";
 import { registerReview } from "./review.js";
 import { localReviewList, registerReviewList } from "./review-list.js";
@@ -309,6 +310,21 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       write: deps.write,
       now: deps.now,
       configPath: deps.configPath ?? defaultConfigPath(),
+    }),
+    fail,
+  );
+
+  registerPolicyCompile(
+    program,
+    () => ({
+      env: deps.env,
+      cwd: deps.cwd,
+      platform: deps.platform,
+      write: deps.write,
+      setExitCode: deps.setExitCode,
+      now: deps.now,
+      configPath: deps.configPath ?? defaultConfigPath(),
+      fetch: deps.fetch,
     }),
     fail,
   );

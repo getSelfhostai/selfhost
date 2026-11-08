@@ -1,0 +1,155 @@
+{
+  "vendor": {
+    "vendor": "copilot",
+    "version": "2026-03-10",
+    "docs": [
+      "https://docs.github.com/en/copilot/reference/enterprise-administrators/enterprise-managed-settings",
+      "https://docs.github.com/en/copilot/how-tos/administer-copilot/manage-for-enterprise/use-managed-settings/deploy-managed-settings",
+      "https://docs.github.com/en/rest/repos/contents#create-or-update-file-contents"
+    ],
+    "notes": [
+      "selfhost has no Copilot hook, so nothing covers what these rules miss.",
+      "Copilot treats any managed permission rule as a policy: once one is set, every operation no rule matches asks for approval.",
+      "The .github-private copy reaches only users who get their Copilot license from the enterprise; the file-based copy applies on the machine, and Copilot CLI on macOS and Linux reads it only when root owns it and it is not group- or world-writable.",
+      "Not checked against a Copilot Business or Enterprise organization."
+    ]
+  },
+  "rules": [
+    {
+      "rule_id": "no-force-push",
+      "vendor": "copilot",
+      "mode": "enforce",
+      "action": "block",
+      "status": "compiled",
+      "native": [
+        "deny: Shell(git push --force)",
+        "deny: Shell(git push --force *)",
+        "deny: Shell(git push -f)",
+        "deny: Shell(git push -f *)"
+      ],
+      "hook": "none",
+      "detail": "Shell rules cover every command the regular expression matches."
+    },
+    {
+      "rule_id": "reset-hard",
+      "vendor": "copilot",
+      "mode": "enforce",
+      "action": "ask",
+      "status": "partial",
+      "native": [
+        "ask: Shell(git reset --hard)",
+        "ask: Shell(git reset --hard *)"
+      ],
+      "hook": "none",
+      "detail": "Shell(git reset --hard *) matches whole words, so git reset --hard followed by more characters is missed. Nothing checks the rest on Copilot."
+    },
+    {
+      "rule_id": "no-rm-rf",
+      "vendor": "copilot",
+      "mode": "enforce",
+      "action": "block",
+      "status": "not_expressible",
+      "native": [],
+      "hook": "none",
+      "detail": "Shell(...) matches a command prefix or the exact text, and rm -rf has no ^ before it. Nothing checks it on Copilot."
+    },
+    {
+      "rule_id": "no-curl-pipe",
+      "vendor": "copilot",
+      "mode": "enforce",
+      "action": "block",
+      "status": "not_expressible",
+      "native": [],
+      "hook": "none",
+      "detail": "Copilot's Shell(...) rules match a prefix or exact text, and the regular expression uses quantifier .*. Nothing checks it on Copilot."
+    },
+    {
+      "rule_id": "env-files",
+      "vendor": "copilot",
+      "mode": "enforce",
+      "action": "block",
+      "status": "compiled",
+      "native": [
+        "deny: Read(/**/.env*)",
+        "deny: Edit(/**/.env*)"
+      ],
+      "hook": "none",
+      "detail": "In Copilot's rules / is the workspace root, as selfhost reads paths from the repository root."
+    },
+    {
+      "rule_id": "infra-edits",
+      "vendor": "copilot",
+      "mode": "enforce",
+      "action": "ask",
+      "status": "not_applicable",
+      "native": [],
+      "hook": "none",
+      "detail": "Edit is another agent's tool name: Copilot reports this tool as create or edit."
+    },
+    {
+      "rule_id": "no-paste-sites",
+      "vendor": "copilot",
+      "mode": "enforce",
+      "action": "block",
+      "status": "compiled",
+      "native": [
+        "deny: Domain(*.pastebin.com)"
+      ],
+      "hook": "none",
+      "detail": "Domain(*.pastebin.com) covers the subdomains, and also pastebin.com itself."
+    },
+    {
+      "rule_id": "no-web-search",
+      "vendor": "copilot",
+      "mode": "observe",
+      "action": "block",
+      "status": "not_expressible",
+      "native": [],
+      "hook": "none",
+      "detail": "Observe mode: nothing native is written until the rule is enforced. Copilot's managed rules cover shell commands, file paths and domains, not tools by name. Nothing checks it on Copilot."
+    },
+    {
+      "rule_id": "codex-npm-publish",
+      "vendor": "copilot",
+      "mode": "enforce",
+      "action": "block",
+      "status": "not_applicable",
+      "native": [],
+      "hook": "none",
+      "detail": "The rule is only for Codex."
+    },
+    {
+      "rule_id": "retired",
+      "vendor": "copilot",
+      "mode": "off",
+      "action": "block",
+      "status": "not_applicable",
+      "native": [],
+      "hook": "none",
+      "detail": "Mode off."
+    },
+    {
+      "rule_id": "mcp.allow",
+      "vendor": "copilot",
+      "mode": "enforce",
+      "action": "block",
+      "status": "compiled",
+      "native": [
+        "allowedMcpServers: github",
+        "allowedMcpServers: linear"
+      ],
+      "hook": "none",
+      "detail": "allowedMcpServers blocks every other server name. Like selfhost, it trusts the name the user gave the server."
+    },
+    {
+      "rule_id": "models.allow",
+      "vendor": "copilot",
+      "mode": "observe",
+      "action": "block",
+      "status": "not_expressible",
+      "native": [],
+      "hook": "none",
+      "detail": "Observe mode: nothing native is written until the rule is enforced. Copilot's managed settings pick a default model and have no allow list. Nothing checks it on Copilot."
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 export * from "./api.js";
 export * from "./common.js";
+export * from "./compile.js";
 export * from "./config.js";
 export * from "./event.js";
 export * from "./hooks/claude-code.js";

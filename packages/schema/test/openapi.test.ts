@@ -48,6 +48,7 @@ describe("openapi.yaml", () => {
         "GET /v1/health",
         "GET /v1/me",
         "GET /v1/policy",
+        "GET /v1/policy/coverage",
         "GET /v1/review-items",
         "GET /v1/review-items/{id}",
         "POST /v1/decisions",

@@ -1,0 +1,30 @@
+{
+  "files": [
+    {
+      "name": "requirements.toml",
+      "description": "Codex requirements: forbidden and prompt prefix rules and managed hooks.",
+      "install": {
+        "kind": "system",
+        "paths": {
+          "darwin": "/etc/codex/requirements.toml",
+          "linux": "/etc/codex/requirements.toml",
+          "win32": "C:\\ProgramData\\OpenAI\\Codex\\requirements.toml"
+        },
+        "mode": "0644"
+      }
+    },
+    {
+      "name": "hooks/selfhost-hook",
+      "description": "Script Codex's managed hooks run on macOS and Linux.",
+      "install": {
+        "kind": "system",
+        "paths": {
+          "darwin": "/etc/codex/hooks/selfhost-hook",
+          "linux": "/etc/codex/hooks/selfhost-hook"
+        },
+        "mode": "0755"
+      }
+    }
+  ],
+  "calls": []
+}

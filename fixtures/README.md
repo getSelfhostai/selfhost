@@ -14,6 +14,7 @@ Test inputs for the session importers, hook ingest, ledger source mappers and re
 | `risk/` | `selfhost.toml` with protected paths and irreversible rules, and `cases.json`: risk score inputs with the level, score and missing inputs each must give, one or more per acceptance criterion of the PR risk score, for `ee/risk`. |
 | `redaction/` | Planted fake secrets and an example.com email. The files hold `{{kind}}` placeholders and `manifest.json` keeps each value in parts; `planted.ts` joins them at test time, so the repository carries no key-shaped string. |
 | `markers/` | One Claude Code session and one Codex rollout with marker strings planted in prompts, replies, reasoning, code, commands, tool output and commit messages. `selfhost scan` must print none of them. `manifest.json` lists every marker. |
+| `compile/` | `selfhost.toml` with one rule for each way a rule compiles, and per vendor config version (`<vendor>/<version>/`) the files `packages/compile` writes from it plus `coverage.json` and `install.json`. `rules/<ruler version>/` holds the `AGENTS.md` and `CLAUDE.md` Ruler writes from the policy text, saved as `.out` files. |
 | `expected/` | ccusage daily totals for the session fixtures. |
 | `captured/` | Scrubbed real sessions, written by `scripts/capture-fixtures.mjs`. Absent until someone runs it. |
 
@@ -38,6 +39,25 @@ HOME=$empty CLAUDE_CONFIG_DIR=fixtures/claude-code CODEX_HOME=fixtures/codex npx
 ```
 
 Days are grouped in UTC. Bump the pinned ccusage version only on purpose and record it in the vendor manifests.
+
+## Compile golden files
+
+`packages/compile/test/golden.test.ts` compiles `compile/selfhost.toml` for every version in
+`VENDOR_VERSIONS` (`packages/compile/src/versions.ts`) and fails when a generated file drifts from
+its folder. When a vendor CLI ships a release that changes its config:
+
+1. Check the vendor's docs (cited at the top of `packages/compile/src/vendors/<vendor>.ts`) and
+   update the mapping, gating new syntax on the version with `atLeast(version, "x.y.z")`.
+2. Add the version to `VENDOR_VERSIONS`, then write its folder and review the diff:
+
+```sh
+UPDATE_GOLDEN=1 pnpm --filter @selfhost/compile test
+git diff fixtures/compile
+```
+
+Bumping the pinned Ruler in `pnpm-workspace.yaml` needs `RULER_VERSION` changed to match; the
+same command writes `compile/rules/<new version>/`, and the old folder is deleted by hand. A
+vendor version dropped from `VENDOR_VERSIONS` loses its folder the same way.
 
 ## Capture real sessions
 

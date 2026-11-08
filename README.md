@@ -36,6 +36,7 @@ from the same code.
 | `packages/importers`   | Local session log importers for Claude Code and Codex (pricing ported from ccusage, MIT)    |
 | `packages/spend`       | Spend by request type, agent, model and person, and the waste detector                      |
 | `packages/policy`      | Evaluates `selfhost.toml` rules against tool calls and records would-block events           |
+| `packages/compile`     | Compiles `selfhost.toml` into each vendor's native controls, with coverage per rule         |
 | `packages/review`      | The review list: items from ledger signals, deduped, routed, ranked, with approval timeouts |
 | `packages/agents`      | Agent and login detection, context file listing, and config writing for five agent CLIs     |
 | `packages/attribution` | Links commits and pull requests to the agent and model that produced them, with merge stats |

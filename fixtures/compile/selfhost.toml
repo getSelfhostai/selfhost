@@ -1,0 +1,90 @@
+# Input for the golden-file tests of packages/compile: one rule for each way a rule compiles.
+version = 1
+
+[org]
+name = "Acme"
+
+# Anchored alternation with a word end: a literal prefix every vendor can write.
+[[rules]]
+id = "no-force-push"
+mode = "enforce"
+match = { command = '^git push (--force|-f)(\s|$)' }
+action = "block"
+message = "Force pushes are blocked. Push a new commit instead."
+irreversible = true
+
+# Anchored prefix with an open end: the last word may go on (--hard-ish).
+[[rules]]
+id = "reset-hard"
+mode = "enforce"
+match = { command = '^git reset --hard' }
+action = "ask"
+message = "git reset --hard drops uncommitted work."
+irreversible = true
+
+# No ^: the text can appear anywhere in a command.
+[[rules]]
+id = "no-rm-rf"
+mode = "enforce"
+match = { command = 'rm -rf' }
+action = "block"
+message = "rm -rf is blocked."
+
+# A real regular expression: no vendor matches commands this way.
+[[rules]]
+id = "no-curl-pipe"
+mode = "enforce"
+match = { command = 'curl .*\| *sh' }
+action = "block"
+message = "Do not pipe downloads into a shell."
+
+[[rules]]
+id = "env-files"
+mode = "enforce"
+match = { path = "**/.env*" }
+action = "block"
+message = "Do not read or write .env files."
+
+[[rules]]
+id = "infra-edits"
+mode = "enforce"
+match = { tool = "Edit", path = "infra/**" }
+action = "ask"
+message = "Infrastructure changes need a person."
+
+[[rules]]
+id = "no-paste-sites"
+mode = "enforce"
+match = { url = "https://*.pastebin.com/**" }
+action = "block"
+message = "Do not send code to paste sites."
+
+[[rules]]
+id = "no-web-search"
+mode = "observe"
+match = { tool = "WebSearch" }
+action = "block"
+message = "Web search is off for now."
+
+[[rules]]
+id = "codex-npm-publish"
+mode = "enforce"
+agents = ["codex"]
+match = { command = '^npm publish$' }
+action = "block"
+message = "Publishing happens in CI."
+
+[[rules]]
+id = "retired"
+mode = "off"
+match = { tool = "Bash" }
+action = "block"
+message = "Retired."
+
+[mcp]
+mode = "enforce"
+allow = ["github", "linear"]
+
+[models]
+mode = "observe"
+allow = ["claude-opus-5", "claude-sonnet-5"]

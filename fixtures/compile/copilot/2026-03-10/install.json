@@ -1,0 +1,29 @@
+{
+  "files": [
+    {
+      "name": "managed-settings.json",
+      "description": "Copilot enterprise managed settings: permission rules and the MCP allow list.",
+      "install": {
+        "kind": "system",
+        "paths": {
+          "darwin": "/Library/Application Support/GitHubCopilot/managed-settings.json",
+          "linux": "/etc/github-copilot/managed-settings.json",
+          "win32": "C:\\Program Files\\GitHubCopilot\\managed-settings.json"
+        },
+        "mode": "0644"
+      }
+    }
+  ],
+  "calls": [
+    {
+      "method": "PUT",
+      "path": "/repos/{owner}/{repo}/contents/copilot/managed-settings.json",
+      "body": {
+        "message": "Update Copilot managed settings from selfhost.toml",
+        "content": "ewogICJwZXJtaXNzaW9ucyI6IHsKICAgICJkZW55IjogWwogICAgICAiU2hlbGwoZ2l0IHB1c2ggLS1mb3JjZSkiLAogICAgICAiU2hlbGwoZ2l0IHB1c2ggLS1mb3JjZSAqKSIsCiAgICAgICJTaGVsbChnaXQgcHVzaCAtZikiLAogICAgICAiU2hlbGwoZ2l0IHB1c2ggLWYgKikiLAogICAgICAiUmVhZCgvKiovLmVudiopIiwKICAgICAgIkVkaXQoLyoqLy5lbnYqKSIsCiAgICAgICJEb21haW4oKi5wYXN0ZWJpbi5jb20pIgogICAgXSwKICAgICJhc2siOiBbCiAgICAgICJTaGVsbChnaXQgcmVzZXQgLS1oYXJkKSIsCiAgICAgICJTaGVsbChnaXQgcmVzZXQgLS1oYXJkICopIgogICAgXQogIH0sCiAgImFsbG93ZWRNY3BTZXJ2ZXJzIjogWwogICAgewogICAgICAic2VydmVyTmFtZSI6ICJnaXRodWIiCiAgICB9LAogICAgewogICAgICAic2VydmVyTmFtZSI6ICJsaW5lYXIiCiAgICB9CiAgXQp9Cg=="
+      },
+      "description": "Writes managed-settings.json to the enterprise's .github-private repository, where Copilot reads server-managed settings.",
+      "needsSha": true
+    }
+  ]
+}

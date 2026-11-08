@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "deny": [
+      "Shell(git push --force)",
+      "Shell(git push --force *)",
+      "Shell(git push -f)",
+      "Shell(git push -f *)",
+      "Read(/**/.env*)",
+      "Edit(/**/.env*)",
+      "Domain(*.pastebin.com)"
+    ],
+    "ask": [
+      "Shell(git reset --hard)",
+      "Shell(git reset --hard *)"
+    ]
+  },
+  "allowedMcpServers": [
+    {
+      "serverName": "github"
+    },
+    {
+      "serverName": "linear"
+    }
+  ]
+}

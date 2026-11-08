@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "selfhost hook cursor"
+      }
+    ],
+    "sessionEnd": [
+      {
+        "command": "selfhost hook cursor"
+      }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "command": "selfhost hook cursor"
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": "selfhost hook cursor"
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": "selfhost hook cursor"
+      }
+    ],
+    "beforeShellExecution": [
+      {
+        "command": "selfhost hook cursor"
+      }
+    ],
+    "afterShellExecution": [
+      {
+        "command": "selfhost hook cursor"
+      }
+    ],
+    "beforeMCPExecution": [
+      {
+        "command": "selfhost hook cursor"
+      }
+    ],
+    "afterMCPExecution": [
+      {
+        "command": "selfhost hook cursor"
+      }
+    ],
+    "afterFileEdit": [
+      {
+        "command": "selfhost hook cursor"
+      }
+    ],
+    "stop": [
+      {
+        "command": "selfhost hook cursor"
+      }
+    ]
+  }
+}

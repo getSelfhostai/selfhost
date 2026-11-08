@@ -1,0 +1,38 @@
+{
+  "files": [
+    {
+      "name": "hooks.json",
+      "description": "Cursor enterprise hooks that run selfhost hook on every agent event.",
+      "install": {
+        "kind": "system",
+        "paths": {
+          "darwin": "/Library/Application Support/Cursor/hooks.json",
+          "linux": "/etc/cursor/hooks.json",
+          "win32": "C:\\ProgramData\\Cursor\\hooks.json"
+        },
+        "mode": "0644"
+      }
+    },
+    {
+      "name": "team-rules.md",
+      "description": "The policy as a Cursor team rule. Turn on Enforce this rule when you add it.",
+      "install": {
+        "kind": "dashboard",
+        "where": "Cursor dashboard, Team content, Rules (https://cursor.com/dashboard/team-content)"
+      }
+    },
+    {
+      "name": "permissions.json",
+      "description": "Cursor MCP allowlist for device management to deliver to each user.",
+      "install": {
+        "kind": "mdm",
+        "paths": {
+          "darwin": "~/.cursor/permissions.json",
+          "linux": "~/.cursor/permissions.json",
+          "win32": "~/.cursor/permissions.json"
+        }
+      }
+    }
+  ],
+  "calls": []
+}

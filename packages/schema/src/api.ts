@@ -1,5 +1,6 @@
 import { type Static, Type } from "@sinclair/typebox";
 import { DateTime, NonEmpty, RepoSlug, StringEnum, Url, Uuidv7 } from "./common.js";
+import { COMPILE_VENDORS, PolicyCoverageSchema } from "./compile.js";
 import { RuleSchema, SelfhostConfigSchema } from "./config.js";
 import {
   AGENT_VENDORS,
@@ -232,6 +233,35 @@ export const PolicyResponseSchema = Type.Object(
   { additionalProperties: false, title: "PolicyResponse" },
 );
 
+export const PolicyCoverageQuerySchema = Type.Object(
+  {
+    team: Type.Optional(
+      Type.String({
+        description:
+          "Team id on a team server. Needed with the admin token; a person token reads its own team.",
+      }),
+    ),
+    vendor: Type.Optional(
+      StringEnum(COMPILE_VENDORS, { description: "Only this vendor's coverage." }),
+    ),
+  },
+  { additionalProperties: false, title: "PolicyCoverageQuery" },
+);
+
+export const PolicyCoverageResponseSchema = Type.Object(
+  {
+    hash: Type.String({ description: "sha256 of the selfhost.toml text compiled." }),
+    team: Type.String({ description: "Team id." }),
+    coverage: PolicyCoverageSchema,
+  },
+  {
+    additionalProperties: false,
+    title: "PolicyCoverageResponse",
+    description:
+      "What selfhost policy compile would write for the team's selfhost.toml: per rule and vendor, whether the vendor's native controls express it and whether the selfhost hook covers the rest.",
+  },
+);
+
 export const BudgetQuerySchema = Type.Object(
   {
     person: Type.Optional(Type.String()),
@@ -405,6 +435,8 @@ export type SnoozeRequest = Static<typeof SnoozeRequestSchema>;
 export type ReviewItemConflict = Static<typeof ReviewItemConflictSchema>;
 export type PolicyQuery = Static<typeof PolicyQuerySchema>;
 export type PolicyResponse = Static<typeof PolicyResponseSchema>;
+export type PolicyCoverageQuery = Static<typeof PolicyCoverageQuerySchema>;
+export type PolicyCoverageResponse = Static<typeof PolicyCoverageResponseSchema>;
 export type BudgetQuery = Static<typeof BudgetQuerySchema>;
 export type BudgetResponse = Static<typeof BudgetResponseSchema>;
 export type DecisionQuery = Static<typeof DecisionQuerySchema>;
