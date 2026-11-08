@@ -6,6 +6,7 @@ The `selfhost` command line.
 pnpm --filter @selfhost/cli dev --version
 pnpm --filter @selfhost/cli dev doctor [--config path/to/selfhost.toml]
 pnpm --filter @selfhost/cli dev spend --since 7d --by request_type,model
+pnpm --filter @selfhost/cli dev console
 pnpm --filter @selfhost/cli dev ledger prune --days 30
 pnpm --filter @selfhost/cli dev spend forecast
 pnpm --filter @selfhost/cli dev spend alarms --since 1h
@@ -30,6 +31,14 @@ reads `cost.recorded` events from the ledger (the same one `selfhost import` wri
 share, then every request type that crossed `--threshold` percent of a day's spend, with the day
 it crossed and the days before. `--by` takes `request_type`, `agent`, `model` and `person`; flags
 are always by request type. See [`packages/spend`](../../packages/spend/README.md).
+
+`selfhost console [--port 4400] [--host 127.0.0.1] [--no-open] [--json]` serves the web console
+([`apps/console`](../console/README.md)) and the API on this machine's ledger (the one `selfhost
+import` writes, or `--database` / `--data-dir`) and opens it in the browser, signed in: it prints
+the URL, the link with the API token in its fragment, and the token (kept in `<data dir>/token`).
+Usage, cost, sessions and PRs by team, developer, agent and model, with filters and CSV export.
+It listens on 127.0.0.1 unless `--host` says otherwise and stops on Ctrl-C. The embedded ledger
+is one process at a time, so stop `selfhost import --watch` first, or use Postgres.
 
 `selfhost ledger prune [--days <n>] [--config <path>] [--json]` deletes events older than the
 retention from the ledger (the one `selfhost import` writes, or `--database` / `--data-dir`):

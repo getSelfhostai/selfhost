@@ -157,14 +157,27 @@ OTLP_BIND=127.0.0.1
 Caddy routes by path ([`Caddyfile`](./Caddyfile)): `/v1/*` to the API, behind its bearer
 tokens, so the CLI, hooks and the GitHub webhook work as before; `/otlp/*` to the collector's
 OTLP HTTP port, behind the agent token (point agents at `https://<domain>/otlp`); everything
-else is the console. Without sign-in the console answers 503.
+else is the web console, which the selfhost server itself serves (it is built into the image).
+Without sign-in the console asks each person for their token: their person token from
+`selfhost team join` (in `~/.selfhost/config.json`) or the admin token. Its pages hold no data;
+what it shows comes from `/v1` with that token, and the server's roles decide what that is (a
+member sees their teams, the admin token every team).
 
 `compose.signin.yml` adds oauth2-proxy in front of the console: add it to `COMPOSE_FILE` and set
 `SELFHOST_SIGNIN_PROVIDER` (`github` or `google`), the OAuth app's client id and secret, and who
 may sign in (`SELFHOST_SIGNIN_EMAIL_DOMAINS`, the emails in `signin-emails.txt`, and for GitHub
 `SELFHOST_SIGNIN_GITHUB_ORG`). The OAuth app's callback URL is
-`https://<domain>/oauth2/callback`. The console itself is a placeholder page until the web
-console ships; `/v1` never needs sign-in.
+`https://<domain>/oauth2/callback`. `/v1` never needs sign-in.
+
+With sign-in, people need no token in the console: a signed-in browser's own reads of `/v1`
+(GET, no bearer token, the oauth2-proxy cookie) go through oauth2-proxy, and Caddy passes the
+signed-in email to the server in `X-Selfhost-Email` with `SELFHOST_SIGNIN_PROXY_SECRET` in
+`X-Selfhost-Proxy-Secret`. The server believes the email only with that secret (install.sh
+generates it), and Caddy drops both headers from every request before it sets them, so neither
+a client nor a request that reaches port 4400 some other way can claim an email. The email must
+be a person id on the server whose tokens are not all revoked: invite people by email
+(`selfhost team invite --email`) and the ids match. Sign-in only reads; anything that writes
+still needs a token.
 
 ## install.sh
 
@@ -172,7 +185,7 @@ console ships; `/v1` never needs sign-in.
 missing (from Docker's apt repository on Debian and Ubuntu, with the script from get.docker.com
 on other systems; it says which), the containers of the files in `COMPOSE_FILE`,
 and the daily backup timer. It generates any secret left empty in `.env` (the database password,
-both tokens, the sign-in cookie secret), so `cp .env.example .env && sudo ./install.sh` is a
+both tokens, the sign-in cookie secret and proxy secret), so `cp .env.example .env && sudo ./install.sh` is a
 complete install. Run again, it keeps the secrets already in `.env`.
 
 ## selfhost up
@@ -216,17 +229,16 @@ The CI job `install` runs `install.sh` with both overlays on a GitHub runner, wi
 
 ## Files
 
-| File                           | What                                                                      |
-| ------------------------------ | ------------------------------------------------------------------------- |
-| `compose.yml`                  | The stack                                                                 |
-| `.env.example`                 | Every setting `compose.yml` reads, with defaults; copy to `.env`          |
-| `otel-collector.yaml`          | Collector config: OTLP receivers, agent token, batching and retries       |
-| `Dockerfile`                   | The server image: pnpm and tsup build on `node:22-slim`, non-root runtime |
-| `backup.sh`, `restore.sh`      | `pg_dump` and `pg_restore` wrappers                                       |
-| `compose.tls.yml`, `Caddyfile` | Caddy with HTTPS in front of the API, the collector and the console       |
-| `compose.signin.yml`           | oauth2-proxy: GitHub or Google sign-in for the console                    |
-| `console/`                     | The page the console route serves until the web console ships             |
-| `install.sh`                   | Installs Docker, starts the stack, schedules the daily backup             |
+| File                           | What                                                                 |
+| ------------------------------ | -------------------------------------------------------------------- |
+| `compose.yml`                  | The stack                                                            |
+| `.env.example`                 | Every setting `compose.yml` reads, with defaults; copy to `.env`     |
+| `otel-collector.yaml`          | Collector config: OTLP receivers, agent token, batching and retries  |
+| `Dockerfile`                   | Server image with the web console, built on `node:22-slim`, non-root |
+| `backup.sh`, `restore.sh`      | `pg_dump` and `pg_restore` wrappers                                  |
+| `compose.tls.yml`, `Caddyfile` | Caddy with HTTPS in front of the API, the collector and the console  |
+| `compose.signin.yml`           | oauth2-proxy: GitHub or Google sign-in for the console               |
+| `install.sh`                   | Installs Docker, starts the stack, schedules the daily backup        |
 
 The CI job `compose` in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs all of
 this on a Linux runner: it builds the image, waits for every health check, writes fixture events

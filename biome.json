@@ -18,6 +18,11 @@
       "!deploy/src/stack.generated.ts"
     ]
   },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  },
   "formatter": {
     "indentStyle": "space",
     "indentWidth": 2,

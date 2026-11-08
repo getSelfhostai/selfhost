@@ -15,7 +15,6 @@ export const STACK_PATHS = [
   "compose.signin.yml",
   "otel-collector.yaml",
   "Caddyfile",
-  "console/index.html",
   "install.sh",
   "backup.sh",
   "restore.sh",

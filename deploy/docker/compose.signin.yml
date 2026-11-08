@@ -1,6 +1,8 @@
 # GitHub or Google sign-in for the console: oauth2-proxy checks the login before Caddy serves
 # anything outside /v1 and /otlp, which keep their bearer tokens so CLIs, hooks and agents work
-# as before. Use it with compose.tls.yml:
+# as before. A signed-in browser reads /v1 as the person whose email it signed in with, which
+# must be their person id on the server (selfhost team invite --email). Use it with
+# compose.tls.yml:
 #   COMPOSE_FILE=compose.yml:compose.tls.yml:compose.signin.yml
 # The OAuth app's callback URL is https://<SELFHOST_DOMAIN>/oauth2/callback.
 services:
@@ -25,6 +27,8 @@ services:
       # Caddy asks /oauth2/auth before serving the console, so oauth2-proxy proxies nothing.
       OAUTH2_PROXY_UPSTREAMS: static://202
       OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
+      # /oauth2/auth answers with X-Auth-Request-Email, which Caddy passes to selfhost.
+      OAUTH2_PROXY_SET_XAUTHREQUEST: "true"
     volumes:
       - ./signin-emails.txt:/etc/oauth2-proxy/emails.txt:ro
     logging:
@@ -36,3 +40,10 @@ services:
   caddy:
     environment:
       SELFHOST_CONSOLE_ACCESS: signin
+      SELFHOST_SIGNIN_PROXY_SECRET: ${SELFHOST_SIGNIN_PROXY_SECRET:?Set SELFHOST_SIGNIN_PROXY_SECRET in .env}
+
+  # The server believes the email Caddy forwards only with this secret, so a request that
+  # reaches port 4400 some other way signs in as nobody.
+  selfhost:
+    environment:
+      SELFHOST_SIGNIN_PROXY_SECRET: ${SELFHOST_SIGNIN_PROXY_SECRET:?Set SELFHOST_SIGNIN_PROXY_SECRET in .env}

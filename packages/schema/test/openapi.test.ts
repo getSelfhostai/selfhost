@@ -58,6 +58,8 @@ describe("openapi.yaml", () => {
         "GET /v1/teams/{team}/overview",
         "GET /v1/teams/{team}/people",
         "GET /v1/teams/{team}/repos",
+        "GET /v1/usage",
+        "GET /v1/usage.csv",
         "PATCH /v1/teams/{team}",
         "POST /v1/decisions",
         "POST /v1/events",

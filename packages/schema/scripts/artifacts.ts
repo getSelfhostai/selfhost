@@ -59,6 +59,10 @@ import {
   TeamRepoSchema,
   TeamReposResponseSchema,
   UpdateTeamRequestSchema,
+  UsageQuerySchema,
+  UsageResponseSchema,
+  UsageRowSchema,
+  UsageTotalsSchema,
 } from "../src/index.js";
 
 /** Files generated from the TypeBox sources. The drift test fails when they are stale. */
@@ -170,6 +174,9 @@ const COMPONENT_SCHEMAS: ReadonlyArray<readonly [name: string, schema: TSchema]>
   ["BudgetResponse", BudgetResponseSchema],
   ["TeamOverview", TeamOverviewSchema],
   ["OrgOverview", OrgOverviewSchema],
+  ["UsageTotals", UsageTotalsSchema],
+  ["UsageRow", UsageRowSchema],
+  ["UsageResponse", UsageResponseSchema],
 ];
 
 const ENTITY_REFS = new Map<string, string>([
@@ -682,6 +689,42 @@ function openApiDocument(): Json {
             ...authErrors,
             "403": errorResponse("A person token of another org, or one that leads no team of it."),
             "404": errorResponse("No such org."),
+          },
+        },
+      },
+      "/v1/usage": {
+        get: {
+          operationId: "getUsage",
+          summary: "Tokens, cost, sessions and pull requests, grouped and filtered.",
+          description:
+            "What the console shows. Every filter applies to every row and to the total, from the ledger's events whatever source wrote them. The admin token sees every team of the org and events with no team; a person token sees the teams of its org it is in. A team filter for a team the caller is not in answers 403.",
+          parameters: queryParameters(UsageQuerySchema),
+          responses: {
+            "200": {
+              description: "The rows and the total.",
+              content: jsonContent("UsageResponse"),
+            },
+            "400": errorResponse("Invalid query or time range."),
+            ...authErrors,
+            "403": errorResponse("The caller is not in the team or the org asked for."),
+          },
+        },
+      },
+      "/v1/usage.csv": {
+        get: {
+          operationId: "getUsageCsv",
+          summary: "The same rows as GET /v1/usage, as CSV.",
+          description:
+            "One line per row of GET /v1/usage for the same query, after a header line: the grouped dimensions, then usd, tokens, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, requests, sessions, prs_opened and prs_merged. Text that a spreadsheet would read as a formula starts with an apostrophe.",
+          parameters: queryParameters(UsageQuerySchema),
+          responses: {
+            "200": {
+              description: "The rows as CSV.",
+              content: { "text/csv": { schema: { type: "string" } } },
+            },
+            "400": errorResponse("Invalid query or time range."),
+            ...authErrors,
+            "403": errorResponse("The caller is not in the team or the org asked for."),
           },
         },
       },

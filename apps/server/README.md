@@ -28,6 +28,16 @@ The selfhost HTTP API, specified in
   `item_id`, `from` and `to`. `format=text` returns the plain text the CLI and the MCP tool
   print: each decision's id, who, verdict, reason and links.
 
+- `GET /v1/usage`: tokens, cost, sessions and pull requests opened and merged, grouped by one or
+  two of `team`, `person`, `agent`, `model` and `day` (`group_by=person`, `group_by=day,model`),
+  with filters `team`, `person`, `agent`, `model` (`unknown` matches events with none), `from`
+  and `to` (default: the 30 days before now) applied to every row and to the total. `GET
+  /v1/usage.csv` returns the same rows as CSV. See [Usage](#usage).
+
+The server also serves the web console ([`apps/console`](../console/README.md)) at `/` and every
+other path outside `/v1`, with no token: the pages hold no data, and what they show comes from
+`/v1` with the reader's own token. See [Console](#console).
+
 Every route except `/v1/health`, `/v1/join` and `/v1/github/webhooks` needs
 `Authorization: Bearer <token>`. The admin
 token is `SELFHOST_TOKEN` when set; otherwise the server generates one on first start, saves it
@@ -126,6 +136,63 @@ OpenAI or any other provider, and serving a request opens no connection other th
 database (and, for a signed GitHub App delivery, to the GitHub API): agents keep calling their vendors directly under each developer's own login, and
 selfhost never asks for or stores those logins or provider keys. `test/teams.test.ts` checks that vendor API paths are not served and that
 serving team requests opens no connection.
+
+## Usage
+
+`GET /v1/usage` reads the ledger's events with one SQL query per view, on Postgres or the
+embedded database alone, whatever source wrote them: OpenTelemetry, local logs, hooks, the
+gateway and vendor admin data all land as the same event kinds, so nothing here knows about
+sources.
+
+- Spend (`usd`, the four token counts and `tokens`, `requests`) adds up `cost.recorded` events.
+  A session (agent and `session_id`) that more than one source reports counts the events of
+  one, in the order `otel`, `local_log`, `hook`, `gateway`, `vendor_api`, as `selfhost spend`
+  and the team overview count it, so a team's total equals its overview's spend.
+- `sessions` counts distinct sessions with a `session.started`, `session.ended`,
+  `prompt.submitted` or `cost.recorded` event in the range. A session counts once in every row
+  its events fall in (a session over midnight is in two days) and once in the total, so rows
+  can add up to more than the total. Hook events name no model, so they do not put a session in
+  the `unknown` model when its other events name one.
+- `prs_opened` and `prs_merged` count distinct pull request URLs of `pr.opened` and `pr.merged`
+  events in the range, so a pull request a scan and the webhook both report counts once. Their
+  agent and model are the attribution from [`packages/attribution`](../../packages/attribution).
+- An event's team is the team that owns its repo (or its run's repo) in the org, else the team
+  of the person token that wrote it, read now, as the overview reads it. `org` picks the org
+  (default: the person token's, or `default` with the admin token).
+
+Who sees what follows the roles: a person token sees every team of its org it is in (what each
+team's overview already shows them), and a `team` filter for another team answers 403. The admin
+token sees every team of the org and the events with no team, such as a laptop's. The CSV has
+a header line with the grouped dimensions and the metrics, then one line per row of the JSON
+view; text a spreadsheet would run as a formula starts with an apostrophe.
+
+`test/usage.test.ts` seeds a ledger and checks every grouping under every filter, the totals
+and the CSV against SQL written directly on the events table, on PGlite and on Postgres when
+`DATABASE_URL` is set.
+
+## Console
+
+The built console is found in `SELFHOST_CONSOLE_DIR`, else `console/` beside the server bundle
+(`pnpm build` and the Docker image copy `apps/console/dist` there), else `apps/console/dist` in
+a checkout. Without one `/` says the console is not built; `SELFHOST_CONSOLE=off` serves `/v1`
+only. Its pages are sent with a content security policy that allows only the console's own
+scripts and requests to this server.
+
+How people sign in to it:
+
+- **On a laptop**, `selfhost console` starts this server on the local ledger at
+  `http://127.0.0.1:4400/` and opens `/#token=<admin token>`. The console keeps the token in the
+  browser's localStorage and takes it out of the address bar; a fragment is never sent to a
+  server. Nothing else is needed on localhost.
+- **On a team server**, each person pastes their own token (a person token from `selfhost team
+  join`, kept in `~/.selfhost/config.json`, or the admin token) and sees what that token reads.
+- **With a sign-in proxy** (`compose.signin.yml`, see
+  [`deploy/docker`](../../deploy/docker/README.md)), no token is needed: set
+  `SELFHOST_SIGNIN_PROXY_SECRET` (32 characters or more) on the server and have the proxy send
+  it in `X-Selfhost-Proxy-Secret` with the signed-in email in `X-Selfhost-Email`. Only then, and
+  only for GET requests under `/v1` with no bearer token, does the server read as the person
+  whose id is that email (ignoring case) and who still holds a person token; anyone else gets
+  403. The proxy must drop both headers from what clients send. Writes always need a token.
 
 ## GitHub App
 
@@ -274,3 +341,6 @@ Environment:
 | `SELFHOST_GITHUB_WEBHOOK_SECRET`   | unset              | The App's webhook secret.                                                                                  |
 | `SELFHOST_GITHUB_TEAM`             | unset              | Team whose stored `selfhost.toml` sets `[review]` for GitHub, and whose review items pick the owner.       |
 | `SELFHOST_PUBLIC_URL`              | unset              | This server's URL as people reach it, for trace links in the brief. Unset uses the delivery's origin.      |
+| `SELFHOST_CONSOLE`                 | on                 | `off` serves `/v1` only, no web console at `/`.                                                            |
+| `SELFHOST_CONSOLE_DIR`             | unset              | The built console to serve at `/`. Unset uses the one built into the server.                               |
+| `SELFHOST_SIGNIN_PROXY_SECRET`     | unset              | Turns on console sign-in through a proxy that sends it with the signed-in email. See [Console](#console).  |

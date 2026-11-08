@@ -10,6 +10,7 @@ import {
 import { registerAlerts } from "./alerts/commands.js";
 import { registerBrief } from "./brief.js";
 import { defaultConfigPath } from "./config-file.js";
+import { registerConsole } from "./console.js";
 import { registerContext } from "./context/commands.js";
 import { registerDecisions } from "./decisions.js";
 import { doctor } from "./doctor.js";
@@ -69,6 +70,10 @@ export interface CliDeps {
   exec?: Exec;
   /** Waits between polls in `selfhost up`. */
   sleep?: (ms: number) => Promise<void>;
+  /** Opens the console in a browser for `selfhost console`. Default: the system's opener. */
+  openBrowser?: (url: string, platform: NodeJS.Platform) => void;
+  /** Resolves when `selfhost console` should stop. Default: Ctrl-C or SIGTERM. */
+  untilStopped?: () => Promise<void>;
 }
 
 /** `--json` errors: printed on stdout so a script always gets JSON back. */
@@ -450,6 +455,19 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
       exec: deps.exec ?? systemExec,
       sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
+    }),
+    fail,
+  );
+
+  registerConsole(
+    program,
+    () => ({
+      env: deps.env,
+      platform: deps.platform,
+      write: deps.write,
+      version: VERSION,
+      ...(deps.openBrowser ? { openBrowser: deps.openBrowser } : {}),
+      ...(deps.untilStopped ? { untilStopped: deps.untilStopped } : {}),
     }),
     fail,
   );
