@@ -152,7 +152,7 @@ function readPolicy(
 }
 
 /** The resolved policy, or an error listing every problem as file:line: field: message. */
-function loadPolicy(
+export function loadPolicy(
   cwd: string,
   flag: string | undefined,
   io: PolicyIo,
@@ -166,7 +166,7 @@ function loadPolicy(
   return { location, config: result.config };
 }
 
-function checkTeam(config: ResolvedSelfhostConfig, team: string | undefined): void {
+export function checkTeam(config: ResolvedSelfhostConfig, team: string | undefined): void {
   if (team === undefined || Object.hasOwn(config.teams, team)) return;
   const known = Object.keys(config.teams);
   throw new Error(

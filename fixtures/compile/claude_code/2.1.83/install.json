@@ -1,0 +1,18 @@
+{
+  "files": [
+    {
+      "name": "managed-settings.d/selfhost.json",
+      "description": "Claude Code managed settings: permission rules, MCP and model allow lists, and hooks that run selfhost hook.",
+      "install": {
+        "kind": "system",
+        "paths": {
+          "darwin": "/Library/Application Support/ClaudeCode/managed-settings.d/selfhost.json",
+          "linux": "/etc/claude-code/managed-settings.d/selfhost.json",
+          "win32": "C:\\Program Files\\ClaudeCode\\managed-settings.d\\selfhost.json"
+        },
+        "mode": "0644"
+      }
+    }
+  ],
+  "calls": []
+}

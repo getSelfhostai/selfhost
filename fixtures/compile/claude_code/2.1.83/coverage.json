@@ -1,0 +1,155 @@
+{
+  "vendor": {
+    "vendor": "claude_code",
+    "version": "2.1.83",
+    "docs": [
+      "https://code.claude.com/docs/en/settings",
+      "https://code.claude.com/docs/en/permissions",
+      "https://code.claude.com/docs/en/settings-reference",
+      "https://code.claude.com/docs/en/hooks"
+    ],
+    "notes": [
+      "Managed settings apply to every project on the machine, and a deny rule from any settings file wins over an allow.",
+      "Claude Code's docs say Bash rules match the command as written, not the program: git -C . push and sh -c '...' get past a Bash(git push *) rule. The selfhost hook checks every Bash call as well.",
+      "The hooks run the same command selfhost agents configure writes, and Claude Code runs identical handlers once.",
+      "allowManagedMcpServersOnly makes this the only MCP allowlist: allowlists in user and project settings are ignored."
+    ]
+  },
+  "rules": [
+    {
+      "rule_id": "no-force-push",
+      "vendor": "claude_code",
+      "mode": "enforce",
+      "action": "block",
+      "status": "compiled",
+      "native": [
+        "deny: Bash(git push --force *)",
+        "deny: Bash(git push -f *)"
+      ],
+      "hook": "enforce",
+      "detail": "Bash rules cover every command the regular expression matches. Claude Code also applies them to each part of a compound command and looks through wrappers such as timeout, so they block a little more."
+    },
+    {
+      "rule_id": "reset-hard",
+      "vendor": "claude_code",
+      "mode": "enforce",
+      "action": "ask",
+      "status": "compiled",
+      "native": [
+        "ask: Bash(git reset --hard*)"
+      ],
+      "hook": "enforce",
+      "detail": "Bash rules cover every command the regular expression matches. Claude Code also applies them to each part of a compound command and looks through wrappers such as timeout, so they block a little more."
+    },
+    {
+      "rule_id": "no-rm-rf",
+      "vendor": "claude_code",
+      "mode": "enforce",
+      "action": "block",
+      "status": "partial",
+      "native": [
+        "deny: Bash(*rm -rf*)"
+      ],
+      "hook": "enforce",
+      "detail": "The regular expression has no ^, and Claude Code matches each command after taking off wrappers such as timeout and leading VAR=value, so rm -rf inside those is missed. The selfhost hook checks the rest."
+    },
+    {
+      "rule_id": "no-curl-pipe",
+      "vendor": "claude_code",
+      "mode": "enforce",
+      "action": "block",
+      "status": "not_expressible",
+      "native": [],
+      "hook": "enforce",
+      "detail": "Claude Code matches commands by prefix and * wildcards, and the regular expression uses quantifier .*. The selfhost hook checks it."
+    },
+    {
+      "rule_id": "env-files",
+      "vendor": "claude_code",
+      "mode": "enforce",
+      "action": "block",
+      "status": "partial",
+      "native": [
+        "deny: Read(./**/.env*)",
+        "deny: Edit(./**/.env*)"
+      ],
+      "hook": "enforce",
+      "detail": "Claude Code reads ./ from the folder a session starts in and selfhost reads paths from the repository root, so a session started in a subfolder is missed. The selfhost hook checks the rest."
+    },
+    {
+      "rule_id": "infra-edits",
+      "vendor": "claude_code",
+      "mode": "enforce",
+      "action": "ask",
+      "status": "partial",
+      "native": [
+        "ask: Edit(./infra/**)"
+      ],
+      "hook": "enforce",
+      "detail": "Claude Code reads ./ from the folder a session starts in and selfhost reads paths from the repository root, so a session started in a subfolder is missed. Edit rules also cover Write and NotebookEdit. The selfhost hook checks the rest."
+    },
+    {
+      "rule_id": "no-paste-sites",
+      "vendor": "claude_code",
+      "mode": "enforce",
+      "action": "block",
+      "status": "not_expressible",
+      "native": [],
+      "hook": "enforce",
+      "detail": "WebFetch domain wildcards need Claude Code 2.1.172 or later. The selfhost hook checks it."
+    },
+    {
+      "rule_id": "no-web-search",
+      "vendor": "claude_code",
+      "mode": "observe",
+      "action": "block",
+      "status": "compiled",
+      "native": [],
+      "hook": "record",
+      "detail": "Observe mode: nothing native is written until the rule is enforced. A bare WebSearch rule covers every call to the tool. The selfhost hook records its hits."
+    },
+    {
+      "rule_id": "codex-npm-publish",
+      "vendor": "claude_code",
+      "mode": "enforce",
+      "action": "block",
+      "status": "not_applicable",
+      "native": [],
+      "hook": "none",
+      "detail": "The rule is only for Codex."
+    },
+    {
+      "rule_id": "retired",
+      "vendor": "claude_code",
+      "mode": "off",
+      "action": "block",
+      "status": "not_applicable",
+      "native": [],
+      "hook": "none",
+      "detail": "Mode off."
+    },
+    {
+      "rule_id": "mcp.allow",
+      "vendor": "claude_code",
+      "mode": "enforce",
+      "action": "block",
+      "status": "compiled",
+      "native": [
+        "allowedMcpServers: github",
+        "allowedMcpServers: linear"
+      ],
+      "hook": "enforce",
+      "detail": "allowedMcpServers, made the only MCP allowlist by allowManagedMcpServersOnly, blocks every other server name. Like selfhost, it trusts the name the user gave the server."
+    },
+    {
+      "rule_id": "models.allow",
+      "vendor": "claude_code",
+      "mode": "observe",
+      "action": "block",
+      "status": "partial",
+      "native": [],
+      "hook": "record",
+      "detail": "Observe mode: nothing native is written until the rule is enforced. Before 2.1.283, availableModels lets a listed id through with every later version that extends it. The selfhost hook records its hits."
+    }
+  ]
+}

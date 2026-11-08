@@ -1,0 +1,6 @@
+{
+  "mcpAllowlist": [
+    "github:*",
+    "linear:*"
+  ]
+}

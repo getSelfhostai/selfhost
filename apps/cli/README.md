@@ -203,6 +203,20 @@ echo, grep or rg. The window is whole UTC days through today. `--json` prints th
 `selfhost.review_item/v1` item of kind `policy_report`; its id depends only on the window, so
 the same week gives the same item.
 
+`selfhost policy compile [--vendor <name...>] [--target <vendor@version...>] [--out <dir>] [--apply] [--team <name>] [--json]`
+compiles the rules into each vendor's own controls (see
+[`packages/compile`](../../packages/compile/README.md)): a Claude Code `managed-settings.d`
+fragment, Codex `requirements.toml` with a managed hook script, Cursor's enterprise `hooks.json`,
+team rule text and MCP allowlist, and Copilot's enterprise `managed-settings.json` with the
+GitHub API call that stores it. Files go to `--out` (default `.selfhost/compiled` in the
+repository) and it prints a table of every rule per vendor: `compiled` (the vendor's settings
+cover every call the rule matches), `partial`, `none` (the vendor can't express it) or `n/a`,
+with `+hook` where the selfhost hook checks the rest, then each gap and why. Nothing is
+installed. `--apply` writes `.ruler/selfhost-policy.md` and runs Ruler in the repository to
+update `AGENTS.md` and `CLAUDE.md` (refusing when they were written by hand and there is no
+`.ruler/` yet), makes the GitHub API call when `--github-org` and `GITHUB_TOKEN` are given, and
+prints the `sudo install` commands for the system paths. selfhost never runs those itself.
+
 ### Policy test files
 
 A test file is TOML: an optional `config`, the `selfhost.toml` it tests relative to the test file,
@@ -236,8 +250,8 @@ and actual decision and its hits.
 ### Presets
 
 [`presets/`](../../presets) holds four starting points, each with its own test file. Every one
-starts with the editor schema line below and leaves a commented `[guardrails]` line where the
-built-in guardrails are switched on.
+starts with the editor schema line below and sets the built-in guardrails in its `[guardrails]`
+section (enforced; `irreversible` leaves `git reset --hard` to an observe rule).
 
 | Preset         | What it enforces                                                                                                                                   |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |

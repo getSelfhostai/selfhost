@@ -1,0 +1,108 @@
+# Codex requirements from selfhost.toml, written by selfhost policy compile.
+# Change selfhost.toml and compile again instead of editing this file.
+
+[features]
+hooks = true
+
+[rules]
+prefix_rules = [
+  { pattern = [{ token = "git" }, { token = "push" }, { token = "--force" }], decision = "forbidden", justification = "Force pushes are blocked. Push a new commit instead." },
+  { pattern = [{ token = "git" }, { token = "push" }, { token = "-f" }], decision = "forbidden", justification = "Force pushes are blocked. Push a new commit instead." },
+  { pattern = [{ token = "git" }, { token = "reset" }, { token = "--hard" }], decision = "prompt", justification = "git reset --hard drops uncommitted work." },
+  { pattern = [{ token = "npm" }, { token = "publish" }], decision = "forbidden", justification = "Publishing happens in CI." },
+]
+
+[hooks]
+managed_dir = "/etc/codex/hooks"
+windows_managed_dir = "C:\\ProgramData\\OpenAI\\Codex\\hooks"
+
+[[hooks.SessionStart]]
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = "/etc/codex/hooks/selfhost-hook"
+command_windows = "selfhost hook codex"
+
+[[hooks.SessionEnd]]
+
+[[hooks.SessionEnd.hooks]]
+type = "command"
+command = "/etc/codex/hooks/selfhost-hook"
+command_windows = "selfhost hook codex"
+
+[[hooks.UserPromptSubmit]]
+
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = "/etc/codex/hooks/selfhost-hook"
+command_windows = "selfhost hook codex"
+
+[[hooks.PreToolUse]]
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "/etc/codex/hooks/selfhost-hook"
+command_windows = "selfhost hook codex"
+
+[[hooks.PermissionRequest]]
+
+[[hooks.PermissionRequest.hooks]]
+type = "command"
+command = "/etc/codex/hooks/selfhost-hook"
+command_windows = "selfhost hook codex"
+
+[[hooks.PostToolUse]]
+
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = "/etc/codex/hooks/selfhost-hook"
+command_windows = "selfhost hook codex"
+
+[[hooks.PostModelRequest]]
+
+[[hooks.PostModelRequest.hooks]]
+type = "command"
+command = "/etc/codex/hooks/selfhost-hook"
+command_windows = "selfhost hook codex"
+
+[[hooks.Stop]]
+
+[[hooks.Stop.hooks]]
+type = "command"
+command = "/etc/codex/hooks/selfhost-hook"
+command_windows = "selfhost hook codex"
+
+[[hooks.SubagentStart]]
+
+[[hooks.SubagentStart.hooks]]
+type = "command"
+command = "/etc/codex/hooks/selfhost-hook"
+command_windows = "selfhost hook codex"
+
+[[hooks.SubagentStop]]
+
+[[hooks.SubagentStop.hooks]]
+type = "command"
+command = "/etc/codex/hooks/selfhost-hook"
+command_windows = "selfhost hook codex"
+
+[[hooks.PreCompact]]
+
+[[hooks.PreCompact.hooks]]
+type = "command"
+command = "/etc/codex/hooks/selfhost-hook"
+command_windows = "selfhost hook codex"
+
+[[hooks.PostCompact]]
+
+[[hooks.PostCompact.hooks]]
+type = "command"
+command = "/etc/codex/hooks/selfhost-hook"
+command_windows = "selfhost hook codex"
+
+[[hooks.Interrupt]]
+
+[[hooks.Interrupt.hooks]]
+type = "command"
+command = "/etc/codex/hooks/selfhost-hook"
+command_windows = "selfhost hook codex"

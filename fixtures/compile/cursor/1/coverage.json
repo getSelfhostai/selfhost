@@ -1,0 +1,142 @@
+{
+  "vendor": {
+    "vendor": "cursor",
+    "version": "1",
+    "docs": [
+      "https://cursor.com/docs/hooks",
+      "https://cursor.com/docs/rules",
+      "https://cursor.com/docs/enterprise/model-and-integration-management",
+      "https://cursor.com/docs/cli/reference/permissions"
+    ],
+    "notes": [
+      "The enterprise hooks.json applies to every user on the machine. Cursor runs hooks fail-open: a crash or timeout lets the call through unless failClosed is set, which selfhost leaves off. If selfhost agents configure also wrote ~/.cursor/hooks.json, Cursor runs both.",
+      "Team rules, team hooks and the MCP allowlist live in the Cursor dashboard (Teams and Enterprise) with no API. Not checked against a Cursor Teams account.",
+      "Cursor's MCP tool names (MCP:<tool>) carry no server, so rules naming mcp__<server>__<tool> never match in Cursor."
+    ]
+  },
+  "rules": [
+    {
+      "rule_id": "no-force-push",
+      "vendor": "cursor",
+      "mode": "enforce",
+      "action": "block",
+      "status": "not_expressible",
+      "native": [],
+      "hook": "enforce",
+      "detail": "Cursor has no admin-managed deny list for commands: the team dashboard sets run modes and has no API, and cli-config.json permissions are per user and CLI only. The selfhost hook checks it."
+    },
+    {
+      "rule_id": "reset-hard",
+      "vendor": "cursor",
+      "mode": "enforce",
+      "action": "ask",
+      "status": "not_expressible",
+      "native": [],
+      "hook": "enforce",
+      "detail": "Cursor has no admin-managed deny list for commands: the team dashboard sets run modes and has no API, and cli-config.json permissions are per user and CLI only. The selfhost hook checks it."
+    },
+    {
+      "rule_id": "no-rm-rf",
+      "vendor": "cursor",
+      "mode": "enforce",
+      "action": "block",
+      "status": "not_expressible",
+      "native": [],
+      "hook": "enforce",
+      "detail": "Cursor has no admin-managed deny list for commands: the team dashboard sets run modes and has no API, and cli-config.json permissions are per user and CLI only. The selfhost hook checks it."
+    },
+    {
+      "rule_id": "no-curl-pipe",
+      "vendor": "cursor",
+      "mode": "enforce",
+      "action": "block",
+      "status": "not_expressible",
+      "native": [],
+      "hook": "enforce",
+      "detail": "Cursor has no admin-managed deny list for commands: the team dashboard sets run modes and has no API, and cli-config.json permissions are per user and CLI only. The selfhost hook checks it."
+    },
+    {
+      "rule_id": "env-files",
+      "vendor": "cursor",
+      "mode": "enforce",
+      "action": "block",
+      "status": "not_expressible",
+      "native": [],
+      "hook": "enforce",
+      "detail": "Cursor has no admin-managed deny list for files: the team dashboard sets run modes and has no API, and cli-config.json permissions are per user and CLI only. The selfhost hook checks it."
+    },
+    {
+      "rule_id": "infra-edits",
+      "vendor": "cursor",
+      "mode": "enforce",
+      "action": "ask",
+      "status": "not_applicable",
+      "native": [],
+      "hook": "none",
+      "detail": "Edit is another agent's tool name: Cursor reports this tool as Write or Delete."
+    },
+    {
+      "rule_id": "no-paste-sites",
+      "vendor": "cursor",
+      "mode": "enforce",
+      "action": "block",
+      "status": "not_expressible",
+      "native": [],
+      "hook": "none",
+      "detail": "Cursor's hooks don't name a fetch tool, so neither a native rule nor the selfhost hook sees the URL. Nothing checks it on Cursor."
+    },
+    {
+      "rule_id": "no-web-search",
+      "vendor": "cursor",
+      "mode": "observe",
+      "action": "block",
+      "status": "not_expressible",
+      "native": [],
+      "hook": "record",
+      "detail": "Observe mode: nothing native is written until the rule is enforced. Cursor has no admin-managed deny list for tools: the team dashboard sets run modes and has no API, and cli-config.json permissions are per user and CLI only. The selfhost hook records its hits."
+    },
+    {
+      "rule_id": "codex-npm-publish",
+      "vendor": "cursor",
+      "mode": "enforce",
+      "action": "block",
+      "status": "not_applicable",
+      "native": [],
+      "hook": "none",
+      "detail": "The rule is only for Codex."
+    },
+    {
+      "rule_id": "retired",
+      "vendor": "cursor",
+      "mode": "off",
+      "action": "block",
+      "status": "not_applicable",
+      "native": [],
+      "hook": "none",
+      "detail": "Mode off."
+    },
+    {
+      "rule_id": "mcp.allow",
+      "vendor": "cursor",
+      "mode": "enforce",
+      "action": "block",
+      "status": "partial",
+      "native": [
+        "mcpAllowlist: github:*",
+        "mcpAllowlist: linear:*"
+      ],
+      "hook": "enforce",
+      "detail": "~/.cursor/permissions.json sits in each user's home, so it holds only where device management delivers and locks it, and a dashboard MCP allowlist replaces it. The selfhost hook checks the rest."
+    },
+    {
+      "rule_id": "models.allow",
+      "vendor": "cursor",
+      "mode": "observe",
+      "action": "block",
+      "status": "not_expressible",
+      "native": [],
+      "hook": "none",
+      "detail": "Observe mode: nothing native is written until the rule is enforced. Cursor sets model access in the team dashboard, which selfhost does not write, and its hooks don't report the model. Nothing checks it on Cursor."
+    }
+  ]
+}

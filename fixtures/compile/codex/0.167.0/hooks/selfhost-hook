@@ -1,0 +1,3 @@
+#!/bin/sh
+# Runs selfhost's hook for Codex. requirements.toml points Codex's managed hooks here.
+exec selfhost hook codex

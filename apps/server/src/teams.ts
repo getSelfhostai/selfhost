@@ -14,6 +14,7 @@ import {
   type JoinResponse,
   type MeResponse,
   type Person,
+  PolicyCoverageQuerySchema,
   PolicyQuerySchema,
   parseConfig,
   type RevokeTokensResponse,
@@ -24,7 +25,7 @@ import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { requireBearerToken } from "./auth.js";
 import { eventRoutes, MAX_BODY_BYTES } from "./events.js";
-import { policyResponse } from "./policy.js";
+import { policyCoverageResponse, policyResponse } from "./policy.js";
 
 export interface TeamRouteOptions {
   ledger: Ledger;
@@ -50,6 +51,7 @@ const createInviteBody = createValidator(CreateInviteRequestSchema);
 const joinBody = createValidator(JoinRequestSchema);
 const setPolicyBody = createValidator(SetPolicyRequestSchema);
 const policyQuery = createValidator(PolicyQuerySchema);
+const coverageQuery = createValidator(PolicyCoverageQuerySchema);
 
 const apiError = (code: string, message: string): ApiError => ({ error: { code, message } });
 
@@ -107,7 +109,7 @@ export function teamRoutes(app: Hono, { ledger, token, personRoutes }: TeamRoute
     c.json(
       apiError(
         "forbidden",
-        "A person token can write and read its team's events, read and act on its team's review items, read /v1/me and its team's policy, and revoke itself. This route needs the admin token.",
+        "A person token can write and read its team's events, read and act on its team's review items, read /v1/me and its team's policy and its coverage, and revoke itself. This route needs the admin token.",
       ),
       403,
     ),
@@ -159,6 +161,18 @@ export function teamRoutes(app: Hono, { ledger, token, personRoutes }: TeamRoute
     if (!policy) return noPolicy(c, own.team);
     const { person: who = own.id, agent } = query.value;
     return c.json(policyResponse(policy, { team: own.team, person: who, agent }));
+  });
+
+  person.get("/v1/policy/coverage", async (c) => {
+    const query = coverageQuery.validate(c.req.query());
+    if (!query.ok) return invalidQuery(c, query.errors);
+    const own = c.env.person;
+    if (query.value.team !== undefined && query.value.team !== own.team) {
+      return c.json(apiError("forbidden", "A person token reads only its own team's policy"), 403);
+    }
+    const policy = await teams.getPolicy(own.team);
+    if (!policy) return noPolicy(c, own.team);
+    return c.json(policyCoverageResponse(policy, query.value.vendor));
   });
 
   person.put("/v1/policy", limit(POLICY_BODY_BYTES), async (c) => {
@@ -264,6 +278,18 @@ export function teamRoutes(app: Hono, { ledger, token, personRoutes }: TeamRoute
     const policy = await teams.getPolicy(team);
     if (!policy) return noPolicy(c, team);
     return c.json(policyResponse(policy, { team, person: who, agent }));
+  });
+
+  app.get("/v1/policy/coverage", adminOnly, async (c) => {
+    const query = coverageQuery.validate(c.req.query());
+    if (!query.ok) return invalidQuery(c, query.errors);
+    const { team, vendor } = query.value;
+    if (team === undefined) {
+      return c.json(apiError("invalid_query", "team: Required with the admin token"), 400);
+    }
+    const policy = await teams.getPolicy(team);
+    if (!policy) return noPolicy(c, team);
+    return c.json(policyCoverageResponse(policy, vendor));
   });
 
   app.put("/v1/policy", adminOnly, limit(POLICY_BODY_BYTES), async (c) => {

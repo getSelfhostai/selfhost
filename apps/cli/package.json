@@ -29,6 +29,7 @@
     "@selfhost/agents": "workspace:*",
     "@selfhost/attribution": "workspace:*",
     "@selfhost/brief": "workspace:*",
+    "@selfhost/compile": "workspace:*",
     "@selfhost/deploy": "workspace:*",
     "@selfhost/ee-risk": "workspace:*",
     "@selfhost/importers": "workspace:*",

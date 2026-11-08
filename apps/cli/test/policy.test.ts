@@ -65,6 +65,7 @@ describe("selfhost policy", () => {
       "observe",
       "promote",
       "report",
+      "compile",
     ]);
   });
 });

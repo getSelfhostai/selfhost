@@ -601,6 +601,56 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /v1/policy/coverage:
+    get:
+      operationId: getPolicyCoverage
+      summary: Get what each vendor's native controls cover of the team's rules.
+      description: "Compiles the team's selfhost.toml the way selfhost policy compile does and returns the coverage of every rule per vendor: compiled, partial, not_expressible or not_applicable, and whether the selfhost hook covers the rest."
+      parameters:
+        - name: team
+          in: query
+          required: false
+          description: Team id on a team server. Needed with the admin token; a person token reads its own team.
+          schema:
+            type: string
+        - name: vendor
+          in: query
+          required: false
+          description: Only this vendor's coverage.
+          schema:
+            type: string
+            enum:
+              - claude_code
+              - codex
+              - cursor
+              - copilot
+      responses:
+        "200":
+          description: Coverage per rule and vendor.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PolicyCoverageResponse"
+        "400":
+          description: Invalid query, or no team given with the admin token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: A person token asked for another team's policy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such team, or the team has no policy yet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /v1/teams:
     post:
       operationId: createTeam
@@ -1256,6 +1306,134 @@ components:
                 default: false
                 description: true when the matched action cannot be undone, which raises review risk.
                 type: boolean
+    PolicyCoverageResponse:
+      additionalProperties: false
+      title: PolicyCoverageResponse
+      description: "What selfhost policy compile would write for the team's selfhost.toml: per rule and vendor, whether the vendor's native controls express it and whether the selfhost hook covers the rest."
+      type: object
+      required:
+        - hash
+        - team
+        - coverage
+      properties:
+        hash:
+          description: sha256 of the selfhost.toml text compiled.
+          type: string
+        team:
+          description: Team id.
+          type: string
+        coverage:
+          additionalProperties: false
+          title: PolicyCoverage
+          type: object
+          required:
+            - schema
+            - team
+            - vendors
+            - rules
+          properties:
+            schema:
+              const: selfhost.policy_coverage/v1
+              type: string
+            team:
+              description: Team whose overrides were applied, or null.
+              anyOf:
+                - type: string
+                - type: "null"
+            vendors:
+              type: array
+              items:
+                additionalProperties: false
+                title: VendorCoverage
+                type: object
+                required:
+                  - vendor
+                  - version
+                  - docs
+                  - notes
+                properties:
+                  vendor:
+                    type: string
+                    enum:
+                      - claude_code
+                      - codex
+                      - cursor
+                      - copilot
+                  version:
+                    description: Vendor config version the output targets.
+                    type: string
+                  docs:
+                    description: Vendor docs the mapping follows.
+                    type: array
+                    items:
+                      type: string
+                  notes:
+                    description: Side effects and checks still open for this vendor.
+                    type: array
+                    items:
+                      type: string
+            rules:
+              description: "One entry per rule and vendor, in rule order then vendor order: rules in file order, then mcp.allow, then models.allow."
+              type: array
+              items:
+                additionalProperties: false
+                title: RuleCoverage
+                type: object
+                required:
+                  - rule_id
+                  - vendor
+                  - mode
+                  - action
+                  - status
+                  - native
+                  - hook
+                  - detail
+                properties:
+                  rule_id:
+                    description: Rule id, or mcp.allow and models.allow.
+                    type: string
+                  vendor:
+                    type: string
+                    enum:
+                      - claude_code
+                      - codex
+                      - cursor
+                      - copilot
+                  mode:
+                    description: Mode after the team's overrides.
+                    type: string
+                    enum:
+                      - observe
+                      - enforce
+                      - off
+                  action:
+                    type: string
+                    enum:
+                      - block
+                      - ask
+                  status:
+                    description: What the vendor's native controls express once the rule is enforced. Observe rules write nothing native.
+                    type: string
+                    enum:
+                      - compiled
+                      - partial
+                      - not_expressible
+                      - not_applicable
+                  native:
+                    description: Native entries written for the rule, like Bash(git push --force*). Empty when nothing is written.
+                    type: array
+                    items:
+                      type: string
+                  hook:
+                    description: What the selfhost pre-tool hook does for the rule on this vendor.
+                    type: string
+                    enum:
+                      - enforce
+                      - record
+                      - none
+                  detail:
+                    description: Why, and what is left uncovered.
+                    type: string
     SetPolicyRequest:
       additionalProperties: false
       title: SetPolicyRequest
