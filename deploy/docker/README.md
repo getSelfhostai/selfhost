@@ -76,22 +76,41 @@ the laptop of whoever runs the team, never on the laptops agents run on):
 curl -H "Authorization: Bearer <SELFHOST_TOKEN>" "http://<server>:4400/v1/events?limit=20"
 ```
 
-## Upgrade
-
-Take a backup, set `SELFHOST_VERSION` in `.env` to the new release, then run one command:
+## Upgrade and roll back
 
 ```sh
-docker compose pull && docker compose up -d
+./upgrade.sh 0.2.0     # the SELFHOST_VERSION to run, newer or older
 ```
 
-Compose replaces only the containers whose image or settings changed. The new server runs any
-pending migrations when it starts. Events live in the `selfhost_postgres-data` volume, which an
-upgrade never touches. When a release also moves a pinned image or the collector config, pull the
-new release's files first (`git pull`). If you build from source, the command is
-`git pull && docker compose up -d --build`.
+[`upgrade.sh`](./upgrade.sh) is the one command for both directions:
 
-To roll back, set the previous `SELFHOST_VERSION` and run the same command. If the newer release
-added migrations, restore the backup you took before upgrading instead.
+1. It takes a backup with `backup.sh`.
+2. Going back to a release that knows fewer migrations than the database has, the running
+   release rolls them back with their down migrations (only it has them).
+3. The target release applies its pending migrations in a one-off container
+   (`node dist/migrate.js`) while the running release keeps serving. They run in one transaction:
+   if one fails, the database stays at the version it had, `.env` keeps naming the running
+   release, and the script stops with `... keeps running`.
+4. It sets `SELFHOST_VERSION` in `.env`, and the new server replaces the running one.
+
+Events live in the `selfhost_postgres-data` volume, which an upgrade never touches. When a
+release also moves a pinned image or the collector config, pull the new release's files first
+(`git pull`). If you build from source, build the target image first (`SELFHOST_VERSION=<version>
+docker compose build selfhost`); upgrade.sh only pulls an image it does not have.
+
+Every migration ships with a rollback, but rolling back drops what the newer release added (a
+new table's rows, a new column's values), so after a rollback the backup from step 1 is the
+complete copy. A server never starts on a schema newer than it knows: it stops with `The database
+schema is newer than this release` instead, which is what you see if you set an older
+`SELFHOST_VERSION` by hand without `upgrade.sh`. By hand, the same steps are:
+
+```sh
+./backup.sh
+docker compose run --rm --no-deps selfhost node dist/migrate.js --status    # where the schema is
+docker compose run --rm --no-deps selfhost node dist/migrate.js --to 0008   # down (or up) to 0008
+SELFHOST_VERSION=0.2.0 docker compose run --rm --no-deps selfhost node dist/migrate.js
+# then set SELFHOST_VERSION=0.2.0 in .env and: docker compose up -d
+```
 
 ## Back up
 
@@ -101,13 +120,22 @@ added migrations, restore the backup you took before upgrading instead.
 ```
 
 `backup.sh` runs `pg_dump --format=custom` inside the `postgres` container while the stack keeps
-running. The dump is one consistent snapshot, and the script prints how many events it holds.
-Copy the file off the server, and keep a copy of `.env` too, so agents keep working with the same
-tokens after a restore. `install.sh` (and so `selfhost up`) schedules it daily with a systemd timer
-and deletes backups older than `SELFHOST_BACKUP_KEEP_DAYS` (14). By hand, a nightly cron entry:
+running. The dump is one consistent snapshot. It prints the rows of every table
+(`rows: events=1204 people=6 ...`), counted right after the dump. Copy the file off the server,
+and keep a copy of `.env` too, so agents keep working with the same tokens after a restore.
+`install.sh` (and so `selfhost up`) schedules it daily with a systemd timer and deletes backups
+older than `SELFHOST_BACKUP_KEEP_DAYS` (14). By hand, a nightly cron entry:
 
 ```cron
 0 3 * * * /opt/selfhost/deploy/docker/backup.sh >> /var/log/selfhost-backup.log 2>&1
+```
+
+From a laptop with the selfhost CLI, one command runs it over SSH and copies the dump back, which
+is how to get the daily backups of a `selfhost up` server off it:
+
+```sh
+selfhost ledger backup --host root@203.0.113.10                      # ./selfhost-<UTC time>.dump
+selfhost ledger backup --host ubuntu@203.0.113.10 -i ~/.ssh/key off-site/selfhost.dump
 ```
 
 The same by hand:
@@ -118,18 +146,24 @@ docker compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES
 
 ## Restore into a fresh install
 
-1. Install as above on the new server. Copy the old `.env` over first to keep the same tokens.
+1. Install as above on the new server (or `selfhost up`). Copy the old `.env` over first to keep
+   the same tokens.
 2. `docker compose up -d`, and wait for `docker compose ps` to show every service healthy.
-3. Restore, and compare the event count it prints with the one `backup.sh` printed:
+3. Restore, and compare the `rows:` line it prints with the one `backup.sh` printed:
 
 ```sh
 ./restore.sh /path/to/selfhost-20261107T030000Z.dump
+# or from a laptop, copying the dump to the server over SSH first:
+selfhost ledger restore selfhost-20261107T030000Z.dump --host root@203.0.113.10
 ```
 
 `restore.sh` runs `pg_restore` in a single transaction into a scratch database while the stack
 keeps running, so a bad file leaves the live database as it was. Then it stops `selfhost` and
 `otel-collector`, swaps the restored database in, and starts them again. If the live database
-already holds events it stops and changes nothing; `./restore.sh --force <file>` replaces them.
+already holds events it stops and changes nothing; `./restore.sh --force <file>` (or
+`selfhost ledger restore --force`) replaces them. Restore into the release that made the backup
+or a newer one: the server applies any newer migrations on start, and refuses a backup from a
+newer release.
 
 The same by hand:
 
@@ -140,6 +174,10 @@ docker compose exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTG
 docker compose up -d
 docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT count(*) FROM events"'
 ```
+
+The embedded ledger of a laptop (`selfhost import`, solo mode) backs up the same way without
+`--host`: `selfhost ledger backup` writes a gzipped tar of `~/.selfhost/data`, and
+`selfhost ledger restore <file>` puts it back. See [`apps/cli`](../../apps/cli/README.md).
 
 ## HTTPS and sign-in
 
@@ -262,7 +300,9 @@ turns on sign-in. Until release images are published, pass `--image` with one th
 pull.
 
 If a step fails, it stops and lists every resource it created, with the command that deletes
-each one. Backups stay on the server's disk only: copy them elsewhere as well.
+each one. Backups stay on the server's disk only: copy them elsewhere as well, with
+`selfhost ledger backup --host <user@host>` (see [Back up](#back-up)). Upgrades and restores on
+the server are the same `upgrade.sh` and `restore.sh` as above, in `/opt/selfhost/deploy/docker`.
 
 `--gateway` adds the AI gateway: its two files go over SSH with the sign-in step, which keeps
 the user-data under Hetzner's 32 KB. Provider keys never travel through `selfhost up`: add them
@@ -282,6 +322,7 @@ and budgets the server writes. No provider is called.
 | `otel-collector.yaml`          | Collector config: OTLP receivers, agent token, batching and retries  |
 | `Dockerfile`                   | Server image with the web console, built on `node:22-slim`, non-root |
 | `backup.sh`, `restore.sh`      | `pg_dump` and `pg_restore` wrappers                                  |
+| `upgrade.sh`                   | Moves to another release: backup, migrations checked first, switch   |
 | `compose.tls.yml`, `Caddyfile` | Caddy with HTTPS in front of the API, the collector and the console  |
 | `compose.signin.yml`           | oauth2-proxy: GitHub or Google sign-in for the console               |
 | `compose.gateway.yml`          | Bifrost, the AI gateway, with its database on the same Postgres      |
@@ -290,7 +331,11 @@ and budgets the server writes. No provider is called.
 
 The CI job `compose` in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs all of
 this on a Linux runner: it builds the image, waits for every health check, writes fixture events
-through the API and an OTLP payload through the collector, upgrades to a new image tag and checks
-the events are still there, then backs up, restores into a fresh volume and compares the event
-counts. The repository root's `docker-compose.yml` is separate: Postgres alone, for local
+through the API and an OTLP payload through the collector, upgrades to a new image tag with
+`upgrade.sh` and checks the events are still there, rolls back the same way, checks that a release
+whose migrations fail leaves the running one serving, then backs up, restores into a fresh volume
+and compares the event and row counts. The CI job `upgrade` writes data through the previous
+release's server (this checkout without its newest migration, as no release is tagged yet) on
+the same Postgres version, upgrades, rolls back and upgrades again with the server's
+`dist/migrate.js`, and checks the rows of every table at each step. The repository root's `docker-compose.yml` is separate: Postgres alone, for local
 development.

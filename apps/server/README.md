@@ -49,6 +49,14 @@ Every route except `/v1/health`, `/v1/join` and `/v1/github/webhooks` needs
 token is `SELFHOST_TOKEN` when set; otherwise the server generates one on first start, saves it
 to `<data dir>/token` with mode 0600 and prints it once.
 
+On start the server applies pending ledger migrations, in one transaction, before it listens. A
+database with a migration it does not know (a newer release applied it) stops it with `The
+database schema is newer than this release`, before it changes anything. `node dist/migrate.js`
+runs the migrations alone: with no argument it applies pending ones, `--to <version>` moves the
+schema to that version (down with each newer migration's rollback, or up), and `--status`
+prints where the schema is as JSON. The Docker Compose `upgrade.sh` runs it before it switches
+releases ([`deploy/docker`](../../deploy/docker/README.md#upgrade-and-roll-back)).
+
 ## Teams
 
 Team mode lets laptops share their usage and read one team policy. The admin token stays the

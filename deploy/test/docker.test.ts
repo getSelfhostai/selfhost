@@ -260,8 +260,8 @@ describe("Dockerfile", () => {
   });
 });
 
-describe("backup, restore and install scripts", () => {
-  const scripts = ["backup.sh", "restore.sh", "install.sh"];
+describe("backup, restore, upgrade and install scripts", () => {
+  const scripts = ["backup.sh", "restore.sh", "upgrade.sh", "install.sh"];
 
   it.skipIf(process.platform === "win32")("gateway-config.sh is executable and parses", () => {
     expect(statSync(join(DIR, "gateway-config.sh")).mode & 0o111).toBe(0o111);
@@ -286,6 +286,31 @@ describe("backup, restore and install scripts", () => {
       }
     },
   );
+
+  it("backup.sh and restore.sh count the rows of every table the same way", () => {
+    const rows = (file: string) => /^ROWS_SQL=.*$/m.exec(read(file))?.[0];
+    expect(rows("backup.sh")).toContain("information_schema.tables");
+    expect(rows("restore.sh")).toBe(rows("backup.sh"));
+  });
+
+  it("upgrade.sh backs up and migrates with the new release before it switches to it", () => {
+    const text = read("upgrade.sh");
+    const at = (needle: string) => {
+      const index = text.indexOf(needle);
+      expect(index, needle).toBeGreaterThan(-1);
+      return index;
+    };
+    const backup = at('"$here/backup.sh"');
+    const rollback = at('running --to "$latest"');
+    const migrations = at("\nnext || die");
+    const env = at("printf 'SELFHOST_VERSION=%s\\n' \"$target\"");
+    const up = at("\ncompose up -d\n");
+    expect(backup).toBeLessThan(rollback);
+    expect(rollback).toBeLessThan(migrations);
+    expect(migrations).toBeLessThan(env);
+    expect(env).toBeLessThan(up);
+    expect(text).toContain("compose run --rm --no-deps -T selfhost node dist/migrate.js");
+  });
 
   it("install.sh generates every secret .env.example leaves empty, and keeps the ones .env has", () => {
     const text = read("install.sh");

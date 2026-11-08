@@ -6,7 +6,7 @@ import { defineConfig } from "tsup";
 const CONSOLE_DIST = join(import.meta.dirname, "..", "console", "dist");
 
 export default defineConfig({
-  entry: ["src/main.ts"],
+  entry: ["src/main.ts", "src/migrate.ts"],
   format: "esm",
   target: "node20",
   platform: "node",

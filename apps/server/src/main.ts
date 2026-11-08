@@ -18,10 +18,17 @@ const hostname = process.env.HOST ?? "127.0.0.1";
 const dataDir = resolveDataDir();
 const config = serverConfig();
 
+// Applies pending migrations first. A failed one changes nothing, and a schema newer than this
+// release (SchemaTooNewError) stops the server before it serves a request.
 const ledger = await openLedger({
   url: process.env.DATABASE_URL,
   dataDir,
   redaction: redactionSettings(config),
+}).catch((error: unknown) => {
+  console.error(
+    `selfhost server ${pkg.version} did not start: ${error instanceof Error ? error.message : error}`,
+  );
+  process.exit(1);
 });
 const { token, path, created } = loadApiToken(dataDir);
 if (created) {

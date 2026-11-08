@@ -47,6 +47,29 @@ retention from the ledger (the one `selfhost import` writes, or `--database` / `
 `selfhost import` keeps prompt text only with `--prompts`, and masks secrets and emails either
 way; the ledger drops prompt text from any import without it.
 
+`selfhost ledger status [--json]` prints the ledger's schema version against the migrations this
+release knows (pending ones, and any from a newer release, which this one refuses to run on) and
+the rows of every table. `selfhost ledger migrate [--to <version>] [--json]` applies pending
+migrations, or moves the schema to a version (`0008`, or `0` for none), down with the rollback
+of each newer migration, all in one transaction. Roll back with the newer release before you go
+back to an older one: only it has the newer migrations' rollbacks. Both take `--database` /
+`--data-dir`.
+
+`selfhost ledger backup [file]` and `selfhost ledger restore <file> [--force]` back up and restore:
+
+- The embedded ledger (`--data-dir`, default `~/.selfhost/data`): a gzipped tar of its folder,
+  `selfhost-<UTC time>.tar.gz` here by default. A restore unpacks it next to the ledger and checks
+  it first, so a bad file or one from a newer release changes nothing; then the ledger it replaces
+  is moved to `<data dir>.before-restore-<time>`, not deleted. A ledger that already holds events
+  is replaced only with `--force`. Stop `selfhost import --watch` and `selfhost console` first.
+- A Docker Compose install or a `selfhost up` server, with `--host user@host` (`--port`, `-i`,
+  `--dir`, default `/opt/selfhost/deploy/docker`): over SSH it runs the stack's `backup.sh`
+  (`pg_dump --format=custom`) and copies the dump here with `scp`, or copies a dump there and runs
+  `restore.sh`. Users other than root need `sudo` without a password.
+
+Both print the rows of every table, so a restore can be checked against its backup. A ledger in
+your own Postgres (`DATABASE_URL`) is refused: use `pg_dump --format=custom` and `pg_restore`.
+
 `selfhost traces export [--since <date>] [--dry-run] [--json]` sends the ledger's finished runs
 to the tracer in `[integrations.tracer]` of `selfhost.toml` (Langfuse, Phoenix, Datadog or any
 OTLP endpoint), each agent session as one OpenTelemetry trace with GenAI attributes, the same
@@ -763,7 +786,8 @@ vendors directly; no model traffic goes through selfhost.
 
 Every command takes `--json` and prints one object with a `schema` tag: `selfhost.doctor/v1`,
 `selfhost.init/v1`, `selfhost.init_undo/v1`, `selfhost.import/v1` (plus one `selfhost.import_batch/v1` line per batch with `--watch`),
-`selfhost.ledger_prune/v1`, `selfhost.agents/v1`, `selfhost.agents_configure/v1`, `selfhost.scan/v1`,
+`selfhost.ledger_prune/v1`, `selfhost.ledger_status/v1`, `selfhost.ledger_migrate/v1`, `selfhost.ledger_backup/v1`,
+`selfhost.ledger_restore/v1`, `selfhost.agents/v1`, `selfhost.agents_configure/v1`, `selfhost.scan/v1`,
 `selfhost.policy_check/v1`, `selfhost.policy_test/v1`, `selfhost.policy_tests/v1`,
 `selfhost.policy_replay/v1`, `selfhost.policy_observe/v1`,
 `selfhost.policy_promote/v1`, `selfhost.review_item/v1` (from `policy report`),
