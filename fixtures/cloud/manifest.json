@@ -1,0 +1,22 @@
+{
+  "description": "Cloud provider API responses for selfhost up, taken from the providers' published OpenAPI documents (examples, or schema examples where an operation has none). No account was used.",
+  "sources": {
+    "hetzner": "https://docs.hetzner.cloud/cloud.spec.json, fetched 2026-11-08",
+    "digitalocean": "https://api-engineering.nyc3.digitaloceanspaces.com/spec-ci/DigitalOcean-public.v2.yaml, fetched 2026-11-08"
+  },
+  "files": {
+    "hetzner/servers-create.json": "POST /servers 201 example, root_password set to null as for a server created with an SSH key",
+    "hetzner/ssh_keys-list.json": "GET /ssh_keys 200 schema example",
+    "hetzner/ssh_keys-create.json": "POST /ssh_keys 201 schema example",
+    "hetzner/firewalls-create.json": "POST /firewalls 201 schema example",
+    "hetzner/error-unauthorized.json": "4xx schema example",
+    "hetzner/error-resource_unavailable.json": "written in the documented error format with the documented resource_unavailable code",
+    "digitalocean/droplets-create.json": "POST /v2/droplets 202 Single Droplet Create Response example",
+    "digitalocean/droplets-get.json": "GET /v2/droplets/{droplet_id} 200 example: active, with public networks",
+    "digitalocean/account-keys-create.json": "POST /v2/account/keys 201 schema example",
+    "digitalocean/account-keys-get.json": "GET /v2/account/keys/{ssh_key_identifier} 200 schema example",
+    "digitalocean/firewalls-create.json": "POST /v2/firewalls 202 example",
+    "digitalocean/error-not-found.json": "404 example",
+    "digitalocean/error-unauthorized.json": "401 example"
+  }
+}

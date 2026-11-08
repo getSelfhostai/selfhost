@@ -1,0 +1,48 @@
+# Caddy in front of selfhost (compose.tls.yml): HTTPS for SELFHOST_DOMAIN with a certificate it
+# gets and renews by itself, on ports 80 and 443. The selfhost API and the collector stay inside
+# Docker; this is the only way in.
+#
+#   /v1/*    the selfhost API, behind its bearer tokens (CLIs, hooks, the GitHub webhook)
+#   /otlp/*  agents' OpenTelemetry over HTTP, behind the agent token checked by the collector
+#   the rest the console, behind GitHub or Google sign-in when compose.signin.yml is in use
+
+# Without compose.signin.yml the console is closed: there is no sign-in to put in front of it.
+(console-closed) {
+	handle {
+		respond "The selfhost console needs sign-in, which is not set up on this server. The API answers at /v1 with a bearer token." 503
+	}
+}
+
+# With compose.signin.yml: oauth2-proxy checks the sign-in cookie on each request and sends
+# people without one to GitHub or Google first.
+(console-signin) {
+	handle /oauth2/* {
+		reverse_proxy oauth2-proxy:4180
+	}
+	handle {
+		forward_auth oauth2-proxy:4180 {
+			uri /oauth2/auth
+			@signed_out status 401
+			handle_response @signed_out {
+				redir * /oauth2/sign_in?rd={scheme}://{host}{uri}
+			}
+		}
+		root * /srv/console
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+{$SELFHOST_DOMAIN} {
+	encode zstd gzip
+
+	handle /v1/* {
+		reverse_proxy selfhost:4400
+	}
+
+	handle_path /otlp/* {
+		reverse_proxy otel-collector:4318
+	}
+
+	import console-{$SELFHOST_CONSOLE_ACCESS:closed}
+}

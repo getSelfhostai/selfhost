@@ -1,0 +1,42 @@
+# HTTPS for selfhost: Caddy gets a certificate for SELFHOST_DOMAIN and serves the API (/v1), the
+# agents' OpenTelemetry endpoint (/otlp) and the console on ports 80 and 443. See Caddyfile.
+# Use it with COMPOSE_FILE=compose.yml:compose.tls.yml in .env, and set SELFHOST_BIND=127.0.0.1
+# and OTLP_BIND=127.0.0.1 there, so the API and the collector are not reachable from outside.
+# SELFHOST_DOMAIN must point at this server before Caddy can get the certificate.
+services:
+  caddy:
+    image: caddy:2.11.9-alpine
+    restart: unless-stopped
+    depends_on:
+      selfhost:
+        condition: service_healthy
+    environment:
+      SELFHOST_DOMAIN: ${SELFHOST_DOMAIN:?Set SELFHOST_DOMAIN in .env}
+      # compose.signin.yml sets this to signin.
+      SELFHOST_CONSOLE_ACCESS: closed
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./console:/srv/console:ro
+      # Certificates and the ACME account. Losing them means asking for new certificates, which
+      # Let's Encrypt rate limits.
+      - caddy-data:/data
+      - caddy-config:/config
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "4", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+
+volumes:
+  caddy-data:
+  caddy-config:

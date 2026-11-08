@@ -261,3 +261,135 @@ jobs:
       - name: Stop the stack
         if: always()
         run: docker compose down --volumes
+
+  # install.sh with the HTTPS and sign-in overlays, the way selfhost up runs it on a server: first
+  # with no secret in .env, then again with sign-in. SELFHOST_DOMAIN=localhost, so Caddy serves
+  # HTTPS from its own local CA and no DNS or Let's Encrypt is involved.
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: deploy/docker
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build the server image
+        run: docker build -f Dockerfile -t selfhost-ci:ci-1 ../..
+
+      - name: Write the check helpers
+        run: |
+          cat > "$RUNNER_TEMP/install-ci.sh" <<'SH'
+          ca="$RUNNER_TEMP/caddy-root.crt"
+          # HTTPS checked against Caddy's local CA, not skipped.
+          https() { curl -sS --cacert "$ca" "$@"; }
+          status() { https -o /dev/null -w '%{http_code}' "$@"; }
+          wait_https() {
+            for _ in $(seq 1 60); do
+              if sudo docker compose exec -T caddy cat /data/caddy/pki/authorities/local/root.crt > "$ca" 2>/dev/null \
+                && https -f https://localhost/v1/health | jq -e '.ok == true' >/dev/null; then
+                return 0
+              fi
+              sleep 2
+            done
+            echo "::error::https://localhost/v1/health did not answer"
+            sudo docker compose ps -a
+            sudo docker compose logs --no-color --tail 50
+            return 1
+          }
+          secrets() { sudo grep -E '^(POSTGRES_PASSWORD|SELFHOST_TOKEN|SELFHOST_OTLP_TOKEN|SELFHOST_SIGNIN_COOKIE_SECRET)=' .env; }
+          SH
+
+      - name: Install with HTTPS and no secret in .env, as the cloud-init user-data does
+        run: |
+          . "$RUNNER_TEMP/install-ci.sh"
+          cat > .env.next <<'EOF'
+          COMPOSE_FILE=compose.yml:compose.tls.yml
+          SELFHOST_IMAGE=selfhost-ci
+          SELFHOST_VERSION=ci-1
+          POSTGRES_PASSWORD=
+          SELFHOST_TOKEN=
+          SELFHOST_OTLP_TOKEN=
+          SELFHOST_SIGNIN_COOKIE_SECRET=
+          SELFHOST_BIND=127.0.0.1
+          OTLP_BIND=127.0.0.1
+          SELFHOST_DOMAIN=localhost
+          SELFHOST_PUBLIC_URL=https://localhost
+          EOF
+          sudo ./install.sh
+          [ "$(sudo stat -c %a .env)" = 600 ]
+          # Every secret was generated on the server.
+          [ "$(secrets | grep -c '=.\{32,\}$')" = 4 ]
+          wait_https
+          [ "$(status https://localhost/)" = 503 ]
+
+      - name: Keep the API and the collector off the network, and route /v1 and /otlp through Caddy
+        run: |
+          . "$RUNNER_TEMP/install-ci.sh"
+          [ "$(sudo docker compose port selfhost 4400)" = 127.0.0.1:4400 ]
+          [ "$(sudo docker compose port otel-collector 4318)" = 127.0.0.1:4318 ]
+          ip=$(hostname -I | awk '{print $1}')
+          for port in 4400 4317 4318; do
+            if curl -s --max-time 3 -o /dev/null "http://$ip:$port/"; then
+              echo "::error::port $port answers on $ip"; exit 1
+            fi
+          done
+          admin=$(sudo sed -n 's/^SELFHOST_TOKEN=//p' .env)
+          otlp=$(sudo sed -n 's/^SELFHOST_OTLP_TOKEN=//p' .env)
+          [ "$(status "https://localhost/v1/events?limit=1")" = 401 ]
+          https -f -H "Authorization: Bearer $admin" "https://localhost/v1/events?limit=1" | jq -e '.events'
+          [ "$(status -X POST -H 'Content-Type: application/json' -d '{"resourceLogs":[]}' https://localhost/otlp/v1/logs)" = 401 ]
+          https -f -X POST -H "Authorization: Bearer $otlp" -H 'Content-Type: application/json' \
+            -d '{"resourceLogs":[]}' https://localhost/otlp/v1/logs
+
+      - name: Turn on sign-in with a second run, keeping every secret
+        run: |
+          . "$RUNNER_TEMP/install-ci.sh"
+          before=$(secrets)
+          cat > .env.next <<'EOF'
+          COMPOSE_FILE=compose.yml:compose.tls.yml:compose.signin.yml
+          SELFHOST_SIGNIN_PROVIDER=github
+          SELFHOST_SIGNIN_CLIENT_ID=ci-client-id
+          SELFHOST_SIGNIN_CLIENT_SECRET=ci-client-secret
+          SELFHOST_SIGNIN_EMAIL_DOMAINS=example.com
+          SELFHOST_SIGNIN_GITHUB_ORG=
+          EOF
+          sudo ./install.sh
+          [ "$(secrets)" = "$before" ]
+          wait_https
+          # The console sends people to sign in, and sign-in sends them to GitHub with this app.
+          console=$(https -o /dev/null -w '%{redirect_url}' https://localhost/)
+          case "$console" in
+            https://localhost/oauth2/sign_in\?rd=*) ;;
+            *) echo "::error::the console redirected to '$console'"; exit 1 ;;
+          esac
+          github=$(https -o /dev/null -w '%{redirect_url}' https://localhost/oauth2/sign_in)
+          case "$github" in
+            https://github.com/login/oauth/authorize\?*client_id=ci-client-id*) ;;
+            *) echo "::error::sign-in redirected to '$github'"; exit 1 ;;
+          esac
+          # The API keeps its bearer tokens, with no sign-in.
+          [ "$(status https://localhost/v1/health)" = 200 ]
+          # Every image of the three files, as Compose resolves them, has an exact tag.
+          for image in $(sudo docker compose config --images); do
+            ref=${image##*/}
+            case "$ref" in
+              selfhost-ci:*|*@sha256:*) continue ;;
+              *:*latest*) echo "::error::$image uses latest"; exit 1 ;;
+              *:*) ;;
+              *) echo "::error::$image has no tag"; exit 1 ;;
+            esac
+          done
+
+      - name: Run the daily backup once
+        run: |
+          systemctl is-enabled selfhost-backup.timer
+          sudo systemctl start selfhost-backup.service
+          ls backups/selfhost-*.dump
+
+      - name: Show logs on failure
+        if: failure()
+        run: sudo docker compose logs --no-color
+
+      - name: Stop the stack
+        if: always()
+        run: sudo docker compose down --volumes

@@ -25,6 +25,10 @@
 - Solo mode: nothing leaves the laptop and no network request is made. The ledger keeps no prompt text; raw hook payloads wait in ~/.selfhost/spool (mode 0600) until the next import.
 - Team mode: each `selfhost import` sends the ledger to the team's server.
 
+## Team server
+
+- `selfhost up --provider hetzner|digitalocean|aws|ssh` sets up the shared server (HTTPS, daily backups, optional GitHub or Google sign-in) and prints the `selfhost join` line. `--dry-run` prints the plan and the cloud-init user-data and creates nothing. It needs cloud credentials (HCLOUD_TOKEN, DIGITALOCEAN_TOKEN, the aws CLI) or `--host user@host`, so ask the person before running it without `--dry-run`: it creates billed servers.
+
 ## Docs
 
 - [AGENTS.md](AGENTS.md): install steps for coding agents

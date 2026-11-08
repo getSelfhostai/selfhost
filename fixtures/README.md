@@ -15,6 +15,7 @@ Test inputs for the session importers, hook ingest, ledger source mappers and re
 | `redaction/` | Planted fake secrets and an example.com email. The files hold `{{kind}}` placeholders and `manifest.json` keeps each value in parts; `planted.ts` joins them at test time, so the repository carries no key-shaped string. |
 | `markers/` | One Claude Code session and one Codex rollout with marker strings planted in prompts, replies, reasoning, code, commands, tool output and commit messages. `selfhost scan` must print none of them. `manifest.json` lists every marker. |
 | `expected/` | ccusage daily totals for the session fixtures. |
+| `cloud/` | Hetzner Cloud and DigitalOcean API responses for `selfhost up`, from the examples in each provider's published OpenAPI document. `manifest.json` names the source of each file. |
 | `captured/` | Scrubbed real sessions, written by `scripts/capture-fixtures.mjs`. Absent until someone runs it. |
 
 ## Checks

@@ -7,6 +7,7 @@ import {
 import type { Command } from "commander";
 import { plural } from "../format.js";
 import { defaultPerson } from "../import.js";
+import { deploymentToken } from "../up/record.js";
 import { type Fetch, serverUrl, TeamApiError, TeamClient } from "./client.js";
 import {
   clearMembership,
@@ -135,8 +136,12 @@ function joinCommand(server: string, invite: string, email?: string): string {
 
 const shortTime = (iso: string) => iso.replace("T", " ").replace(/:\d{2}\.\d{3}Z$/, " UTC");
 
-function adminToken(options: AdminOptions, io: TeamIo, command: string): string {
-  const token = options.token ?? io.env.SELFHOST_TOKEN?.trim();
+/** --token, else SELFHOST_TOKEN, else the token `selfhost up` saved when it set up the server. */
+function adminToken(options: AdminOptions, io: TeamIo, command: string, server: string): string {
+  const token =
+    options.token ??
+    (io.env.SELFHOST_TOKEN?.trim() || undefined) ??
+    deploymentToken(io.configPath, server);
   if (!token) {
     throw new Error(
       `${command} needs the server's admin token: pass --token or set SELFHOST_TOKEN`,
@@ -153,7 +158,7 @@ function adminTarget(options: AdminOptions, io: TeamIo, command: string) {
     throw new Error(`${command} needs the team server: pass --server <url>`);
   }
   const server = serverUrl(url);
-  const client = new TeamClient(server, adminToken(options, io, command), io.fetch);
+  const client = new TeamClient(server, adminToken(options, io, command, server), io.fetch);
   const team = options.team ?? (membership?.server === server ? membership.team : undefined);
   return { server, client, team };
 }
@@ -164,7 +169,7 @@ export async function teamInit(
   io: TeamIo,
 ): Promise<TeamInitReport> {
   const server = serverUrl(options.server);
-  const token = adminToken(options, io, "team init");
+  const token = adminToken(options, io, "team init", server);
   const ttl = parseTtl(options.inviteTtl, "--invite-ttl");
   const created = await new TeamClient(server, token, io.fetch).createTeam(
     options.name ?? "default",
