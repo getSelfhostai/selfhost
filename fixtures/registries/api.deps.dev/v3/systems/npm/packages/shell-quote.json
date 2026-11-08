@@ -1,0 +1,317 @@
+{
+  "status": 200,
+  "body": {
+    "packageKey": {
+      "system": "NPM",
+      "name": "shell-quote"
+    },
+    "versions": [
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "0.0.0"
+        },
+        "publishedAt": "2012-05-18T10:42:06Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "0.0.1"
+        },
+        "publishedAt": "2012-05-18T18:25:42Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "0.1.0"
+        },
+        "publishedAt": "2013-04-15T04:36:33Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "0.1.1"
+        },
+        "publishedAt": "2013-04-17T08:06:42Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.0.0"
+        },
+        "publishedAt": "2013-05-13T10:27:10Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.1.0"
+        },
+        "publishedAt": "2013-05-13T10:35:28Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.10.0"
+        },
+        "publishedAt": "2026-07-10T23:31:18Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.11.0"
+        },
+        "publishedAt": "2026-09-29T02:34:24Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.12.0"
+        },
+        "publishedAt": "2026-10-02T14:58:24Z",
+        "isDefault": true
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.2.0"
+        },
+        "publishedAt": "2013-05-13T12:10:00Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.3.0"
+        },
+        "publishedAt": "2013-05-13T13:42:12Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.3.1"
+        },
+        "publishedAt": "2013-05-13T13:48:27Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.3.2"
+        },
+        "publishedAt": "2013-06-24T11:50:12Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.3.3"
+        },
+        "publishedAt": "2013-06-24T12:01:40Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.4.0"
+        },
+        "publishedAt": "2013-10-18T01:40:45Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.4.1"
+        },
+        "publishedAt": "2013-12-25T01:00:11Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.4.2"
+        },
+        "publishedAt": "2014-07-20T21:27:22Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.4.3"
+        },
+        "publishedAt": "2015-03-08T03:47:14Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.5.0"
+        },
+        "publishedAt": "2016-03-16T17:58:28Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.6.0"
+        },
+        "publishedAt": "2016-04-24T05:53:28Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.6.1"
+        },
+        "publishedAt": "2016-06-17T20:43:12Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.6.2"
+        },
+        "publishedAt": "2019-08-13T07:15:52Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.6.3"
+        },
+        "publishedAt": "2019-08-13T07:41:40Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.7.0"
+        },
+        "publishedAt": "2019-08-13T07:52:14Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.7.1"
+        },
+        "publishedAt": "2019-08-13T13:35:05Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.7.2"
+        },
+        "publishedAt": "2019-09-01T07:46:40Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.7.3"
+        },
+        "publishedAt": "2021-10-21T06:34:51Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.7.4"
+        },
+        "publishedAt": "2022-10-13T16:52:42Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.8.0"
+        },
+        "publishedAt": "2023-01-31T03:27:05Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.8.1"
+        },
+        "publishedAt": "2023-04-07T20:56:18Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.8.2"
+        },
+        "publishedAt": "2024-11-27T21:33:37Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.8.3"
+        },
+        "publishedAt": "2025-06-02T05:03:05Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.8.4"
+        },
+        "publishedAt": "2026-05-22T13:13:48Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "shell-quote",
+          "version": "1.9.0"
+        },
+        "publishedAt": "2026-06-25T04:47:19Z",
+        "isDefault": false
+      }
+    ]
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "status": 404,
+  "body": "not found: module github.com/gin-gonic/gin-jwt-middleware: git ls-remote -q --end-of-options https://github.com/gin-gonic/gin-jwt-middleware in /tmp/gopath/pkg/mod/cache/vcs/abeca11c9e5f47f91a3c48d27ff3909daa77421cc9712be108a08bcac36e9adb: exit status 128:\n\tfatal: could not read Username for 'https://github.com': terminal prompts disabled\nConfirm the import path was entered correctly.\nIf this is a private repository, see https://go.dev/doc/faq#git_https for additional information."
+}

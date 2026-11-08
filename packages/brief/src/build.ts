@@ -8,7 +8,7 @@ import {
   type TestChangeKind,
   testChanges,
 } from "@selfhost/pr";
-import type { LedgerEvent } from "@selfhost/schema";
+import { type LedgerEvent, PACKAGE_RULE_IDS } from "@selfhost/schema";
 import { oneSourcePerSession } from "@selfhost/spend";
 import { commandsRun, oneToolSourcePerSession } from "./commands.js";
 import { lineUrl, traceCommand, traceUrl } from "./links.js";
@@ -137,13 +137,21 @@ function costOf(events: LedgerEvent[]): BriefCost | undefined {
   };
 }
 
-/** Block and ask verdicts, once per rule and action, oldest first. */
-function blockedActions(events: LedgerEvent[]): BriefBlock[] {
+/**
+ * Block and ask verdicts, once per rule and action, oldest first, and the package installs the
+ * package guard could not check. Those went ahead (it fails open), so they are not blocks.
+ */
+function blockedActions(events: LedgerEvent[]): { blocked: BriefBlock[]; unchecked: number } {
   // Newest first, so a hit recorded again after a policy change keeps its latest record.
   const hits = runGuardrails([...events].reverse());
   const seen = new Map<string, BriefBlock>();
+  const unchecked = new Set<string>();
   for (const hit of hits) {
     const { event } = hit;
+    if (hit.rule_id === PACKAGE_RULE_IDS.unchecked) {
+      unchecked.add(event.target?.value ?? event.tool?.input_summary ?? event.id);
+      continue;
+    }
     const target = event.target?.value ?? event.tool?.input_summary;
     const tool = event.tool?.name;
     const key = [hit.rule_id, hit.verdict, hit.mode, tool ?? "", target ?? ""].join("\n");
@@ -161,7 +169,12 @@ function blockedActions(events: LedgerEvent[]): BriefBlock[] {
     const earlier = seen.get(key);
     if (!earlier || block.ts < earlier.ts) seen.set(key, block);
   }
-  return [...seen.values()].sort((a, b) => compare(a.ts, b.ts) || compare(a.rule_id, b.rule_id));
+  return {
+    blocked: [...seen.values()].sort(
+      (a, b) => compare(a.ts, b.ts) || compare(a.rule_id, b.rule_id),
+    ),
+    unchecked: unchecked.size,
+  };
 }
 
 /**
@@ -317,9 +330,17 @@ export function buildBrief(inputs: BriefInputs): Brief {
     note("tests", run ? "No tests ran in this run." : `No tests known: ${noRun}.`);
   }
 
-  const blocked = blockedActions(events);
+  const { blocked, unchecked } = blockedActions(events);
   if (blocked.length === 0) {
     note("blocked", run ? "No actions were blocked." : `No blocked actions known: ${noRun}.`);
+  }
+  if (unchecked > 0) {
+    note(
+      "blocked",
+      unchecked === 1
+        ? "1 package install could not be checked against its registry in time and went ahead unchecked (packages.unchecked in the trace)."
+        : `${unchecked} package installs could not be checked against their registries in time and went ahead unchecked (packages.unchecked in the trace).`,
+    );
   }
 
   const cost = costOf(events);

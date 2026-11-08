@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { join } from "node:path";
+import { EVENT_SCHEMA, type LedgerEvent } from "@selfhost/schema";
 import { describe, expect, it } from "vitest";
 import {
   BRIEF_MARKER,
@@ -240,6 +241,110 @@ describe("buildBrief", () => {
         events: 6,
         command: "selfhost review trace a3d5f7b9-1c2e-4a6b-8d0f-2e4c6a8b0d1f",
       },
+    ]);
+  });
+});
+
+describe("package installs", () => {
+  const session = "a3d5f7b9-1c2e-4a6b-8d0f-2e4c6a8b0d1f";
+  let counter = 0;
+  /** A policy.evaluated event from the package guard, as the pre-tool hook records it. */
+  function packageHit(
+    ruleId: string,
+    verdict: "block" | "ask",
+    mode: "observe" | "enforce",
+    command: string,
+    reason: string,
+  ): LedgerEvent {
+    counter += 1;
+    const id = `0199e2b0-0000-7000-8000-${String(counter).padStart(12, "0")}`;
+    return {
+      id,
+      schema: EVENT_SCHEMA,
+      ts: `2026-10-14T15:0${counter}:30.000Z`,
+      source: "hook",
+      kind: "policy.evaluated",
+      actor: { kind: "system", id: "selfhost-policy" },
+      agent: { vendor: "codex" },
+      session_id: session,
+      tool: { name: "exec_command" },
+      target: { type: "command", value: command },
+      decision: { verdict, by: "selfhost-policy", reason, rule_id: ruleId, mode },
+      data: { tool_event_id: `tool-${counter}` },
+    };
+  }
+
+  function withHits(events: LedgerEvent[]) {
+    const inputs = fixture("local");
+    const run = {
+      sessions: inputs.run?.sessions ?? [],
+      events: [...(inputs.run?.events ?? []), ...events],
+    };
+    return buildBrief({ ...inputs, run });
+  }
+
+  it("lists package blocks and flags as installs, and notes installs that went unchecked", () => {
+    const brief = withHits([
+      packageHit(
+        "packages.not_found",
+        "block",
+        "enforce",
+        "npm i react-hooks-form-validator-pro",
+        "npm has no package named react-hooks-form-validator-pro.",
+      ),
+      packageHit(
+        "packages.too_new",
+        "ask",
+        "observe",
+        "pip install fresh-lib",
+        "fresh-lib 0.1.0 (PyPI) was published 2 days ago; [packages] min_age_days is 7.",
+      ),
+      packageHit(
+        "packages.unchecked",
+        "ask",
+        "observe",
+        "cargo add serde",
+        "Could not fully check serde (crates.io): deps.dev did not answer within 3000 ms. It was not blocked.",
+      ),
+    ]);
+    expect(brief.blocked.map((b) => [b.rule_id, b.verdict, b.mode, b.target])).toEqual([
+      ["packages.not_found", "block", "enforce", "npm i react-hooks-form-validator-pro"],
+      ["packages.too_new", "ask", "observe", "pip install fresh-lib"],
+    ]);
+    expect(brief.notes.blocked).toEqual([
+      "1 package install could not be checked against its registry in time and went ahead unchecked (packages.unchecked in the trace).",
+    ]);
+    const markdown = renderBrief(brief);
+    expect(markdown).toContain(
+      "- `packages.not_found` blocked the install `npm i react-hooks-form-validator-pro`: npm has no package named react-hooks-form-validator-pro.",
+    );
+    expect(markdown).toContain(
+      "- `packages.too_new` flagged the install (observe mode) `pip install fresh-lib`: fresh-lib 0.1.0 (PyPI) was published 2 days ago; \\[packages\\] min_age_days is 7.",
+    );
+    expect(summarizeBrief(brief)).toContain("2 blocked actions.");
+  });
+
+  it("says so when the only package note is an unchecked install", () => {
+    const brief = withHits([
+      packageHit(
+        "packages.unchecked",
+        "ask",
+        "observe",
+        "npm i a",
+        "Could not fully check a (npm).",
+      ),
+      packageHit(
+        "packages.unchecked",
+        "ask",
+        "observe",
+        "npm i b",
+        "Could not fully check b (npm).",
+      ),
+    ]);
+    expect(brief.blocked).toEqual([]);
+    expect(brief.notes.blocked).toEqual([
+      "No actions were blocked.",
+      "2 package installs could not be checked against their registries in time and went ahead unchecked (packages.unchecked in the trace).",
     ]);
   });
 });

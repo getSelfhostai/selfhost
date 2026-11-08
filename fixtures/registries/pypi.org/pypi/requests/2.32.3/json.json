@@ -1,0 +1,21 @@
+{
+  "status": 200,
+  "body": {
+    "info": {
+      "name": "requests",
+      "version": "2.32.3"
+    },
+    "urls": [
+      {
+        "filename": "requests-2.32.3-py3-none-any.whl",
+        "packagetype": "bdist_wheel",
+        "upload_time_iso_8601": "2024-05-29T15:37:47.027275Z"
+      },
+      {
+        "filename": "requests-2.32.3.tar.gz",
+        "packagetype": "sdist",
+        "upload_time_iso_8601": "2024-05-29T15:37:49.536140Z"
+      }
+    ]
+  }
+}

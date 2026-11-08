@@ -63,6 +63,21 @@ allow = ["claude-opus-*", "gpt-5*"]
 mode = "enforce"
 ```
 
+`[packages]` configures the package guard
+([`packages/package-guard`](../package-guard/README.md)), which checks every package an agent
+installs against its registry. Its verdicts carry rule ids that start with `packages.`
+(`PACKAGE_RULE_IDS`), which a rule may not use.
+
+```toml
+[packages]
+mode = "observe"                # observe records verdicts, enforce applies them, off checks nothing
+allow = ["@acme/*", "go:github.com/acme/**"]   # skip every check; npm:, pypi:, cargo:, go: limit an entry
+deny = ["event-stream"]         # always blocked; deny wins over allow
+min_age_days = 7                # flag versions younger than this; absent checks no age
+blocked_registries = ["*.example.com", "registry.npmjs.cf"]   # hosts, URLs or globs
+install_scripts = "ask"         # ask (default), block or allow
+```
+
 ## Redaction
 
 `redactEvent(event, settings)` (`src/redact.ts`) returns the event as it may be stored: prompt

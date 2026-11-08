@@ -20,7 +20,13 @@ describe("parseConfig", () => {
           github_logins: {},
           block_merge_on_high: false,
         },
-        packages: { mode: "observe", allow: [], deny: [] },
+        packages: {
+          mode: "observe",
+          allow: [],
+          deny: [],
+          blocked_registries: [],
+          install_scripts: "ask",
+        },
         mcp: { mode: "observe", allow: [] },
         models: { mode: "observe", allow: [] },
         alerts: {
@@ -152,6 +158,43 @@ message = "m"
         line: 5,
       },
     ]);
+  });
+
+  it("reserves rule ids that start with packages. for the package guard", () => {
+    const result = parseConfig(`version = 1
+[[rules]]
+id = "packages.too_new"
+match = { tool = "Bash" }
+action = "ask"
+message = "m"
+`);
+    expect(result.ok ? [] : result.errors).toEqual([
+      {
+        field: "rules[0].id",
+        message:
+          'Rule id "packages.too_new" is reserved: ids that start with "packages." belong to [packages]',
+        line: 3,
+      },
+    ]);
+  });
+
+  it("reads blocked registries and the install script action in [packages]", () => {
+    const result = parseConfig(`version = 1
+[packages]
+mode = "enforce"
+min_age_days = 14
+blocked_registries = ["*.example.com"]
+install_scripts = "block"
+`);
+    if (!result.ok) throw new Error(JSON.stringify(result.errors));
+    expect(result.config.packages).toEqual({
+      mode: "enforce",
+      allow: [],
+      deny: [],
+      min_age_days: 14,
+      blocked_registries: ["*.example.com"],
+      install_scripts: "block",
+    });
   });
 
   it("formats errors as file:line: field: message", () => {

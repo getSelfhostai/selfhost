@@ -1,0 +1,25 @@
+{
+  "synthetic": false,
+  "recorded_at": "2026-11-08T06:22:37Z",
+  "description": "Real registry responses for packages/package-guard, recorded by packages/package-guard/scripts/capture-fixtures.ts and replayed by its tests, which never use the network. Paths mirror the request: <host>/<decoded path>.json, with .head.json for a HEAD request, and api.osv.dev/v1/querybatch/<ecosystem>/<name>/<version or all>.json for one OSV query. Each file holds the status and the body: JSON keeps only the fields the guard reads (deps.dev version keys, publish times and the default flag; npm name, version, scripts and gypfile; PyPI release file types and upload times; Go proxy Version and Time; OSV ids), any other body is the text as returned.",
+  "packages": [
+    { "registry": "npm", "name": "left-pad", "case": "Old, no install scripts: passes. Also the range ^1.1.0, the latest tag, an npm: alias and a version that does not exist (9.9.9)." },
+    { "registry": "npm", "name": "bcrypt", "case": "Install script (install: node-gyp-build)." },
+    { "registry": "npm", "name": "shell-quote", "case": "1.12.0 published 2026-10-02, under a 60 day minimum age." },
+    { "registry": "npm", "name": "@types/shell-quote", "case": "Scoped package at an exact version." },
+    { "registry": "npm", "name": "cowsay", "case": "The package npx, pnpm dlx, bunx and yarn dlx run." },
+    { "registry": "npm", "name": "react-hooks-form-validator-pro", "case": "Invented name: neither deps.dev nor the npm registry has it." },
+    { "registry": "npm", "name": "flatmap-stream", "case": "Removed from npm; osv.dev lists MAL-2025-20690." },
+    { "registry": "PyPI", "name": "requests", "case": "2.32.3 exact, and the default 2.34.2; both have wheels." },
+    { "registry": "PyPI", "name": "docopt", "case": "0.6.2 ships an sdist only, so installing it runs its build code." },
+    { "registry": "PyPI", "name": "flask-sqlalchemy-async-session-pro", "case": "Invented name: deps.dev and PyPI (HEAD) answer 404." },
+    { "registry": "crates.io", "name": "cfg-if", "case": "Default 1.0.5 published 2026-09-16, under a 60 day minimum age." },
+    { "registry": "crates.io", "name": "itoa", "case": "Requirement 1.0 resolves to 1.0.18 from 2026-03-20." },
+    { "registry": "crates.io", "name": "ripgrep", "case": "cargo install --version 14.1.0 installs exactly 14.1.0." },
+    { "registry": "crates.io", "name": "tokio-retry-backoff-utils", "case": "Invented name: deps.dev and the sparse index (HEAD) answer 404." },
+    { "registry": "Go", "name": "github.com/google/uuid", "case": "v1.6.0 exact." },
+    { "registry": "Go", "name": "golang.org/x/sync", "case": "@latest is v0.24.0 from 2026-09-23, under a 60 day minimum age." },
+    { "registry": "Go", "name": "github.com/pkg/errors/subpkg", "case": "A package path: deps.dev has no module by that path, so the guard finds module github.com/pkg/errors." },
+    { "registry": "Go", "name": "github.com/gin-gonic/gin-jwt-middleware", "case": "Invented module: deps.dev and proxy.golang.org answer 404." }
+  ]
+}

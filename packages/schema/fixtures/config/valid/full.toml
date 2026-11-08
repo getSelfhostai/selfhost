@@ -53,6 +53,8 @@ mode = "observe"
 allow = ["@acme/*"]
 deny = ["event-stream"]
 min_age_days = 7
+blocked_registries = ["registry.npmjs.cf", "*.packages.example.com"]
+install_scripts = "block"
 
 [alerts]
 spike_factor = 5

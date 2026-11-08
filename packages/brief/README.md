@@ -44,9 +44,13 @@ selfhost.toml has no [review] high_risk_paths."
 | Files touched    | Every changed file with its status and line counts                                                                                                                      |
 | Commands run     | Shell commands from the run's `tool.called` events, one source per session, identical ones on one line                                                                  |
 | Tests run        | Commands that run a test runner (vitest, jest, pytest, go test, cargo test, npm/pnpm/yarn/bun test, and others), with the result from the matching `tool.result`        |
-| Blocked actions  | `policy.evaluated` block and ask verdicts with their rule ids, enforced or observed                                                                                     |
+| Blocked actions  | `policy.evaluated` block and ask verdicts with their rule ids, enforced or observed; package guard verdicts (`packages.*`) read as blocked or flagged installs          |
 | Cost             | `cost.recorded` events, one source per session, as `selfhost spend` counts them                                                                                         |
 | Trace            | Each session's events on the team server (`<server>/v1/events?session=<id>`), or the local command `selfhost review trace <id>`                                         |
+
+Package installs the package guard could not check in time (`packages.unchecked`, recorded in
+observe mode because the install went ahead) are not listed as blocks: the Blocked actions
+section counts them in a note instead.
 
 A test result is matched to its call by the call id when the hook recorded one, else to the
 earliest call in the same session with the same command. `passed` and `failed` come from the

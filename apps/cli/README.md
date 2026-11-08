@@ -14,6 +14,7 @@ pnpm --filter @selfhost/cli dev inbox
 pnpm --filter @selfhost/cli dev policy check
 pnpm --filter @selfhost/cli dev policy test --tool Bash --command "git push --force"
 pnpm --filter @selfhost/cli dev policy observe --since 30d
+pnpm --filter @selfhost/cli dev packages check "npm i left-pad && pip install requests"
 pnpm --filter @selfhost/cli dev review risk --base main
 pnpm --filter @selfhost/cli dev review brief --base main
 pnpm --filter @selfhost/cli dev scan --since 30d --report scan.html --share scan.svg
@@ -158,6 +159,14 @@ policy that is not.
   belong to the repository and records one `policy.evaluated` event per hit, with the git commit
   and SHA-256 of the policy file. It prints, per rule, how many hits are new and how many an
   earlier run already recorded. Nothing is stopped and nothing leaves the machine.
+
+`selfhost packages check "<command>" [--timeout <ms>] [--json]` runs the package guard
+([`packages/package-guard`](../../packages/package-guard/README.md)) on one shell command the
+way the pre-tool hook does: every npm, pnpm, yarn, bun, pip, uv, poetry, pipx, cargo and go
+install in it is checked against `selfhost.toml` `[packages]` and the registries, and each
+package is printed as ok, blocked, flagged, unchecked, allowed or skipped, with why. It exits 1
+when a package would be blocked, whatever the mode. Lookups are cached in
+`~/.selfhost/cache/packages`; `--timeout` (default 10000) is how long it waits on the registries.
 
 `selfhost policy promote <rule> [--team <name>] [--to observe|off] [--reason <text>] [--config <path>]`
 sets a rule's mode in `selfhost.toml` (default `enforce`) and prints the file's `git diff`. Only

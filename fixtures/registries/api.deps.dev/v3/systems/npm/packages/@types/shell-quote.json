@@ -1,0 +1,92 @@
+{
+  "status": 200,
+  "body": {
+    "packageKey": {
+      "system": "NPM",
+      "name": "@types/shell-quote"
+    },
+    "versions": [
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "@types/shell-quote",
+          "version": "1.6.0"
+        },
+        "publishedAt": "2017-07-14T14:19:49Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "@types/shell-quote",
+          "version": "1.6.1"
+        },
+        "publishedAt": "2019-01-25T00:37:21Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "@types/shell-quote",
+          "version": "1.6.2"
+        },
+        "publishedAt": "2020-05-15T13:24:35Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "@types/shell-quote",
+          "version": "1.7.0"
+        },
+        "publishedAt": "2020-06-24T08:23:12Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "@types/shell-quote",
+          "version": "1.7.1"
+        },
+        "publishedAt": "2021-07-06T17:05:57Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "@types/shell-quote",
+          "version": "1.7.2"
+        },
+        "publishedAt": "2023-09-25T14:28:48Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "@types/shell-quote",
+          "version": "1.7.3"
+        },
+        "publishedAt": "2023-10-18T14:50:57Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "@types/shell-quote",
+          "version": "1.7.4"
+        },
+        "publishedAt": "2023-11-07T16:29:27Z",
+        "isDefault": false
+      },
+      {
+        "versionKey": {
+          "system": "NPM",
+          "name": "@types/shell-quote",
+          "version": "1.7.5"
+        },
+        "publishedAt": "2023-11-21T01:03:41Z",
+        "isDefault": true
+      }
+    ]
+  }
+}
