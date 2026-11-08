@@ -31,6 +31,7 @@
     "@selfhost/pr": "workspace:*",
     "@selfhost/review": "workspace:*",
     "@selfhost/schema": "workspace:*",
+    "@selfhost/spend": "workspace:*",
     "hono": "catalog:",
     "postgres": "catalog:"
   },

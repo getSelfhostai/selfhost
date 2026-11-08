@@ -1,8 +1,11 @@
 import {
   INVITE_TTL_MAX_SECONDS,
   INVITE_TTL_MIN_SECONDS,
+  PERSON_ROLES,
+  type Person,
   type PersonRole,
   type TeamInfo,
+  type TeamRepo,
 } from "@selfhost/schema";
 import type { Command } from "commander";
 import { plural } from "../format.js";
@@ -59,6 +62,40 @@ export interface TeamRevokeReport {
   person: string | null;
   /** Tokens and open invites of the person revoked by this call; null for an invite. */
   revoked: number | null;
+}
+
+/** `selfhost team role --json`. */
+export interface TeamRoleReport {
+  schema: "selfhost.team_role/v1";
+  server: string;
+  team: string;
+  person: string;
+  role: PersonRole;
+}
+
+/** `selfhost team add --json`. */
+export interface TeamAddReport {
+  schema: "selfhost.team_add/v1";
+  server: string;
+  team: string;
+  person: string;
+  role: PersonRole;
+}
+
+/** `selfhost team people --json`. */
+export interface TeamPeopleReport {
+  schema: "selfhost.team_people/v1";
+  server: string;
+  team: string;
+  people: Person[];
+}
+
+/** `selfhost team repo add|remove|list --json`: the team's repos after the command. */
+export interface TeamReposReport {
+  schema: "selfhost.team_repos/v1";
+  server: string;
+  team: string;
+  repos: TeamRepo[];
 }
 
 /** `selfhost join --json`. The token is saved, never printed. */
@@ -137,30 +174,41 @@ function joinCommand(server: string, invite: string, email?: string): string {
 const shortTime = (iso: string) => iso.replace("T", " ").replace(/:\d{2}\.\d{3}Z$/, " UTC");
 
 /** --token, else SELFHOST_TOKEN, else the token `selfhost up` saved when it set up the server. */
-function adminToken(options: AdminOptions, io: TeamIo, command: string, server: string): string {
-  const token =
+function adminToken(options: AdminOptions, io: TeamIo, server: string): string | undefined {
+  return (
     options.token ??
     (io.env.SELFHOST_TOKEN?.trim() || undefined) ??
-    deploymentToken(io.configPath, server);
-  if (!token) {
-    throw new Error(
-      `${command} needs the server's admin token: pass --token or set SELFHOST_TOKEN`,
-    );
-  }
-  return token;
+    deploymentToken(io.configPath, server)
+  );
 }
 
-/** The server and team an admin command acts on: the flags, else this machine's membership. */
-function adminTarget(options: AdminOptions, io: TeamIo, command: string) {
+/**
+ * The server, team and token a team command acts with: the flags, else this machine's
+ * membership. The token is the admin token when there is one, else this machine's person token,
+ * whose role in the team the server checks.
+ */
+function teamTarget(options: AdminOptions, io: TeamIo, command: string) {
   const membership = readMembership(io.configPath);
   const url = options.server ?? membership?.server;
   if (!url) {
     throw new Error(`${command} needs the team server: pass --server <url>`);
   }
   const server = serverUrl(url);
-  const client = new TeamClient(server, adminToken(options, io, command, server), io.fetch);
-  const team = options.team ?? (membership?.server === server ? membership.team : undefined);
+  const own = membership?.server === server ? membership : undefined;
+  const token = adminToken(options, io, server) ?? own?.token;
+  if (!token) {
+    throw new Error(
+      `${command} needs the server's admin token (pass --token or set SELFHOST_TOKEN), or run it on a machine that joined the team as an owner or admin`,
+    );
+  }
+  const client = new TeamClient(server, token, io.fetch);
+  const team = options.team ?? own?.team;
   return { server, client, team };
+}
+
+function needTeam(team: string | undefined, command: string): string {
+  if (!team) throw new Error(`${command} needs the team: pass --team <id>`);
+  return team;
 }
 
 /** Creates a team on the server with the admin token and prints the command to share. */
@@ -169,7 +217,10 @@ export async function teamInit(
   io: TeamIo,
 ): Promise<TeamInitReport> {
   const server = serverUrl(options.server);
-  const token = adminToken(options, io, "team init", server);
+  const token = adminToken(options, io, server);
+  if (!token) {
+    throw new Error("team init needs the server's admin token: pass --token or set SELFHOST_TOKEN");
+  }
   const ttl = parseTtl(options.inviteTtl, "--invite-ttl");
   const created = await new TeamClient(server, token, io.fetch).createTeam(
     options.name ?? "default",
@@ -194,14 +245,17 @@ export async function teamInit(
   return report;
 }
 
-/** Creates another invite for a team, optionally for one person's email. Admin token only. */
+/**
+ * Creates another invite for a team, optionally for one person's email. The admin token, or an
+ * owner or admin of the team.
+ */
 export async function teamInvite(
   options: AdminOptions & { email?: string; ttl?: string },
   io: TeamIo,
 ): Promise<TeamInviteReport> {
   const ttl = parseTtl(options.ttl, "--ttl");
-  const { server, client, team } = adminTarget(options, io, "team invite");
-  if (!team) throw new Error("team invite needs the team: pass --team <id>");
+  const { server, client, team: target } = teamTarget(options, io, "team invite");
+  const team = needTeam(target, "team invite");
   const email = options.email?.trim();
   const created = await client.createInvite(team, {
     ...(ttl === undefined ? {} : { ttl_seconds: ttl }),
@@ -235,15 +289,16 @@ export async function teamInvite(
 const INVITE_PREFIX = "selfhost_inv_";
 
 /**
- * Revokes an invite (given as its code) or every token a person holds (given as their id).
- * Admin token only. The person's events stay in the ledger.
+ * Revokes an invite (given as its code) or every token a person holds (given as their id). The
+ * admin token, or an owner or admin of the team; only an owner revokes an owner. The person's
+ * events stay in the ledger.
  */
 export async function teamRevoke(
   target: string,
   options: AdminOptions,
   io: TeamIo,
 ): Promise<TeamRevokeReport> {
-  const { server, client, team } = adminTarget(options, io, "team revoke");
+  const { server, client, team } = teamTarget(options, io, "team revoke");
   if (target.startsWith(INVITE_PREFIX)) {
     const invite = await client.revokeInvite(target);
     const report: TeamRevokeReport = {
@@ -274,6 +329,110 @@ export async function teamRevoke(
     revoked > 0
       ? `Revoked ${person}'s access to team ${team} on ${server} (${plural(revoked, "token")}, counting open invites for their email). Their events stay in the ledger.`
       : `${person} has nothing left to revoke in team ${team} on ${server}.`,
+  ]);
+  return report;
+}
+
+const A_ROLE: Record<PersonRole, string> = {
+  owner: "an owner",
+  admin: "an admin",
+  member: "a member",
+};
+
+function checkRole(role: string): PersonRole {
+  if (!(PERSON_ROLES as readonly string[]).includes(role)) {
+    throw new Error(`role: expected one of ${PERSON_ROLES.join(", ")}, got "${role}"`);
+  }
+  return role as PersonRole;
+}
+
+/** Changes a person's role in the team. Only owners can; a team always keeps an owner. */
+export async function teamRole(
+  person: string,
+  role: string,
+  options: AdminOptions,
+  io: TeamIo,
+): Promise<TeamRoleReport> {
+  const wanted = checkRole(role);
+  const { server, client, team: target } = teamTarget(options, io, "team role");
+  const team = needTeam(target, "team role");
+  const changed = await client.setRole(team, person.trim(), wanted);
+  const report: TeamRoleReport = {
+    schema: "selfhost.team_role/v1",
+    server,
+    team,
+    person: changed.id,
+    role: changed.role,
+  };
+  print(io, options.json, report, [
+    `${changed.id} is now ${A_ROLE[changed.role]} of team ${team} on ${server}.`,
+  ]);
+  return report;
+}
+
+/** Adds someone already in another team of the org to this team. */
+export async function teamAdd(
+  person: string,
+  options: AdminOptions & { role?: string },
+  io: TeamIo,
+): Promise<TeamAddReport> {
+  const role = options.role === undefined ? undefined : checkRole(options.role);
+  const { server, client, team: target } = teamTarget(options, io, "team add");
+  const team = needTeam(target, "team add");
+  const added = await client.addPerson(team, person.trim(), role);
+  const report: TeamAddReport = {
+    schema: "selfhost.team_add/v1",
+    server,
+    team,
+    person: added.id,
+    role: added.role,
+  };
+  print(io, options.json, report, [
+    `Added ${added.id} to team ${team} on ${server} as ${A_ROLE[added.role]}. The tokens they hold already work in it.`,
+  ]);
+  return report;
+}
+
+/** Everyone in the team and their role. */
+export async function teamPeople(options: AdminOptions, io: TeamIo): Promise<TeamPeopleReport> {
+  const { server, client, team: target } = teamTarget(options, io, "team people");
+  const team = needTeam(target, "team people");
+  const { people } = await client.people(team);
+  const report: TeamPeopleReport = { schema: "selfhost.team_people/v1", server, team, people };
+  print(io, options.json, report, [
+    `Team ${team} on ${server}: ${people.length === 1 ? "1 person" : `${people.length} people`}.`,
+    ...people.map((p) => `  ${p.role.padEnd(6)}  ${p.id}${p.name ? ` (${p.name})` : ""}`),
+  ]);
+  return report;
+}
+
+/** Maps a repo to the team by its remote URL, unmaps one, or lists them. */
+export async function teamRepo(
+  action: "add" | "remove" | "list",
+  remote: string | undefined,
+  options: AdminOptions,
+  io: TeamIo,
+): Promise<TeamReposReport> {
+  const { server, client, team: target } = teamTarget(options, io, `team repo ${action}`);
+  const team = needTeam(target, `team repo ${action}`);
+  if (action !== "list" && !remote) {
+    throw new Error(`team repo ${action} needs the repo: a remote URL or owner/name`);
+  }
+  let line: string | undefined;
+  if (action === "add") {
+    const added = await client.addRepo(team, remote ?? "");
+    line = `Team ${team} owns ${added.repo} (${added.remote}): every run in it is the team's.`;
+  } else if (action === "remove") {
+    await client.removeRepo(team, (remote ?? "").toLowerCase());
+    line = `Team ${team} no longer owns ${remote}.`;
+  }
+  const { repos } = await client.repos(team);
+  const report: TeamReposReport = { schema: "selfhost.team_repos/v1", server, team, repos };
+  print(io, options.json, report, [
+    ...(line ? [line] : []),
+    repos.length === 0
+      ? `Team ${team} on ${server} owns no repos.`
+      : `Team ${team} on ${server} owns ${repos.map((r) => r.repo).join(", ")}.`,
   ]);
   return report;
 }
@@ -408,7 +567,9 @@ export function registerTeam(
 
   const team = program
     .command("team")
-    .description("create a team on a selfhost server, invite to it, revoke access or leave it");
+    .description(
+      "create a team on a selfhost server, invite to it, manage its people, roles and repos, or leave it",
+    );
 
   team
     .command("init")
@@ -429,7 +590,10 @@ export function registerTeam(
     command
       .option("--server <url>", "the selfhost server (default: the one this machine joined)")
       .option("--team <id>", "team id (default: the one this machine joined)")
-      .option("--token <token>", "the server's admin token (default: SELFHOST_TOKEN)")
+      .option(
+        "--token <token>",
+        "the server's admin token (default: SELFHOST_TOKEN, else this machine's team token)",
+      )
       .option("--json", "print JSON");
 
   adminOptions(
@@ -449,6 +613,47 @@ export function registerTeam(
       .argument("<invite-or-person>", "an invite code, or a person id such as their git email"),
   ).action((target: string, options: AdminOptions) =>
     guard(options.json, () => teamRevoke(target, options, io())),
+  );
+
+  adminOptions(
+    team
+      .command("role")
+      .description("change a person's role in the team (owner, admin or member); owners only")
+      .argument("<person>", "the person id, such as their git email")
+      .argument("<role>", "owner, admin or member"),
+  ).action((person: string, role: string, options: AdminOptions) =>
+    guard(options.json, () => teamRole(person, role, options, io())),
+  );
+
+  adminOptions(
+    team
+      .command("add")
+      .description("add someone already in another team of the org to this team")
+      .argument("<person>", "the person id, such as their git email")
+      .option("--role <role>", "member (default), admin or owner; admin and owner need an owner"),
+  ).action((person: string, options: AdminOptions & { role?: string }) =>
+    guard(options.json, () => teamAdd(person, options, io())),
+  );
+
+  adminOptions(
+    team.command("people").description("list the people in the team and their roles"),
+  ).action((options: AdminOptions) => guard(options.json, () => teamPeople(options, io())));
+
+  adminOptions(
+    team
+      .command("repo")
+      .description(
+        "give a repo to the team by its remote URL, take it back, or list the team's repos",
+      )
+      .argument("<action>", "add, remove or list")
+      .argument("[repo]", "remote URL (https://github.com/acme/api.git) or owner/name"),
+  ).action((action: string, repo: string | undefined, options: AdminOptions) =>
+    guard(options.json, () => {
+      if (action !== "add" && action !== "remove" && action !== "list") {
+        throw new Error(`team repo: expected add, remove or list, got "${action}"`);
+      }
+      return teamRepo(action, repo, options, io());
+    }),
   );
 
   team

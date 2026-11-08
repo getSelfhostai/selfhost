@@ -208,17 +208,38 @@ export const PolicyQuerySchema = Type.Object(
     team: Type.Optional(
       Type.String({
         description:
-          "Team id on a team server. Needed with the admin token; a person token reads its own team.",
+          "Team id on a team server. Needed with the admin token; a person token reads its own team by default, or another team it is in.",
+      }),
+    ),
+    repo: Type.Optional(
+      RepoSlug({
+        description:
+          "A repo the team owns, as owner/name: the policy with the repo's own rules on top.",
       }),
     ),
   },
   { additionalProperties: false, title: "PolicyQuery" },
 );
 
+export const POLICY_LAYER_KINDS = ["org", "team", "repo"] as const;
+
 export const PolicyResponseSchema = Type.Object(
   {
     hash: Type.String({ description: "sha256 of the selfhost.toml text in use." }),
     team: Type.Optional(Type.String({ description: "Team id, when the policy is a team's." })),
+    repo: Type.Optional(RepoSlug({ description: "The repo, when its own rules are included." })),
+    layers: Type.Optional(
+      Type.Array(
+        Type.Object(
+          { kind: StringEnum(POLICY_LAYER_KINDS), name: Type.String() },
+          { additionalProperties: false },
+        ),
+        {
+          description:
+            "What text is made of, in order: the org floor, the team's selfhost.toml, the repo's. With one layer text is that layer's own.",
+        },
+      ),
+    ),
     text: Type.Optional(Type.String({ description: "The selfhost.toml text in use." })),
     commit_sha: Type.Optional(
       Type.String({ description: "Git commit of selfhost.toml, when it is read from a repo." }),
@@ -238,7 +259,7 @@ export const PolicyCoverageQuerySchema = Type.Object(
     team: Type.Optional(
       Type.String({
         description:
-          "Team id on a team server. Needed with the admin token; a person token reads its own team.",
+          "Team id on a team server. Needed with the admin token; a person token reads its own team by default, or another team it is in.",
       }),
     ),
     vendor: Type.Optional(
@@ -262,11 +283,26 @@ export const PolicyCoverageResponseSchema = Type.Object(
   },
 );
 
+export const BUDGET_PERIODS = ["day", "week", "month"] as const;
+export type BudgetPeriod = (typeof BUDGET_PERIODS)[number];
+
 export const BudgetQuerySchema = Type.Object(
   {
-    person: Type.Optional(Type.String()),
-    team: Type.Optional(Type.String()),
-    period: Type.Optional(StringEnum(["day", "week", "month"] as const, { default: "month" })),
+    person: Type.Optional(
+      Type.String({ description: "Only this person's spend in the team. limit_usd is then null." }),
+    ),
+    team: Type.Optional(
+      Type.String({
+        description:
+          "Team id. Needed with the admin token; a person token reads its own team by default, or another team it is in.",
+      }),
+    ),
+    period: Type.Optional(
+      StringEnum(BUDGET_PERIODS, {
+        default: "month",
+        description: "The UTC day, the week from Monday, or the calendar month, now.",
+      }),
+    ),
   },
   { additionalProperties: false, title: "BudgetQuery" },
 );
@@ -276,7 +312,7 @@ const NullableUsd = (description: string) =>
 
 export const BudgetResponseSchema = Type.Object(
   {
-    period: StringEnum(["day", "week", "month"] as const),
+    period: StringEnum(BUDGET_PERIODS),
     from: DateTime(),
     to: DateTime(),
     spent_usd: Type.Number({ minimum: 0 }),

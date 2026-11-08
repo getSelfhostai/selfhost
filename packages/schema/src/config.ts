@@ -334,6 +334,28 @@ const PlanTiersSchema = (plan: string) =>
     }),
   );
 
+const BudgetUsd = (window: string) =>
+  Type.Optional(
+    Type.Number({
+      exclusiveMinimum: 0,
+      description: `Spend allowed per ${window} (UTC), in API-equivalent USD.`,
+    }),
+  );
+
+export const BudgetSchema = Type.Object(
+  {
+    daily_usd: BudgetUsd("day"),
+    weekly_usd: BudgetUsd("week, from Monday"),
+    monthly_usd: BudgetUsd("calendar month"),
+  },
+  {
+    additionalProperties: false,
+    minProperties: 1,
+    description:
+      "Spend budget of the team whose selfhost.toml this is; in the org policy, of the whole org. Spend is shown against it. Nothing is charged back and nothing is stopped.",
+  },
+);
+
 export const SelfhostConfigSchema = Type.Object(
   {
     version: Type.Literal(1, { description: "selfhost.toml format version." }),
@@ -651,6 +673,7 @@ export const SelfhostConfigSchema = Type.Object(
         },
       ),
     ),
+    budget: Type.Optional(BudgetSchema),
     teams: Type.Optional(
       Type.Record(Type.String(), TeamSchema, { default: {}, description: "Teams by name." }),
     ),
@@ -673,6 +696,7 @@ export type Team = Static<typeof TeamSchema>;
 export type PlanLimits = Static<typeof PlanLimitsSchema>;
 export type Runtime = Static<typeof RuntimeSchema>;
 export type RunCommand = Static<typeof RunCommandSchema>;
+export type Budget = Static<typeof BudgetSchema>;
 
 type Present<T> = Exclude<T, undefined>;
 
@@ -728,7 +752,18 @@ function regexError(pattern: string): string | undefined {
   }
 }
 
-function semanticErrors(config: ResolvedSelfhostConfig): SegmentError[] {
+export interface ParseOptions {
+  /**
+   * Rule ids defined in another layer of the same policy, such as the org floor, that
+   * `[teams.<name>.rules.<id>]` overrides in this file may name.
+   */
+  knownRuleIds?: ReadonlySet<string>;
+}
+
+function semanticErrors(
+  config: ResolvedSelfhostConfig,
+  { knownRuleIds = new Set() }: ParseOptions = {},
+): SegmentError[] {
   const errors: SegmentError[] = [];
   const ruleIds = new Map<string, number>();
   // A built-in id is taken only once its allow list is in use, so files written before
@@ -774,7 +809,7 @@ function semanticErrors(config: ResolvedSelfhostConfig): SegmentError[] {
   });
   for (const [team, { rules }] of Object.entries(config.teams)) {
     for (const ruleId of Object.keys(rules)) {
-      if (!ruleIds.has(ruleId) && !builtIn.has(ruleId)) {
+      if (!ruleIds.has(ruleId) && !builtIn.has(ruleId) && !knownRuleIds.has(ruleId)) {
         errors.push({
           segments: ["teams", team, "rules", ruleId],
           message: `Override for unknown rule "${ruleId}"`,
@@ -810,12 +845,15 @@ function runtimeErrors(runtime: Runtime): SegmentError[] {
   return errors;
 }
 
-function check(value: unknown): { config?: ResolvedSelfhostConfig; errors: SegmentError[] } {
+function check(
+  value: unknown,
+  options?: ParseOptions,
+): { config?: ResolvedSelfhostConfig; errors: SegmentError[] } {
   const withDefaults = Value.Default(SelfhostConfigSchema, Value.Clone(value));
   const errors = schemaErrors(configCheck(), withDefaults);
   if (errors.length > 0) return { errors };
   const config = withDefaults as ResolvedSelfhostConfig;
-  const semantic = semanticErrors(config);
+  const semantic = semanticErrors(config, options);
   return semantic.length > 0 ? { errors: semantic } : { config, errors: [] };
 }
 
@@ -833,7 +871,7 @@ export function validateConfig(value: unknown): ConfigResult {
  * Parses selfhost.toml text, applies defaults and validates it. Errors name the field and,
  * when it can be found, the line.
  */
-export function parseConfig(text: string): ConfigResult {
+export function parseConfig(text: string, options?: ParseOptions): ConfigResult {
   let raw: unknown;
   try {
     raw = parseToml(text);
@@ -847,7 +885,7 @@ export function parseConfig(text: string): ConfigResult {
     }
     throw error;
   }
-  const { config, errors } = check(raw);
+  const { config, errors } = check(raw, options);
   if (config) return { ok: true, config };
   const lines = new TomlLineIndex(text);
   return {

@@ -27,7 +27,12 @@
             ]
           },
           "team": {
-            "description": "Team id on a team server. Needed with the admin token; a person token reads its own team.",
+            "description": "Team id on a team server. Needed with the admin token; a person token reads its own team by default, or another team it is in.",
+            "type": "string"
+          },
+          "repo": {
+            "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+            "description": "A repo the team owns, as owner/name: the policy with the repo's own rules on top.",
             "type": "string"
           }
         }
@@ -49,6 +54,36 @@
           "team": {
             "description": "Team id, when the policy is a team's.",
             "type": "string"
+          },
+          "repo": {
+            "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+            "description": "The repo, when its own rules are included.",
+            "type": "string"
+          },
+          "layers": {
+            "description": "What text is made of, in order: the org floor, the team's selfhost.toml, the repo's. With one layer text is that layer's own.",
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "kind",
+                "name"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "org",
+                    "team",
+                    "repo"
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "text": {
             "description": "The selfhost.toml text in use.",
@@ -621,6 +656,29 @@
                   }
                 }
               },
+              "budget": {
+                "additionalProperties": false,
+                "minProperties": 1,
+                "description": "Spend budget of the team whose selfhost.toml this is; in the org policy, of the whole org. Spend is shown against it. Nothing is charged back and nothing is stopped.",
+                "type": "object",
+                "properties": {
+                  "daily_usd": {
+                    "exclusiveMinimum": 0,
+                    "description": "Spend allowed per day (UTC), in API-equivalent USD.",
+                    "type": "number"
+                  },
+                  "weekly_usd": {
+                    "exclusiveMinimum": 0,
+                    "description": "Spend allowed per week, from Monday (UTC), in API-equivalent USD.",
+                    "type": "number"
+                  },
+                  "monthly_usd": {
+                    "exclusiveMinimum": 0,
+                    "description": "Spend allowed per calendar month (UTC), in API-equivalent USD.",
+                    "type": "number"
+                  }
+                }
+              },
               "teams": {
                 "default": {},
                 "description": "Teams by name.",
@@ -901,13 +959,16 @@
         "type": "object",
         "properties": {
           "person": {
+            "description": "Only this person's spend in the team. limit_usd is then null.",
             "type": "string"
           },
           "team": {
+            "description": "Team id. Needed with the admin token; a person token reads its own team by default, or another team it is in.",
             "type": "string"
           },
           "period": {
             "default": "month",
+            "description": "The UTC day, the week from Monday, or the calendar month, now.",
             "type": "string",
             "enum": [
               "day",

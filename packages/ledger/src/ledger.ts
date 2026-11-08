@@ -13,6 +13,7 @@ import { type ConnectOptions, connect, type Database, migrate } from "./db.js";
 import { createDecisionStore, type DecisionStore } from "./decisions/store.js";
 import { createDeliveryStore, type DeliveryStore } from "./deliveries.js";
 import { type LedgerFieldError, LedgerQueryError, LedgerValidationError } from "./errors.js";
+import { createOrgStore, type OrgStore } from "./orgs.js";
 import { redactBatch, teamRedaction } from "./redaction.js";
 import { createTeamStore, type TeamStore } from "./teams.js";
 
@@ -25,7 +26,10 @@ export interface EventFilter {
   /** session_id */
   session?: string;
   kind?: string;
-  /** Team of the person token that wrote the event, on a team server. */
+  /**
+   * Team the event belongs to on a team server: the team that owns its run's repo, else the
+   * team of the person token that wrote it.
+   */
   team?: string;
   /** Events at or after this time. */
   from?: string;
@@ -46,8 +50,10 @@ export interface AppendResult {
 
 export interface AppendOptions {
   /**
-   * Team of the person token writing the batch. Stored with each new event so the team's
-   * people can read it; the event body's own team field is not used for this.
+   * Team of the person token writing the batch. Each new event is stored with the team that
+   * owns its run's repo (see OrgStore.assignTeams), else this team, so that team's people can
+   * read it, and the event's own team field is set to the same. Without it (the admin token, a
+   * laptop) the event body is kept as it is.
    */
   team?: string;
 }
@@ -70,6 +76,8 @@ export interface Ledger {
   query(filter: EventFilter): Promise<EventPage>;
   /** Teams, people and tokens for team mode, kept in the same database. */
   teams: TeamStore;
+  /** Orgs, the repos each team owns, and the policies and spend of each team. */
+  orgs: OrgStore;
   /** Decision events by id, and search by path, topic, rule and person. */
   decisions: DecisionStore;
   /** GitHub webhook delivery ids already handled, so a redelivery changes nothing. */
@@ -104,12 +112,13 @@ export async function openLedger(options: OpenLedgerOptions = {}): Promise<Ledge
   return createLedger(db, options);
 }
 
+/** $2 is a JSON array with the team of each event, in batch order. */
 const INSERT_SQL = `
 INSERT INTO events
   (id, ts, source, kind, actor_kind, actor_id, agent, model, session_id, body, team)
 SELECT (e->>'id')::uuid, (e->>'ts')::timestamptz, e->>'source', e->>'kind',
   e#>>'{actor,kind}', e#>>'{actor,id}', e#>>'{agent,vendor}', e->>'model', e->>'session_id', e,
-  $2::text
+  $2::text::jsonb ->> (n::int - 1)
 FROM jsonb_array_elements($1::text::jsonb) WITH ORDINALITY AS batch(e, n)
 ORDER BY n
 ON CONFLICT (id) DO NOTHING
@@ -126,21 +135,42 @@ export function databaseOf(ledger: Ledger): Database {
 
 export function createLedger(db: Database, options: LedgerOptions = {}): Ledger {
   const teams = createTeamStore(db);
-  const settingsFor = teamRedaction(teams, options.redaction ?? DEFAULT_REDACTION);
+  const orgs = createOrgStore(db);
+  const settingsFor = teamRedaction(orgs, options.redaction ?? DEFAULT_REDACTION);
   const ledger: Ledger = {
     async append(events, appendOptions = {}) {
       const valid = validateForAppend(events);
       if (valid.length === 0) return { accepted: [], duplicates: [] };
+      const writer = appendOptions.team;
+      const assigned = await orgs.assignTeams(db, valid, writer);
+      // A person token's events say which team they went to; other writers' bodies are kept.
+      const bodies =
+        writer === undefined
+          ? valid
+          : valid.map((event, i) => {
+              const team = assigned[i];
+              return team ? { ...event, team } : event;
+            });
       // The one place every ingest path passes through, so nothing unredacted is ever written.
-      // A person token's team decides the settings; otherwise the team named on the event.
-      const stored = await redactBatch(valid, (team) => settingsFor(appendOptions.team ?? team));
+      // The team the event goes to decides the settings; otherwise the team named on the event.
+      const byTeam = new Map<string | undefined, Promise<RedactionSettings>>();
+      const stored = await redactBatch(bodies, (event, i) => {
+        const team = assigned[i] ?? event.team;
+        let settings = byTeam.get(team);
+        if (!settings) {
+          settings = settingsFor(team);
+          byTeam.set(team, settings);
+        }
+        return settings;
+      });
       const inserted = new Set<string>();
       await db.transaction(async (tx) => {
+        await orgs.recordRuns(tx, stored);
         for (let start = 0; start < stored.length; start += MAX_EVENT_BATCH) {
           const chunk = stored.slice(start, start + MAX_EVENT_BATCH);
           const rows = await tx.query<{ id: string }>(INSERT_SQL, [
             JSON.stringify(chunk),
-            appendOptions.team ?? null,
+            JSON.stringify(assigned.slice(start, start + MAX_EVENT_BATCH)),
           ]);
           for (const row of rows) inserted.add(row.id);
         }
@@ -175,6 +205,8 @@ export function createLedger(db: Database, options: LedgerOptions = {}): Ledger 
     },
 
     teams,
+
+    orgs,
 
     decisions: createDecisionStore(db),
 

@@ -37,6 +37,11 @@ export interface ReviewRouteOptions {
   now?: () => Date;
   /** The person a person token belongs to; undefined for the admin token. */
   person?: (c: Context) => Person | undefined;
+  /**
+   * Every team the person token's person is in, their own first: they read and act on the
+   * items of each. Default: their own team only.
+   */
+  teams?: (c: Context) => Promise<string[]>;
 }
 
 const apiError = (code: string, message: string): ApiError => ({ error: { code, message } });
@@ -97,6 +102,19 @@ export function reviewRoutes<E extends Env>(
     const person = options.person?.(c);
     return { person, list: listFor(person?.team) };
   };
+  /** The lists a request can reach: every team of the person, or every item. */
+  const listsOf = async (c: Context): Promise<ReviewList[]> => {
+    const person = options.person?.(c);
+    if (!person) return [listFor(undefined)];
+    const teams = (await options.teams?.(c)) ?? [person.team];
+    return teams.map((team) => listFor(team));
+  };
+  /** The list that holds an item, so a person in several teams acts on any of theirs. */
+  const listWith = async (c: Context, id: string): Promise<ReviewList> => {
+    const lists = await listsOf(c);
+    for (const list of lists) if (await list.get(id)) return list;
+    return lists[0] ?? scope(c).list;
+  };
   const limit = bodyLimit({
     maxSize: MAX_ACTION_BYTES,
     onError: (c) =>
@@ -144,10 +162,13 @@ export function reviewRoutes<E extends Env>(
     }
     const person = options.person?.(c);
     if (person && team !== undefined && team !== person.team) {
-      return c.json(apiError("forbidden", "A person token reads only its own team's items"), 403);
+      const teams = (await options.teams?.(c)) ?? [person.team];
+      if (!teams.includes(team)) {
+        return c.json(apiError("forbidden", `You are not in team ${team}.`), 403);
+      }
     }
     try {
-      return c.json(await listFor(person?.team ?? team).list(query));
+      return c.json(await listFor(person ? (team ?? person.team) : team).list(query));
     } catch (error) {
       if (error instanceof ReviewInputError) {
         return c.json(apiError("invalid_query", error.message), 400);
@@ -158,7 +179,7 @@ export function reviewRoutes<E extends Env>(
 
   app.get("/v1/review-items/:id", async (c) => {
     const id = c.req.param("id");
-    const item = await scope(c).list.get(id);
+    const item = await (await listWith(c, id)).get(id);
     if (!item) return c.json(apiError("not_found", `No review item ${id}`), 404);
     return c.json(item);
   });
@@ -170,7 +191,7 @@ export function reviewRoutes<E extends Env>(
     if (by instanceof Response) return by;
     const id = c.req.param("id");
     try {
-      const response = await scope(c).list.decide(id, {
+      const response = await (await listWith(c, id)).decide(id, {
         verdict: body.verdict,
         by,
         ...(body.reason !== undefined ? { reason: body.reason } : {}),
@@ -196,7 +217,7 @@ export function reviewRoutes<E extends Env>(
     if (by instanceof Response) return by;
     const id = c.req.param("id");
     try {
-      return c.json(await scope(c).list.snooze(id, { by, until: body.until }));
+      return c.json(await (await listWith(c, id)).snooze(id, { by, until: body.until }));
     } catch (error) {
       if (error instanceof AlreadyAnsweredError) return conflict(c, error);
       if (error instanceof ReviewItemNotFoundError) {

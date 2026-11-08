@@ -22,6 +22,7 @@ import {
   type PolicyResponse,
   PolicyResponseSchema,
   RevokeTokensResponseSchema,
+  TEAM_ACTIONS,
 } from "@selfhost/schema";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { stampEvents, teamId } from "../src/teams.js";
@@ -53,8 +54,15 @@ const as = (token: string, init: RequestInit = {}) => ({
   headers: { ...(init.headers as Record<string, string>), authorization: `Bearer ${token}` },
 });
 
+/**
+ * A team in an org of its own, so the people of one test's team are not people of another's:
+ * a person's tokens act in every team of their org.
+ */
 async function createTeam(name: string, options: { invite_ttl_seconds?: number } = {}) {
-  const res = await server.request("/v1/teams", json("POST", { name, ...options }));
+  const org = await server.request("/v1/orgs", json("POST", { name: `${name} Org` }));
+  expect(org.status).toBe(201);
+  const { id } = (await org.json()) as { id: string };
+  const res = await server.request("/v1/teams", json("POST", { name, org: id, ...options }));
   expect(res.status).toBe(201);
   const body = await res.json();
   matches(CreateTeamResponseSchema, body);
@@ -159,7 +167,7 @@ describe("POST /v1/teams and /v1/join", () => {
 describe("GET /v1/me", () => {
   it("names the admin, the person and the team", async () => {
     const admin = await server.request("/v1/me");
-    expect(await admin.json()).toEqual({ kind: "admin" });
+    expect(await admin.json()).toEqual({ kind: "admin", allowed: [...TEAM_ACTIONS] });
 
     const { invite } = await createTeam("Me Team");
     const { token, person } = await join(invite, "ada@example.com");
@@ -241,13 +249,12 @@ describe("events written with a person token", () => {
     expect(notJson.status).toBe(400);
   });
 
-  it("cannot reach the admin routes", async () => {
+  it("cannot reach the admin token's routes", async () => {
     for (const [method, path] of [
-      ["POST", "/v1/teams/events-team/invites"],
-      ["DELETE", `/v1/invites/${"0".repeat(64)}`],
-      ["DELETE", "/v1/teams/events-team/people/ada@example.com/tokens"],
+      ["POST", "/v1/teams"],
+      ["POST", "/v1/orgs"],
     ] as const) {
-      const res = await server.app.request(path, as(token, json(method, {})));
+      const res = await server.app.request(path, as(token, json(method, { name: "x" })));
       expect(res.status, path).toBe(403);
     }
   });
@@ -295,16 +302,17 @@ describe("invites", () => {
     expect((await joinAs(invite, "late@example.com")).status).toBe(200);
   });
 
-  it("answer 401 once revoked, and only the admin token revokes them", async () => {
+  it("answer 401 once revoked, and only the admin token, owners and admins revoke them", async () => {
     const { invite } = await createTeam("Revoke Team");
     const extra = await createInvite("revoke-team");
     const { token } = await join(extra.invite, "ada@example.com");
+    const { token: member } = await join(invite, "mia@example.com");
 
-    const asOwner = await server.app.request(
+    const asMember = await server.app.request(
       `/v1/invites/${extra.id}`,
-      as(token, { method: "DELETE" }),
+      as(member, { method: "DELETE" }),
     );
-    expect(asOwner.status).toBe(403);
+    expect(asMember.status).toBe(403);
     const res = await server.request(`/v1/invites/${extra.id}`, { method: "DELETE" });
     expect(res.status).toBe(200);
     const revoked = (await res.json()) as Invite;
@@ -386,13 +394,19 @@ describe("revoking person tokens", () => {
     const { invite } = await createTeam("Offboard Team");
     const owner = await join(invite, "ada@example.com");
     const first = await join(invite, "bob@example.com");
+    const carol = await join(invite, "carol@example.com");
     const forBob = await createInvite("offboard-team", { email: "bob@example.com" });
     const second = await join(forBob.invite, "bob@example.com");
     const path = "/v1/teams/offboard-team/people/bob%40example.com/tokens";
 
-    expect((await server.app.request(path, as(owner.token, { method: "DELETE" }))).status).toBe(
+    // A member cannot cut off another member, or the owner.
+    expect((await server.app.request(path, as(carol.token, { method: "DELETE" }))).status).toBe(
       403,
     );
+    const ownerPath = "/v1/teams/offboard-team/people/ada%40example.com/tokens";
+    expect(
+      (await server.app.request(ownerPath, as(carol.token, { method: "DELETE" }))).status,
+    ).toBe(403);
     const res = await server.request(path, { method: "DELETE" });
     expect(res.status).toBe(200);
     const body = await res.json();

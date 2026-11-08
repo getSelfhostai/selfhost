@@ -128,10 +128,13 @@ describe.each(BACKENDS)("ledger on $name", (backend) => {
         "close",
         "decisions",
         "deliveries",
+        "orgs",
         "query",
         "teams",
       ]);
       expect(Object.keys(ledger.teams).filter((key) => /event/i.test(key))).toEqual([]);
+      // orgs holds orgs, repos and the repo of each run, and only reads events.
+      expect(Object.keys(ledger.orgs).filter((key) => /event/i.test(key))).toEqual([]);
       // deliveries holds GitHub webhook delivery ids, never events.
       expect(Object.keys(ledger.deliveries).sort()).toEqual(["claim", "release"]);
       // decisions only reads: a decision is recorded with append and corrected by a new one.

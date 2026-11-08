@@ -1,7 +1,11 @@
 import type { TObject, TSchema } from "@sinclair/typebox";
 import { stringify } from "yaml";
 import {
+  AddPersonRequestSchema,
+  AddRepoRequestSchema,
   ApiErrorSchema,
+  BudgetQuerySchema,
+  BudgetResponseSchema,
   ClaudeCodeHookInputSchema,
   CodexHookInputSchema,
   CodexNotifySchema,
@@ -9,6 +13,7 @@ import {
   CreateDecisionResponseSchema,
   CreateInviteRequestSchema,
   CreateInviteResponseSchema,
+  CreateOrgRequestSchema,
   CreateTeamRequestSchema,
   CreateTeamResponseSchema,
   DecisionQuerySchema,
@@ -29,6 +34,11 @@ import {
   MCP_TOOLS,
   MCP_TOOLS_SCHEMA,
   MeResponseSchema,
+  OrgInfoSchema,
+  OrgOverviewSchema,
+  OrgPolicyResponseSchema,
+  OverviewQuerySchema,
+  PersonSchema,
   PolicyCoverageQuerySchema,
   PolicyCoverageResponseSchema,
   PolicyQuerySchema,
@@ -40,7 +50,14 @@ import {
   RevokeTokensResponseSchema,
   SelfhostConfigSchema,
   SetPolicyRequestSchema,
+  SetRoleRequestSchema,
   SnoozeRequestSchema,
+  TeamInfoSchema,
+  TeamOverviewSchema,
+  TeamPeopleResponseSchema,
+  TeamRepoSchema,
+  TeamReposResponseSchema,
+  UpdateTeamRequestSchema,
 } from "../src/index.js";
 
 /** Files generated from the TypeBox sources. The drift test fails when they are stale. */
@@ -137,6 +154,21 @@ const COMPONENT_SCHEMAS: ReadonlyArray<readonly [name: string, schema: TSchema]>
   ["JoinRequest", JoinRequestSchema],
   ["JoinResponse", JoinResponseSchema],
   ["MeResponse", MeResponseSchema],
+  ["TeamInfo", TeamInfoSchema],
+  ["Person", PersonSchema],
+  ["UpdateTeamRequest", UpdateTeamRequestSchema],
+  ["TeamPeopleResponse", TeamPeopleResponseSchema],
+  ["AddPersonRequest", AddPersonRequestSchema],
+  ["SetRoleRequest", SetRoleRequestSchema],
+  ["CreateOrgRequest", CreateOrgRequestSchema],
+  ["OrgInfo", OrgInfoSchema],
+  ["OrgPolicyResponse", OrgPolicyResponseSchema],
+  ["AddRepoRequest", AddRepoRequestSchema],
+  ["TeamRepo", TeamRepoSchema],
+  ["TeamReposResponse", TeamReposResponseSchema],
+  ["BudgetResponse", BudgetResponseSchema],
+  ["TeamOverview", TeamOverviewSchema],
+  ["OrgOverview", OrgOverviewSchema],
 ];
 
 const ENTITY_REFS = new Map<string, string>([
@@ -185,9 +217,29 @@ const teamParameter = {
   name: "team",
   in: "query",
   required: false,
-  description: "Team id. Needed with the admin token; a person token writes its own team.",
+  description:
+    "Team id. Needed with the admin token; a person token writes its own team by default, or another team it is in.",
   schema: { type: "string" },
 };
+
+const repoParameter = {
+  name: "repo",
+  in: "query",
+  required: false,
+  description: "A repo the team owns, as owner/name: set that repo's own rules instead.",
+  schema: { type: "string", pattern: "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$" },
+};
+
+/** Who may call a route, from the permission table in src/team.ts. */
+const ROLE_NOTE = {
+  read: "The admin token, or a person token of anyone in the team.",
+  admin: "The admin token, or a person token whose role in the team is owner or admin.",
+  owner: "The admin token, or a person token whose role in the team is owner.",
+};
+
+const forbiddenResponse = errorResponse(
+  "The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.",
+);
 
 function openApiDocument(): Json {
   const authErrors = {
@@ -360,31 +412,34 @@ function openApiDocument(): Json {
         get: {
           operationId: "getPolicy",
           summary: "Get the team config in use and the rules that apply.",
+          description: `${ROLE_NOTE.read} The config in use is the org floor, then the team's selfhost.toml, then with repo the repo's own rules; layers says which. With one layer text is that file as it was set.`,
           parameters: queryParameters(PolicyQuerySchema),
           responses: {
             "200": { description: "Policy in use.", content: jsonContent("PolicyResponse") },
             "400": errorResponse("Invalid query, or no team given with the admin token."),
             ...authErrors,
-            "403": errorResponse("A person token asked for another team's policy."),
-            "404": errorResponse("No such team, or the team has no policy yet."),
+            "403": forbiddenResponse,
+            "404": errorResponse(
+              "No such team, the team does not own the repo, or neither the team nor its org has a policy yet.",
+            ),
           },
         },
         put: {
           operationId: "setPolicy",
-          summary: "Replace a team's selfhost.toml.",
-          description:
-            "Admin token, or a person token whose role is owner or admin. The text is validated first; an invalid file changes nothing.",
-          parameters: [teamParameter],
+          summary: "Replace a team's selfhost.toml, or the rules of one of its repos.",
+          description: `${ROLE_NOTE.admin} The text is validated first, like selfhost doctor, then against the org floor: a field that would relax an org rule (a lower mode, ask where the org blocks, fewer agents, another match, an allow list that widens, a guardrail the org keeps on) fails and names the org rule in org_rule. Teams and repos can add rules and tighten the org's. An invalid file changes nothing.`,
+          parameters: [teamParameter, repoParameter],
           requestBody: { required: true, content: jsonContent("SetPolicyRequest") },
           responses: {
             "200": { description: "Policy stored.", content: jsonContent("PolicyResponse") },
             "400": {
-              description: "The selfhost.toml is invalid. Nothing was stored.",
+              description:
+                "The selfhost.toml is invalid or relaxes the org floor. Nothing was stored.",
               content: jsonContent("InvalidPolicyError"),
             },
             ...authErrors,
-            "403": errorResponse("The person token's role is not owner or admin."),
-            "404": errorResponse("No such team."),
+            "403": forbiddenResponse,
+            "404": errorResponse("No such team, or the team does not own the repo."),
           },
         },
       },
@@ -411,13 +466,221 @@ function openApiDocument(): Json {
         post: {
           operationId: "createTeam",
           summary: "Create a team and its invite code.",
-          description: "Admin token only.",
+          description:
+            "Admin token only. The team goes in org (default: default). The first person to join with its invite is its owner.",
           requestBody: { required: true, content: jsonContent("CreateTeamRequest") },
           responses: {
             "201": { description: "Team created.", content: jsonContent("CreateTeamResponse") },
             "400": errorResponse("Invalid name or invite lifetime."),
             ...authErrors,
+            "404": errorResponse("No such org."),
             "409": errorResponse("A team with this id already exists."),
+          },
+        },
+      },
+      "/v1/teams/{team}": {
+        patch: {
+          operationId: "updateTeam",
+          summary: "Rename a team.",
+          description: `${ROLE_NOTE.admin} The id stays the same.`,
+          parameters: [pathParameter("team", "Team id.")],
+          requestBody: { required: true, content: jsonContent("UpdateTeamRequest") },
+          responses: {
+            "200": { description: "The team.", content: jsonContent("TeamInfo") },
+            "400": errorResponse("Invalid name."),
+            ...authErrors,
+            "403": forbiddenResponse,
+            "404": errorResponse("No such team."),
+          },
+        },
+      },
+      "/v1/teams/{team}/people": {
+        get: {
+          operationId: "listTeamPeople",
+          summary: "List the people in a team and their roles.",
+          description: ROLE_NOTE.read,
+          parameters: [pathParameter("team", "Team id.")],
+          responses: {
+            "200": { description: "The people.", content: jsonContent("TeamPeopleResponse") },
+            ...authErrors,
+            "403": forbiddenResponse,
+            "404": errorResponse("No such team."),
+          },
+        },
+        post: {
+          operationId: "addTeamPerson",
+          summary: "Add someone already in another team of the org.",
+          description: `${ROLE_NOTE.admin} Adding someone as admin or owner needs an owner. The tokens they hold work in this team from then on. People new to the org join with an invite instead.`,
+          parameters: [pathParameter("team", "Team id.")],
+          requestBody: { required: true, content: jsonContent("AddPersonRequest") },
+          responses: {
+            "201": { description: "Added.", content: jsonContent("Person") },
+            "400": errorResponse("Invalid body."),
+            ...authErrors,
+            "403": forbiddenResponse,
+            "404": errorResponse("No such team, or the person is in no team of its org."),
+            "409": errorResponse("The person is in the team already."),
+          },
+        },
+      },
+      "/v1/teams/{team}/people/{person}/role": {
+        put: {
+          operationId: "setTeamRole",
+          summary: "Change a person's role in a team.",
+          description: `${ROLE_NOTE.owner} Every person has exactly one role per team, and a team always keeps an owner.`,
+          parameters: [pathParameter("team", "Team id."), pathParameter("person", "Person id.")],
+          requestBody: { required: true, content: jsonContent("SetRoleRequest") },
+          responses: {
+            "200": { description: "The person with the new role.", content: jsonContent("Person") },
+            "400": errorResponse("Invalid role."),
+            ...authErrors,
+            "403": forbiddenResponse,
+            "404": errorResponse("No such person in the team."),
+            "409": errorResponse("The change would leave the team with no owner."),
+          },
+        },
+      },
+      "/v1/teams/{team}/repos": {
+        get: {
+          operationId: "listTeamRepos",
+          summary: "List the repos a team owns.",
+          description: ROLE_NOTE.read,
+          parameters: [pathParameter("team", "Team id.")],
+          responses: {
+            "200": { description: "The repos.", content: jsonContent("TeamReposResponse") },
+            ...authErrors,
+            "403": forbiddenResponse,
+            "404": errorResponse("No such team."),
+          },
+        },
+        post: {
+          operationId: "addTeamRepo",
+          summary: "Give a repo to a team, by its remote URL.",
+          description: `${ROLE_NOTE.admin} Every run in the repo is the team's from then on: events that name the repo, and events of a run (session) once any of its events names it, go to the team for its people, review list, spend and budget.`,
+          parameters: [pathParameter("team", "Team id.")],
+          requestBody: { required: true, content: jsonContent("AddRepoRequest") },
+          responses: {
+            "201": { description: "The repo.", content: jsonContent("TeamRepo") },
+            "400": errorResponse("Not a remote URL or owner/name."),
+            ...authErrors,
+            "403": forbiddenResponse,
+            "404": errorResponse("No such team."),
+            "409": errorResponse("Another team of the org owns the repo."),
+          },
+        },
+      },
+      "/v1/teams/{team}/repos/{owner}/{name}": {
+        delete: {
+          operationId: "removeTeamRepo",
+          summary: "Take a repo back from a team.",
+          description: `${ROLE_NOTE.admin} Events already written keep their team.`,
+          parameters: [
+            pathParameter("team", "Team id."),
+            pathParameter("owner", "Repo owner."),
+            pathParameter("name", "Repo name."),
+          ],
+          responses: {
+            "200": {
+              description: "The team's repos now.",
+              content: jsonContent("TeamReposResponse"),
+            },
+            ...authErrors,
+            "403": forbiddenResponse,
+            "404": errorResponse("The team does not own the repo."),
+          },
+        },
+      },
+      "/v1/teams/{team}/overview": {
+        get: {
+          operationId: "getTeamOverview",
+          summary: "One team's dashboard: spend, budget, people, repos and review list.",
+          description: ROLE_NOTE.read,
+          parameters: [pathParameter("team", "Team id."), ...queryParameters(OverviewQuerySchema)],
+          responses: {
+            "200": { description: "The overview.", content: jsonContent("TeamOverview") },
+            "400": errorResponse("Invalid time range."),
+            ...authErrors,
+            "403": forbiddenResponse,
+            "404": errorResponse("No such team."),
+          },
+        },
+      },
+      "/v1/budget": {
+        get: {
+          operationId: "getBudget",
+          summary: "Spend so far against a team's budget, with a forecast.",
+          description: `${ROLE_NOTE.read} The budget is [budget] in the team's selfhost.toml. Nothing is charged back or stopped. The MCP tool get_budget makes the same call.`,
+          parameters: queryParameters(BudgetQuerySchema),
+          responses: {
+            "200": { description: "The budget.", content: jsonContent("BudgetResponse") },
+            "400": errorResponse("Invalid query, or no team given with the admin token."),
+            ...authErrors,
+            "403": forbiddenResponse,
+            "404": errorResponse("No such team."),
+          },
+        },
+      },
+      "/v1/orgs": {
+        post: {
+          operationId: "createOrg",
+          summary: "Create an org.",
+          description:
+            "Admin token only. Teams go in it with POST /v1/teams and org. Every team created without one is in the org default.",
+          requestBody: { required: true, content: jsonContent("CreateOrgRequest") },
+          responses: {
+            "201": { description: "Org created.", content: jsonContent("OrgInfo") },
+            "400": errorResponse("Invalid name."),
+            ...authErrors,
+            "409": errorResponse("An org with this id already exists."),
+          },
+        },
+      },
+      "/v1/orgs/{org}/policy": {
+        get: {
+          operationId: "getOrgPolicy",
+          summary: "Get the org floor: the selfhost.toml every team and repo builds on.",
+          description:
+            "The admin token, or a person token of anyone in the org. conflicts lists stored team and repo rules that relax it.",
+          parameters: [pathParameter("org", "Org id.")],
+          responses: {
+            "200": { description: "The org policy.", content: jsonContent("OrgPolicyResponse") },
+            ...authErrors,
+            "403": errorResponse("A person token of another org."),
+            "404": errorResponse("No such org, or it has no policy yet."),
+          },
+        },
+        put: {
+          operationId: "setOrgPolicy",
+          summary: "Replace the org floor.",
+          description:
+            "Admin token only. Every team's and repo's policy builds on it: they can add rules and tighten its own, never relax them. Stored team and repo rules that relax the new floor are listed in conflicts, and the org's value applies to them until they are changed.",
+          parameters: [pathParameter("org", "Org id.")],
+          requestBody: { required: true, content: jsonContent("SetPolicyRequest") },
+          responses: {
+            "200": { description: "Stored.", content: jsonContent("OrgPolicyResponse") },
+            "400": {
+              description: "The selfhost.toml is invalid. Nothing was stored.",
+              content: jsonContent("InvalidPolicyError"),
+            },
+            ...authErrors,
+            "403": errorResponse("Not the admin token."),
+            "404": errorResponse("No such org."),
+          },
+        },
+      },
+      "/v1/orgs/{org}/overview": {
+        get: {
+          operationId: "getOrgOverview",
+          summary: "The cross-team view for the lead.",
+          description:
+            "Every team of the org with the admin token; with a person token, the teams where the person is owner or admin. The org's [budget] is shown to whoever sees every team. Nothing is charged back.",
+          parameters: [pathParameter("org", "Org id."), ...queryParameters(OverviewQuerySchema)],
+          responses: {
+            "200": { description: "The overview.", content: jsonContent("OrgOverview") },
+            "400": errorResponse("Invalid time range."),
+            ...authErrors,
+            "403": errorResponse("A person token of another org, or one that leads no team of it."),
+            "404": errorResponse("No such org."),
           },
         },
       },
@@ -425,14 +688,14 @@ function openApiDocument(): Json {
         post: {
           operationId: "createInvite",
           summary: "Create another invite code for a team.",
-          description:
-            "Admin token only. The invite expires after ttl_seconds (default 7 days). With an email, only that person can join with it, and their person id is the email.",
+          description: `${ROLE_NOTE.admin} The invite expires after ttl_seconds (default 7 days). With an email, only that person can join with it, and their person id is the email.`,
           parameters: [pathParameter("team", "Team id.")],
           requestBody: { required: true, content: jsonContent("CreateInviteRequest") },
           responses: {
             "201": { description: "Invite created.", content: jsonContent("CreateInviteResponse") },
             "400": errorResponse("Invalid lifetime or email."),
             ...authErrors,
+            "403": forbiddenResponse,
             "404": errorResponse("No such team."),
           },
         },
@@ -441,12 +704,12 @@ function openApiDocument(): Json {
         delete: {
           operationId: "revokeInvite",
           summary: "Revoke an invite code.",
-          description:
-            "Admin token only. Joining with a revoked invite answers 401. People who already joined keep their tokens. Revoking twice is not an error.",
+          description: `${ROLE_NOTE.admin} Joining with a revoked invite answers 401. People who already joined keep their tokens. Revoking twice is not an error.`,
           parameters: [pathParameter("id", "sha256 of the invite code, in hex.")],
           responses: {
             "200": { description: "Invite revoked.", content: jsonContent("Invite") },
             ...authErrors,
+            "403": forbiddenResponse,
             "404": errorResponse("No such invite."),
           },
         },
@@ -455,8 +718,7 @@ function openApiDocument(): Json {
         delete: {
           operationId: "revokePersonTokens",
           summary: "Revoke every token a person holds.",
-          description:
-            "Admin token only. The person's events stay in the ledger; their tokens answer 401 from now on. They can join again only with a new invite.",
+          description: `${ROLE_NOTE.admin} Revoking an owner needs an owner; anyone can revoke their own. The person's events stay in the ledger; their tokens answer 401 from now on. They can join again only with a new invite.`,
           parameters: [pathParameter("team", "Team id."), pathParameter("person", "Person id.")],
           responses: {
             "200": {
@@ -464,6 +726,7 @@ function openApiDocument(): Json {
               content: jsonContent("RevokeTokensResponse"),
             },
             ...authErrors,
+            "403": forbiddenResponse,
             "404": errorResponse("No such team or person."),
           },
         },
@@ -473,7 +736,7 @@ function openApiDocument(): Json {
           operationId: "joinTeam",
           summary: "Exchange an invite code for a person token.",
           description:
-            "The invite code is the credential, so no bearer token is needed. A team-wide invite only adds new people: a person id already in the team (compared ignoring case) is refused, so the holder cannot take over the owner's or anyone else's identity. An invite for an email joins only that person, also when they are already in the team, which adds another token for them.",
+            "The invite code is the credential, so no bearer token is needed. A team-wide invite only adds people new to the org: a person id already in any team of the org (compared ignoring case) is refused, so the holder cannot take over the owner's or anyone else's identity, which acts in every team of the org it is in. An invite for an email joins only that person, also when they are already in the team, which adds another token for them.",
           security: [],
           requestBody: { required: true, content: jsonContent("JoinRequest") },
           responses: {
@@ -488,7 +751,9 @@ function openApiDocument(): Json {
       "/v1/me": {
         get: {
           operationId: "getMe",
-          summary: "Who the bearer token belongs to.",
+          summary: "Who the bearer token belongs to, their role and what it allows.",
+          description:
+            "For a person token: the person, their team, their role there, the actions the permission table gives that role (the console offers only these), and every team of the org they are in.",
           responses: {
             "200": { description: "The token's owner.", content: jsonContent("MeResponse") },
             ...authErrors,

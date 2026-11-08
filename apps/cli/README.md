@@ -676,8 +676,10 @@ a selfhost server. Team mode connects the same install to a shared server
 selfhost team init --server https://selfhost.example.com --name Platform   # admin token: --token or SELFHOST_TOKEN
 selfhost join https://selfhost.example.com selfhost_inv_...                 # on each laptop
 selfhost status
-selfhost team invite --email bob@example.com --ttl 2d                      # admin token
-selfhost team revoke bob@example.com                                       # admin token
+selfhost team invite --email bob@example.com --ttl 2d                      # owner or admin
+selfhost team revoke bob@example.com                                       # owner or admin
+selfhost team role bob@example.com admin                                   # owner
+selfhost team repo add https://github.com/acme/api.git                     # owner or admin
 selfhost team leave
 ```
 
@@ -691,8 +693,16 @@ selfhost team leave
   team, the owner included, is refused, so a second machine for the same person needs
   `selfhost team invite --email <person>`. `selfhost team revoke <invite>` revokes an invite code; `selfhost team revoke
   <person>` revokes every token the person holds (all their machines) and the open invites for
-  their email. Their events stay. Both take the admin token like `team init` does, and
-  `--server` and `--team`, which default to the team this machine joined.
+  their email. Their events stay. Both take `--server` and `--team`, which default to the team
+  this machine joined, and the admin token like `team init` does, else this machine's person
+  token, whose role in the team the server checks.
+- `selfhost team role <person> <owner|admin|member>` changes a person's role (owners only; a
+  team always keeps an owner), `selfhost team add <person> [--role]` adds someone already in
+  another team of the org, `selfhost team people` lists the team and its roles, and `selfhost
+  team repo add|remove|list [remote]` gives a repo to the team by its remote URL, so its runs,
+  spend and review items are the team's. They take the same flags as `team invite`. A refused
+  call prints the server's permission error, such as `Permission denied: Changing roles needs
+  the owner role in team platform; you are an admin there.`, and exits 1.
 - `selfhost join <url> <invite> [--person <id>] [--name <name>]` exchanges the invite for a
   person token and adds `server`, `token`, `person` and `team` to `~/.selfhost/config.json`
   (mode 0600), and nothing else: no vendor login or API key is asked for or stored. `--person`
@@ -732,6 +742,7 @@ Every command takes `--json` and prints one object with a `schema` tag: `selfhos
 `selfhost.inbox_sync/v1`,
 `selfhost.limit_forecast/v1`, `selfhost.plan_tiers/v1`, `selfhost.spend_alarms/v1`,
 `selfhost.team_init/v1`, `selfhost.team_invite/v1`, `selfhost.team_revoke/v1`,
+`selfhost.team_role/v1`, `selfhost.team_add/v1`, `selfhost.team_people/v1`, `selfhost.team_repos/v1`,
 `selfhost.join/v1`, `selfhost.status/v1`, `selfhost.team_leave/v1` and `selfhost.up/v1`. Errors print `selfhost.error/v1` and exit 1. In solo mode no command
 needs a network connection.
 

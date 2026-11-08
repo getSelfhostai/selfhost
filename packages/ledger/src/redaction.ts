@@ -1,49 +1,45 @@
 import {
   type LedgerEvent,
-  parseConfig,
   type RedactionSettings,
   redactEvent,
   redactionSettings,
 } from "@selfhost/schema";
-import type { TeamStore } from "./teams.js";
+import type { OrgStore } from "./orgs.js";
 
 /**
- * Settings for an event's team: the team's stored selfhost.toml when it has one, read the same
- * way GET /v1/policy reads it, else `fallback`. Parsed policies are kept until their text changes.
+ * Settings for an event's team: the policy in use for the team (its stored selfhost.toml on
+ * top of its org's, read the same way GET /v1/policy reads it), else `fallback`. Composed
+ * policies are kept until their text changes.
  */
 export function teamRedaction(
-  teams: Pick<TeamStore, "getPolicy">,
+  orgs: Pick<OrgStore, "effectivePolicy">,
   fallback: RedactionSettings,
-): (team: string | undefined) => Promise<RedactionSettings> {
-  const parsed = new Map<string, { text: string; settings: RedactionSettings }>();
+): (team: string | null | undefined) => Promise<RedactionSettings> {
+  const parsed = new Map<string, { hash: string; settings: RedactionSettings }>();
   return async (team) => {
-    if (team === undefined) return fallback;
-    const policy = await teams.getPolicy(team);
+    if (team == null) return fallback;
+    let policy: Awaited<ReturnType<OrgStore["effectivePolicy"]>>;
+    try {
+      policy = await orgs.effectivePolicy(team);
+    } catch {
+      // Only text that validates is stored, so this means the schema changed under it.
+      return fallback;
+    }
     if (!policy) return fallback;
     const cached = parsed.get(team);
-    if (cached?.text === policy.text) return cached.settings;
-    const result = parseConfig(policy.text);
-    // PUT /v1/policy stores only text that parses, so this means the schema changed under it.
-    const settings = result.ok ? redactionSettings(result.config) : fallback;
-    parsed.set(team, { text: policy.text, settings });
+    if (cached?.hash === policy.hash) return cached.settings;
+    const settings = redactionSettings(policy.config);
+    parsed.set(team, { hash: policy.hash, settings });
     return settings;
   };
 }
 
-/** Each event as it may be stored, under its own team's settings. */
+/** Each event as it may be stored, under the settings of the team it goes to. */
 export async function redactBatch(
   events: LedgerEvent[],
-  settingsFor: (team: string | undefined) => Promise<RedactionSettings>,
+  settingsFor: (event: LedgerEvent, index: number) => Promise<RedactionSettings>,
 ): Promise<LedgerEvent[]> {
-  const byTeam = new Map<string | undefined, Promise<RedactionSettings>>();
   return Promise.all(
-    events.map(async (event) => {
-      let settings = byTeam.get(event.team);
-      if (!settings) {
-        settings = settingsFor(event.team);
-        byTeam.set(event.team, settings);
-      }
-      return redactEvent(event, await settings);
-    }),
+    events.map(async (event, index) => redactEvent(event, await settingsFor(event, index))),
   );
 }

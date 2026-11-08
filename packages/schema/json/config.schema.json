@@ -560,6 +560,29 @@
         }
       }
     },
+    "budget": {
+      "additionalProperties": false,
+      "minProperties": 1,
+      "description": "Spend budget of the team whose selfhost.toml this is; in the org policy, of the whole org. Spend is shown against it. Nothing is charged back and nothing is stopped.",
+      "type": "object",
+      "properties": {
+        "daily_usd": {
+          "exclusiveMinimum": 0,
+          "description": "Spend allowed per day (UTC), in API-equivalent USD.",
+          "type": "number"
+        },
+        "weekly_usd": {
+          "exclusiveMinimum": 0,
+          "description": "Spend allowed per week, from Monday (UTC), in API-equivalent USD.",
+          "type": "number"
+        },
+        "monthly_usd": {
+          "exclusiveMinimum": 0,
+          "description": "Spend allowed per calendar month (UTC), in API-equivalent USD.",
+          "type": "number"
+        }
+      }
+    },
     "teams": {
       "default": {},
       "description": "Teams by name.",

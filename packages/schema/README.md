@@ -95,6 +95,57 @@ blocked_registries = ["*.example.com", "registry.npmjs.cf"]   # hosts, URLs or g
 install_scripts = "ask"         # ask (default), block or allow
 ```
 
+## Org, team and repo policy
+
+On a team server a team's policy is layered: the org's `selfhost.toml` is a floor, then the
+team's, then a repo's own rules (`src/layers.ts`). `checkLayer(orgText, text)` validates a team
+or repo file on top of the floor: the file itself, then every field that would relax the org,
+each error naming the org rule in `org_rule`. `composePolicy(layers)` merges the layers into the
+file in use; one layer is used as it is, so a team with no org policy keeps its text and hash.
+
+Relaxing the floor means any of:
+
+| Where                                                                      | Relaxes the org when the team or repo file                                                                                                                            |
+| -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `[[rules]]` with an org rule's id                                          | sets a lower mode (off < observe < enforce), ask where the org blocks, fewer agents, another match, or drops `irreversible`                                           |
+| `[teams.<name>.rules.<id>]` for an org rule, `mcp.allow` or `models.allow` | sets a lower mode, ask where the org blocks, or fewer agents, measured against the org rule with the org's own override for that name                                 |
+| `[mcp]`, `[models]` (when the org file has the section)                    | sets a lower mode, or an allow list that widens the org's: an entry no org entry covers (equal, or matched by an org glob), or an empty list, which allows everything |
+| `[packages]` (when the org file has it)                                    | sets a lower mode, an allow entry the org's allow does not cover, a lower `min_age_days`, or a softer `install_scripts` (allow < ask < block)                         |
+| `[guardrails]` (when the org file has it)                                  | sets a lower mode, or disables a guardrail the org keeps on                                                                                                           |
+| `[[redaction]]`                                                            | reuses an org pattern's name with another pattern                                                                                                                     |
+| `[ledger]`                                                                 | sets `log_prompts = true` where the org sets it to false                                                                                                              |
+
+Org rules are inherited, so a team or repo cannot drop one; it can add rules with new ids and
+tighten the org's. Lists that only add protection (`deny`, `blocked_registries`,
+`prod_connections`, `prod_credentials`, redaction patterns, team `members`) are joined. Other
+sections (`[review]`, `[alerts]`, `[plans]`, `[ledger] retention_days`) merge key by key with the
+later layer winning. When the org raises its floor over stored team or repo files, the fields
+that now relax it are reported as conflicts and the org's value is used. `[budget]` is not
+inherited: the org's is the org total, a team's is its own.
+
+`[budget]` sets `daily_usd`, `weekly_usd` (from Monday) and `monthly_usd`, UTC, in API-equivalent
+USD. Spend is shown against it; nothing is charged back and nothing is stopped.
+
+## Roles
+
+Every person has exactly one role per team: owner (the first to join), admin or member.
+`ROLE_PERMISSIONS` (`src/team.ts`) is the permission table the server checks on every request,
+and `GET /v1/me` lists the caller's actions so the console offers only those:
+
+| Action                                                                                  | owner | admin | member |
+| --------------------------------------------------------------------------------------- | ----- | ----- | ------ |
+| `read`: the team's events, review items, people, repos, policy, spend, budget, overview | yes   | yes   | yes    |
+| `work`: write own events, answer and snooze review items, leave                         | yes   | yes   | yes    |
+| `policy.write`: the team's selfhost.toml and its repos' rules                           | yes   | yes   | no     |
+| `settings.write`: rename the team, map and unmap repos                                  | yes   | yes   | no     |
+| `invites`: create and revoke invites (they add members)                                 | yes   | yes   | no     |
+| `people`: add org people as members, revoke a member's or admin's tokens                | yes   | yes   | no     |
+| `roles`: change roles, add admins and owners, revoke an owner's tokens                  | yes   | no    | no     |
+| `org.overview`: the team shows in the person's cross-team view                          | yes   | yes   | no     |
+
+A team always keeps an owner. The admin token can do everything; it alone creates orgs and
+teams and sets the org floor. Anyone can revoke their own tokens.
+
 ## Guardrails
 
 `[guardrails]` sets the built-in guardrails that pre-tool hooks apply on top of `[[rules]]`
@@ -235,7 +286,10 @@ batches of up to 1000), `GET /v1/events`, `GET /v1/review-items`, `GET /v1/revie
 `POST /v1/review-items/{id}/decision` (409 with the current item when it is no longer open),
 `POST /v1/review-items/{id}/snooze`, `GET` and `PUT /v1/policy`, and the team endpoints
 `POST /v1/teams`, `POST /v1/join` (no bearer token: the invite code is the credential) and
-`GET /v1/me`, whose bodies are in `src/team.ts`. It references the JSON Schema files for events,
+`GET /v1/me`, whose bodies are in `src/team.ts`, plus roles and people
+(`/v1/teams/{team}/people`, `.../role`, `PATCH /v1/teams/{team}`), orgs, repos and overviews
+(`/v1/orgs`, `/v1/orgs/{org}/policy`, `/v1/orgs/{org}/overview`, `/v1/teams/{team}/repos`,
+`/v1/teams/{team}/overview`, `/v1/budget`), whose bodies are in `src/org.ts`. It references the JSON Schema files for events,
 review items and the config. `mcp-tools.json` lists `get_policy`, `get_budget`,
 `list_review_items`, `search_events`, `search_decisions` and `record_decision` with
 self-contained input and output schemas.

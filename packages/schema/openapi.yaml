@@ -503,6 +503,7 @@ paths:
     get:
       operationId: getPolicy
       summary: Get the team config in use and the rules that apply.
+      description: The admin token, or a person token of anyone in the team. The config in use is the org floor, then the team's selfhost.toml, then with repo the repo's own rules; layers says which. With one layer text is that file as it was set.
       parameters:
         - name: person
           in: query
@@ -527,8 +528,15 @@ paths:
         - name: team
           in: query
           required: false
-          description: Team id on a team server. Needed with the admin token; a person token reads its own team.
+          description: Team id on a team server. Needed with the admin token; a person token reads its own team by default, or another team it is in.
           schema:
+            type: string
+        - name: repo
+          in: query
+          required: false
+          description: "A repo the team owns, as owner/name: the policy with the repo's own rules on top."
+          schema:
+            pattern: ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$
             type: string
       responses:
         "200":
@@ -546,28 +554,35 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          description: A person token asked for another team's policy.
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
         "404":
-          description: No such team, or the team has no policy yet.
+          description: No such team, the team does not own the repo, or neither the team nor its org has a policy yet.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
     put:
       operationId: setPolicy
-      summary: Replace a team's selfhost.toml.
-      description: Admin token, or a person token whose role is owner or admin. The text is validated first; an invalid file changes nothing.
+      summary: Replace a team's selfhost.toml, or the rules of one of its repos.
+      description: "The admin token, or a person token whose role in the team is owner or admin. The text is validated first, like selfhost doctor, then against the org floor: a field that would relax an org rule (a lower mode, ask where the org blocks, fewer agents, another match, an allow list that widens, a guardrail the org keeps on) fails and names the org rule in org_rule. Teams and repos can add rules and tighten the org's. An invalid file changes nothing."
       parameters:
         - name: team
           in: query
           required: false
-          description: Team id. Needed with the admin token; a person token writes its own team.
+          description: Team id. Needed with the admin token; a person token writes its own team by default, or another team it is in.
           schema:
             type: string
+        - name: repo
+          in: query
+          required: false
+          description: "A repo the team owns, as owner/name: set that repo's own rules instead."
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$
       requestBody:
         required: true
         content:
@@ -582,7 +597,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/PolicyResponse"
         "400":
-          description: The selfhost.toml is invalid. Nothing was stored.
+          description: The selfhost.toml is invalid or relaxes the org floor. Nothing was stored.
           content:
             application/json:
               schema:
@@ -590,13 +605,13 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          description: The person token's role is not owner or admin.
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
         "404":
-          description: No such team.
+          description: No such team, or the team does not own the repo.
           content:
             application/json:
               schema:
@@ -610,7 +625,7 @@ paths:
         - name: team
           in: query
           required: false
-          description: Team id on a team server. Needed with the admin token; a person token reads its own team.
+          description: Team id on a team server. Needed with the admin token; a person token reads its own team by default, or another team it is in.
           schema:
             type: string
         - name: vendor
@@ -655,7 +670,7 @@ paths:
     post:
       operationId: createTeam
       summary: Create a team and its invite code.
-      description: Admin token only.
+      description: "Admin token only. The team goes in org (default: default). The first person to join with its invite is its owner."
       requestBody:
         required: true
         content:
@@ -677,8 +692,598 @@ paths:
                 $ref: "#/components/schemas/ApiError"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No such org.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
         "409":
           description: A team with this id already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/teams/{team}:
+    patch:
+      operationId: updateTeam
+      summary: Rename a team.
+      description: The admin token, or a person token whose role in the team is owner or admin. The id stays the same.
+      parameters:
+        - name: team
+          in: path
+          required: true
+          description: Team id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTeamRequest"
+      responses:
+        "200":
+          description: The team.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamInfo"
+        "400":
+          description: Invalid name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such team.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/teams/{team}/people:
+    get:
+      operationId: listTeamPeople
+      summary: List the people in a team and their roles.
+      description: The admin token, or a person token of anyone in the team.
+      parameters:
+        - name: team
+          in: path
+          required: true
+          description: Team id.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The people.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamPeopleResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such team.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    post:
+      operationId: addTeamPerson
+      summary: Add someone already in another team of the org.
+      description: The admin token, or a person token whose role in the team is owner or admin. Adding someone as admin or owner needs an owner. The tokens they hold work in this team from then on. People new to the org join with an invite instead.
+      parameters:
+        - name: team
+          in: path
+          required: true
+          description: Team id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddPersonRequest"
+      responses:
+        "201":
+          description: Added.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Person"
+        "400":
+          description: Invalid body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such team, or the person is in no team of its org.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: The person is in the team already.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/teams/{team}/people/{person}/role:
+    put:
+      operationId: setTeamRole
+      summary: Change a person's role in a team.
+      description: The admin token, or a person token whose role in the team is owner. Every person has exactly one role per team, and a team always keeps an owner.
+      parameters:
+        - name: team
+          in: path
+          required: true
+          description: Team id.
+          schema:
+            type: string
+        - name: person
+          in: path
+          required: true
+          description: Person id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetRoleRequest"
+      responses:
+        "200":
+          description: The person with the new role.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Person"
+        "400":
+          description: Invalid role.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such person in the team.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: The change would leave the team with no owner.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/teams/{team}/repos:
+    get:
+      operationId: listTeamRepos
+      summary: List the repos a team owns.
+      description: The admin token, or a person token of anyone in the team.
+      parameters:
+        - name: team
+          in: path
+          required: true
+          description: Team id.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The repos.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamReposResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such team.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    post:
+      operationId: addTeamRepo
+      summary: Give a repo to a team, by its remote URL.
+      description: "The admin token, or a person token whose role in the team is owner or admin. Every run in the repo is the team's from then on: events that name the repo, and events of a run (session) once any of its events names it, go to the team for its people, review list, spend and budget."
+      parameters:
+        - name: team
+          in: path
+          required: true
+          description: Team id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddRepoRequest"
+      responses:
+        "201":
+          description: The repo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamRepo"
+        "400":
+          description: Not a remote URL or owner/name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such team.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Another team of the org owns the repo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/teams/{team}/repos/{owner}/{name}:
+    delete:
+      operationId: removeTeamRepo
+      summary: Take a repo back from a team.
+      description: The admin token, or a person token whose role in the team is owner or admin. Events already written keep their team.
+      parameters:
+        - name: team
+          in: path
+          required: true
+          description: Team id.
+          schema:
+            type: string
+        - name: owner
+          in: path
+          required: true
+          description: Repo owner.
+          schema:
+            type: string
+        - name: name
+          in: path
+          required: true
+          description: Repo name.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The team's repos now.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamReposResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: The team does not own the repo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/teams/{team}/overview:
+    get:
+      operationId: getTeamOverview
+      summary: "One team's dashboard: spend, budget, people, repos and review list."
+      description: The admin token, or a person token of anyone in the team.
+      parameters:
+        - name: team
+          in: path
+          required: true
+          description: Team id.
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: false
+          description: "Spend at or after this time. Default: month start."
+          schema:
+            format: date-time
+            type: string
+        - name: to
+          in: query
+          required: false
+          description: "Spend before this time. Default: now."
+          schema:
+            format: date-time
+            type: string
+      responses:
+        "200":
+          description: The overview.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamOverview"
+        "400":
+          description: Invalid time range.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such team.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/budget:
+    get:
+      operationId: getBudget
+      summary: Spend so far against a team's budget, with a forecast.
+      description: The admin token, or a person token of anyone in the team. The budget is [budget] in the team's selfhost.toml. Nothing is charged back or stopped. The MCP tool get_budget makes the same call.
+      parameters:
+        - name: person
+          in: query
+          required: false
+          description: Only this person's spend in the team. limit_usd is then null.
+          schema:
+            type: string
+        - name: team
+          in: query
+          required: false
+          description: Team id. Needed with the admin token; a person token reads its own team by default, or another team it is in.
+          schema:
+            type: string
+        - name: period
+          in: query
+          required: false
+          description: The UTC day, the week from Monday, or the calendar month, now.
+          schema:
+            default: month
+            type: string
+            enum:
+              - day
+              - week
+              - month
+      responses:
+        "200":
+          description: The budget.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BudgetResponse"
+        "400":
+          description: Invalid query, or no team given with the admin token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such team.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/orgs:
+    post:
+      operationId: createOrg
+      summary: Create an org.
+      description: Admin token only. Teams go in it with POST /v1/teams and org. Every team created without one is in the org default.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOrgRequest"
+      responses:
+        "201":
+          description: Org created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrgInfo"
+        "400":
+          description: Invalid name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: An org with this id already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/orgs/{org}/policy:
+    get:
+      operationId: getOrgPolicy
+      summary: "Get the org floor: the selfhost.toml every team and repo builds on."
+      description: The admin token, or a person token of anyone in the org. conflicts lists stored team and repo rules that relax it.
+      parameters:
+        - name: org
+          in: path
+          required: true
+          description: Org id.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The org policy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrgPolicyResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: A person token of another org.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such org, or it has no policy yet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    put:
+      operationId: setOrgPolicy
+      summary: Replace the org floor.
+      description: "Admin token only. Every team's and repo's policy builds on it: they can add rules and tighten its own, never relax them. Stored team and repo rules that relax the new floor are listed in conflicts, and the org's value applies to them until they are changed."
+      parameters:
+        - name: org
+          in: path
+          required: true
+          description: Org id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetPolicyRequest"
+      responses:
+        "200":
+          description: Stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrgPolicyResponse"
+        "400":
+          description: The selfhost.toml is invalid. Nothing was stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvalidPolicyError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Not the admin token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such org.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/orgs/{org}/overview:
+    get:
+      operationId: getOrgOverview
+      summary: The cross-team view for the lead.
+      description: Every team of the org with the admin token; with a person token, the teams where the person is owner or admin. The org's [budget] is shown to whoever sees every team. Nothing is charged back.
+      parameters:
+        - name: org
+          in: path
+          required: true
+          description: Org id.
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: false
+          description: "Spend at or after this time. Default: month start."
+          schema:
+            format: date-time
+            type: string
+        - name: to
+          in: query
+          required: false
+          description: "Spend before this time. Default: now."
+          schema:
+            format: date-time
+            type: string
+      responses:
+        "200":
+          description: The overview.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrgOverview"
+        "400":
+          description: Invalid time range.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: A person token of another org, or one that leads no team of it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such org.
           content:
             application/json:
               schema:
@@ -687,7 +1292,7 @@ paths:
     post:
       operationId: createInvite
       summary: Create another invite code for a team.
-      description: Admin token only. The invite expires after ttl_seconds (default 7 days). With an email, only that person can join with it, and their person id is the email.
+      description: The admin token, or a person token whose role in the team is owner or admin. The invite expires after ttl_seconds (default 7 days). With an email, only that person can join with it, and their person id is the email.
       parameters:
         - name: team
           in: path
@@ -716,6 +1321,12 @@ paths:
                 $ref: "#/components/schemas/ApiError"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
         "404":
           description: No such team.
           content:
@@ -726,7 +1337,7 @@ paths:
     delete:
       operationId: revokeInvite
       summary: Revoke an invite code.
-      description: Admin token only. Joining with a revoked invite answers 401. People who already joined keep their tokens. Revoking twice is not an error.
+      description: The admin token, or a person token whose role in the team is owner or admin. Joining with a revoked invite answers 401. People who already joined keep their tokens. Revoking twice is not an error.
       parameters:
         - name: id
           in: path
@@ -743,6 +1354,12 @@ paths:
                 $ref: "#/components/schemas/Invite"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
         "404":
           description: No such invite.
           content:
@@ -753,7 +1370,7 @@ paths:
     delete:
       operationId: revokePersonTokens
       summary: Revoke every token a person holds.
-      description: Admin token only. The person's events stay in the ledger; their tokens answer 401 from now on. They can join again only with a new invite.
+      description: The admin token, or a person token whose role in the team is owner or admin. Revoking an owner needs an owner; anyone can revoke their own. The person's events stay in the ledger; their tokens answer 401 from now on. They can join again only with a new invite.
       parameters:
         - name: team
           in: path
@@ -776,6 +1393,12 @@ paths:
                 $ref: "#/components/schemas/RevokeTokensResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
         "404":
           description: No such team or person.
           content:
@@ -786,7 +1409,7 @@ paths:
     post:
       operationId: joinTeam
       summary: Exchange an invite code for a person token.
-      description: "The invite code is the credential, so no bearer token is needed. A team-wide invite only adds new people: a person id already in the team (compared ignoring case) is refused, so the holder cannot take over the owner's or anyone else's identity. An invite for an email joins only that person, also when they are already in the team, which adds another token for them."
+      description: "The invite code is the credential, so no bearer token is needed. A team-wide invite only adds people new to the org: a person id already in any team of the org (compared ignoring case) is refused, so the holder cannot take over the owner's or anyone else's identity, which acts in every team of the org it is in. An invite for an email joins only that person, also when they are already in the team, which adds another token for them."
       security: []
       requestBody:
         required: true
@@ -816,7 +1439,8 @@ paths:
   /v1/me:
     get:
       operationId: getMe
-      summary: Who the bearer token belongs to.
+      summary: Who the bearer token belongs to, their role and what it allows.
+      description: "For a person token: the person, their team, their role there, the actions the permission table gives that role (the console offers only these), and every team of the org they are in."
       responses:
         "200":
           description: The token's owner.
@@ -1213,6 +1837,28 @@ components:
         team:
           description: Team id, when the policy is a team's.
           type: string
+        repo:
+          pattern: ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$
+          description: The repo, when its own rules are included.
+          type: string
+        layers:
+          description: "What text is made of, in order: the org floor, the team's selfhost.toml, the repo's. With one layer text is that layer's own."
+          type: array
+          items:
+            additionalProperties: false
+            type: object
+            required:
+              - kind
+              - name
+            properties:
+              kind:
+                type: string
+                enum:
+                  - org
+                  - team
+                  - repo
+              name:
+                type: string
         text:
           description: The selfhost.toml text in use.
           type: string
@@ -1492,6 +2138,9 @@ components:
               column:
                 minimum: 1
                 type: integer
+              org_rule:
+                description: The org rule or setting this would relax, such as rule "no-force-push" or [mcp] allow. Set only for errors against the org floor.
+                type: string
     CreateTeamRequest:
       additionalProperties: false
       title: CreateTeamRequest
@@ -1503,6 +2152,10 @@ components:
           minLength: 1
           maxLength: 100
           description: Team name. Its id is the name in kebab case.
+          type: string
+        org:
+          pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+          description: "Org that holds the team. Default: default."
           type: string
         invite_ttl_seconds:
           minimum: 60
@@ -1535,6 +2188,10 @@ components:
             name:
               minLength: 1
               description: Team name as given.
+              type: string
+            org:
+              pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+              description: Org the team belongs to. default on a single-org server.
               type: string
             created_at:
               format: date-time
@@ -1703,7 +2360,7 @@ components:
               description: Team the person belongs to.
               type: string
             role:
-              description: owner for the first person to join, member for everyone after.
+              description: "Exactly one per person and team: owner for the first person to join, member for everyone after, until an owner changes it."
               type: string
               enum:
                 - owner
@@ -1728,6 +2385,10 @@ components:
             name:
               minLength: 1
               description: Team name as given.
+              type: string
+            org:
+              pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+              description: Org the team belongs to. default on a single-org server.
               type: string
             created_at:
               format: date-time
@@ -1768,7 +2429,7 @@ components:
               description: Team the person belongs to.
               type: string
             role:
-              description: owner for the first person to join, member for everyone after.
+              description: "Exactly one per person and team: owner for the first person to join, member for everyone after, until an owner changes it."
               type: string
               enum:
                 - owner
@@ -1794,6 +2455,960 @@ components:
               minLength: 1
               description: Team name as given.
               type: string
+            org:
+              pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+              description: Org the team belongs to. default on a single-org server.
+              type: string
             created_at:
               format: date-time
               type: string
+        role:
+          description: The person's role in the token's team.
+          type: string
+          enum:
+            - owner
+            - admin
+            - member
+        allowed:
+          description: What the caller can do in the token's team, from the permission table. The admin token can do everything.
+          type: array
+          items:
+            type: string
+            enum:
+              - read
+              - work
+              - policy.write
+              - settings.write
+              - invites
+              - people
+              - roles
+              - org.overview
+        memberships:
+          description: Every team in the org this person belongs to, with their role in each.
+          type: array
+          items:
+            additionalProperties: false
+            title: Membership
+            type: object
+            required:
+              - team
+              - role
+            properties:
+              team:
+                pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+                description: Team id.
+                type: string
+              role:
+                type: string
+                enum:
+                  - owner
+                  - admin
+                  - member
+    TeamInfo:
+      additionalProperties: false
+      title: TeamInfo
+      type: object
+      required:
+        - id
+        - name
+        - created_at
+      properties:
+        id:
+          pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+          description: Team id, derived from the name. Set as team on every event its people write.
+          type: string
+        name:
+          minLength: 1
+          description: Team name as given.
+          type: string
+        org:
+          pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+          description: Org the team belongs to. default on a single-org server.
+          type: string
+        created_at:
+          format: date-time
+          type: string
+    Person:
+      additionalProperties: false
+      title: Person
+      type: object
+      required:
+        - id
+        - team
+        - role
+        - created_at
+      properties:
+        id:
+          minLength: 1
+          maxLength: 256
+          description: Who the person is, such as a git email. Their events carry it as actor.id.
+          type: string
+        name:
+          description: Display name.
+          type: string
+        team:
+          pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+          description: Team the person belongs to.
+          type: string
+        role:
+          description: "Exactly one per person and team: owner for the first person to join, member for everyone after, until an owner changes it."
+          type: string
+          enum:
+            - owner
+            - admin
+            - member
+        created_at:
+          format: date-time
+          type: string
+    UpdateTeamRequest:
+      additionalProperties: false
+      title: UpdateTeamRequest
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          minLength: 1
+          maxLength: 100
+          description: New team name. The id stays the same.
+          type: string
+    TeamPeopleResponse:
+      additionalProperties: false
+      title: TeamPeopleResponse
+      type: object
+      required:
+        - team
+        - people
+      properties:
+        team:
+          pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+          description: Team id.
+          type: string
+        people:
+          description: Everyone in the team, owners first.
+          type: array
+          items:
+            additionalProperties: false
+            title: Person
+            type: object
+            required:
+              - id
+              - team
+              - role
+              - created_at
+            properties:
+              id:
+                minLength: 1
+                maxLength: 256
+                description: Who the person is, such as a git email. Their events carry it as actor.id.
+                type: string
+              name:
+                description: Display name.
+                type: string
+              team:
+                pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+                description: Team the person belongs to.
+                type: string
+              role:
+                description: "Exactly one per person and team: owner for the first person to join, member for everyone after, until an owner changes it."
+                type: string
+                enum:
+                  - owner
+                  - admin
+                  - member
+              created_at:
+                format: date-time
+                type: string
+    AddPersonRequest:
+      additionalProperties: false
+      title: AddPersonRequest
+      type: object
+      required:
+        - person
+      properties:
+        person:
+          minLength: 1
+          maxLength: 256
+          description: Someone already in another team of the same org.
+          type: string
+        role:
+          default: member
+          description: Role in this team. Only an owner can add an admin or owner.
+          type: string
+          enum:
+            - owner
+            - admin
+            - member
+    SetRoleRequest:
+      additionalProperties: false
+      title: SetRoleRequest
+      type: object
+      required:
+        - role
+      properties:
+        role:
+          description: The person's new role in the team.
+          type: string
+          enum:
+            - owner
+            - admin
+            - member
+    CreateOrgRequest:
+      additionalProperties: false
+      title: CreateOrgRequest
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          minLength: 1
+          maxLength: 100
+          description: Org name. Its id is the name in kebab case.
+          type: string
+    OrgInfo:
+      additionalProperties: false
+      title: OrgInfo
+      type: object
+      required:
+        - id
+        - name
+        - created_at
+      properties:
+        id:
+          pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+          description: Org id, derived from the name.
+          type: string
+        name:
+          minLength: 1
+          description: Org name as given.
+          type: string
+        created_at:
+          format: date-time
+          type: string
+    OrgPolicyResponse:
+      additionalProperties: false
+      title: OrgPolicyResponse
+      type: object
+      required:
+        - org
+        - hash
+        - text
+        - loaded_at
+        - config
+        - conflicts
+      properties:
+        org:
+          pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+          description: Org id.
+          type: string
+        hash:
+          description: sha256 of the org's selfhost.toml.
+          type: string
+        text:
+          description: "The org's selfhost.toml: the floor every team builds on."
+          type: string
+        loaded_at:
+          format: date-time
+          type: string
+        config:
+          $ref: "#/components/schemas/SelfhostConfig"
+        conflicts:
+          description: Stored team and repo rules that relax this floor. The org's value applies to them until they are changed.
+          type: array
+          items:
+            additionalProperties: false
+            title: FloorConflict
+            type: object
+            required:
+              - team
+              - field
+              - message
+              - org_rule
+            properties:
+              team:
+                pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+                description: Team whose rules relax the org floor.
+                type: string
+              repo:
+                pattern: ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$
+                description: The repo, for a repo's own rules.
+                type: string
+              field:
+                description: Field path in that team's or repo's selfhost.toml.
+                type: string
+              message:
+                type: string
+              org_rule:
+                description: The org rule or setting it relaxes.
+                type: string
+    AddRepoRequest:
+      additionalProperties: false
+      title: AddRepoRequest
+      type: object
+      required:
+        - remote
+      properties:
+        remote:
+          minLength: 1
+          maxLength: 500
+          description: The repo's remote URL (https://github.com/acme/api.git, git@github.com:acme/api.git) or owner/name.
+          type: string
+    TeamRepo:
+      additionalProperties: false
+      title: TeamRepo
+      type: object
+      required:
+        - repo
+        - remote
+        - team
+        - org
+        - has_policy
+        - created_at
+      properties:
+        repo:
+          pattern: ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$
+          description: "owner/name in lower case: what events carry as repo, and how runs are assigned to the team."
+          type: string
+        remote:
+          minLength: 1
+          description: The remote as host/owner/name, without scheme or user.
+          type: string
+        team:
+          pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+          description: Team that owns the repo. Every run in it is the team's.
+          type: string
+        org:
+          pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+          description: Org of the team. A repo belongs to one team per org.
+          type: string
+        has_policy:
+          description: true when the repo has rules of its own.
+          type: boolean
+        created_at:
+          format: date-time
+          type: string
+    TeamReposResponse:
+      additionalProperties: false
+      title: TeamReposResponse
+      type: object
+      required:
+        - team
+        - repos
+      properties:
+        team:
+          pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+          description: Team id.
+          type: string
+        repos:
+          description: By repo.
+          type: array
+          items:
+            additionalProperties: false
+            title: TeamRepo
+            type: object
+            required:
+              - repo
+              - remote
+              - team
+              - org
+              - has_policy
+              - created_at
+            properties:
+              repo:
+                pattern: ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$
+                description: "owner/name in lower case: what events carry as repo, and how runs are assigned to the team."
+                type: string
+              remote:
+                minLength: 1
+                description: The remote as host/owner/name, without scheme or user.
+                type: string
+              team:
+                pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+                description: Team that owns the repo. Every run in it is the team's.
+                type: string
+              org:
+                pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+                description: Org of the team. A repo belongs to one team per org.
+                type: string
+              has_policy:
+                description: true when the repo has rules of its own.
+                type: boolean
+              created_at:
+                format: date-time
+                type: string
+    BudgetResponse:
+      additionalProperties: false
+      title: BudgetResponse
+      type: object
+      required:
+        - period
+        - from
+        - to
+        - spent_usd
+        - limit_usd
+        - remaining_usd
+        - forecast_usd
+      properties:
+        period:
+          type: string
+          enum:
+            - day
+            - week
+            - month
+        from:
+          format: date-time
+          type: string
+        to:
+          format: date-time
+          type: string
+        spent_usd:
+          minimum: 0
+          type: number
+        limit_usd:
+          description: Budget for the period, or null when none is set.
+          anyOf:
+            - minimum: 0
+              type: number
+            - type: "null"
+        remaining_usd:
+          description: limit_usd minus spent_usd, or null when no budget is set.
+          anyOf:
+            - minimum: 0
+              type: number
+            - type: "null"
+        forecast_usd:
+          description: Projected spend for the whole period, or null without enough data.
+          anyOf:
+            - minimum: 0
+              type: number
+            - type: "null"
+    TeamOverview:
+      additionalProperties: false
+      title: TeamOverview
+      description: "One team's dashboard. Spend counts every run assigned to the team: runs in the team's repos, and runs in no mapped repo written by its people."
+      type: object
+      required:
+        - team
+        - people
+        - repos
+        - spend
+        - by_person
+        - by_agent
+        - by_model
+        - budget
+        - review
+      properties:
+        team:
+          additionalProperties: false
+          title: TeamInfo
+          type: object
+          required:
+            - id
+            - name
+            - created_at
+          properties:
+            id:
+              pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+              description: Team id, derived from the name. Set as team on every event its people write.
+              type: string
+            name:
+              minLength: 1
+              description: Team name as given.
+              type: string
+            org:
+              pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+              description: Org the team belongs to. default on a single-org server.
+              type: string
+            created_at:
+              format: date-time
+              type: string
+        people:
+          minimum: 0
+          description: People in the team.
+          type: integer
+        repos:
+          description: Repos the team owns.
+          type: array
+          items:
+            pattern: ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$
+            type: string
+        spend:
+          additionalProperties: false
+          title: SpendTotals
+          type: object
+          required:
+            - usd
+            - tokens
+            - requests
+          properties:
+            usd:
+              minimum: 0
+              type: number
+            tokens:
+              minimum: 0
+              type: integer
+            requests:
+              minimum: 0
+              description: cost.recorded events, one per request.
+              type: integer
+        by_person:
+          description: Spend by person, highest first.
+          type: array
+          items:
+            additionalProperties: false
+            type: object
+            required:
+              - key
+              - usd
+              - tokens
+              - requests
+            properties:
+              key:
+                description: The person, agent or model; unknown when not recorded.
+                type: string
+              usd:
+                minimum: 0
+                type: number
+              tokens:
+                minimum: 0
+                type: integer
+              requests:
+                minimum: 0
+                type: integer
+        by_agent:
+          description: Spend by agent, highest first.
+          type: array
+          items:
+            additionalProperties: false
+            type: object
+            required:
+              - key
+              - usd
+              - tokens
+              - requests
+            properties:
+              key:
+                description: The person, agent or model; unknown when not recorded.
+                type: string
+              usd:
+                minimum: 0
+                type: number
+              tokens:
+                minimum: 0
+                type: integer
+              requests:
+                minimum: 0
+                type: integer
+        by_model:
+          description: Spend by model, highest first.
+          type: array
+          items:
+            additionalProperties: false
+            type: object
+            required:
+              - key
+              - usd
+              - tokens
+              - requests
+            properties:
+              key:
+                description: The person, agent or model; unknown when not recorded.
+                type: string
+              usd:
+                minimum: 0
+                type: number
+              tokens:
+                minimum: 0
+                type: integer
+              requests:
+                minimum: 0
+                type: integer
+        budget:
+          description: This month against [budget] monthly_usd of the team's selfhost.toml, or null when it sets none.
+          anyOf:
+            - additionalProperties: false
+              title: BudgetResponse
+              type: object
+              required:
+                - period
+                - from
+                - to
+                - spent_usd
+                - limit_usd
+                - remaining_usd
+                - forecast_usd
+              properties:
+                period:
+                  type: string
+                  enum:
+                    - day
+                    - week
+                    - month
+                from:
+                  format: date-time
+                  type: string
+                to:
+                  format: date-time
+                  type: string
+                spent_usd:
+                  minimum: 0
+                  type: number
+                limit_usd:
+                  description: Budget for the period, or null when none is set.
+                  anyOf:
+                    - minimum: 0
+                      type: number
+                    - type: "null"
+                remaining_usd:
+                  description: limit_usd minus spent_usd, or null when no budget is set.
+                  anyOf:
+                    - minimum: 0
+                      type: number
+                    - type: "null"
+                forecast_usd:
+                  description: Projected spend for the whole period, or null without enough data.
+                  anyOf:
+                    - minimum: 0
+                      type: number
+                    - type: "null"
+            - type: "null"
+        review:
+          additionalProperties: false
+          description: The team's review list now.
+          type: object
+          required:
+            - open
+            - blocking
+            - unowned
+          properties:
+            open:
+              minimum: 0
+              type: integer
+            blocking:
+              minimum: 0
+              description: Open items an agent waits on.
+              type: integer
+            unowned:
+              minimum: 0
+              description: "Open items routing gave nobody: the team's policy names no owner for them."
+              type: integer
+    OrgOverview:
+      additionalProperties: false
+      title: OrgOverview
+      description: The cross-team view for the lead. Budgets are shown, nothing is charged back.
+      type: object
+      required:
+        - org
+        - from
+        - to
+        - teams
+        - total
+        - budget
+      properties:
+        org:
+          additionalProperties: false
+          title: OrgInfo
+          type: object
+          required:
+            - id
+            - name
+            - created_at
+          properties:
+            id:
+              pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+              description: Org id, derived from the name.
+              type: string
+            name:
+              minLength: 1
+              description: Org name as given.
+              type: string
+            created_at:
+              format: date-time
+              type: string
+        from:
+          format: date-time
+          type: string
+        to:
+          format: date-time
+          type: string
+        teams:
+          description: Every team the caller leads (owner or admin), or every team with the admin token, by team id.
+          type: array
+          items:
+            additionalProperties: false
+            title: TeamOverview
+            description: "One team's dashboard. Spend counts every run assigned to the team: runs in the team's repos, and runs in no mapped repo written by its people."
+            type: object
+            required:
+              - team
+              - people
+              - repos
+              - spend
+              - by_person
+              - by_agent
+              - by_model
+              - budget
+              - review
+            properties:
+              team:
+                additionalProperties: false
+                title: TeamInfo
+                type: object
+                required:
+                  - id
+                  - name
+                  - created_at
+                properties:
+                  id:
+                    pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+                    description: Team id, derived from the name. Set as team on every event its people write.
+                    type: string
+                  name:
+                    minLength: 1
+                    description: Team name as given.
+                    type: string
+                  org:
+                    pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+                    description: Org the team belongs to. default on a single-org server.
+                    type: string
+                  created_at:
+                    format: date-time
+                    type: string
+              people:
+                minimum: 0
+                description: People in the team.
+                type: integer
+              repos:
+                description: Repos the team owns.
+                type: array
+                items:
+                  pattern: ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$
+                  type: string
+              spend:
+                additionalProperties: false
+                title: SpendTotals
+                type: object
+                required:
+                  - usd
+                  - tokens
+                  - requests
+                properties:
+                  usd:
+                    minimum: 0
+                    type: number
+                  tokens:
+                    minimum: 0
+                    type: integer
+                  requests:
+                    minimum: 0
+                    description: cost.recorded events, one per request.
+                    type: integer
+              by_person:
+                description: Spend by person, highest first.
+                type: array
+                items:
+                  additionalProperties: false
+                  type: object
+                  required:
+                    - key
+                    - usd
+                    - tokens
+                    - requests
+                  properties:
+                    key:
+                      description: The person, agent or model; unknown when not recorded.
+                      type: string
+                    usd:
+                      minimum: 0
+                      type: number
+                    tokens:
+                      minimum: 0
+                      type: integer
+                    requests:
+                      minimum: 0
+                      type: integer
+              by_agent:
+                description: Spend by agent, highest first.
+                type: array
+                items:
+                  additionalProperties: false
+                  type: object
+                  required:
+                    - key
+                    - usd
+                    - tokens
+                    - requests
+                  properties:
+                    key:
+                      description: The person, agent or model; unknown when not recorded.
+                      type: string
+                    usd:
+                      minimum: 0
+                      type: number
+                    tokens:
+                      minimum: 0
+                      type: integer
+                    requests:
+                      minimum: 0
+                      type: integer
+              by_model:
+                description: Spend by model, highest first.
+                type: array
+                items:
+                  additionalProperties: false
+                  type: object
+                  required:
+                    - key
+                    - usd
+                    - tokens
+                    - requests
+                  properties:
+                    key:
+                      description: The person, agent or model; unknown when not recorded.
+                      type: string
+                    usd:
+                      minimum: 0
+                      type: number
+                    tokens:
+                      minimum: 0
+                      type: integer
+                    requests:
+                      minimum: 0
+                      type: integer
+              budget:
+                description: This month against [budget] monthly_usd of the team's selfhost.toml, or null when it sets none.
+                anyOf:
+                  - additionalProperties: false
+                    title: BudgetResponse
+                    type: object
+                    required:
+                      - period
+                      - from
+                      - to
+                      - spent_usd
+                      - limit_usd
+                      - remaining_usd
+                      - forecast_usd
+                    properties:
+                      period:
+                        type: string
+                        enum:
+                          - day
+                          - week
+                          - month
+                      from:
+                        format: date-time
+                        type: string
+                      to:
+                        format: date-time
+                        type: string
+                      spent_usd:
+                        minimum: 0
+                        type: number
+                      limit_usd:
+                        description: Budget for the period, or null when none is set.
+                        anyOf:
+                          - minimum: 0
+                            type: number
+                          - type: "null"
+                      remaining_usd:
+                        description: limit_usd minus spent_usd, or null when no budget is set.
+                        anyOf:
+                          - minimum: 0
+                            type: number
+                          - type: "null"
+                      forecast_usd:
+                        description: Projected spend for the whole period, or null without enough data.
+                        anyOf:
+                          - minimum: 0
+                            type: number
+                          - type: "null"
+                  - type: "null"
+              review:
+                additionalProperties: false
+                description: The team's review list now.
+                type: object
+                required:
+                  - open
+                  - blocking
+                  - unowned
+                properties:
+                  open:
+                    minimum: 0
+                    type: integer
+                  blocking:
+                    minimum: 0
+                    description: Open items an agent waits on.
+                    type: integer
+                  unowned:
+                    minimum: 0
+                    description: "Open items routing gave nobody: the team's policy names no owner for them."
+                    type: integer
+        total:
+          additionalProperties: false
+          title: SpendTotals
+          type: object
+          required:
+            - usd
+            - tokens
+            - requests
+          properties:
+            usd:
+              minimum: 0
+              type: number
+            tokens:
+              minimum: 0
+              type: integer
+            requests:
+              minimum: 0
+              description: cost.recorded events, one per request.
+              type: integer
+        budget:
+          description: This month across the org against the org policy's [budget], or null.
+          anyOf:
+            - additionalProperties: false
+              title: BudgetResponse
+              type: object
+              required:
+                - period
+                - from
+                - to
+                - spent_usd
+                - limit_usd
+                - remaining_usd
+                - forecast_usd
+              properties:
+                period:
+                  type: string
+                  enum:
+                    - day
+                    - week
+                    - month
+                from:
+                  format: date-time
+                  type: string
+                to:
+                  format: date-time
+                  type: string
+                spent_usd:
+                  minimum: 0
+                  type: number
+                limit_usd:
+                  description: Budget for the period, or null when none is set.
+                  anyOf:
+                    - minimum: 0
+                      type: number
+                    - type: "null"
+                remaining_usd:
+                  description: limit_usd minus spent_usd, or null when no budget is set.
+                  anyOf:
+                    - minimum: 0
+                      type: number
+                    - type: "null"
+                forecast_usd:
+                  description: Projected spend for the whole period, or null without enough data.
+                  anyOf:
+                    - minimum: 0
+                      type: number
+                    - type: "null"
+            - type: "null"
