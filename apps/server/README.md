@@ -155,7 +155,8 @@ package's migrations `0002_teams.sql`, `0003_team_access.sql`, `0006_roles.sql` 
 
 No model traffic passes through this server. It has no route that forwards requests to Anthropic,
 OpenAI or any other provider, and serving a request opens no connection other than to its own
-database (and, for a signed GitHub App delivery, to the GitHub API): agents keep calling their vendors directly under each developer's own login, and
+database (and, for a signed GitHub App delivery, to the GitHub API; `GET /v1/integrations` also calls
+the tools the team picked, to check them, see [Integrations](#integrations)): agents keep calling their vendors directly under each developer's own login, and
 selfhost never asks for or stores those logins or provider keys. `test/teams.test.ts` checks that vendor API paths are not served and that
 serving team requests opens no connection.
 
@@ -191,6 +192,79 @@ view; text a spreadsheet would run as a formula starts with an apostrophe.
 `test/usage.test.ts` seeds a ledger and checks every grouping under every filter, the totals
 and the CSV against SQL written directly on the events table, on PGlite and on Postgres when
 `DATABASE_URL` is set.
+
+## Integrations
+
+selfhost does not rebuild the tools a team already likes. Each team picks one tool per job in
+`[integrations]` of its `selfhost.toml`, and the server checks that each one answers and that its
+key works ([`packages/integrations`](../../packages/integrations) lists every tool and its
+check):
+
+| Job        | Tools                                          |
+| ---------- | ---------------------------------------------- |
+| `router`   | `bifrost` (bundled), `litellm`                 |
+| `tracer`   | `langfuse`, `phoenix`, `datadog`, `otlp`       |
+| `runtime`  | `e2b`, `daytona`, `modal`, `coder`             |
+| `reviewer` | `pr-agent`, `claude-code-action`, `coderabbit` |
+
+`GET /v1/integrations` (anyone in the team; `team` with the admin token) answers:
+
+```json
+{
+  "schema": "selfhost.integrations/v1",
+  "team": "web",
+  "integrations": {
+    "router": {
+      "tool": "bifrost",
+      "status": "connected",
+      "detail": "Bifrost at http://bifrost:8080 is up, with admin sign-in off.",
+      "settings": {}
+    },
+    "tracer": {
+      "tool": null,
+      "status": "not_configured",
+      "detail": "No tracer picked. ...",
+      "settings": {}
+    },
+    "runtime": {
+      "tool": "e2b",
+      "status": "error",
+      "detail": "Set the environment variable E2B_API_KEY (api_key_env) where selfhost runs, to an E2B API key. It is not set.",
+      "settings": {}
+    },
+    "reviewer": {
+      "tool": "claude-code-action",
+      "status": "connected",
+      "detail": "The Claude Code GitHub Action runs from .github/workflows/claude.yml in acme/api.",
+      "settings": {}
+    }
+  }
+}
+```
+
+`status` is `connected`, `not_configured` (no tool picked) or `error`, and `detail` says what to
+fix. `settings` is the rest of the table: secrets are only ever named by environment variable,
+and the variables are read on this server. Every GET checks again; each call times out after 5
+seconds and the four jobs are checked at once.
+
+`PUT /v1/integrations/{kind}` with `{ "tool": "litellm", "settings": { "url": "http://litellm:4000",
+"admin_key_env": "LITELLM_MASTER_KEY" } }` picks a tool (owners and admins; a member gets 403).
+It replaces the `[integrations.<kind>]` table in the team's own `selfhost.toml` and leaves every
+other line as it was, then validates the file like `PUT /v1/policy`, against the org floor too.
+`"tool": null` removes the table. It answers with the same body as the GET. A table written
+inline (`router = { tool = "bifrost" }`) answers 409; change it with `PUT /v1/policy` instead.
+
+The org's `selfhost.toml` can pick tools for every team. A team's own table for a job replaces
+the org's whole, so picking another tool never mixes in the org tool's settings; the org floor
+never refuses an `[integrations]` change.
+
+Reviewer checks read the team's repositories through the GitHub App: the workflow files
+(Contents read) for PR-Agent and the Claude Code action, and for CodeRabbit the org's GitHub
+Apps (only with Administration read) or `coderabbitai[bot]` comments on recent pull requests
+(Issues read). Without the App they say so.
+
+The checks only test the connection. Model traffic through the router and trace export to the
+tracer are set up by the gateway sync and the trace export.
 
 ## Console
 

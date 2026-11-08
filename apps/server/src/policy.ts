@@ -75,7 +75,7 @@ export function policyCoverageResponse(
   return { hash: policy.hash, team: policy.team, coverage };
 }
 
-function invalidPolicy(c: Context, errors: InvalidPolicyError["errors"], relaxes: boolean) {
+export function invalidPolicy(c: Context, errors: InvalidPolicyError["errors"], relaxes: boolean) {
   const body: InvalidPolicyError = {
     error: {
       code: "invalid_policy",

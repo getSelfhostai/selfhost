@@ -41,6 +41,7 @@
     "@selfhost/deploy": "workspace:*",
     "@selfhost/ee-risk": "workspace:*",
     "@selfhost/importers": "workspace:*",
+    "@selfhost/integrations": "workspace:*",
     "@selfhost/ledger": "workspace:*",
     "@selfhost/mcp": "workspace:*",
     "@selfhost/package-guard": "workspace:*",

@@ -475,6 +475,18 @@ export type TracerTool = (typeof TRACER_TOOLS)[number];
 export type RuntimeTool = (typeof RUNTIME_TOOLS)[number];
 export type ReviewerTool = (typeof REVIEWER_TOOLS)[number];
 
+/** The jobs a team picks a tool for, in the order selfhost lists them. */
+export const INTEGRATION_KINDS = ["router", "tracer", "runtime", "reviewer"] as const;
+export type IntegrationKind = (typeof INTEGRATION_KINDS)[number];
+
+/** The tools selfhost can connect for each job. */
+export const INTEGRATION_TOOLS: Readonly<Record<IntegrationKind, readonly string[]>> = {
+  router: ROUTER_TOOLS,
+  tracer: TRACER_TOOLS,
+  runtime: RUNTIME_TOOLS,
+  reviewer: REVIEWER_TOOLS,
+};
+
 const EnvName = (description: string) => Type.String({ pattern: ENV_NAME_PATTERN, description });
 const HttpUrl = (description: string) => Type.String({ pattern: "^https?://", description });
 
@@ -539,7 +551,14 @@ export const IntegrationsSchema = Type.Object(
             HttpUrl("The provider's API address, for coder and self-hosted providers."),
           ),
           api_key_env: Type.Optional(
-            EnvName("Environment variable on the server that holds the provider's API key."),
+            EnvName(
+              "Environment variable on the server that holds the provider's API key: for modal, its token id. Unset uses the provider's usual name, such as E2B_API_KEY.",
+            ),
+          ),
+          api_secret_env: Type.Optional(
+            EnvName(
+              "Environment variable on the server that holds the second half of a two-part key: for modal, its token secret (default MODAL_TOKEN_SECRET).",
+            ),
           ),
           template: Type.Optional(
             NonEmpty({ description: "The provider's template, snapshot or image to start from." }),
@@ -960,6 +979,7 @@ export type RunCommand = Static<typeof RunCommandSchema>;
 export type ReceiptConfig = Static<typeof ReceiptConfigSchema>;
 export type Budget = Static<typeof BudgetSchema>;
 export type RoiConfig = Static<typeof RoiConfigSchema>;
+export type Integrations = Static<typeof IntegrationsSchema>;
 
 type Present<T> = Exclude<T, undefined>;
 

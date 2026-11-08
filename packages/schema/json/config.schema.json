@@ -957,7 +957,12 @@
             },
             "api_key_env": {
               "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-              "description": "Environment variable on the server that holds the provider's API key.",
+              "description": "Environment variable on the server that holds the provider's API key: for modal, its token id. Unset uses the provider's usual name, such as E2B_API_KEY.",
+              "type": "string"
+            },
+            "api_secret_env": {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+              "description": "Environment variable on the server that holds the second half of a two-part key: for modal, its token secret (default MODAL_TOKEN_SECRET).",
               "type": "string"
             },
             "template": {

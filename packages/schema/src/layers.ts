@@ -34,7 +34,9 @@ import { type FieldError, formatField, type Segment } from "./validate.js";
  * Lists that only add protection (deny, blocked_registries, prod_connections,
  * prod_credentials, redaction patterns, team members) are joined. Other sections (review,
  * alerts, plans, ledger retention) merge key by key with the later layer winning. `[budget]`
- * is not inherited: the org's is the org's total, a team's is its own.
+ * is not inherited: the org's is the org's total, a team's is its own. `[integrations]` is a
+ * choice, not a floor: a later layer's `[integrations.<kind>]` replaces the org's table for that
+ * kind whole, so a team that picks another tool does not inherit the org tool's settings.
  */
 
 export type LayerKind = "org" | "team" | "repo";
@@ -481,6 +483,14 @@ function mergeLayer(
           } else section[field] = clone(fieldValue);
         }
         out[key] = section;
+        break;
+      }
+      case "integrations": {
+        const section: Table = isTable(out.integrations) ? clone(out.integrations) : {};
+        for (const [kind, table] of Object.entries(isTable(value) ? value : {})) {
+          section[kind] = clone(table);
+        }
+        out.integrations = section;
         break;
       }
       case "ledger":

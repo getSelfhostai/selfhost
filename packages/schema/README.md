@@ -259,6 +259,26 @@ cwd = "services/api"                        # relative to the workspace
 API_BASE_URL = "http://localhost:${SELFHOST_PORT}"
 ```
 
+## Integrations
+
+`[integrations]` names the tool for each job: `router` (bifrost, litellm), `tracer` (langfuse,
+phoenix, datadog, otlp), `runtime` (e2b, daytona, modal, coder) and `reviewer` (pr-agent,
+claude-code-action, coderabbit), each with its address. Secrets are referenced by environment
+variable name only (`admin_key_env`, `api_key_env`, `api_secret_env`, `headers_env`), never
+written. In a team, a team's table for a job replaces the org's whole (see `src/layers.ts`).
+`INTEGRATION_KINDS` and `INTEGRATION_TOOLS` list them; the checks are in
+[`packages/integrations`](../integrations).
+
+```toml
+[integrations.router]
+tool = "litellm"
+url = "http://litellm:4000"
+admin_key_env = "LITELLM_MASTER_KEY"
+
+[integrations.runtime]
+tool = "modal"                               # MODAL_TOKEN_ID and MODAL_TOKEN_SECRET by default
+```
+
 ## Review item
 
 One entry in the review list: `kind`, `state`, `blocking`, `risk` (score 0 to 100 with reasons),
@@ -317,7 +337,9 @@ batches of up to 1000), `GET /v1/events`, `GET /v1/review-items`, `GET /v1/revie
 (`/v1/orgs`, `/v1/orgs/{org}/policy`, `/v1/orgs/{org}/overview`, `/v1/teams/{team}/repos`,
 `/v1/teams/{team}/overview`, `/v1/budget`), whose bodies are in `src/org.ts`, and agent-written
 code (`/v1/teams/{team}/provenance` and `.../provenance/modules`), whose bodies are in
-`src/provenance.ts` with the `selfhost provenance --json` report and the `VendorLineStat` input. It references the JSON Schema files for events,
+`src/provenance.ts` with the `selfhost provenance --json` report and the `VendorLineStat` input,
+and the team's integrations (`GET /v1/integrations`, `PUT /v1/integrations/{kind}`), whose bodies
+are in `src/api.ts`. It references the JSON Schema files for events,
 review items and the config. `mcp-tools.json` lists the tools of the selfhost MCP server
 (`packages/mcp`) with self-contained input and output schemas and a `readOnlyHint`: the read
 tools `get_policy`, `get_budget`, `list_review_items`, `search_events`, `search_decisions`,

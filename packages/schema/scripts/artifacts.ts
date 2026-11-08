@@ -24,9 +24,13 @@ import {
   EventsPageSchema,
   eventVersionsFile,
   HealthResponseSchema,
+  INTEGRATION_KINDS,
   IngestEventsErrorSchema,
   IngestEventsRequestSchema,
   IngestEventsResponseSchema,
+  IntegrationStateSchema,
+  IntegrationsQuerySchema,
+  IntegrationsResponseSchema,
   InvalidPolicyErrorSchema,
   InviteSchema,
   JoinRequestSchema,
@@ -64,6 +68,7 @@ import {
   RunResponseSchema,
   RunSummarySchema,
   SelfhostConfigSchema,
+  SetIntegrationRequestSchema,
   SetPolicyRequestSchema,
   SetRoleRequestSchema,
   SnoozeRequestSchema,
@@ -168,6 +173,9 @@ const COMPONENT_SCHEMAS: ReadonlyArray<readonly [name: string, schema: TSchema]>
   ["PolicyCoverageResponse", PolicyCoverageResponseSchema],
   ["SetPolicyRequest", SetPolicyRequestSchema],
   ["InvalidPolicyError", InvalidPolicyErrorSchema],
+  ["IntegrationState", IntegrationStateSchema],
+  ["IntegrationsResponse", IntegrationsResponseSchema],
+  ["SetIntegrationRequest", SetIntegrationRequestSchema],
   ["CreateTeamRequest", CreateTeamRequestSchema],
   ["CreateTeamResponse", CreateTeamResponseSchema],
   ["CreateInviteRequest", CreateInviteRequestSchema],
@@ -498,6 +506,60 @@ function openApiDocument(): Json {
             ...authErrors,
             "403": errorResponse("A person token asked for another team's policy."),
             "404": errorResponse("No such team, or the team has no policy yet."),
+          },
+        },
+      },
+      "/v1/integrations": {
+        get: {
+          operationId: "getIntegrations",
+          summary: "The router, tracer, runtime and reviewer the team picked, each checked now.",
+          description: `${ROLE_NOTE.read} Reads [integrations] from the policy in use (the org's, then the team's; a team's table for a job replaces the org's) and checks each tool from the server with the cheapest call its docs give: the gateway's health and admin key, the tracer's API key, the runtime's API key, and for a reviewer its workflow file or GitHub App through the selfhost GitHub App. A team with no policy gets every job not_configured. Checks time out after a few seconds each.`,
+          parameters: queryParameters(IntegrationsQuerySchema),
+          responses: {
+            "200": {
+              description: "Each job's tool and status.",
+              content: jsonContent("IntegrationsResponse"),
+            },
+            "400": errorResponse("Invalid query, or no team given with the admin token."),
+            ...authErrors,
+            "403": forbiddenResponse,
+            "404": errorResponse("No such team."),
+          },
+        },
+      },
+      "/v1/integrations/{kind}": {
+        put: {
+          operationId: "setIntegration",
+          summary:
+            "Pick the tool for one job, writing [integrations.<kind>] in the team's selfhost.toml.",
+          description: `${ROLE_NOTE.admin} Replaces the [integrations.<kind>] table of the team's own selfhost.toml with tool and settings (tool null removes it) and leaves the rest of the file as it was, comments included. The new file is validated like PUT /v1/policy, against the org floor too, and an invalid one changes nothing. Answers with the same body as GET /v1/integrations.`,
+          parameters: [
+            {
+              name: "kind",
+              in: "path",
+              required: true,
+              description: "The job.",
+              schema: { type: "string", enum: [...INTEGRATION_KINDS] },
+            },
+            teamParameter,
+          ],
+          requestBody: { required: true, content: jsonContent("SetIntegrationRequest") },
+          responses: {
+            "200": {
+              description: "Stored, with each job checked again.",
+              content: jsonContent("IntegrationsResponse"),
+            },
+            "400": {
+              description:
+                "The tool is not one for this job, or the settings make selfhost.toml invalid or relax the org floor: an InvalidPolicyError naming each field. An unknown kind or a body that is not JSON answers an ApiError. Nothing was stored.",
+              content: jsonContent("InvalidPolicyError"),
+            },
+            ...authErrors,
+            "403": forbiddenResponse,
+            "404": errorResponse("No such team."),
+            "409": errorResponse(
+              "[integrations.<kind>] is written in a way that cannot be replaced safely, such as an inline table. Change it with PUT /v1/policy.",
+            ),
           },
         },
       },

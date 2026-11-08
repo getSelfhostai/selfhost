@@ -43,6 +43,7 @@ from the same code.
 | `packages/pr`            | Reads a pull request or local commits: hunks, new dependencies, test changes, the agent run |
 | `packages/brief`         | The review brief comment on agent pull requests, as data and as Markdown                    |
 | `packages/github`        | Labels, review check run, review requests and brief comment on agent PRs, via a GitHub App  |
+| `packages/integrations`  | The router, tracer, runtime and reviewer a team picks: one adapter per tool and its check   |
 | `packages/sdk`           | API client (placeholder) and the event schema versions it sends                             |
 | `packages/vendor-compat` | Scheduled checks of new vendor CLI releases, and the page in `docs/compatibility`           |
 | `apps/server`            | HTTP API server (Hono)                                                                      |

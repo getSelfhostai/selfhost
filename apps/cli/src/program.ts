@@ -20,6 +20,7 @@ import { type ImportCommandOptions, type ImportIo, runImport, runWatch } from ".
 import { registerInbox } from "./inbox/commands.js";
 import type { OpenLocalReviewList } from "./inbox/sync.js";
 import { registerInit } from "./init/commands.js";
+import { registerIntegrations } from "./integrations.js";
 import { registerLedger } from "./ledger.js";
 import { registerMcp } from "./mcp/commands.js";
 import { registerMigrate } from "./migrate/commands.js";
@@ -62,7 +63,10 @@ export interface CliDeps {
   home?: string;
   /** Where one-time answers and the team membership are kept. Default: ~/.selfhost/config.json. */
   configPath?: string;
-  /** HTTP for the team server, used only in team mode. Default: the global fetch. */
+  /**
+   * HTTP for the team server in team mode, and for the calls `selfhost integrations check` makes
+   * to the tools in solo mode. Default: the global fetch.
+   */
   fetch?: Fetch;
   /** Retry timing for sends to the team server. */
   retry?: ImportIo["retry"];
@@ -475,6 +479,19 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       write: deps.write,
       configPath: deps.configPath ?? defaultConfigPath(),
       fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
+    }),
+    fail,
+  );
+
+  registerIntegrations(
+    program,
+    () => ({
+      env: deps.env,
+      cwd: deps.cwd,
+      write: deps.write,
+      setExitCode: deps.setExitCode,
+      configPath: deps.configPath ?? defaultConfigPath(),
+      ...(deps.fetch ? { fetch: deps.fetch } : {}),
     }),
     fail,
   );
