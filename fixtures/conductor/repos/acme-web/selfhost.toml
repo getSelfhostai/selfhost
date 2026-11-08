@@ -1,0 +1,11 @@
+#:schema https://selfhost.ai/schema/selfhost.toml.v1.json
+# Team rules for acme-web. The platform team owns this file.
+version = 1
+
+# Production env files hold live credentials.
+[[rules]]
+id = "no-prod-env"
+mode = "observe"
+match = { path = "**/.env.production" }
+action = "block"
+message = "Agents do not read production env files."

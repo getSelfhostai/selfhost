@@ -8,8 +8,8 @@ import { CONTRACTS, FIXTURES, listFiles, PACKAGE_ROOT, read } from "./contracts.
 // The exported JSON Schema files are the contract for other languages. This checks them with
 // an independent validator, so they agree with the TypeBox validators on every fixture.
 // Config fixtures are checked after TOML parsing; semantic checks (duplicate ids, regex
-// syntax, unknown rule overrides, reserved rule ids) live in parseConfig only, so those
-// fixtures are skipped.
+// syntax, unknown rule overrides, reserved rule ids, one default run command, reserved
+// SELFHOST_ variables) live in parseConfig only, so those fixtures are skipped.
 const SEMANTIC_ONLY = new Set([
   "bad-command-regex.toml",
   "duplicate-rule-id.toml",
@@ -17,6 +17,8 @@ const SEMANTIC_ONLY = new Set([
   "reserved-rule-id.toml",
   "reserved-package-rule-id.toml",
   "reserved-guardrail-id.toml",
+  "runtime-two-defaults.toml",
+  "runtime-reserved-env.toml",
   "not-toml.toml",
 ]);
 

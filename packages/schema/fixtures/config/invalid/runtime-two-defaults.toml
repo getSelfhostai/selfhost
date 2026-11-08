@@ -1,0 +1,9 @@
+version = 1
+
+[runtime.run.web]
+command = "pnpm dev"
+default = true
+
+[runtime.run.worker]
+command = "pnpm worker"
+default = true

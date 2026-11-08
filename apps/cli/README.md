@@ -21,6 +21,7 @@ pnpm --filter @selfhost/cli dev review brief --base main
 pnpm --filter @selfhost/cli dev scan --since 30d --report scan.html --share scan.svg
 pnpm --filter @selfhost/cli dev agents
 pnpm --filter @selfhost/cli dev agents configure --dry-run --otel-endpoint http://127.0.0.1:4318
+pnpm --filter @selfhost/cli dev migrate conductor --dry-run --history ~/conductor-export
 ```
 
 `selfhost spend [--since 7d] [--by request_type,model] [--threshold 10] [--min-usd 0] [--json]`
@@ -426,6 +427,52 @@ agents run hooks concurrently. Pre-tool events also get an answer on stdout (see
 block. `selfhost import` (and `--watch`, every poll) maps the spool into the ledger with the hook
 mappers: ids come from the receive time and the payload, so a line read twice is a duplicate, a
 malformed line is skipped and counted, and a finished day's file is deleted once imported.
+
+## Moving from Conductor: `selfhost migrate conductor`
+
+`selfhost migrate conductor [--repo <path...>] [--history <export>] [--force] [--dry-run]
+[--json]` reads each repository's Conductor settings and writes them into the `[runtime]` section
+of its `selfhost.toml`, which the runtime plugin reads to set up, run and clean up each agent
+workspace. Without `--repo` it migrates the git repository it runs in. Conductor's own files are
+read, never written: the report hashes them before and after.
+
+- Source: `.conductor/settings.toml` (or `.json`), else the legacy `conductor.json`, which
+  Conductor ignores once the first exists. `.conductor/settings.local.toml` holds one machine's
+  overrides and can hold secrets, so it is listed with its keys (never values) and not moved.
+  Scripts set only in the Conductor app are kept by the app, not the repository; the command says
+  so when it finds no settings file.
+- `scripts.setup` and `scripts.archive` become `setup` and `archive`, each action in
+  `scripts.run` (or the single `run` string, as `dev`) becomes `[runtime.run.<name>]` with its
+  `command`, `options.cwd` as `cwd`, `args` appended and `default`, `run_mode` keeps `concurrent`
+  and turns `nonconcurrent` into `exclusive`, and `environment_variables` become `[runtime.env]`.
+  Values that look like secrets or emails are not copied: `selfhost.toml` is shared.
+- `CONDUCTOR_WORKSPACE_NAME`, `CONDUCTOR_WORKSPACE_PATH`, `CONDUCTOR_ROOT_PATH`,
+  `CONDUCTOR_DEFAULT_BRANCH` and `CONDUCTOR_PORT` are renamed to their `SELFHOST_*` twins in the
+  commands. Script files the commands run (such as `./script/setup.sh`) are never edited: when one
+  reads a Conductor name, `[runtime.env]` keeps that name, set from the selfhost variable.
+  `CONDUCTOR_IS_LOCAL`, `CONDUCTOR_BASE_DIR`, `CONDUCTOR_API_*` and `CONDUCTOR_SESSION_ID` have no
+  selfhost value and are listed with why.
+- Everything else (icons, `available_in`, `hide`, prompts, git and provider settings, preview
+  links, files to copy) is listed by key with the reason it was not moved, and keys Conductor's
+  schema does not have are listed as unknown.
+
+An existing `selfhost.toml` keeps every byte; `[runtime]` goes at the end. A file with a
+different `[runtime]` is left as is (exit 1) unless `--force` replaces that section in place. A
+second run with the same settings changes nothing. `--dry-run` prints the plan and the diff and
+writes nothing. `selfhost migrate conductor --undo` puts each `selfhost.toml` back byte for byte
+(recorded in `~/.selfhost/migrate.json`), unless it was edited since.
+
+`--history <path>` imports workspace history into the ledger (`--database` / `--data-dir`):
+an unpacked export folder or one JSON or JSON Lines file. Conductor does not publish the format
+of its account export (Settings, Account, Export data), so the importer reads JSON shaped like
+the objects of Conductor's published API wherever they sit: workspaces, sessions with their
+transcript messages, pages of `GET /v0/sessions/{id}/messages` and rows of `POST /v0/sql`. Each
+session becomes `session.started` and `session.ended` with `run_id: conductor:<workspace id>`,
+and each prompt a `prompt.submitted` with `--prompts`. Tool calls and token usage are not read
+from the export: local workspaces' agents already logged them where `selfhost import` reads
+them. A second import adds nothing. Without `--history` it says no history was imported and
+finishes the rest; an export with no session in a known shape exits 1 after the scripts are
+moved. See [`packages/importers`](../../packages/importers/README.md#conductor-history).
 
 ## Guardrails: `selfhost guard`
 

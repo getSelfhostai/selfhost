@@ -73,6 +73,29 @@ Each `cost.recorded` event gets `data.request_type` (see
   feature threads), and compaction request records are `compaction`. Rollouts do not persist API
   errors, so Codex retries are not visible here.
 
+## Conductor history
+
+`readConductorExport(path, opts)` and `importConductorExport(writer, path, opts)` map workspace
+history from Conductor (conductor.build) for `selfhost migrate conductor --history`. Conductor
+does not publish the format of its account export, so they read JSON shaped like the objects of
+its published API ([docs](https://www.conductor.build/docs/api),
+[OpenAPI](https://api.conductor.build/v0/openapi.json)) anywhere in a folder of `.json`, `.jsonl`
+and `.ndjson` files: workspaces (`repoUrl`, `state`), sessions (`model`, `resolvedModel`, nested
+under `sessions` or with `workspaceId`), transcript messages (`sessionId`, `sessionIndex`,
+`type`, `receivedAt`), projects (`gitRemote`) and `session_transcripts_view` rows from
+`POST /v0/sql`.
+
+| Kind               | From                                                                                              |
+| ------------------ | ------------------------------------------------------------------------------------------------- |
+| `session.started`  | The session's first timestamp, with `run_id: conductor:<workspace id>`, the repository and model. |
+| `session.ended`    | Its last timestamp.                                                                               |
+| `prompt.submitted` | Each `userMessage`, only with `logPrompts: true`, masked and capped like the log importers.       |
+
+Tool calls and token usage inside `agent` messages are not read: that payload is the harness's
+raw output, which Conductor does not document, and local workspaces' agents already wrote them to
+the logs above. A session with no timestamp is skipped and listed. Ids come from the Conductor
+session and message ids, so importing the same export again stores nothing new.
+
 ## Ids and re-imports
 
 Each event id is a UUIDv7 whose time bits hold the event time and whose other bits come from a

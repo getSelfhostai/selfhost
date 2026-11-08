@@ -94,6 +94,27 @@ key = "team-overflow"
     expect(b.config.rules).toEqual([]);
   });
 
+  it("reads [runtime] and defaults its run_mode to concurrent", () => {
+    const result = parseConfig(`version = 1
+[runtime]
+setup = "pnpm install"
+[runtime.run.dev]
+command = "pnpm dev --port $SELFHOST_PORT"
+default = true
+[runtime.env]
+API_BASE_URL = "http://localhost:\${SELFHOST_PORT}"
+`);
+    if (!result.ok) throw new Error(JSON.stringify(result.errors));
+    expect(result.config.runtime).toEqual({
+      setup: "pnpm install",
+      run_mode: "concurrent",
+      run: { dev: { command: "pnpm dev --port $SELFHOST_PORT", default: true } },
+      env: { API_BASE_URL: `http://localhost:\${SELFHOST_PORT}` },
+    });
+    const minimal = parseConfig("version = 1\n");
+    expect(minimal.ok && "runtime" in minimal.config).toBe(false);
+  });
+
   it("reports every schema error with field and line", () => {
     const result = parseConfig(`version = 1
 [ledger]

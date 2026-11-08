@@ -1,0 +1,8 @@
+"$schema" = "https://conductor.build/schemas/settings.repo.schema.json"
+
+[scripts.run.web]
+command = "pnpm dev --host 127.0.0.1 --port $CONDUCTOR_PORT"
+default = true
+
+[environment_variables]
+ANTHROPIC_BASE_URL = "http://127.0.0.1:4000"

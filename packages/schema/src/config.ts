@@ -71,6 +71,29 @@ export const GUARDRAIL_IDS = [
 
 export type GuardrailId = (typeof GUARDRAIL_IDS)[number];
 
+/** [runtime] run_mode: whether run commands of several workspaces may run at the same time. */
+export const RUN_MODES = ["concurrent", "exclusive"] as const;
+export type RunMode = (typeof RUN_MODES)[number];
+
+/**
+ * Variables the runtime sets for every [runtime] setup, run and archive command, and that
+ * [runtime.env] values may refer to. Names that start with SELFHOST_ are reserved for these.
+ */
+export const RUNTIME_VARIABLES = {
+  SELFHOST_WORKSPACE_NAME: "Name of the workspace, which also names its branch.",
+  SELFHOST_WORKSPACE_PATH: "Folder of the workspace checkout. Every command starts there.",
+  SELFHOST_ROOT_PATH:
+    "Folder of the repository's main checkout. In a sandbox it is the workspace folder.",
+  SELFHOST_DEFAULT_BRANCH: "Branch the workspace was cut from and merges into, usually main.",
+  SELFHOST_PORT:
+    "First of 10 ports kept for the workspace, so SELFHOST_PORT to SELFHOST_PORT + 9 are free to use.",
+} as const;
+export type RuntimeVariable = keyof typeof RUNTIME_VARIABLES;
+export const RUNTIME_VARIABLE_PREFIX = "SELFHOST_";
+
+const RUN_NAME_PATTERN = "^[A-Za-z0-9][A-Za-z0-9 _-]*$";
+const ENV_NAME_PATTERN = "^[A-Za-z_][A-Za-z0-9_]*$";
+
 const RULE_ID_PATTERN = "^[A-Za-z0-9][A-Za-z0-9_.-]*$";
 /** GitHub logins: letters, digits and single hyphens, at most 39 characters. */
 const GITHUB_LOGIN_PATTERN = "^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$";
@@ -229,6 +252,67 @@ export const PlanLimitsSchema = Type.Object(
     minProperties: 1,
     description:
       "Approximate limits of one plan tier, in API-equivalent USD (the estimated cost the ledger records for the same tokens).",
+  },
+);
+
+export const RunCommandSchema = Type.Object(
+  {
+    command: NonEmpty({
+      description:
+        "Shell command that starts the app, a server, a worker, a watcher or a test loop in the workspace.",
+    }),
+    cwd: Type.Optional(
+      NonEmpty({ description: "Folder to run it in, relative to the workspace folder." }),
+    ),
+    default: Type.Optional(
+      Type.Boolean({
+        description: "The command to start when none is named. At most one command sets it.",
+      }),
+    ),
+  },
+  { additionalProperties: false, description: "One named command that runs the project." },
+);
+
+const variableList = Object.keys(RUNTIME_VARIABLES).join(", ");
+
+export const RuntimeSchema = Type.Object(
+  {
+    setup: Type.Optional(
+      NonEmpty({
+        description:
+          "Shell script run in each new workspace after checkout and before the agent starts: install dependencies, generate files, link local config.",
+      }),
+    ),
+    run: Type.Optional(
+      Type.Record(Type.String({ pattern: RUN_NAME_PATTERN }), RunCommandSchema, {
+        additionalProperties: false,
+        description:
+          "Named commands that run the project in a workspace, for example [runtime.run.dev].",
+      }),
+    ),
+    run_mode: Type.Optional(
+      StringEnum(RUN_MODES, {
+        default: "concurrent",
+        description:
+          "concurrent lets the run commands of several workspaces run at once. exclusive stops the others first, for projects that need one fixed port, database or Docker stack.",
+      }),
+    ),
+    archive: Type.Optional(
+      NonEmpty({
+        description:
+          "Shell script run before a workspace is archived, to clean up what it made outside its own folder.",
+      }),
+    ),
+    env: Type.Optional(
+      Type.Record(Type.String({ pattern: ENV_NAME_PATTERN }), Type.String(), {
+        additionalProperties: false,
+        description: `Environment variables for the setup, run and archive commands. Values may refer to the variables selfhost sets (${variableList}) as $NAME or \${NAME}. This file is shared: keep secrets out of it.`,
+      }),
+    ),
+  },
+  {
+    additionalProperties: false,
+    description: `How each agent workspace is set up, run and cleaned up, read by the runtime plugin. Commands run in the workspace folder with ${variableList} set.`,
   },
 );
 
@@ -552,6 +636,7 @@ export const SelfhostConfigSchema = Type.Object(
     teams: Type.Optional(
       Type.Record(Type.String(), TeamSchema, { default: {}, description: "Teams by name." }),
     ),
+    runtime: Type.Optional(RuntimeSchema),
   },
   {
     $id: CONFIG_SCHEMA_URL,
@@ -568,6 +653,8 @@ export type RuleMatch = Static<typeof RuleMatchSchema>;
 export type RuleOverride = Static<typeof RuleOverrideSchema>;
 export type Team = Static<typeof TeamSchema>;
 export type PlanLimits = Static<typeof PlanLimitsSchema>;
+export type Runtime = Static<typeof RuntimeSchema>;
+export type RunCommand = Static<typeof RunCommandSchema>;
 
 type Present<T> = Exclude<T, undefined>;
 
@@ -675,6 +762,31 @@ function semanticErrors(config: ResolvedSelfhostConfig): SegmentError[] {
           message: `Override for unknown rule "${ruleId}"`,
         });
       }
+    }
+  }
+  if (config.runtime) errors.push(...runtimeErrors(config.runtime));
+  return errors;
+}
+
+function runtimeErrors(runtime: Runtime): SegmentError[] {
+  const errors: SegmentError[] = [];
+  let firstDefault: string | undefined;
+  for (const [name, command] of Object.entries(runtime.run ?? {})) {
+    if (command.default !== true) continue;
+    if (firstDefault === undefined) firstDefault = name;
+    else {
+      errors.push({
+        segments: ["runtime", "run", name, "default"],
+        message: `Only one run command can be the default; runtime.run.${firstDefault} already is`,
+      });
+    }
+  }
+  for (const name of Object.keys(runtime.env ?? {})) {
+    if (name.startsWith(RUNTIME_VARIABLE_PREFIX)) {
+      errors.push({
+        segments: ["runtime", "env", name],
+        message: `Names that start with ${RUNTIME_VARIABLE_PREFIX} are set by selfhost for each workspace`,
+      });
     }
   }
   return errors;

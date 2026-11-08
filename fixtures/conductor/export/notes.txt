@@ -1,0 +1,1 @@
+Conductor export notes kept by the person who exported it. Not JSON, so not read.

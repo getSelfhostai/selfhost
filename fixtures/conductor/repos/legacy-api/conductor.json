@@ -1,0 +1,9 @@
+{
+  "scripts": {
+    "setup": "pnpm install",
+    "run": "pnpm dev --port $CONDUCTOR_PORT",
+    "archive": "./script/workspace-archive.sh"
+  },
+  "runScriptMode": "concurrent",
+  "enterpriseDataPrivacy": true
+}
