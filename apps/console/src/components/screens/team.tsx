@@ -11,6 +11,7 @@ import type {
 import { Copy, Trash2 } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { Empty, Failed, Loading, NoTeam, PageHeader, Section } from "@/components/common";
+import { Notifications } from "@/components/notifications";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -477,6 +478,7 @@ export function TeamScreen() {
       {can(me, team, "invites") ? <Invites team={team} /> : null}
       <Repos team={team} />
       <Laptops team={team} />
+      {me.kind === "person" ? <Notifications /> : null}
     </>
   );
 }

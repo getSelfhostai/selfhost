@@ -1,6 +1,7 @@
 import type { TObject, TSchema } from "@sinclair/typebox";
 import { stringify } from "yaml";
 import {
+  AddNotifyTargetRequestSchema,
   AddPersonRequestSchema,
   AddRepoRequestSchema,
   ApiErrorSchema,
@@ -54,6 +55,12 @@ import {
   MCP_TOOLS,
   MCP_TOOLS_SCHEMA,
   MeResponseSchema,
+  NotifySendSchema,
+  NotifySendsResponseSchema,
+  NotifySettingsSchema,
+  NotifyTargetSchema,
+  NotifyTestRequestSchema,
+  NotifyTestResponseSchema,
   OrgContextResponseSchema,
   OrgInfoSchema,
   OrgOverviewSchema,
@@ -90,6 +97,7 @@ import {
   SelfhostConfigSchema,
   SetContextRequestSchema,
   SetIntegrationRequestSchema,
+  SetNotifyDigestRequestSchema,
   SetPolicyRequestSchema,
   SetRoleRequestSchema,
   SnoozeRequestSchema,
@@ -260,6 +268,14 @@ const COMPONENT_SCHEMAS: ReadonlyArray<readonly [name: string, schema: TSchema]>
   ["RunSummary", RunSummarySchema],
   ["RunPullRequest", RunPullRequestSchema],
   ["RunResponse", RunResponseSchema],
+  ["NotifyTarget", NotifyTargetSchema],
+  ["NotifySettings", NotifySettingsSchema],
+  ["AddNotifyTargetRequest", AddNotifyTargetRequestSchema],
+  ["SetNotifyDigestRequest", SetNotifyDigestRequestSchema],
+  ["NotifyTestRequest", NotifyTestRequestSchema],
+  ["NotifySend", NotifySendSchema],
+  ["NotifyTestResponse", NotifyTestResponseSchema],
+  ["NotifySendsResponse", NotifySendsResponseSchema],
 ];
 
 const ENTITY_REFS = new Map<string, string>([
@@ -327,6 +343,9 @@ const ROLE_NOTE = {
   admin: "The admin token, or a person token whose role in the team is owner or admin.",
   owner: "The admin token, or a person token whose role in the team is owner.",
 };
+
+const PERSON_NOTE =
+  "A person token only: each person sets their own notifications. The admin token has none and gets 404.";
 
 const forbiddenResponse = errorResponse(
   "The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.",
@@ -1221,6 +1240,96 @@ function openApiDocument(): Json {
             "403": errorResponse(
               "The admin token is set on the server and cannot be revoked here.",
             ),
+          },
+        },
+      },
+      "/v1/notify": {
+        get: {
+          operationId: "getNotifySettings",
+          summary: "The caller's notification targets, masked, and digest cadence.",
+          description: `${PERSON_NOTE} Targets are Apprise URLs; only their service and a masked form are returned, never the URL.`,
+          responses: {
+            "200": { description: "The settings.", content: jsonContent("NotifySettings") },
+            ...authErrors,
+          },
+        },
+      },
+      "/v1/notify/targets": {
+        post: {
+          operationId: "addNotifyTarget",
+          summary: "Add an Apprise URL the caller's alerts and digests go to.",
+          description: `${PERSON_NOTE} The URL is kept on the server and never returned. At most ten targets per person.`,
+          requestBody: { required: true, content: jsonContent("AddNotifyTargetRequest") },
+          responses: {
+            "201": { description: "Added.", content: jsonContent("NotifySettings") },
+            "400": errorResponse("Not an Apprise URL, or an invalid name."),
+            ...authErrors,
+            "409": errorResponse("The name is taken, or the caller has ten targets."),
+          },
+        },
+      },
+      "/v1/notify/targets/{name}": {
+        delete: {
+          operationId: "removeNotifyTarget",
+          summary: "Remove one of the caller's targets.",
+          description: PERSON_NOTE,
+          parameters: [pathParameter("name", "Target name.")],
+          responses: {
+            "200": { description: "Removed.", content: jsonContent("NotifySettings") },
+            ...authErrors,
+            "404": errorResponse("The caller has no target with this name."),
+          },
+        },
+      },
+      "/v1/notify/digest": {
+        put: {
+          operationId: "setNotifyDigest",
+          summary: "Set the caller's digest cadence: daily, weekly or off.",
+          description: `${PERSON_NOTE} Digests go out at [notify] digest_hour (UTC), weekly ones on Mondays.`,
+          requestBody: { required: true, content: jsonContent("SetNotifyDigestRequest") },
+          responses: {
+            "200": { description: "Set.", content: jsonContent("NotifySettings") },
+            "400": errorResponse("Not daily, weekly or off."),
+            ...authErrors,
+          },
+        },
+      },
+      "/v1/notify/test": {
+        post: {
+          operationId: "testNotify",
+          summary: "Send a test message to the caller's targets.",
+          description: `${PERSON_NOTE} Each send is recorded by target name, ok or failed, with any URL in an error masked.`,
+          requestBody: { required: true, content: jsonContent("NotifyTestRequest") },
+          responses: {
+            "200": {
+              description: "One send per target.",
+              content: jsonContent("NotifyTestResponse"),
+            },
+            ...authErrors,
+            "404": errorResponse("The caller has no targets, or none with this name."),
+            "503": errorResponse(
+              "The server has no Apprise to send through (SELFHOST_APPRISE_URL).",
+            ),
+          },
+        },
+      },
+      "/v1/notify/sends": {
+        get: {
+          operationId: "listNotifySends",
+          summary: "The caller's recent sends, newest first.",
+          description: `${PERSON_NOTE} Kept 90 days.`,
+          parameters: [
+            {
+              name: "limit",
+              in: "query",
+              required: false,
+              schema: { type: "integer", minimum: 1, maximum: 200, default: 50 },
+            },
+          ],
+          responses: {
+            "200": { description: "The sends.", content: jsonContent("NotifySendsResponse") },
+            "400": errorResponse("Invalid limit."),
+            ...authErrors,
           },
         },
       },

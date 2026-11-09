@@ -371,7 +371,12 @@ describe("HTTPS and sign-in overlays", () => {
   });
 
   it("documents in .env.example every variable they read", () => {
-    const names = ["compose.tls.yml", "compose.signin.yml", "compose.gateway.yml"].flatMap((file) =>
+    const names = [
+      "compose.tls.yml",
+      "compose.signin.yml",
+      "compose.gateway.yml",
+      "compose.notify.yml",
+    ].flatMap((file) =>
       [...read(file).matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)/g)].map((m) => m[1] ?? ""),
     );
     expect(names.filter((name) => !envExample.documented.has(name))).toEqual([]);
@@ -447,6 +452,30 @@ describe("HTTPS and sign-in overlays", () => {
     );
     expect(env.OAUTH2_PROXY_HTTP_ADDRESS).toBe("0.0.0.0:4180");
     expect(proxy?.volumes).toEqual(["./signin-emails.txt:/etc/oauth2-proxy/emails.txt:ro"]);
+  });
+});
+
+describe("notifications overlay", () => {
+  const notify = parse(read("compose.notify.yml")) as { services: Record<string, Service> };
+  const apprise = notify.services.apprise;
+
+  it("pins Apprise and keeps it off the network, with no configuration store", () => {
+    expect(unpinned(apprise?.image ?? "")).toBeUndefined();
+    expect(apprise?.image).toMatch(/^caronc\/apprise:/);
+    expect(apprise?.ports).toBeUndefined();
+    expect(apprise?.volumes).toBeUndefined();
+    expect(apprise?.restart).toBe("unless-stopped");
+    // Stateless /notify only: the target URLs stay in selfhost's database.
+    expect(apprise?.environment?.APPRISE_STATEFUL_MODE).toBe("disabled");
+  });
+
+  it("points the server at it, and lets a team point it at its own Apprise instead", () => {
+    expect(notify.services.selfhost?.environment).toEqual({
+      SELFHOST_APPRISE_URL: "http://apprise:8000",
+    });
+    expect(service("selfhost").environment?.SELFHOST_APPRISE_URL).toBe(
+      `\${SELFHOST_APPRISE_URL:-}`,
+    );
   });
 });
 

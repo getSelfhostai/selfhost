@@ -3,6 +3,7 @@ import { Value } from "@sinclair/typebox/value";
 import { parse as parseToml, TomlError } from "smol-toml";
 import { NonEmpty, StringEnum, Url } from "./common.js";
 import { AGENT_VENDORS } from "./event.js";
+import { NOTIFY_CADENCES } from "./notify.js";
 import { TomlLineIndex } from "./toml-lines.js";
 import {
   type FieldError,
@@ -477,6 +478,46 @@ export const BudgetSchema = Type.Object(
     minProperties: 1,
     description:
       "Spend budget of the team whose selfhost.toml this is; in the org policy, of the whole org. Spend is shown against it and nothing is charged back. With mode = hard, the AI gateway refuses requests once a budget is spent.",
+  },
+);
+
+export const NotifyConfigSchema = Type.Object(
+  {
+    digest: Type.Optional(
+      StringEnum(NOTIFY_CADENCES, {
+        default: "daily",
+        description:
+          "Digest cadence for people who did not pick their own (selfhost notify digest): daily, weekly (Mondays) or off.",
+      }),
+    ),
+    digest_hour: Type.Optional(
+      Type.Integer({
+        minimum: 0,
+        maximum: 23,
+        default: 9,
+        description: "Hour of the day (UTC) digests go out.",
+      }),
+    ),
+    budget_owners: Type.Optional(
+      Type.Array(NonEmpty(), {
+        default: [],
+        description:
+          "People who get the spend alerts at 50%, 80% and 100% of [budget] and the daily spend digest. Default: the team's owners.",
+      }),
+    ),
+    spend_digest: Type.Optional(
+      Type.Boolean({
+        default: true,
+        description:
+          "Send budget owners a daily digest of top spenders, fastest-growing teams and runs that hit caps.",
+      }),
+    ),
+  },
+  {
+    additionalProperties: false,
+    default: {},
+    description:
+      "Phone, chat and email notifications, delivered through Apprise. Each person adds their own targets with selfhost notify add; the URLs are kept on the server, never here. An agent that waits on a person is pushed at once, budget alerts go to the budget owners, and the rest goes into each person's digest.",
   },
 );
 
@@ -1011,6 +1052,7 @@ export const SelfhostConfigSchema = Type.Object(
       ),
     ),
     budget: Type.Optional(BudgetSchema),
+    notify: Type.Optional(NotifyConfigSchema),
     teams: Type.Optional(
       Type.Record(Type.String(), TeamSchema, { default: {}, description: "Teams by name." }),
     ),
@@ -1038,6 +1080,7 @@ export type Runtime = Static<typeof RuntimeSchema>;
 export type RunCommand = Static<typeof RunCommandSchema>;
 export type ReceiptConfig = Static<typeof ReceiptConfigSchema>;
 export type Budget = Static<typeof BudgetSchema>;
+export type NotifyConfig = Static<typeof NotifyConfigSchema>;
 export type RoiConfig = Static<typeof RoiConfigSchema>;
 export type Integrations = Static<typeof IntegrationsSchema>;
 
@@ -1057,6 +1100,7 @@ export type ResolvedSelfhostConfig = Omit<
   | "mcp"
   | "models"
   | "alerts"
+  | "notify"
   | "guardrails"
   | "teams"
   | "integrations"
@@ -1078,6 +1122,7 @@ export type ResolvedSelfhostConfig = Omit<
   alerts: Present<SelfhostConfig["alerts"]> &
     Required<Omit<Present<SelfhostConfig["alerts"]>, "runbook_url">>;
   guardrails: Required<Present<SelfhostConfig["guardrails"]>>;
+  notify: Required<Present<SelfhostConfig["notify"]>>;
   integrations: Present<SelfhostConfig["integrations"]>;
   teams: Record<string, ResolvedTeam>;
 };

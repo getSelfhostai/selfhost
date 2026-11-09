@@ -1,6 +1,6 @@
 import type { DecisionResponse, ReviewAction, ReviewItem, ReviewItemsPage } from "@selfhost/schema";
 import { Check, ExternalLink, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Empty, Failed, Loading, PageHeader } from "@/components/common";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -89,12 +89,15 @@ function ItemCard({
   canAct,
   admin,
   now,
+  linked,
   onDone,
 }: {
   item: ReviewItem;
   canAct: boolean;
   admin: boolean;
   now: Date;
+  /** Opened from a notification's link: shown first in view and outlined. */
+  linked: boolean;
   onDone: (outcome: Outcome, closed: boolean) => void;
 }) {
   const [open, setOpen] = useState(item.kind === "exception");
@@ -141,7 +144,11 @@ function ItemCard({
   const exception = item.kind === "exception" ? exceptionParts(item) : undefined;
 
   return (
-    <Card className="gap-3 py-4" data-testid="review-item">
+    <Card
+      id={`item-${item.id}`}
+      className={linked ? "gap-3 py-4 ring-2 ring-amber-500" : "gap-3 py-4"}
+      data-testid="review-item"
+    >
       <CardContent className="space-y-3 px-4">
         <div className="flex flex-wrap items-center gap-1.5 text-xs">
           <Badge variant="secondary">{REVIEW_KIND_NAMES[item.kind]}</Badge>
@@ -304,6 +311,12 @@ export function ReviewScreen() {
   const blocking = items.filter((item) => item.blocking).length;
   const admin = me.kind === "admin";
   const canAct = can(me, scoped ?? team, "work");
+  // A notification links to ?screen=review&item=<id>.
+  const [linked] = useState(() => new URLSearchParams(window.location.search).get("item"));
+  const found = linked !== null && items.some((item) => item.id === linked);
+  useEffect(() => {
+    if (found) document.getElementById(`item-${linked}`)?.scrollIntoView?.({ block: "center" });
+  }, [found, linked]);
 
   const done = (next: Outcome, close: boolean) => {
     setOutcome(next);
@@ -361,6 +374,7 @@ export function ReviewScreen() {
               canAct={canAct}
               admin={admin}
               now={now}
+              linked={item.id === linked}
               onDone={done}
             />
           ))}

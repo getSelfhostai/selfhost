@@ -6,6 +6,7 @@ import { createApp } from "./app.js";
 import { findConsoleDir } from "./console.js";
 import { gatewayFromEnv, startGatewayJob } from "./gateway.js";
 import { githubAppFromEnv, githubConfig } from "./github.js";
+import { notifyFromEnv, startNotifyJob } from "./notify.js";
 import { clonesUnder } from "./provenance.js";
 import { serverConfig, startRetentionJob } from "./retention.js";
 import { startReviewRefreshJob } from "./review.js";
@@ -55,6 +56,8 @@ const clones = clonesDir ? clonesUnder(clonesDir) : undefined;
 
 // The AI gateway from [integrations.router], or the bundled Bifrost (compose.gateway.yml).
 const gateway = gatewayFromEnv(config);
+// The Apprise API notifications go through (compose.notify.yml, or one the team runs).
+const deliver = notifyFromEnv();
 
 const server = serve(
   {
@@ -68,6 +71,7 @@ const server = serve(
       ...(signin ? { signin } : {}),
       ...(clones ? { clones } : {}),
       ...(gateway ? { gateway } : {}),
+      ...(deliver ? { notify: { deliver } } : {}),
     }).fetch,
     port,
     hostname,
@@ -80,6 +84,11 @@ const server = serve(
     if (signin) console.log("console sign-in through the proxy is on");
     if (gateway)
       console.log(`AI gateway: ${gateway.client.tool}, agents reach it at ${gateway.baseUrl}`);
+    console.log(
+      deliver
+        ? "notifications: on, through Apprise"
+        : "notifications: off (set SELFHOST_APPRISE_URL, or add compose.notify.yml)",
+    );
   },
 );
 
@@ -108,9 +117,17 @@ const gatewayJob =
     ? startGatewayJob(ledger, gateway)
     : undefined;
 
+// SELFHOST_NOTIFY=off stops sending notifications, for installs where another server sends
+// them from the same database.
+const notifications =
+  deliver && process.env.SELFHOST_NOTIFY !== "off"
+    ? startNotifyJob(ledger, { deliver, config, ...(publicUrl ? { publicUrl } : {}) })
+    : undefined;
+
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
     retention?.stop();
+    notifications?.stop();
     gatewayJob?.stop();
     reviews?.stop();
     traces?.stop();

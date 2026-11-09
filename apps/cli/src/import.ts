@@ -8,6 +8,7 @@ import {
   watchLogs,
 } from "@selfhost/importers";
 import { isPostgresUrl, type Ledger, openLedger, resolveDataDir } from "@selfhost/ledger";
+import { scrub } from "@selfhost/notify";
 import { startMonitor } from "./alerts/monitor.js";
 import { defaultConfigPath } from "./config-file.js";
 import { plural } from "./format.js";
@@ -15,6 +16,7 @@ import { drainSpool, type SpoolReport, watchSpool } from "./hooks/drain.js";
 import { spoolDir } from "./hooks/receive.js";
 import { refreshGrants } from "./inbox/grants.js";
 import { type OpenLocalReviewList, watchInbox } from "./inbox/sync.js";
+import { type LaptopNotifyReport, notifyOnLaptop } from "./notify/laptop.js";
 import { describeManaged } from "./policy/managed.js";
 import type { Fetch } from "./team/client.js";
 import { type Membership, readMembership, readSyncState } from "./team/config.js";
@@ -51,6 +53,11 @@ export interface ImportReport {
   /** Team mode only: what went to the team server. */
   sync?: SyncReport;
   /**
+   * Solo mode only, when there was any: budget alerts this machine's spend raised against
+   * [budget] in selfhost.toml, and what was sent through the apprise command (selfhost notify).
+   */
+  notify?: LaptopNotifyReport;
+  /**
    * Ids of the one-time exceptions approved since the last run, now usable once by this
    * machine's agents. Solo mode reads the local review list; team mode the server (sync.grants).
    */
@@ -65,6 +72,8 @@ export interface ImportBatchReport {
 
 export interface ImportIo {
   env: NodeJS.ProcessEnv;
+  /** Where selfhost.toml is looked for, for [budget] and [notify]. Default: process.cwd(). */
+  cwd?: string;
   write: (line: string) => void;
   now?: Date;
   /** Where the team membership is kept. Default: ~/.selfhost/config.json. */
@@ -169,9 +178,13 @@ function teamSyncFor(membership: Membership, io: ImportIo) {
 
 const configPathOf = (io: ImportIo) => io.configPath ?? defaultConfigPath();
 
+/** How often `selfhost import --watch` checks budgets and sends notifications on a laptop. */
+const LAPTOP_NOTIFY_MS = 60_000;
+
 /**
  * Imports local session logs into the ledger once. In team mode it then syncs: the events go
- * to the team server too, and the team policy comes back. Solo mode makes no network request.
+ * to the team server too, and the team policy comes back. Solo mode makes no network request
+ * itself; only the apprise command does, for a person who added notification targets.
  * Pass a ledger to reuse an open one.
  */
 export async function runImport(
@@ -197,18 +210,28 @@ export async function runImport(
     };
     if (membership) {
       report.sync = await syncLedger(target, teamSyncFor(membership, io), opts.since);
-    } else if (io.localReviewList) {
+    } else {
       const open = io.localReviewList;
       let list: Awaited<ReturnType<OpenLocalReviewList>> | undefined;
-      const grants = await refreshGrants(
-        configPathOf(io),
-        async (id) => {
-          list ??= await open(target);
-          return list.get(id);
-        },
-        io.now ?? new Date(),
-      );
-      if (grants) report.grants = grants.issued.map((grant) => grant.id);
+      if (open) {
+        const grants = await refreshGrants(
+          configPathOf(io),
+          async (id) => {
+            list ??= await open(target);
+            return list.get(id);
+          },
+          io.now ?? new Date(),
+        );
+        if (grants) report.grants = grants.issued.map((grant) => grant.id);
+      }
+      const notify = await laptopNotify(target, opts.actorId ?? defaultPerson(io.env), io, {
+        refresh: open
+          ? async () => {
+              list ??= await open(target);
+            }
+          : undefined,
+      });
+      if (describeNotify(notify).length > 0) report.notify = notify;
     }
     if (options.json) {
       io.write(options.watch ? JSON.stringify(report) : JSON.stringify(report, null, 2));
@@ -225,6 +248,7 @@ export async function runImport(
       }
       io.write(`Ledger: ${report.ledger}`);
       if (report.sync) for (const line of describeSync(report.sync)) io.write(line);
+      if (report.notify) for (const line of describeNotify(report.notify)) io.write(line);
       const granted = report.grants?.length ?? report.sync?.grants ?? 0;
       if (granted > 0) {
         io.write(
@@ -236,6 +260,36 @@ export async function runImport(
   } finally {
     if (!ledger) await target.close();
   }
+}
+
+/** Budget alerts and sends on a laptop; a failure here never fails the import. */
+async function laptopNotify(
+  ledger: Ledger,
+  person: string,
+  io: ImportIo,
+  options: { refresh?: () => Promise<unknown> },
+): Promise<LaptopNotifyReport> {
+  try {
+    return await notifyOnLaptop(ledger, person, {
+      env: io.env,
+      cwd: io.cwd ?? process.cwd(),
+      ...(io.now ? { now: io.now } : {}),
+      ...(options.refresh ? { refresh: options.refresh } : {}),
+    });
+  } catch (error) {
+    const reason = scrub(error instanceof Error ? error.message : String(error));
+    return { budget_alerts: [], sent: 0, failed: 0, skipped: `Notifications failed: ${reason}` };
+  }
+}
+
+function describeNotify(notify: LaptopNotifyReport): string[] {
+  return [
+    ...notify.budget_alerts.map((message) => `Budget alert: ${message}`),
+    ...(notify.sent + notify.failed > 0
+      ? [`Notifications: ${notify.sent} sent, ${notify.failed} failed.`]
+      : []),
+    ...(notify.skipped ? [notify.skipped] : []),
+  ];
 }
 
 function describeSync(sync: SyncReport): string[] {
@@ -305,10 +359,35 @@ export async function runWatch(options: ImportCommandOptions, io: ImportIo): Pro
     write: io.write,
     json: options.json,
   });
+  // Budget alerts and notifications on a laptop, at most once a minute as batches land.
+  let notifiedAt = Date.now();
+  let notifying: Promise<void> | undefined;
+  let skipped: string | undefined = first.notify?.skipped;
+  const notifyLaptop = () => {
+    if (membership || notifying || Date.now() - notifiedAt < LAPTOP_NOTIFY_MS) return;
+    notifiedAt = Date.now();
+    notifying = laptopNotify(ledger, opts.actorId ?? defaultPerson(io.env), io, {})
+      .then((notify) => {
+        if (options.json) {
+          if (notify.budget_alerts.length > 0 || notify.sent + notify.failed > 0) {
+            io.write(JSON.stringify({ schema: "selfhost.notify_batch/v1", ...notify }));
+          }
+          return;
+        }
+        const lines = describeNotify({ ...notify, skipped: undefined });
+        if (notify.skipped && notify.skipped !== skipped) lines.push(notify.skipped);
+        skipped = notify.skipped;
+        for (const line of lines) io.write(line);
+      })
+      .finally(() => {
+        notifying = undefined;
+      });
+  };
   const onBatch = (n: number) => {
     synced();
     monitor.check();
     inbox?.refresh();
+    notifyLaptop();
     if (n === 0) return;
     const batch: ImportBatchReport = { schema: "selfhost.import_batch/v1", accepted: n };
     io.write(options.json ? JSON.stringify(batch) : `+${n} events`);
@@ -327,6 +406,7 @@ export async function runWatch(options: ImportCommandOptions, io: ImportIo): Pro
   });
   await watcher.close();
   await hookWatcher.close();
+  await notifying;
   await monitor.close();
   await inbox?.close();
   await ledger.close();

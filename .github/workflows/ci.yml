@@ -443,6 +443,66 @@ jobs:
           wait_healthy
           [ "$(event_count)" = "$before" ]
 
+      - name: Send a test and a digest by email through Apprise to a local SMTP catcher
+        run: |
+          . "$RUNNER_TEMP/compose-ci.sh"
+          # Mailpit stands in for the mail server: nothing leaves the runner.
+          cat > "$RUNNER_TEMP/compose.mailpit.yml" <<'EOF'
+          services:
+            mailpit:
+              image: axllent/mailpit:v1.32.0
+              ports:
+                - "127.0.0.1:8025:8025"
+          EOF
+          export COMPOSE_FILE="compose.yml:compose.notify.yml:$RUNNER_TEMP/compose.mailpit.yml"
+          docker compose up -d
+          wait_healthy
+
+          invite=$(api /v1/teams -X POST -H 'Content-Type: application/json' -d '{"name":"Notify"}' | jq -r .invite)
+          dev=$(curl -fsS -X POST http://127.0.0.1:4400/v1/join -H 'Content-Type: application/json' \
+            -d "{\"invite\":\"$invite\",\"person\":\"notify@example.com\"}" | jq -r .token)
+          as_dev() {
+            path=$1
+            shift
+            curl -fsS -H "Authorization: Bearer $dev" -H 'Content-Type: application/json' "$@" "http://127.0.0.1:4400$path"
+          }
+          target='mailto://mailpit:1025?from=selfhost@example.com&to=notify@example.com'
+          as_dev /v1/notify/targets -X POST -d "{\"url\":\"$target\",\"name\":\"email\"}" \
+            | jq -e '.targets[0].masked == "mailto://****" and .delivery == "apprise_api"'
+          # Apprise may still be starting: the test send is tried until it goes.
+          for _ in $(seq 1 20); do
+            as_dev /v1/notify/test -X POST -d '{}' | jq -e '.sends[0].ok' && break
+            sleep 3
+          done
+
+          # An agent waiting on them: pushed at once, and listed in their digest.
+          now=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+          as_dev /v1/events -X POST -d "{\"events\":[{\"id\":\"01930c4e-2f1a-7b2c-8d3e-00000000c1c1\",
+            \"schema\":\"selfhost.event/v1\",\"ts\":\"$now\",\"source\":\"hook\",\"kind\":\"approval.requested\",
+            \"session_id\":\"ci-notify\",\"agent\":{\"vendor\":\"claude_code\"},
+            \"tool\":{\"name\":\"Bash\",\"input_summary\":\"cat ci-secret-file\"}}]}"
+          for _ in $(seq 1 60); do
+            subjects=$(curl -fsS http://127.0.0.1:8025/api/v1/messages | jq -r '.messages[].Subject')
+            case "$subjects" in *"on your review list"*) break ;; esac
+            sleep 3
+          done
+          echo "$subjects"
+          echo "$subjects" | grep -qx 'selfhost: test notification'
+          echo "$subjects" | grep -qx 'selfhost: Approval, an agent waits'
+          echo "$subjects" | grep -qx 'selfhost: 1 item on your review list'
+          # Summaries and links only: the tool input never reaches a message.
+          for id in $(curl -fsS http://127.0.0.1:8025/api/v1/messages | jq -r '.messages[].ID'); do
+            if curl -fsS "http://127.0.0.1:8025/api/v1/message/$id" | jq -r .Text | grep -q 'ci-secret-file'; then
+              echo "::error::A message carried the agent's tool input"; exit 1
+            fi
+          done
+          # Every send is recorded by target name, never with the URL.
+          as_dev /v1/notify/sends > "$RUNNER_TEMP/sends.json"
+          jq -e '[.sends[] | select(.ok)] | map(.kind) | sort == ["digest", "item", "test"]' "$RUNNER_TEMP/sends.json"
+          if grep -q 'mailpit:1025' "$RUNNER_TEMP/sends.json" || docker compose logs --no-color selfhost | grep -q 'mailpit:1025'; then
+            echo "::error::A target URL was returned or logged"; exit 1
+          fi
+
       - name: Show logs on failure
         if: failure()
         run: docker compose logs --no-color

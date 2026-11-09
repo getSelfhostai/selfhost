@@ -42,6 +42,7 @@ describe("parseConfig", () => {
           forecast_warn_hours: 24,
         },
         guardrails: { mode: "enforce", disable: [], prod_connections: [], prod_credentials: [] },
+        notify: { digest: "daily", digest_hour: 9, budget_owners: [], spend_digest: true },
         teams: {},
         integrations: {},
       },

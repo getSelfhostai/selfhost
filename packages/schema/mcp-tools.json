@@ -765,6 +765,45 @@
                   }
                 }
               },
+              "notify": {
+                "additionalProperties": false,
+                "default": {},
+                "description": "Phone, chat and email notifications, delivered through Apprise. Each person adds their own targets with selfhost notify add; the URLs are kept on the server, never here. An agent that waits on a person is pushed at once, budget alerts go to the budget owners, and the rest goes into each person's digest.",
+                "type": "object",
+                "properties": {
+                  "digest": {
+                    "default": "daily",
+                    "description": "Digest cadence for people who did not pick their own (selfhost notify digest): daily, weekly (Mondays) or off.",
+                    "type": "string",
+                    "enum": [
+                      "daily",
+                      "weekly",
+                      "off"
+                    ]
+                  },
+                  "digest_hour": {
+                    "minimum": 0,
+                    "maximum": 23,
+                    "default": 9,
+                    "description": "Hour of the day (UTC) digests go out.",
+                    "type": "integer"
+                  },
+                  "budget_owners": {
+                    "default": [],
+                    "description": "People who get the spend alerts at 50%, 80% and 100% of [budget] and the daily spend digest. Default: the team's owners.",
+                    "type": "array",
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "spend_digest": {
+                    "default": true,
+                    "description": "Send budget owners a daily digest of top spenders, fastest-growing teams and runs that hit caps.",
+                    "type": "boolean"
+                  }
+                }
+              },
               "teams": {
                 "default": {},
                 "description": "Teams by name.",

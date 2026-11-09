@@ -258,6 +258,37 @@ AWS_REGION=eu-central-1        # VERTEX_REGION and VERTEX_CREDENTIALS
   same keys, budgets and usage work there, with one budget window per key and team (the
   shortest is enforced, the others alert) and fallbacks left to LiteLLM's own router settings.
 
+## Notifications
+
+`compose.notify.yml` runs the [Apprise API](https://github.com/caronc/apprise-api) (BSD-2,
+pinned to `caronc/apprise:2.0.2`) next to the server. selfhost decides what to send and when;
+Apprise delivers it to Telegram, Slack, email, Teams, Discord, ntfy and 100+ other services, so
+selfhost has no sender of its own for any of them. Add it to `COMPOSE_FILE` and run `install.sh`
+(or `docker compose up -d`):
+
+```sh
+COMPOSE_FILE=compose.yml:compose.tls.yml:compose.notify.yml
+```
+
+- Each person adds their own targets as Apprise URLs with `selfhost notify add
+  tgram://<bot token>/<chat id>` (or `-` to read the URL from stdin), or in the console's Team
+  screen. The URLs hold secrets, so they are kept in the server's database only: the API, the
+  CLI, the console and the logs show a target's name and service, never its URL.
+- Only the server reaches Apprise, on the compose network: no port is published, and Apprise
+  runs stateless (`APPRISE_STATEFUL_MODE=disabled`), so it stores no URL either.
+- An agent waiting on a person is pushed to them at once; everything else goes into their
+  digest (`selfhost notify digest daily|weekly|off`, default `[notify] digest`). Budget alerts
+  at 50%, 80% and 100% go to `[notify] budget_owners` (default: the team's owners), who also get
+  a daily spend digest. Messages carry a summary and a link to the console, where the item is
+  answered; no code, diff, prompt or secret.
+- Every send is recorded with the target's name, what it was and whether it went
+  (`GET /v1/notify/sends`). `SELFHOST_PUBLIC_URL` gives the links; without it messages point to
+  `selfhost inbox`. With several servers on one database, set `SELFHOST_NOTIFY=off` on all but one.
+- A team that already runs Apprise leaves this overlay out and sets `SELFHOST_APPRISE_URL` in
+  `.env` to its address.
+- `selfhost up` does not put this file on the server (user-data has no room for it): copy it to
+  `/opt/selfhost/deploy/docker`, add it to `COMPOSE_FILE` in `.env` and run `install.sh` again.
+
 ## install.sh
 
 `sudo ./install.sh` installs or updates the stack on the server it runs on: Docker when it is
@@ -328,6 +359,7 @@ and budgets the server writes. No provider is called.
 | `compose.signin.yml`           | oauth2-proxy: GitHub or Google sign-in for the console               |
 | `compose.gateway.yml`          | Bifrost, the AI gateway, with its database on the same Postgres      |
 | `gateway-config.sh`            | Writes `bifrost.json` from `.env`, with references, never secrets    |
+| `compose.notify.yml`           | Apprise, which delivers alerts and digests to phone, chat and email  |
 | `install.sh`                   | Installs Docker, starts the stack, schedules the daily backup        |
 
 The CI job `compose` in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs all of
@@ -335,7 +367,9 @@ this on a Linux runner: it builds the image, waits for every health check, write
 through the API and an OTLP payload through the collector, upgrades to a new image tag with
 `upgrade.sh` and checks the events are still there, rolls back the same way, checks that a release
 whose migrations fail leaves the running one serving, then backs up, restores into a fresh volume
-and compares the event and row counts. The CI job `upgrade` writes data through the previous
+and compares the event and row counts. Last it adds `compose.notify.yml` with a local SMTP
+catcher (Mailpit), and checks that a test, an instant push and a digest arrive by email, that no
+message carries the agent's tool input, and that no target URL is returned or logged. The CI job `upgrade` writes data through the previous
 release's server (this checkout without its newest migration, as no release is tagged yet) on
 the same Postgres version, upgrades, rolls back and upgrades again with the server's
 `dist/migrate.js`, and checks the rows of every table at each step. The repository root's `docker-compose.yml` is separate: Postgres alone, for local

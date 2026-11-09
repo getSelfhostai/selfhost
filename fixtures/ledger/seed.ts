@@ -82,6 +82,21 @@ export const SEEDS: readonly (readonly [table: string, sql: string])[] = [
      VALUES ('5eed0000-0000-4000-8000-000000000003', 'seed', 'dev@example.com', 'rule:seed',
        '[]', 'open') ON CONFLICT DO NOTHING`,
   ],
+  [
+    "notify_targets",
+    `INSERT INTO notify_targets (person, name, url)
+     VALUES ('alice@example.com', 'phone', 'ntfys://seed-topic') ON CONFLICT DO NOTHING`,
+  ],
+  [
+    "notify_settings",
+    "INSERT INTO notify_settings (person, digest) VALUES ('alice@example.com', 'weekly') ON CONFLICT DO NOTHING",
+  ],
+  [
+    "notify_sends",
+    `INSERT INTO notify_sends (person, target, kind, subject, ok)
+     SELECT 'alice@example.com', 'phone', 'test', 'seed', true
+     WHERE NOT EXISTS (SELECT 1 FROM notify_sends WHERE subject = 'seed')`,
+  ],
 ];
 
 /** Seeds every table of SEEDS the database has; tables a release does not have are skipped. */

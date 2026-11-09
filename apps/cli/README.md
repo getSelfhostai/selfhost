@@ -504,6 +504,35 @@ with the reason; a refused token or a server error stops the replay and keeps th
 In solo mode, while `import --watch` holds the embedded ledger, the inbox reads the copy the
 watcher saves and queues actions for the watcher to apply within a minute.
 
+## Notifications: `selfhost notify`
+
+Alerts and digests on your phone, in chat or by email, delivered by
+[Apprise](https://github.com/caronc/apprise): any of its 100+ URL types is a target, so Telegram,
+Slack, email, Teams, Discord or ntfy is a different URL, not different code.
+
+- `selfhost notify add <apprise-url> [--name <name>]` adds a target, such as
+  `tgram://<bot token>/<chat id>`, `slack://...`, `mailtos://...` or `ntfys://<topic>`. Pass
+  `-` to read the URL from stdin and keep it out of shell history. The URL holds a secret, so it
+  is never printed back: lists show its name and `tgram://****`.
+- `selfhost notify [list]`, `selfhost notify remove <name>`, and `selfhost notify test
+  [--name <name>]`, which sends a test to each target and exits 1 when one fails.
+- `selfhost notify digest daily|weekly|off` picks how often your digest comes (default
+  `[notify] digest` in `selfhost.toml`, daily at `[notify] digest_hour` UTC; weekly on Mondays).
+
+An agent that waits on you (an approval, a question) is pushed at once; everything else on your
+review list comes in the digest. Budget alerts at 50%, 80% and 100% of `[budget]` go to the
+budget owners, who also get a daily spend digest: top spenders, fastest-growing teams and runs
+that hit their cap. A message holds a summary written by selfhost and a link to the item in the
+console, where you answer it; never code, a diff, a prompt or a secret.
+
+In team mode the server keeps the targets and sends through its Apprise (`compose.notify.yml`,
+see [`deploy/docker`](../../deploy/docker/README.md#notifications)). In solo mode the local
+ledger keeps them and `selfhost import` sends through the `apprise` command when it is on PATH
+(`pipx install apprise`); without it, import says so in one line and sends nothing. Solo import
+also raises the 50%, 80% and 100% budget alerts from this laptop's own spend against `[budget]`
+in the repository's `selfhost.toml`, and prints each one (`Budget alert: You spent 80% of the
+day's budget of $20`).
+
 ## Risk score
 
 `selfhost review risk <pr-number | --base <ref>> [--head <ref>] [--tests passed|failed|not-run]

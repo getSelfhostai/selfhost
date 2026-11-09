@@ -14,6 +14,7 @@ export const STACK_PATHS = [
   "compose.tls.yml",
   "compose.signin.yml",
   "compose.gateway.yml",
+  "compose.notify.yml",
   "otel-collector.yaml",
   "Caddyfile",
   "install.sh",

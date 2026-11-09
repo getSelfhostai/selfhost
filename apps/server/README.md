@@ -530,6 +530,8 @@ Environment:
 | `SELFHOST_RETENTION_SWEEP`         | `daily`            | `off` keeps every event instead of deleting expired ones daily.                                                     |
 | `SELFHOST_REVIEW_REFRESH`          | `15s`              | `off` stops building review items and timing out approvals on this server.                                          |
 | `SELFHOST_TRACE_EXPORT`            | `1m`               | `off` stops sending finished runs to each team's `[integrations.tracer]` from this server.                          |
+| `SELFHOST_APPRISE_URL`             | unset              | Apprise API server notifications go through (`compose.notify.yml`: `http://apprise:8000`). Unset sends none.        |
+| `SELFHOST_NOTIFY`                  | `1m`               | `off` stops sending notifications from this server, when another one sends them from the same database.             |
 | `SELFHOST_GITHUB_APP_ID`           | unset              | GitHub App id. With the key and secret, turns on `POST /v1/github/webhooks`.                                        |
 | `SELFHOST_GITHUB_PRIVATE_KEY`      | unset              | The App's private key (PEM, or one line with `\n` escapes).                                                         |
 | `SELFHOST_GITHUB_PRIVATE_KEY_FILE` | unset              | Path to the App's .pem, instead of `SELFHOST_GITHUB_PRIVATE_KEY`.                                                   |

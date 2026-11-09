@@ -278,8 +278,9 @@ describe("the bootstrap script", () => {
         expect(statSync(path).mode & 0o111, file.path).toBe(file.mode & 0o111 ? 0o111 : 0);
       }
       expect(existsSync(dir.path("stack", ".env.example"))).toBe(false);
-      // The gateway's files go over SSH, only with --gateway.
+      // The gateway's files go over SSH, only with --gateway; notifications are opt-in.
       expect(existsSync(dir.path("stack", "compose.gateway.yml"))).toBe(false);
+      expect(existsSync(dir.path("stack", "compose.notify.yml"))).toBe(false);
       const env = dir.path("stack", ".env.next");
       expect(readFileSync(env, "utf8")).toBe(
         `${envFile(settings())}SELFHOST_DOMAIN=5-6-7-8.sslip.io\nSELFHOST_PUBLIC_URL=https://5-6-7-8.sslip.io\n`,

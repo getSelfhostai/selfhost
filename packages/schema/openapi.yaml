@@ -2461,6 +2461,166 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /v1/notify:
+    get:
+      operationId: getNotifySettings
+      summary: The caller's notification targets, masked, and digest cadence.
+      description: "A person token only: each person sets their own notifications. The admin token has none and gets 404. Targets are Apprise URLs; only their service and a masked form are returned, never the URL."
+      responses:
+        "200":
+          description: The settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotifySettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/notify/targets:
+    post:
+      operationId: addNotifyTarget
+      summary: Add an Apprise URL the caller's alerts and digests go to.
+      description: "A person token only: each person sets their own notifications. The admin token has none and gets 404. The URL is kept on the server and never returned. At most ten targets per person."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddNotifyTargetRequest"
+      responses:
+        "201":
+          description: Added.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotifySettings"
+        "400":
+          description: Not an Apprise URL, or an invalid name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: The name is taken, or the caller has ten targets.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/notify/targets/{name}:
+    delete:
+      operationId: removeNotifyTarget
+      summary: Remove one of the caller's targets.
+      description: "A person token only: each person sets their own notifications. The admin token has none and gets 404."
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Target name.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Removed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotifySettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: The caller has no target with this name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/notify/digest:
+    put:
+      operationId: setNotifyDigest
+      summary: "Set the caller's digest cadence: daily, weekly or off."
+      description: "A person token only: each person sets their own notifications. The admin token has none and gets 404. Digests go out at [notify] digest_hour (UTC), weekly ones on Mondays."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetNotifyDigestRequest"
+      responses:
+        "200":
+          description: Set.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotifySettings"
+        "400":
+          description: Not daily, weekly or off.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/notify/test:
+    post:
+      operationId: testNotify
+      summary: Send a test message to the caller's targets.
+      description: "A person token only: each person sets their own notifications. The admin token has none and gets 404. Each send is recorded by target name, ok or failed, with any URL in an error masked."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotifyTestRequest"
+      responses:
+        "200":
+          description: One send per target.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotifyTestResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: The caller has no targets, or none with this name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: The server has no Apprise to send through (SELFHOST_APPRISE_URL).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/notify/sends:
+    get:
+      operationId: listNotifySends
+      summary: The caller's recent sends, newest first.
+      description: "A person token only: each person sets their own notifications. The admin token has none and gets 404. Kept 90 days."
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: The sends.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotifySendsResponse"
+        "400":
+          description: Invalid limit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 components:
   securitySchemes:
     bearerAuth:
@@ -8252,3 +8412,245 @@ components:
           anyOf:
             - type: string
             - type: "null"
+    NotifyTarget:
+      additionalProperties: false
+      title: NotifyTarget
+      type: object
+      required:
+        - name
+        - service
+        - masked
+        - created_at
+      properties:
+        name:
+          minLength: 1
+          description: The person's name for the target, such as phone or email.
+          type: string
+        service:
+          minLength: 1
+          description: The Apprise URL's scheme, such as tgram, slack, mailto, msteams or ntfys.
+          type: string
+        masked:
+          minLength: 1
+          description: The URL with everything after the scheme hidden. The URL itself is never returned.
+          type: string
+        created_at:
+          format: date-time
+          type: string
+    NotifySettings:
+      additionalProperties: false
+      title: NotifySettings
+      type: object
+      required:
+        - person
+        - targets
+        - digest
+        - digest_set
+        - delivery
+      properties:
+        person:
+          minLength: 1
+          description: Whose settings these are.
+          type: string
+        targets:
+          type: array
+          items:
+            additionalProperties: false
+            title: NotifyTarget
+            type: object
+            required:
+              - name
+              - service
+              - masked
+              - created_at
+            properties:
+              name:
+                minLength: 1
+                description: The person's name for the target, such as phone or email.
+                type: string
+              service:
+                minLength: 1
+                description: The Apprise URL's scheme, such as tgram, slack, mailto, msteams or ntfys.
+                type: string
+              masked:
+                minLength: 1
+                description: The URL with everything after the scheme hidden. The URL itself is never returned.
+                type: string
+              created_at:
+                format: date-time
+                type: string
+        digest:
+          description: "The digest cadence in use: the person's own, else [notify] digest."
+          type: string
+          enum:
+            - daily
+            - weekly
+            - off
+        digest_set:
+          description: true when the person picked the cadence; false when it is the team default.
+          type: boolean
+        delivery:
+          description: apprise_api when the server has SELFHOST_APPRISE_URL, apprise_cli on a laptop with the apprise command, none when nothing can deliver yet.
+          type: string
+          enum:
+            - apprise_api
+            - apprise_cli
+            - none
+    AddNotifyTargetRequest:
+      additionalProperties: false
+      title: AddNotifyTargetRequest
+      type: object
+      required:
+        - url
+      properties:
+        url:
+          minLength: 1
+          maxLength: 2048
+          description: An Apprise URL, such as tgram://<bot token>/<chat id>, mailtos://..., slack://... or ntfys://<topic>. Stored on the server only.
+          type: string
+        name:
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$
+          description: "Default: the URL's service, such as tgram, numbered when it is taken."
+          type: string
+    SetNotifyDigestRequest:
+      additionalProperties: false
+      title: SetNotifyDigestRequest
+      type: object
+      required:
+        - digest
+      properties:
+        digest:
+          description: daily, weekly or off.
+          type: string
+          enum:
+            - daily
+            - weekly
+            - off
+    NotifyTestRequest:
+      additionalProperties: false
+      title: NotifyTestRequest
+      type: object
+      properties:
+        name:
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$
+          description: "Only this target. Default: every target of the person."
+          type: string
+    NotifySend:
+      additionalProperties: false
+      title: NotifySend
+      type: object
+      required:
+        - at
+        - target
+        - kind
+        - ok
+      properties:
+        at:
+          format: date-time
+          type: string
+        target:
+          minLength: 1
+          description: The target's name. Never its URL.
+          type: string
+        kind:
+          type: string
+          enum:
+            - item
+            - spend
+            - digest
+            - spend_digest
+            - test
+        subject:
+          description: The review item id, the alert event id or the digest window it was about.
+          type: string
+        ok:
+          type: boolean
+        error:
+          description: Why it failed, with any URL masked.
+          type: string
+    NotifyTestResponse:
+      additionalProperties: false
+      title: NotifyTestResponse
+      type: object
+      required:
+        - sends
+      properties:
+        sends:
+          description: One per target tried.
+          type: array
+          items:
+            additionalProperties: false
+            title: NotifySend
+            type: object
+            required:
+              - at
+              - target
+              - kind
+              - ok
+            properties:
+              at:
+                format: date-time
+                type: string
+              target:
+                minLength: 1
+                description: The target's name. Never its URL.
+                type: string
+              kind:
+                type: string
+                enum:
+                  - item
+                  - spend
+                  - digest
+                  - spend_digest
+                  - test
+              subject:
+                description: The review item id, the alert event id or the digest window it was about.
+                type: string
+              ok:
+                type: boolean
+              error:
+                description: Why it failed, with any URL masked.
+                type: string
+    NotifySendsResponse:
+      additionalProperties: false
+      title: NotifySendsResponse
+      type: object
+      required:
+        - sends
+      properties:
+        sends:
+          description: The person's sends, newest first.
+          type: array
+          items:
+            additionalProperties: false
+            title: NotifySend
+            type: object
+            required:
+              - at
+              - target
+              - kind
+              - ok
+            properties:
+              at:
+                format: date-time
+                type: string
+              target:
+                minLength: 1
+                description: The target's name. Never its URL.
+                type: string
+              kind:
+                type: string
+                enum:
+                  - item
+                  - spend
+                  - digest
+                  - spend_digest
+                  - test
+              subject:
+                description: The review item id, the alert event id or the digest window it was about.
+                type: string
+              ok:
+                type: boolean
+              error:
+                description: Why it failed, with any URL masked.
+                type: string
