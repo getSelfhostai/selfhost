@@ -11,6 +11,7 @@ import type { Command } from "commander";
 import { pullContext } from "../context/layers.js";
 import { plural } from "../format.js";
 import { defaultPerson } from "../import.js";
+import { describeManaged } from "../policy/managed.js";
 import { deploymentToken } from "../up/record.js";
 import { type Fetch, serverUrl, TeamApiError, TeamClient } from "./client.js";
 import {
@@ -19,8 +20,11 @@ import {
   readSyncState,
   saveMembership,
   writableConfig,
+  writeSyncState,
 } from "./config.js";
+import { type LaptopIo, type LaptopReport, reportLaptop } from "./laptop.js";
 import { registerTeamPolicy } from "./policy.js";
+import { pullPolicy } from "./sync.js";
 
 export interface TeamIo {
   env: NodeJS.ProcessEnv;
@@ -31,6 +35,8 @@ export interface TeamIo {
   cwd?: string;
   /** Whether stdin is a terminal; `team policy push` refuses without one. */
   stdinIsTTY?: boolean;
+  /** Join installs the managed settings and sends a heartbeat; without it, neither. */
+  laptop?: LaptopIo;
 }
 
 /** `selfhost team init --json`. */
@@ -116,6 +122,12 @@ export interface JoinReport {
   context: { hash: string; layers: { kind: "org" | "team"; name: string; files: number }[] } | null;
   /** Why the context layers were not pulled; the next sync pulls them. */
   context_error?: string;
+  /** sha256 of the team policy pulled on joining, null when the team has none yet. */
+  policy_hash?: string | null;
+  /** Why the team policy was not pulled; the next sync pulls it. */
+  policy_error?: string;
+  /** The team policy's managed settings on this laptop, and the first heartbeat. */
+  laptop?: LaptopReport;
 }
 
 /** `selfhost status --json`. */
@@ -454,7 +466,7 @@ export async function teamRepo(
 export async function joinTeam(
   url: string,
   invite: string,
-  options: JsonOption & { person?: string; name?: string },
+  options: JsonOption & { person?: string; name?: string; managed?: boolean },
   io: TeamIo,
 ): Promise<JoinReport> {
   const current = readMembership(io.configPath);
@@ -491,6 +503,7 @@ export async function joinTeam(
   } catch (failure) {
     contextError = failure instanceof Error ? failure.message : String(failure);
   }
+  const laptop = io.laptop ? await joinLaptop(membership, options, io, io.laptop) : undefined;
   const report: JoinReport = {
     schema: "selfhost.join/v1",
     server,
@@ -500,6 +513,7 @@ export async function joinTeam(
     config: io.configPath,
     context,
     ...(contextError === undefined ? {} : { context_error: contextError }),
+    ...(laptop ?? {}),
   };
   const layers = context?.layers ?? [];
   print(io, options.json, report, [
@@ -511,8 +525,66 @@ export async function joinTeam(
       : layers.length === 0
         ? "The team has no context layers yet."
         : `Pulled the ${layers.map((l) => `${l.kind} ${l.name}`).join(" and ")} context layers. Run selfhost context compile in a repository to give your agents the merged result; later syncs keep it up to date.`,
+    ...joinLaptopLines(report),
   ]);
   return report;
+}
+
+/** Pulls the team policy, installs its managed settings and sends the first heartbeat. */
+async function joinLaptop(
+  membership: { server: string; token: string; person: string; team: string },
+  options: { managed?: boolean },
+  io: TeamIo,
+  laptop: LaptopIo,
+): Promise<Pick<JoinReport, "policy_hash" | "policy_error" | "laptop">> {
+  const client = new TeamClient(membership.server, membership.token, io.fetch);
+  const state = readSyncState(io.configPath, membership);
+  if (options.managed === false) {
+    state.managed_off = true;
+    writeSyncState(io.configPath, state);
+  }
+  let policyError: string | undefined;
+  try {
+    await pullPolicy(client, io.configPath, state);
+  } catch (failure) {
+    policyError = failure instanceof Error ? failure.message : String(failure);
+  }
+  const report = await reportLaptop(client, io.configPath, membership, state, laptop, true);
+  return {
+    policy_hash: state.policy_hash ?? null,
+    ...(policyError === undefined ? {} : { policy_error: policyError }),
+    laptop: report,
+  };
+}
+
+function joinLaptopLines(report: JoinReport): string[] {
+  const { laptop } = report;
+  if (!laptop) return [];
+  const lines: string[] = [];
+  if (report.policy_error !== undefined) {
+    lines.push(
+      `The team policy was not pulled (${report.policy_error}); the next selfhost import pulls it and installs its managed settings.`,
+    );
+  } else if (laptop.managed_error !== undefined) {
+    lines.push(`Managed settings not installed: ${laptop.managed_error}`);
+  } else if (!laptop.managed) {
+    lines.push(
+      "The team has no policy yet, so there are no managed settings to install. Syncs install them once it has one.",
+    );
+  } else {
+    lines.push(...describeManaged(laptop.managed));
+    if (laptop.managed.state === "off") {
+      lines.push(
+        "Syncs keep reporting them; to install them, leave and join again without --no-managed.",
+      );
+    }
+  }
+  if (laptop.heartbeat.error !== undefined) {
+    lines.push(
+      `This laptop's config version did not reach the team (${laptop.heartbeat.error}); the next sync reports it.`,
+    );
+  }
+  return lines;
 }
 
 /** Solo or team, from local files only: status makes no network request. */
@@ -714,6 +786,10 @@ export function registerTeam(
     .argument("<invite>", "invite code from selfhost team init")
     .option("--person <id>", "who you are on the team (default: git email)")
     .option("--name <name>", "display name")
+    .option(
+      "--no-managed",
+      "do not install the team's managed settings on this laptop (syncs still report them)",
+    )
     .option("--json", "print JSON")
     .action((url: string, invite: string, options: Parameters<typeof joinTeam>[2]) =>
       guard(options.json, () => joinTeam(url, invite, options, io())),

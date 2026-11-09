@@ -21,6 +21,13 @@ import { plural, table } from "../format.js";
 import { repoDir } from "../scan/index.js";
 import type { Fetch } from "../team/client.js";
 import { checkTeam, loadPolicy, type PolicyIo } from "./commands.js";
+import {
+  describeManaged,
+  installManaged,
+  knownPath,
+  type ManagedReport,
+  managedFiles,
+} from "./managed.js";
 
 export interface PolicyCompileIo extends PolicyIo {
   platform: NodeJS.Platform;
@@ -42,6 +49,12 @@ export interface PolicyCompileOptions {
   hookCommand?: string;
   githubOrg?: string;
   githubRepo?: string;
+  /** Install the system files at the paths each vendor reads, where this user may write. */
+  managed?: boolean;
+  /** With managed: write under this folder instead of the real system paths. */
+  root?: string;
+  /** With managed: replace files selfhost did not write. */
+  force?: boolean;
 }
 
 /** One file written to the output folder. */
@@ -82,6 +95,8 @@ export interface PolicyCompileReport {
     /** Steps outside this machine: device management and vendor dashboards. */
     steps: string[];
   } | null;
+  /** With --managed: each system file at its path, and the admin commands for the rest. */
+  managed: ManagedReport | null;
   /** What may keep the compiled files from working on this machine. */
   warnings: string[];
 }
@@ -465,16 +480,32 @@ export async function policyCompile(
       message: null,
     })),
     apply: null,
+    managed: null,
     warnings:
       options.hookCommand === undefined && io.which && !io.which("selfhost")
         ? [NOT_ON_PATH_WARNING]
         : [],
   };
 
+  if (options.managed) {
+    const files = managedFiles(result, io.platform);
+    report.managed = installManaged(files, {
+      platform: io.platform,
+      ...(options.root === undefined ? {} : { root: resolve(io.cwd, options.root) }),
+      staging: out,
+      known: io.configPath ? knownPath(io.configPath) : join(out, "managed-known.json"),
+      write: true,
+      force: options.force === true,
+      sources: new Map(files.map((file) => [file, join(out, file.vendor, file.name)])),
+    });
+  }
+
   if (options.apply) {
     report.apply = {
       rules: await writeRules(root, result, compiled),
       ...installSteps(written, io.platform),
+      // --managed installed what it could and says what is left.
+      ...(report.managed ? { commands: report.managed.commands } : {}),
     };
     await makeCalls(report.calls, calls, owner, githubToken(io.env), io.fetch);
   }
@@ -485,6 +516,7 @@ export async function policyCompile(
     print(report, io);
   }
   if (report.calls.some((call) => call.status === "failed")) io.setExitCode(1);
+  if (report.managed?.files.some((file) => file.status === "failed")) io.setExitCode(1);
   return report;
 }
 
@@ -524,17 +556,25 @@ function print(report: PolicyCompileReport, io: PolicyCompileIo): void {
       );
     }
   }
+  if (report.managed) {
+    io.write("");
+    const lines = describeManaged(report.managed);
+    if (lines.length === 0)
+      io.write("No managed settings file goes to a system path on this platform.");
+    for (const line of lines) io.write(line);
+  }
   const apply = report.apply;
   if (!apply) {
+    if (report.managed) return;
     io.write("");
     io.write(
-      "Nothing was installed. Run again with --apply to write the rules files and print the install commands.",
+      "Nothing was installed. Run again with --managed to install the managed settings here, or --apply to write the rules files and print the install commands.",
     );
     return;
   }
   io.write("");
   io.write(`Rules files: ${apply.rules.message}`);
-  if (apply.commands.length > 0) {
+  if (apply.commands.length > 0 && !report.managed) {
     io.write("");
     io.write("Install the system files as an admin (selfhost does not run these):");
     for (const command of apply.commands) io.write(`  ${command}`);
@@ -571,6 +611,12 @@ export function registerPolicyCompile(
       "--apply",
       "write the rules files through Ruler, make the GitHub calls, and print the admin install commands",
     )
+    .option(
+      "--managed",
+      "install the managed settings at the system paths each vendor reads, where you may write; prints the admin command for the rest",
+    )
+    .option("--root <dir>", "with --managed: write under this folder instead of / (images, checks)")
+    .option("--force", "with --managed: replace managed files selfhost did not write")
     .option("--team <name>", "apply this team's overrides")
     .option("--hook-command <command>", "command the hooks run; {agent} is the agent id")
     .option(

@@ -13,6 +13,7 @@ import {
   teamPolicyPath,
   writeSyncState,
 } from "./config.js";
+import { type LaptopIo, type LaptopReport, reportLaptop } from "./laptop.js";
 import { RemoteWriter, type RemoteWriterOptions } from "./remote-writer.js";
 
 /** The `sync` part of `selfhost import --json` in team mode. */
@@ -37,6 +38,8 @@ export interface SyncReport {
    * compiled with them on this machine.
    */
   context_repos?: RepoCompile[];
+  /** The managed settings of the pulled policy on this laptop, and the heartbeat. */
+  laptop?: LaptopReport;
   /** Why the sync stopped. The events stay in the local ledger and go up on the next sync. */
   error?: string;
 }
@@ -46,6 +49,8 @@ export interface TeamSync {
   configPath: string;
   client: TeamClient;
   remote: RemoteWriter;
+  /** Installs the managed settings and sends heartbeats; without it a sync does neither. */
+  laptop?: LaptopIo;
 }
 
 export function teamSync(
@@ -53,10 +58,11 @@ export function teamSync(
   configPath: string,
   fetch: Fetch,
   options: Omit<RemoteWriterOptions, "person"> = {},
+  laptop?: LaptopIo,
 ): TeamSync {
   const client = new TeamClient(membership.server, membership.token, fetch);
   const remote = new RemoteWriter(client, { ...options, person: membership.person });
-  return { membership, configPath, client, remote };
+  return { membership, configPath, client, remote, ...(laptop ? { laptop } : {}) };
 }
 
 /** Sends the local ledger, newest first a page at a time; only events at or after `from`. */
@@ -72,7 +78,8 @@ export async function pushLedger(ledger: Ledger, remote: LedgerWriter, from?: Da
 /**
  * Brings the server up to date with the local ledger and pulls the team policy and the org and
  * team context layers; when the layers changed, the repositories compiled with them on this
- * machine are compiled again. The first sync
+ * machine are compiled again. With a laptop, it then installs the managed settings the policy
+ * compiles to and reports a heartbeat. The first sync
  * after joining sends the whole local ledger, so history from solo mode shows up on the server;
  * later ones send events from `since` on. Ids are idempotency keys, so nothing is stored twice.
  */
@@ -104,6 +111,9 @@ export async function syncLedger(
     if (context.changed && state.context_repos?.length) {
       report.context_repos = await compileRepos(configPath, state.context_repos);
     }
+    if (sync.laptop) {
+      report.laptop = await reportLaptop(client, configPath, membership, state, sync.laptop, false);
+    }
   } catch (error) {
     report.error = error instanceof Error ? error.message : String(error);
   }
@@ -119,7 +129,7 @@ export function markSynced(configPath: string, state: SyncState, history = false
 }
 
 /** Saves the team's selfhost.toml next to the config file and returns its hash. */
-async function pullPolicy(
+export async function pullPolicy(
   client: TeamClient,
   configPath: string,
   state: SyncState,

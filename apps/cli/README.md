@@ -295,6 +295,34 @@ update `AGENTS.md` and `CLAUDE.md` (refusing when they were written by hand and 
 `.ruler/` yet), makes the GitHub API call when `--github-org` and `GITHUB_TOKEN` are given, and
 prints the `sudo install` commands for the system paths. selfhost never runs those itself.
 
+`selfhost policy compile --managed [--root <dir>] [--force]` installs the system files at the
+paths each vendor reads on this platform, wherever the user running it may write:
+
+| Vendor      | macOS                                                                      | Linux                                               | Windows                                                        |
+| ----------- | -------------------------------------------------------------------------- | --------------------------------------------------- | -------------------------------------------------------------- |
+| Claude Code | `/Library/Application Support/ClaudeCode/managed-settings.d/selfhost.json` | `/etc/claude-code/managed-settings.d/selfhost.json` | `C:\Program Files\ClaudeCode\managed-settings.d\selfhost.json` |
+| Codex       | `/etc/codex/requirements.toml` and `/etc/codex/hooks/selfhost-hook`        | the same                                            | `C:\ProgramData\OpenAI\Codex\requirements.toml`                |
+| Cursor      | `/Library/Application Support/Cursor/hooks.json`                           | `/etc/cursor/hooks.json`                            | `C:\ProgramData\Cursor\hooks.json`                             |
+| Copilot     | `/Library/Application Support/GitHubCopilot/managed-settings.json`         | `/etc/github-copilot/managed-settings.json`         | `C:\Program Files\GitHubCopilot\managed-settings.json`         |
+
+A file that is already what the policy compiles to is left as it is, and every write goes
+through a temporary file and a rename. Where the user may not write, it prints the exact
+`sudo install` command (PowerShell `Copy-Item` on Windows) and never runs it or asks for
+elevation. A file there that selfhost did not write (its hash is not in
+`~/.selfhost/managed/known.json`) is left alone and reported as a conflict, with the command
+that would replace it; `--force` replaces it. `--root` writes under a folder instead of `/`, for
+images and checks. Per-user files (Cursor's `~/.cursor/permissions.json`) and dashboard text are
+not installed here; device management delivers them.
+
+`selfhost policy package --mdm jamf|kandji|intune [--out <dir>] [--team <name>]` writes a bundle
+to `--out` (default `.selfhost/mdm/<tool>`): self-contained scripts that carry every file
+base64-encoded with its sha256 and write only files that differ, `files/` with plain copies,
+`manifest.json` and a short `README.txt` that says where each script goes. Jamf gets
+`install.sh` and `extension-attribute.sh` (prints `current <version>` or `pending <n>`), Kandji
+`audit.sh` and `remediation.sh`, Intune `install.sh` for macOS and `install.ps1` with
+`detect.ps1` (Remediations) for Windows. Per-user files go into every home folder. A `.pkg`,
+signing and configuration profiles are not built; no vendor account is needed.
+
 ### Context: `selfhost context`
 
 `selfhost context compile [--agent <name...>] [--out <dir>] [--check] [--force] [--json]` compiles
@@ -784,6 +812,7 @@ selfhost team invite --email bob@example.com --ttl 2d                      # own
 selfhost team revoke bob@example.com                                       # owner or admin
 selfhost team role bob@example.com admin                                   # owner
 selfhost team repo add https://github.com/acme/api.git                     # owner or admin
+selfhost team laptops                                                      # who runs which config version
 selfhost team leave
 ```
 
@@ -812,7 +841,11 @@ selfhost team leave
   (mode 0600), and nothing else: no vendor login or API key is asked for or stored. `--person`
   defaults to the git email, the same person `selfhost import` uses. A refused invite changes
   no files. It then pulls the org and team context layers; `selfhost context compile` in a
-  repository gives the agents the merged result.
+  repository gives the agents the merged result. It also pulls the team policy and installs its
+  managed settings the way `selfhost policy compile --managed` does: where it may not write, it
+  stages a copy in `~/.selfhost/managed/` and prints the exact `sudo install` command, and it
+  never escalates by itself. `--no-managed` skips the install; syncs still report the files.
+  Then it sends this laptop's first heartbeat.
 - `selfhost import` keeps writing the local ledger, then syncs: the first sync after joining
   sends the whole local ledger, so solo history shows up on the server with no migration; later
   syncs resend the `--since` window. Event ids are idempotency keys, so a resend stores nothing
@@ -824,7 +857,16 @@ selfhost team leave
   `~/.selfhost/team-policy.toml` and the org and team context layers (see
   [Layers](#layers-org-team-repository-personal)). A failed sync keeps the local import, reports the error and
   exits 1; the next sync sends the events. `--watch` sends each batch after the local write,
-  and a batch that fails is kept and sent again on the next poll.
+  and a batch that fails is kept and sent again on the next poll. After pulling, each sync
+  installs the managed settings the new policy compiles to (printing the command for any that
+  need an admin) and sends a heartbeat when what it says changed or the last one is an hour old.
+- A heartbeat is a `config.reported` event with `data.heartbeat` (`selfhost.laptop_heartbeat/v1`):
+  a random laptop id kept in `~/.selfhost/machine.json`, the host name, platform and CLI version,
+  the team policy hash it runs (its config version) and whether its managed files are current,
+  pending, off or none. `selfhost team laptops [--silent-days 7]` lists every laptop of the team
+  from the newest heartbeat of each, flagged `behind` (another policy hash than the team's),
+  `silent` (nothing for `--silent-days`) or `not installed` (managed files pending or off), and
+  the people with no heartbeat from any laptop. The console's Team screen shows the same list.
 - `selfhost status` shows solo or team, the server, the person, the last sync and the team
   policy hash, from local files only. Sync progress is in `~/.selfhost/sync.json`.
 - `selfhost team policy push [file]` checks a `selfhost.toml` (default: this repository's) and
@@ -856,6 +898,7 @@ Every command takes `--json` and prints one object with a `schema` tag: `selfhos
 `selfhost.limit_forecast/v1`, `selfhost.plan_tiers/v1`, `selfhost.spend_alarms/v1`,
 `selfhost.team_init/v1`, `selfhost.team_invite/v1`, `selfhost.team_revoke/v1`,
 `selfhost.team_role/v1`, `selfhost.team_add/v1`, `selfhost.team_people/v1`, `selfhost.team_repos/v1`,
+`selfhost.team_laptops/v1`, `selfhost.policy_compile/v1`, `selfhost.mdm_bundle/v1` (from `policy package`),
 `selfhost.join/v1`, `selfhost.status/v1`, `selfhost.context_compile/v1`, `selfhost.context_push/v1`,
 `selfhost.context_propose/v1`, `selfhost.team_leave/v1`, `selfhost.integrations/v1` and `selfhost.up/v1`. Errors print `selfhost.error/v1` and exit 1. In solo mode no command
 needs a network connection, except `selfhost integrations check`, which calls the tools named in

@@ -20,7 +20,7 @@ interface TeamServer {
   /** Calls the in-process server and records each call as "METHOD url". */
   fetch: (url: string, init: RequestInit) => Promise<Response>;
   calls: string[];
-  /** Every event on the server, read with the admin token. */
+  /** Every event on the server but laptop heartbeats, read with the admin token. */
   events(): Promise<LedgerEvent[]>;
   admin(path: string, init?: RequestInit): Promise<Response>;
 }
@@ -51,7 +51,7 @@ async function startTeamServer(): Promise<TeamServer> {
         all.push(...page.events);
         cursor = page.next_cursor;
       } while (cursor);
-      return all;
+      return all.filter((event) => event.kind !== "config.reported");
     },
   };
 }
@@ -159,6 +159,9 @@ describe("team init and join", () => {
       config: configPath,
       // The team has no context layers yet.
       context: { hash: expect.any(String), layers: [] },
+      // Nor a policy, so there are no managed settings to install; the heartbeat still goes.
+      policy_hash: null,
+      laptop: { managed: null, heartbeat: { sent: true, machine: expect.any(String) } },
     });
 
     // Only the membership is stored: no vendor login, API key or anything else.

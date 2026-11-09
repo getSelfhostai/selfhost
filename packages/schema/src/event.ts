@@ -46,6 +46,7 @@ export const EVENT_KINDS = [
   "pr.closed",
   "policy.evaluated",
   "alert.raised",
+  "config.reported",
 ] as const;
 
 export const ACTOR_KINDS = ["person", "agent", "system"] as const;

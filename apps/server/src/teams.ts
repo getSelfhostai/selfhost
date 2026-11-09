@@ -33,6 +33,7 @@ import { type Gateway, gatewayRoutes } from "./gateway.js";
 import { limit, readBody, rethrow, SMALL_BODY_BYTES } from "./http.js";
 import { teamId } from "./ids.js";
 import { type IntegrationRouteOptions, integrationRoutes } from "./integrations.js";
+import { laptopRoutes } from "./laptops.js";
 import { createOrgRoute, orgRoutes } from "./orgs.js";
 import { peopleRoutes } from "./people.js";
 import { policyRoutes } from "./policy.js";
@@ -288,6 +289,7 @@ function sharedRoutes(
   integrationRoutes(router, ledger, integrations);
   policyObservedRoutes(router, ledger, now ? { now } : {});
   peopleRoutes(router, ledger);
+  laptopRoutes(router, ledger, now ? { now } : {});
   orgRoutes(router, ledger, now ? { now } : {});
   usageRoutes(router, ledger, now ? { now } : {});
   roiRoutes(router, ledger, now ? { now } : {});

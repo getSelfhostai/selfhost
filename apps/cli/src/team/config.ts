@@ -77,6 +77,11 @@ export interface SyncState {
    * that pulls changed layers compiles them again.
    */
   context_repos?: string[];
+  /** Set by selfhost join --no-managed: syncs report the managed files but never write them. */
+  managed_off?: boolean;
+  /** When the last laptop heartbeat went up, and a hash of what it said. */
+  heartbeat_at?: string;
+  heartbeat_hash?: string;
 }
 
 export const syncStatePath = (configPath: string) => join(dirname(configPath), "sync.json");

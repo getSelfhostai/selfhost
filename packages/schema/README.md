@@ -24,6 +24,11 @@ Corrections are new events that point at the old one with `decision.replaces_eve
 Unknown fields are rejected; source-specific extras go in `data`. `cost.recorded` events put the
 request type in `data.request_type`, one of `REQUEST_TYPES` (`src/request-type.ts`): `main`,
 `subagent`, `compaction`, `title`, `status_line`, `background`, `retry`, `unknown`.
+`config.reported` events are laptop heartbeats: a laptop in a team sends one on join and on
+sync, with a person actor and `data.heartbeat` in its own versioned shape,
+`selfhost.laptop_heartbeat/v1` (`src/laptop.ts`): a random machine id, the platform, the CLI
+version, the team policy hash it runs (its config version) and where its managed settings files
+stand. `GET /v1/teams/{team}/laptops` reads the newest one per laptop.
 
 ```ts
 import { validateEvent, validateEventBatch } from "@selfhost/schema";

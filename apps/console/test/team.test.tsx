@@ -48,10 +48,44 @@ const REPOS = {
   ],
 };
 
+const LAPTOPS = {
+  team: "web",
+  policy_hash: "b".repeat(64),
+  silent_days: 7,
+  laptops: [
+    {
+      machine: "00000000-0000-4000-8000-000000000002",
+      person: "mia@example.com",
+      hostname: "mia-mbp",
+      platform: "darwin",
+      selfhost_version: "0.4.0",
+      policy_hash: "a".repeat(64),
+      managed: { state: "pending", files: 5, pending: 2 },
+      last_heartbeat: "2026-11-08T09:00:00.000Z",
+      flags: ["behind", "not_installed"],
+      status: "behind",
+    },
+    {
+      machine: "00000000-0000-4000-8000-000000000001",
+      person: "ada@example.com",
+      hostname: "ada-mbp",
+      platform: "win32",
+      selfhost_version: "0.4.0",
+      policy_hash: "b".repeat(64),
+      managed: { state: "current", files: 4, pending: 0 },
+      last_heartbeat: "2026-11-08T11:00:00.000Z",
+      flags: [],
+      status: "current",
+    },
+  ],
+  people_without_heartbeat: ["bob@example.com"],
+};
+
 const routes = (overrides: Record<string, unknown> = {}) => ({
   "GET /v1/teams/web/people": PEOPLE,
   "GET /v1/teams/web/invites": { team: "web", invites: [INVITE] },
   "GET /v1/teams/web/repos": REPOS,
+  "GET /v1/teams/web/laptops": LAPTOPS,
   ...overrides,
 });
 
@@ -119,6 +153,39 @@ describe("the team screen", () => {
     expect(screen.queryByText("Invites")).toBeNull();
     expect(screen.queryByRole("button", { name: /Add repo|Remove/ })).toBeNull();
     expect(server.calls.some((c) => c.path.endsWith("/invites"))).toBe(false);
+  });
+});
+
+describe("the laptops section", () => {
+  it("lists each laptop with its config version, flagging the ones behind", async () => {
+    mockServer(routes());
+    renderConsole(MEMBER, "?screen=team");
+    const rows = await screen.findAllByTestId("laptop");
+    expect(rows).toHaveLength(2);
+    const [mia, ada] = rows as [HTMLElement, HTMLElement];
+    expect(within(mia).getByText("mia-mbp")).toBeTruthy();
+    expect(within(mia).getByText("Behind")).toBeTruthy();
+    expect(within(mia).getByText("aaaaaaaaaaaa")).toBeTruthy();
+    expect(within(mia).getByText("Team runs bbbbbbbbbbbb")).toBeTruthy();
+    expect(within(mia).getByText("2 of 5 pending")).toBeTruthy();
+    expect(within(mia).getByText("3h ago")).toBeTruthy();
+    expect(within(ada).getByText("Current")).toBeTruthy();
+    expect(within(ada).getByText(/ada@example\.com · Windows · selfhost 0\.4\.0/)).toBeTruthy();
+    expect(within(ada).getByText("4 files installed")).toBeTruthy();
+    expect(screen.getByText(/2 laptops, 1 flagged/)).toBeTruthy();
+    expect(screen.getByTestId("no-heartbeat").textContent).toBe(
+      "No heartbeat from bob@example.com.",
+    );
+  });
+
+  it("says how laptops report when none has yet", async () => {
+    mockServer(
+      routes({
+        "GET /v1/teams/web/laptops": { ...LAPTOPS, laptops: [], people_without_heartbeat: [] },
+      }),
+    );
+    renderConsole(OWNER, "?screen=team");
+    expect(await screen.findByText("No laptop has reported yet")).toBeTruthy();
   });
 });
 

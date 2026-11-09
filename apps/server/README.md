@@ -94,6 +94,12 @@ bootstrap admin; everything else is a token the server issues and keeps only as 
 - `GET /v1/teams/{team}/people` (anyone in the team): everyone and their role, owners first.
   `POST` (owner or admin) adds `{ person, role? }`, someone already in another team of the org;
   adding an admin or owner needs an owner. Their tokens work in this team from then on.
+- `GET /v1/teams/{team}/laptops[?silent_days=7]` (anyone in the team): laptop coverage from the
+  ledger's heartbeats (`config.reported` events a laptop sends on join and sync). For each
+  laptop, its newest heartbeat: person, host name, platform, CLI version, the policy hash it runs
+  and its managed files' state, flagged `silent` (nothing in `silent_days`), `behind` (another
+  hash than the team's policy now) or `not_installed` (managed files pending or turned off),
+  flagged ones first. `people_without_heartbeat` lists the team's people no laptop reported for.
 - `PUT /v1/teams/{team}/people/{person}/role` (owner): `{ role }`. Every person has exactly
   one role per team, and a change that would leave the team with no owner answers 409
   `last_owner`.

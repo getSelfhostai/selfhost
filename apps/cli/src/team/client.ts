@@ -31,6 +31,7 @@ import type {
   RoiQuery,
   RoiResponse,
   SetIntegrationRequest,
+  TeamLaptopsResponse,
   TeamPeopleResponse,
   TeamRepo,
   TeamReposResponse,
@@ -129,6 +130,12 @@ export class TeamClient {
       person,
       ...(role ? { role } : {}),
     });
+  }
+
+  /** Each laptop of the team with its config version and last heartbeat. */
+  laptops(team: string, silentDays?: number): Promise<TeamLaptopsResponse> {
+    const query = silentDays === undefined ? "" : `?silent_days=${silentDays}`;
+    return this.call("GET", `/v1/teams/${encodeURIComponent(team)}/laptops${query}`);
   }
 
   repos(team: string): Promise<TeamReposResponse> {

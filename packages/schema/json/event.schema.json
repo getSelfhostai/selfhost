@@ -149,7 +149,8 @@
         "pr.merged",
         "pr.closed",
         "policy.evaluated",
-        "alert.raised"
+        "alert.raised",
+        "config.reported"
       ]
     },
     "actor": {

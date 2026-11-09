@@ -1,8 +1,10 @@
 import type {
   CreateInviteResponse,
+  LaptopRow,
   Person,
   PersonRole,
   TeamInvitesResponse,
+  TeamLaptopsResponse,
   TeamPeopleResponse,
   TeamReposResponse,
 } from "@selfhost/schema";
@@ -20,10 +22,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { can } from "@/lib/access";
 import { getJson, send, teamPath } from "@/lib/api";
 import { useConsole } from "@/lib/console-context";
-import { formatTime } from "@/lib/format";
+import { ago, formatTime, plural } from "@/lib/format";
 import { useApi } from "@/lib/use-api";
 
 const ROLES: { value: PersonRole; label: string }[] = [
@@ -329,6 +339,120 @@ function Repos({ team }: { team: string }) {
   );
 }
 
+const LAPTOP_STATUS: Record<LaptopRow["status"], { label: string; flagged: boolean }> = {
+  current: { label: "Current", flagged: false },
+  behind: { label: "Behind", flagged: true },
+  silent: { label: "Silent", flagged: true },
+  not_installed: { label: "Not installed", flagged: true },
+};
+
+const PLATFORM_NAMES: Record<LaptopRow["platform"], string> = {
+  darwin: "macOS",
+  linux: "Linux",
+  win32: "Windows",
+  other: "Other",
+};
+
+function managedFiles(row: LaptopRow): string {
+  const { state, files, pending } = row.managed;
+  if (state === "current") return `${plural(files, "file")} installed`;
+  if (state === "pending") return `${pending} of ${files} pending`;
+  if (state === "off") return "Turned off";
+  return "None";
+}
+
+function Laptops({ team }: { team: string }) {
+  const { now } = useConsole();
+  const loaded = useApi(`laptops:${team}`, (signal) =>
+    getJson<TeamLaptopsResponse>(`${teamPath(team)}/laptops`, signal),
+  );
+  const data = loaded.data;
+  const flagged = data?.laptops.filter((row) => row.flags.length > 0).length ?? 0;
+  return (
+    <Section
+      title="Laptops"
+      description={
+        data
+          ? `${plural(data.laptops.length, "laptop")}, ${flagged} flagged. Each one reports the team policy it runs on join and on every sync; silent means nothing for ${data.silent_days} days.`
+          : "The team policy each laptop runs, from the heartbeats they send on sync."
+      }
+    >
+      {loaded.error ? <Failed error={loaded.error} what="the laptops" /> : null}
+      {!data && !loaded.error ? <Loading rows={2} /> : null}
+      {data && data.laptops.length === 0 ? (
+        <Empty title="No laptop has reported yet">
+          Laptops report on <code>selfhost join</code> and on each sync after it.
+        </Empty>
+      ) : null}
+      {data && data.laptops.length > 0 ? (
+        <div className="overflow-x-auto rounded-xl border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Laptop</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Policy</TableHead>
+                <TableHead>Managed settings</TableHead>
+                <TableHead className="text-right">Last heartbeat</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.laptops.map((row) => {
+                const status = LAPTOP_STATUS[row.status];
+                return (
+                  <TableRow key={row.machine} data-testid="laptop">
+                    <TableCell>
+                      <div className="font-medium text-sm">
+                        {row.hostname ?? row.machine.slice(0, 8)}
+                      </div>
+                      <div className="text-muted-foreground text-xs">
+                        {row.person} · {PLATFORM_NAMES[row.platform]} · selfhost{" "}
+                        {row.selfhost_version}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={
+                          status.flagged
+                            ? "border-amber-500/50 text-amber-700 dark:text-amber-300"
+                            : undefined
+                        }
+                      >
+                        {status.label}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {row.policy_hash ? row.policy_hash.slice(0, 12) : "None"}
+                      {data.policy_hash && row.policy_hash !== data.policy_hash ? (
+                        <div className="font-sans text-muted-foreground">
+                          Team runs {data.policy_hash.slice(0, 12)}
+                        </div>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="text-sm">{managedFiles(row)}</TableCell>
+                    <TableCell
+                      className="text-right text-sm"
+                      title={formatTime(row.last_heartbeat)}
+                    >
+                      {ago(row.last_heartbeat, now)}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      ) : null}
+      {data && data.people_without_heartbeat.length > 0 ? (
+        <p className="text-muted-foreground text-sm" data-testid="no-heartbeat">
+          No heartbeat from {data.people_without_heartbeat.join(", ")}.
+        </p>
+      ) : null}
+    </Section>
+  );
+}
+
 export function TeamScreen() {
   const { me, team } = useConsole();
   if (!team) {
@@ -345,13 +469,14 @@ export function TeamScreen() {
         title="Team"
         description={
           can(me, team, "settings.write")
-            ? `People, invites and repos of team ${team}.`
-            : `People and repos of team ${team}. Owners and admins change them.`
+            ? `People, invites, repos and laptops of team ${team}.`
+            : `People, repos and laptops of team ${team}. Owners and admins change them.`
         }
       />
       <People team={team} />
       {can(me, team, "invites") ? <Invites team={team} /> : null}
       <Repos team={team} />
+      <Laptops team={team} />
     </>
   );
 }

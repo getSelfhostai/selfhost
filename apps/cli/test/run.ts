@@ -34,6 +34,9 @@ export async function run(args: string[], deps: Partial<CliDeps> = {}): Promise<
     configPath: tempDir("config").path("config.json"),
     // Never read the real home directory's context files.
     home: tempDir("home").root,
+    // Never write managed settings to the real system paths.
+    systemRoot: tempDir("system").root,
+    hostname: "test-laptop",
     ...deps,
   });
   program.exitOverride();

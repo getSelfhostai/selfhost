@@ -1,3 +1,4 @@
+import { hostname } from "node:os";
 import { type Env, type Probes, systemProbes } from "@selfhost/agents";
 import { Command } from "commander";
 import pkg from "../package.json" with { type: "json" };
@@ -29,6 +30,7 @@ import { registerPackages } from "./packages.js";
 import { registerPolicy } from "./policy/commands.js";
 import { registerPolicyCompile } from "./policy/compile.js";
 import { registerPolicyEditing } from "./policy/editing.js";
+import { registerPolicyPackage } from "./policy/mdm.js";
 import { registerProvenance } from "./provenance.js";
 import { registerReview } from "./review.js";
 import { localReviewList, registerReviewList } from "./review-list.js";
@@ -40,6 +42,8 @@ import { type Ask, askOnTerminal, type SendPing } from "./scan/telemetry.js";
 import { registerSpend } from "./spend.js";
 import type { Fetch } from "./team/client.js";
 import { registerTeam } from "./team/commands.js";
+import type { LaptopIo } from "./team/laptop.js";
+import { registerTeamLaptops } from "./team/laptops.js";
 import { registerTraces } from "./traces.js";
 import { registerUp } from "./up/commands.js";
 import type { ImageCheck } from "./up/registry.js";
@@ -70,6 +74,13 @@ export interface CliDeps {
   home?: string;
   /** Where one-time answers and the team membership are kept. Default: ~/.selfhost/config.json. */
   configPath?: string;
+  /**
+   * Where the system paths of managed settings start, for join and sync. Default: the real ones.
+   * Tests pass a temporary folder so nothing is written outside it.
+   */
+  systemRoot?: string;
+  /** This laptop's name in heartbeats. Default: the host name. */
+  hostname?: string;
   /**
    * HTTP for the team server in team mode, and for the calls `selfhost integrations check` makes
    * to the tools in solo mode. Default: the global fetch.
@@ -129,6 +140,13 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       now: deps.now,
       configPath: deps.configPath ?? defaultConfigPath(),
     });
+  const laptop = (): LaptopIo => ({
+    platform: deps.platform,
+    ...(deps.systemRoot === undefined ? {} : { systemRoot: deps.systemRoot }),
+    hostname: deps.hostname ?? hostname(),
+    version: VERSION,
+    ...(deps.now ? { now: () => deps.now as Date } : {}),
+  });
   const fail = (error: unknown, json: boolean | undefined) => {
     const message = error instanceof Error ? error.message : String(error);
     if (json) {
@@ -193,6 +211,7 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
         fetch: deps.fetch,
         retry: deps.retry,
         localReviewList: openLocalList,
+        laptop: laptop(),
       };
       try {
         if (options.watch) await runWatch(options, importIo);
@@ -401,6 +420,20 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
     fail,
   );
 
+  registerPolicyPackage(
+    program,
+    () => ({
+      env: deps.env,
+      cwd: deps.cwd,
+      ...(deps.probes.which ? { which: deps.probes.which } : {}),
+      write: deps.write,
+      setExitCode: deps.setExitCode,
+      now: deps.now,
+      configPath: deps.configPath ?? defaultConfigPath(),
+    }),
+    fail,
+  );
+
   registerContext(
     program,
     () => ({
@@ -499,18 +532,17 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
     fail,
   );
 
-  registerTeam(
-    program,
-    () => ({
-      env: deps.env,
-      cwd: deps.cwd,
-      stdinIsTTY: deps.stdinIsTTY === true,
-      write: deps.write,
-      configPath: deps.configPath ?? defaultConfigPath(),
-      fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
-    }),
-    fail,
-  );
+  const teamIo = () => ({
+    env: deps.env,
+    cwd: deps.cwd,
+    stdinIsTTY: deps.stdinIsTTY === true,
+    write: deps.write,
+    configPath: deps.configPath ?? defaultConfigPath(),
+    fetch: deps.fetch ?? ((url: string, init: RequestInit) => fetch(url, init)),
+    laptop: laptop(),
+  });
+  registerTeam(program, teamIo, fail);
+  registerTeamLaptops(program, teamIo, fail);
 
   registerIntegrations(
     program,

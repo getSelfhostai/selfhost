@@ -110,6 +110,7 @@ paths:
               - pr.closed
               - policy.evaluated
               - alert.raised
+              - config.reported
         - name: team
           in: query
           required: false
@@ -1115,6 +1116,52 @@ paths:
                 $ref: "#/components/schemas/ApiError"
         "409":
           description: The person is in the team already.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/teams/{team}/laptops:
+    get:
+      operationId: listTeamLaptops
+      summary: List the laptops of a team with the config version each one runs.
+      description: "The admin token, or a person token of anyone in the team. Built from the heartbeats laptops send on join and on every sync (config.reported events, data.heartbeat a LaptopHeartbeat): the newest one per laptop, compared with the team's policy now. A laptop is behind when it runs another policy hash, silent when it sent nothing in silent_days, and not_installed when its managed settings files are pending or turned off. People in the team with no heartbeat at all are listed apart."
+      parameters:
+        - name: team
+          in: path
+          required: true
+          description: Team id.
+          schema:
+            type: string
+        - name: silent_days
+          in: query
+          required: false
+          description: "Days without a heartbeat before a laptop is flagged silent, 1 to 999. Default: 7."
+          schema:
+            pattern: ^[1-9][0-9]{0,2}$
+            type: string
+      responses:
+        "200":
+          description: Every laptop, flagged ones first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamLaptopsResponse"
+        "400":
+          description: Invalid query.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such team.
           content:
             application/json:
               schema:
@@ -4088,6 +4135,302 @@ components:
               created_at:
                 format: date-time
                 type: string
+    LaptopHeartbeat:
+      additionalProperties: false
+      title: LaptopHeartbeat
+      type: object
+      required:
+        - schema
+        - machine
+        - platform
+        - selfhost_version
+        - policy_hash
+        - managed
+      properties:
+        schema:
+          description: Schema version tag.
+          const: selfhost.laptop_heartbeat/v1
+          type: string
+        machine:
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+          description: Random id selfhost made for this laptop the first time it joined a team. Not derived from the hardware.
+          type: string
+        hostname:
+          maxLength: 255
+          description: The laptop's name.
+          type: string
+        platform:
+          description: Operating system.
+          type: string
+          enum:
+            - darwin
+            - linux
+            - win32
+            - other
+        selfhost_version:
+          minLength: 1
+          maxLength: 64
+          description: Version of the selfhost CLI.
+          type: string
+        policy_hash:
+          description: "The config version: sha256 of the team policy pulled on the last sync, null when none was pulled."
+          anyOf:
+            - pattern: ^[0-9a-f]{64}$
+              description: sha256 of the team's selfhost.toml
+              type: string
+            - type: "null"
+        managed:
+          additionalProperties: false
+          title: LaptopManaged
+          type: object
+          required:
+            - state
+            - files
+            - pending
+          properties:
+            state:
+              description: Where the managed files stand.
+              type: string
+              enum:
+                - current
+                - pending
+                - off
+                - none
+            files:
+              minimum: 0
+              description: Managed files the team policy compiles to on this platform.
+              type: integer
+            pending:
+              minimum: 0
+              description: Of those, the ones missing or different on this laptop.
+              type: integer
+    LaptopManaged:
+      additionalProperties: false
+      title: LaptopManaged
+      type: object
+      required:
+        - state
+        - files
+        - pending
+      properties:
+        state:
+          description: Where the managed files stand.
+          type: string
+          enum:
+            - current
+            - pending
+            - off
+            - none
+        files:
+          minimum: 0
+          description: Managed files the team policy compiles to on this platform.
+          type: integer
+        pending:
+          minimum: 0
+          description: Of those, the ones missing or different on this laptop.
+          type: integer
+    LaptopRow:
+      additionalProperties: false
+      title: LaptopRow
+      type: object
+      required:
+        - machine
+        - person
+        - hostname
+        - platform
+        - selfhost_version
+        - policy_hash
+        - managed
+        - last_heartbeat
+        - flags
+        - status
+      properties:
+        machine:
+          description: The laptop's id from its heartbeats.
+          type: string
+        person:
+          description: "Who the laptop belongs to: the person who sent it."
+          type: string
+        hostname:
+          anyOf:
+            - type: string
+            - type: "null"
+        platform:
+          type: string
+          enum:
+            - darwin
+            - linux
+            - win32
+            - other
+        selfhost_version:
+          type: string
+        policy_hash:
+          description: The config version the laptop reported last.
+          anyOf:
+            - type: string
+            - type: "null"
+        managed:
+          additionalProperties: false
+          title: LaptopManaged
+          type: object
+          required:
+            - state
+            - files
+            - pending
+          properties:
+            state:
+              description: Where the managed files stand.
+              type: string
+              enum:
+                - current
+                - pending
+                - off
+                - none
+            files:
+              minimum: 0
+              description: Managed files the team policy compiles to on this platform.
+              type: integer
+            pending:
+              minimum: 0
+              description: Of those, the ones missing or different on this laptop.
+              type: integer
+        last_heartbeat:
+          format: date-time
+          description: When the laptop last reported.
+          type: string
+        flags:
+          description: "silent: no heartbeat in silent_days. behind: its config version is not the team's. not_installed: its managed files are pending or turned off."
+          type: array
+          items:
+            type: string
+            enum:
+              - silent
+              - behind
+              - not_installed
+        status:
+          description: The first flag, or current when there is none.
+          type: string
+          enum:
+            - current
+            - silent
+            - behind
+            - not_installed
+    TeamLaptopsResponse:
+      additionalProperties: false
+      title: TeamLaptopsResponse
+      type: object
+      required:
+        - team
+        - policy_hash
+        - silent_days
+        - laptops
+        - people_without_heartbeat
+      properties:
+        team:
+          description: Team id.
+          type: string
+        policy_hash:
+          description: The team's config version now, null when the team has no policy.
+          anyOf:
+            - type: string
+            - type: "null"
+        silent_days:
+          minimum: 1
+          type: integer
+        laptops:
+          description: Every laptop that sent a heartbeat for the team, flagged ones first.
+          type: array
+          items:
+            additionalProperties: false
+            title: LaptopRow
+            type: object
+            required:
+              - machine
+              - person
+              - hostname
+              - platform
+              - selfhost_version
+              - policy_hash
+              - managed
+              - last_heartbeat
+              - flags
+              - status
+            properties:
+              machine:
+                description: The laptop's id from its heartbeats.
+                type: string
+              person:
+                description: "Who the laptop belongs to: the person who sent it."
+                type: string
+              hostname:
+                anyOf:
+                  - type: string
+                  - type: "null"
+              platform:
+                type: string
+                enum:
+                  - darwin
+                  - linux
+                  - win32
+                  - other
+              selfhost_version:
+                type: string
+              policy_hash:
+                description: The config version the laptop reported last.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              managed:
+                additionalProperties: false
+                title: LaptopManaged
+                type: object
+                required:
+                  - state
+                  - files
+                  - pending
+                properties:
+                  state:
+                    description: Where the managed files stand.
+                    type: string
+                    enum:
+                      - current
+                      - pending
+                      - off
+                      - none
+                  files:
+                    minimum: 0
+                    description: Managed files the team policy compiles to on this platform.
+                    type: integer
+                  pending:
+                    minimum: 0
+                    description: Of those, the ones missing or different on this laptop.
+                    type: integer
+              last_heartbeat:
+                format: date-time
+                description: When the laptop last reported.
+                type: string
+              flags:
+                description: "silent: no heartbeat in silent_days. behind: its config version is not the team's. not_installed: its managed files are pending or turned off."
+                type: array
+                items:
+                  type: string
+                  enum:
+                    - silent
+                    - behind
+                    - not_installed
+              status:
+                description: The first flag, or current when there is none.
+                type: string
+                enum:
+                  - current
+                  - silent
+                  - behind
+                  - not_installed
+        people_without_heartbeat:
+          description: People in the team with no heartbeat from any laptop.
+          type: array
+          items:
+            type: string
     AddPersonRequest:
       additionalProperties: false
       title: AddPersonRequest

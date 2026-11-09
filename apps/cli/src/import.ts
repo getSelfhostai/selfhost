@@ -15,8 +15,10 @@ import { drainSpool, type SpoolReport, watchSpool } from "./hooks/drain.js";
 import { spoolDir } from "./hooks/receive.js";
 import { refreshGrants } from "./inbox/grants.js";
 import { type OpenLocalReviewList, watchInbox } from "./inbox/sync.js";
+import { describeManaged } from "./policy/managed.js";
 import type { Fetch } from "./team/client.js";
 import { type Membership, readMembership, readSyncState } from "./team/config.js";
+import type { LaptopIo } from "./team/laptop.js";
 import type { RemoteWriterOptions } from "./team/remote-writer.js";
 import { markSynced, type SyncReport, syncingWriter, syncLedger, teamSync } from "./team/sync.js";
 
@@ -73,6 +75,8 @@ export interface ImportIo {
   retry?: Omit<RemoteWriterOptions, "person">;
   /** Solo mode's review list, which `--watch` keeps the saved inbox copy from. */
   localReviewList?: OpenLocalReviewList;
+  /** In team mode, installs the managed settings and sends heartbeats on sync. */
+  laptop?: LaptopIo;
 }
 
 const VENDORS: Record<string, Vendor> = {
@@ -160,7 +164,7 @@ export function describeTarget(
 const globalFetch: Fetch = (url, init) => fetch(url, init);
 
 function teamSyncFor(membership: Membership, io: ImportIo) {
-  return teamSync(membership, configPathOf(io), io.fetch ?? globalFetch, io.retry);
+  return teamSync(membership, configPathOf(io), io.fetch ?? globalFetch, io.retry, io.laptop);
 }
 
 const configPathOf = (io: ImportIo) => io.configPath ?? defaultConfigPath();
@@ -250,7 +254,15 @@ function describeSync(sync: SyncReport): string[] {
       ? `The team's context changed, but ${repo.root} was not compiled again: ${repo.error}`
       : `The team's context changed: compiled ${repo.root} again (${repo.changed} files changed).`,
   );
-  return [`${what} ${where}: ${counts}${policy}.`, ...repos];
+  const laptop = sync.laptop;
+  const managed = [
+    // Quiet on the usual sync, when every file was already in place.
+    ...(laptop?.managed?.files.some((file) => file.status !== "current")
+      ? describeManaged(laptop.managed)
+      : []),
+    ...(laptop?.managed_error ? [`Managed settings not installed: ${laptop.managed_error}`] : []),
+  ];
+  return [`${what} ${where}: ${counts}${policy}.`, ...repos, ...managed];
 }
 
 /** Imports once, then keeps tailing the logs until interrupted. */
