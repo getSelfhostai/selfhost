@@ -1,7 +1,7 @@
 {
   "schema": "selfhost.vendor_compat/v1",
-  "updated": "2026-11-09T05:40:46.034Z",
-  "run_url": "https://github.com/Ronakkadhi/selfhost/actions/runs/42568480453",
+  "updated": "2026-11-09T13:59:55.330Z",
+  "run_url": "https://github.com/Ronakkadhi/selfhost/actions/runs/42630071576",
   "event_schemas": {
     "schema": "selfhost.event_versions/v1",
     "support_months": 12,
@@ -27,7 +27,7 @@
           "live": "not_run",
           "first_tested": "2026-11-08",
           "last_tested": "2026-11-09",
-          "run_url": "https://github.com/Ronakkadhi/selfhost/actions/runs/42568480453",
+          "run_url": "https://github.com/Ronakkadhi/selfhost/actions/runs/42630071576",
           "checks": [
             {
               "id": "install",
@@ -146,7 +146,7 @@
           "live": "not_run",
           "first_tested": "2026-11-08",
           "last_tested": "2026-11-09",
-          "run_url": "https://github.com/Ronakkadhi/selfhost/actions/runs/42568480453",
+          "run_url": "https://github.com/Ronakkadhi/selfhost/actions/runs/42630071576",
           "checks": [
             {
               "id": "install",
@@ -235,7 +235,7 @@
           "live": "not_run",
           "first_tested": "2026-11-08",
           "last_tested": "2026-11-09",
-          "run_url": "https://github.com/Ronakkadhi/selfhost/actions/runs/42568480453",
+          "run_url": "https://github.com/Ronakkadhi/selfhost/actions/runs/42630071576",
           "checks": [
             {
               "id": "install",
@@ -294,7 +294,7 @@
           "live": "not_run",
           "first_tested": "2026-11-08",
           "last_tested": "2026-11-09",
-          "run_url": "https://github.com/Ronakkadhi/selfhost/actions/runs/42568480453",
+          "run_url": "https://github.com/Ronakkadhi/selfhost/actions/runs/42630071576",
           "checks": [
             {
               "id": "install",
