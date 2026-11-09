@@ -1012,6 +1012,51 @@ Every command takes `--json` and prints one object with a `schema` tag: `selfhos
 needs a network connection, except `selfhost integrations check`, which calls the tools named in
 `[integrations]` to test them.
 
+## Background runs: `selfhost run`
+
+```sh
+selfhost run "fix the flaky login test" --agent claude --repo acme/web [--runtime e2b] [--wait]
+selfhost tail --run <id>          # its states, output, health and gate as they land
+selfhost runs [--state active]    # runs of your teams, with health and live cost
+selfhost runs show <id>
+selfhost runs cancel <id>
+selfhost runs kill [--team web | --org acme] [--reason ...] [--clear]
+```
+
+`selfhost run` asks the team server to start an agent CLI (claude, codex, opencode, goose) in a
+sandbox on the team's runtime, under your own login, so it keeps going after this machine
+disconnects. The repo defaults to this checkout's origin. The run gets its own branch, the team's
+hooks inside the sandbox, run health (stopped after `[background] stall_minutes` with no output,
+or the same tool call `loop_repeats` times in a row, or past `timeout_minutes`), the tests-first
+gate and one pull request. `--wait` follows it and exits 1 unless it succeeded.
+
+```toml
+[background]
+agent = "claude"
+timeout_minutes = 60
+max_retries = 1              # runtime errors only
+allowed = []                 # person ids; empty: everyone in the team
+rate_limit_per_hour = 20
+max_concurrent = 5
+tests_first = "observe"      # off, observe or enforce
+test_command = "pnpm test"   # unset: detected
+pr_size_cap = 800            # changed lines; 0 for no cap
+webhook_secret_env = "SELFHOST_RUNS_SECRET"
+
+[[background.schedules]]
+name = "nightly-deps"
+cron = "0 2 * * 1-5"
+repo = "acme/web"
+task = "Update dependencies and fix what breaks"
+```
+
+The gate needs a test file the run added or changed that fails on the base and passes on the
+head, every package the diff adds to exist in its registry, and the diff under `pr_size_cap`. In
+observe it is a neutral check on the pull request; in enforce a failure opens no pull request.
+
+`selfhost import --hook-events` prints the hook spool's events as JSON lines and writes nothing;
+background runs read their sandbox's hook events this way.
+
 ## Integrations: `selfhost integrations`
 
 The router, tracer, runtime and reviewer the team picked, from `[integrations]` in

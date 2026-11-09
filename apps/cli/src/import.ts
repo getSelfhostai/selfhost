@@ -9,6 +9,7 @@ import {
 } from "@selfhost/importers";
 import { isPostgresUrl, type Ledger, openLedger, resolveDataDir } from "@selfhost/ledger";
 import { scrub } from "@selfhost/notify";
+import type { LedgerEvent } from "@selfhost/schema";
 import { startMonitor } from "./alerts/monitor.js";
 import { defaultConfigPath } from "./config-file.js";
 import { plural } from "./format.js";
@@ -39,6 +40,12 @@ export interface ImportCommandOptions {
   spoolDir?: string;
   /** Print JSON instead of text: one object, or one line per batch with --watch. */
   json?: boolean;
+  /**
+   * Print the hook spool's ledger events as JSON lines instead of writing them anywhere, and keep
+   * the spool. A background run reads them from its sandbox this way, so its tool calls are mapped
+   * by the same code as on a laptop.
+   */
+  hookEvents?: boolean;
 }
 
 /** `selfhost import --json`. */
@@ -181,6 +188,31 @@ const configPathOf = (io: ImportIo) => io.configPath ?? defaultConfigPath();
 
 /** How often `selfhost import --watch` checks budgets and sends notifications on a laptop. */
 const LAPTOP_NOTIFY_MS = 60_000;
+
+/**
+ * `selfhost import --hook-events`: the hook spool's events, one JSON line each, on stdout. Nothing
+ * is written, the spool is kept and no server is called, so it can run again and again; the
+ * events' ids are stable, so the ledger that takes them stores each once.
+ */
+export async function printHookEvents(
+  options: ImportCommandOptions,
+  io: ImportIo,
+): Promise<SpoolReport> {
+  const membership = readMembership(configPathOf(io));
+  const opts = importOptions(options, io, membership);
+  const writer: LedgerWriter = {
+    async append(events: LedgerEvent[]) {
+      for (const event of events) io.write(JSON.stringify(event));
+      return { accepted: events.map((event) => event.id), duplicates: [] };
+    },
+  };
+  return drainSpool(writer, options.spoolDir ?? spoolDir(io.env), {
+    person: opts.actorId ?? "",
+    logPrompts: opts.logPrompts,
+    now: io.now,
+    keep: true,
+  });
+}
 
 /**
  * Imports local session logs into the ledger once. In team mode it then syncs: the events go

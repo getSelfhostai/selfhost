@@ -125,6 +125,7 @@ describe.each(BACKENDS)("ledger on $name", (backend) => {
       // teams holds team mode rows (people, tokens, policy), never events.
       expect(Object.keys(ledger).sort()).toEqual([
         "append",
+        "backgroundRuns",
         "close",
         "context",
         "decisions",
@@ -135,6 +136,8 @@ describe.each(BACKENDS)("ledger on $name", (backend) => {
         "teams",
       ]);
       expect(Object.keys(ledger.teams).filter((key) => /event/i.test(key))).toEqual([]);
+      // backgroundRuns holds run records and kill switches; a run's events go through append.
+      expect(Object.keys(ledger.backgroundRuns).filter((key) => /event/i.test(key))).toEqual([]);
       // orgs holds orgs, repos and the repo of each run, and only reads events.
       expect(Object.keys(ledger.orgs).filter((key) => /event/i.test(key))).toEqual([]);
       // context holds org and team context layers and proposals, never events.

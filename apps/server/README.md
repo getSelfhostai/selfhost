@@ -571,6 +571,53 @@ cache_min_requests` whose prompt cache hit rate over their last 10 requests fell
 `cache_hit_floor`, and records one `alert.raised` (`data.alert: "cache_hit_low"`) per session in
 its team, naming the usual causes. `SELFHOST_CACHE_ALERTS=off` turns it off.
 
+## Background runs
+
+A background run hands a task to an agent CLI that already exists (Claude Code headless, Codex
+exec, OpenCode, Goose) in a sandbox on the team's runtime; the server orchestrates, records,
+guards and gates it through [`@selfhost/background`](../../packages/background/src/index.ts).
+Each run: a fresh sandbox, a clone on its own branch, the agent CLI and the selfhost CLI installed
+when the image lacks them, the team's hooks written into the agent's own settings (the same
+`selfhost hook` and `selfhost.toml` as a laptop), the agent run headless with its output in the
+ledger as `run.output`, the hook spool mapped by `selfhost import --hook-events` in the sandbox,
+the tests-first gate, a push and one pull request through the GitHub App with the gate as the
+`selfhost/tests-first` check, then the sandbox stopped. States: queued, starting, running,
+testing, pushing, then succeeded, failed, cancelled, timed_out or stuck. The run record is
+`selfhost.background_run/v1` in the `background_runs` table; the ledger gets `run.triggered`,
+`run.updated`, `run.output`, `run.health`, `run.gate`, `pr.opened`, and `alert.raised`
+(`run_failed`, `run_stuck`) for a run that failed, stuck or timed out, which the review list
+turns into a `stuck_run` item for the run's owner; the owner's notification targets get it too.
+
+- `POST /v1/background-runs` (person token, role work): `{ task, repo, agent?, runtime?, base?,
+  timeout_minutes?, team?, source? }`, 202 with the run. Refused (and recorded) when the person
+  is not on `[background] allowed` (or not in the team), a kill switch is on (409), the team is
+  over `rate_limit_per_hour` or `max_concurrent` (429), or no runtime is set up (503).
+- `GET /v1/background-runs?team&state&limit` and `GET /v1/background-runs/{id}`: runs with their
+  health line and live cost (sandbox time plus the run's `cost.recorded` events).
+- `POST /v1/background-runs/{id}/cancel`; `POST /v1/background-runs/kill` `{ scope: team|org,
+  target, reason? }` stops every run in scope and refuses new ones; `DELETE
+  /v1/background-runs/kill?scope&target` clears it. Who used each switch is kept.
+- `POST /v1/background-runs/webhook`: a run from a signed webhook, `X-Selfhost-Signature-256:
+  sha256=<HMAC of the body>` under the secret in the variable `[background] webhook_secret_env`
+  names. The Slack and Telegram bridges in [`examples/run-triggers`](../../examples/run-triggers)
+  post here; they are not part of the server.
+- GitHub: a `/selfhost run [--agent codex] <task>` comment on an issue or pull request, or the
+  `[background] github_label` on an issue, starts a run for the sender, mapped to a person
+  through `[review] github_logins`; the App answers on the issue either way.
+- Schedules: `[[background.schedules]]` (cron in UTC) start runs with the team's key, once per
+  due minute. `SELFHOST_SCHEDULES=off` turns the job off on a second server.
+
+The runtime plugs in from outside (`createBackground({ runtime })`, runtime selection over the
+E2B, Daytona, Modal, Coder and OpenSandbox adapters); without it starting a run answers 503.
+Credentials come from [`@selfhost/credentials`](../../packages/credentials/src/prepare.ts) by
+default (`brokeredCredentials`): a GitHub App token for the run's one repository, a per-run
+gateway key in place of any provider key when `[integrations.router]` is set, the team's declared
+secrets, and the team's egress list plus github.com, api.github.com and the gateway host, all by
+reference in the sandbox spec, masked in the run's output and revoked with how the run ended.
+`createBackground({ credentials })` replaces it. On start the server marks runs a previous process left going as
+failed and stops their sandboxes (`SELFHOST_BACKGROUND_RECOVER=off` on all but one server sharing
+a database); `SELFHOST_BACKGROUND=off` turns background runs off.
+
 ## Privacy and retention
 
 Every event is redacted in the ledger's write path before it is stored, whichever route it came

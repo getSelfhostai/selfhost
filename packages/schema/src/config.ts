@@ -1,7 +1,9 @@
 import { type Static, Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { parse as parseToml, TomlError } from "smol-toml";
+import { type BackgroundConfig, BackgroundConfigSchema } from "./background.js";
 import { NonEmpty, StringEnum, Url } from "./common.js";
+import { parseCron } from "./cron.js";
 import { EGRESS_HOST_PATTERN, egressEntryCovered, SECRET_SOURCE_PATTERN } from "./egress.js";
 import { AGENT_VENDORS } from "./event.js";
 import { REVIEWER_TOOLS, ROUTER_TOOLS, RUNTIME_TOOLS, TRACER_TOOLS } from "./integration-tools.js";
@@ -1399,6 +1401,7 @@ export const SelfhostConfigSchema = Type.Object(
     receipt: Type.Optional(ReceiptConfigSchema),
     integrations: Type.Optional(IntegrationsSchema),
     roi: Type.Optional(RoiConfigSchema),
+    background: Type.Optional(BackgroundConfigSchema),
   },
   {
     $id: CONFIG_SCHEMA_URL,
@@ -1563,6 +1566,26 @@ function semanticErrors(
   if (config.secrets) errors.push(...secretsErrors(config.secrets));
   if (config.roi) errors.push(...roiErrors(config.roi));
   errors.push(...routeErrors(config.review.routes));
+  if (config.background) errors.push(...backgroundErrors(config.background));
+  return errors;
+}
+
+function backgroundErrors(background: BackgroundConfig): SegmentError[] {
+  const errors: SegmentError[] = [];
+  const names = new Map<string, number>();
+  (background.schedules ?? []).forEach((schedule, index) => {
+    const earlier = names.get(schedule.name);
+    if (earlier !== undefined) {
+      errors.push({
+        segments: ["background", "schedules", index, "name"],
+        message: `Duplicate schedule name "${schedule.name}", also used by schedules[${earlier}]`,
+      });
+    } else names.set(schedule.name, index);
+    const cron = parseCron(schedule.cron);
+    if (typeof cron === "string") {
+      errors.push({ segments: ["background", "schedules", index, "cron"], message: cron });
+    }
+  });
   return errors;
 }
 

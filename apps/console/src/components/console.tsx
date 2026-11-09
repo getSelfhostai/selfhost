@@ -7,6 +7,7 @@ import { OverviewScreen } from "@/components/screens/overview";
 import { ReviewScreen } from "@/components/screens/review";
 import { RulesScreen } from "@/components/screens/rules";
 import { RunScreen } from "@/components/screens/run";
+import { RunsScreen } from "@/components/screens/runs";
 import { SpendScreen } from "@/components/screens/spend";
 import { TeamScreen } from "@/components/screens/team";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,7 @@ import type { Screen, View } from "@/lib/view";
 const NAV: { screen: Screen; name: string }[] = [
   { screen: "overview", name: "Overview" },
   { screen: "review", name: "Review list" },
+  { screen: "runs", name: "Runs" },
   { screen: "rules", name: "Rules" },
   { screen: "spend", name: "Spend" },
   { screen: "code", name: "Code" },
@@ -156,6 +158,7 @@ export function Console({ me, view, onChange, onSignOut, now: fixed }: ConsolePr
         <main className="space-y-6">
           {screen === "overview" ? <OverviewScreen /> : null}
           {screen === "review" ? <ReviewScreen /> : null}
+          {screen === "runs" ? <RunsScreen /> : null}
           {screen === "rules" ? <RulesScreen /> : null}
           {screen === "spend" ? <SpendScreen /> : null}
           {screen === "code" ? <CodeScreen /> : null}

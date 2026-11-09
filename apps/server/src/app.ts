@@ -8,6 +8,7 @@ import {
 import { Hono } from "hono";
 import { roleIn } from "./access.js";
 import { requireBearerToken } from "./auth.js";
+import { type Background, backgroundWebhookRoute } from "./background.js";
 import { consoleRoutes } from "./console.js";
 import { refuseContextDecision } from "./context.js";
 import { decisionRoutes } from "./decisions.js";
@@ -58,6 +59,11 @@ export interface AppOptions {
   gateway?: Gateway;
   /** How notifications are delivered: the Apprise API in SELFHOST_APPRISE_URL (see notify.ts). */
   notify?: Pick<NotifyRouteOptions, "deliver">;
+  /**
+   * Background runs (see background.ts): the runner, built with createBackground. Without it the
+   * routes answer 503 and GitHub run triggers are not acted on.
+   */
+  background?: Background;
 }
 
 export function createApp({
@@ -74,6 +80,7 @@ export function createApp({
   integrations = {},
   gateway,
   notify = {},
+  background,
 }: AppOptions): Hono {
   const app = new Hono();
   const review = {
@@ -83,7 +90,12 @@ export function createApp({
   };
 
   // Signed by GitHub instead of a bearer token, so they go before both token checks.
-  const pulls = githubRoutes(app, ledger, { ...(clones ? { clones } : {}), ...github });
+  const pulls = githubRoutes(app, ledger, {
+    ...(clones ? { clones } : {}),
+    ...(background ? { background } : {}),
+    ...github,
+  });
+  backgroundWebhookRoute(app, ledger, background, github.team);
   receiptRoutes(app, ledger, {
     ...receipts,
     ...(github.app ? { app: github.app } : {}),
@@ -104,6 +116,7 @@ export function createApp({
       ...integrations,
     },
     ...(gateway ? { gateway } : {}),
+    ...(background ? { background } : {}),
     personRoutes: (person) => {
       reviewRoutes(person, ledger, {
         ...review,

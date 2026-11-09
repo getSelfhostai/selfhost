@@ -16,7 +16,7 @@
     { "number": 111, "state": "open", "case": "One Claude Code commit and one Codex commit: conflicting evidence, so unattributed." }
   ],
   "webhooks": {
-    "description": "Webhook deliveries as a GitHub App receives them, for the decision mapper in packages/attribution and the GitHub delivery in apps/server (POST /v1/github/webhooks): the body, with the X-GitHub-Event header as the first part of the file name and the action as the second. reviewers/ holds what PR-Agent, the Claude Code GitHub Action and CodeRabbit post, for the second-opinion ingest in packages/integrations and apps/server.",
+    "description": "Webhook deliveries as a GitHub App receives them, for the decision mapper in packages/attribution and the GitHub delivery in apps/server (POST /v1/github/webhooks): the body, with the X-GitHub-Event header as the first part of the file name and the action as the second. reviewers/ holds what PR-Agent, the Claude Code GitHub Action and CodeRabbit post, for the second-opinion ingest in packages/integrations and apps/server. runs/ holds the comment command and the label that start background runs, for packages/background and apps/server.",
     "files": [
       { "file": "webhooks/pull_request_review.approved.json", "case": "bob approves Claude Code pull request 101 with a reason." },
       { "file": "webhooks/pull_request_review.changes_requested.json", "case": "bob requests changes on Codex pull request 103." },
@@ -34,7 +34,9 @@
       { "file": "webhooks/reviewers/issue_comment.created.claude-code-action.json", "case": "The Claude Code action's summary comment from the workflow selfhost review setup writes: two findings with a failing test and a repro, ending in the selfhost:second-opinion marker line." },
       { "file": "webhooks/reviewers/check_run.completed.claude-code-action-failure.json", "case": "The Claude Code review job (GitHub Actions) fails on pull request 101." },
       { "file": "webhooks/reviewers/check_run.completed.selfhost-review.json", "case": "The selfhost App's own selfhost/review check run completes: not a reviewer." },
-      { "file": "webhooks/check_suite.completed.json", "case": "Another app's check suite finishes green on head 5786c5c9 of pull request 101: auto-approve looks at it again." }
+      { "file": "webhooks/check_suite.completed.json", "case": "Another app's check suite finishes green on head 5786c5c9 of pull request 101: auto-approve looks at it again." },
+      { "file": "webhooks/runs/issue_comment.created.run.json", "case": "octocat comments /selfhost run --agent codex with a task on issue 42: a background run trigger." },
+      { "file": "webhooks/runs/issues.labeled.selfhost.json", "case": "octocat adds the selfhost label to issue 42: a background run on the issue." }
     ]
   }
 }

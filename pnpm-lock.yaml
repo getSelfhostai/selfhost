@@ -421,6 +421,9 @@ importers:
       '@selfhost/attribution':
         specifier: workspace:*
         version: link:../../packages/attribution
+      '@selfhost/background':
+        specifier: workspace:*
+        version: link:../../packages/background
       '@selfhost/brief':
         specifier: workspace:*
         version: link:../../packages/brief
@@ -430,6 +433,9 @@ importers:
       '@selfhost/context':
         specifier: workspace:*
         version: link:../../packages/context
+      '@selfhost/credentials':
+        specifier: workspace:*
+        version: link:../../packages/credentials
       '@selfhost/ee-receipt':
         specifier: workspace:*
         version: link:../../ee/receipt
@@ -491,6 +497,9 @@ importers:
       '@selfhost/console':
         specifier: workspace:*
         version: link:../console
+      '@selfhost/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
       '@types/node':
         specifier: 'catalog:'
         version: 20.19.43
@@ -614,6 +623,37 @@ importers:
 
   packages/attribution:
     dependencies:
+      '@selfhost/schema':
+        specifier: workspace:*
+        version: link:../schema
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 20.19.43
+      tsup:
+        specifier: 'catalog:'
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.32)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.12(@opentelemetry/api@1.9.1)(@types/node@20.19.43)(jsdom@29.1.1)(vite@8.3.6(@types/node@20.19.43)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+
+  packages/background:
+    dependencies:
+      '@selfhost/agents':
+        specifier: workspace:*
+        version: link:../agents
+      '@selfhost/package-guard':
+        specifier: workspace:*
+        version: link:../package-guard
+      '@selfhost/pr':
+        specifier: workspace:*
+        version: link:../pr
+      '@selfhost/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       '@selfhost/schema':
         specifier: workspace:*
         version: link:../schema

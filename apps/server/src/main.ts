@@ -3,6 +3,7 @@ import { openLedger, resolveDataDir } from "@selfhost/ledger";
 import { redactionSettings } from "@selfhost/schema";
 import pkg from "../package.json" with { type: "json" };
 import { createApp } from "./app.js";
+import { allTeams, createBackground, startScheduleJob } from "./background.js";
 import { startCacheAlertJob } from "./cache-alerts.js";
 import { findConsoleDir } from "./console.js";
 import { gatewayFromEnv, startGatewayJob } from "./gateway.js";
@@ -60,6 +61,27 @@ const gateway = gatewayFromEnv(config);
 // The Apprise API notifications go through (compose.notify.yml, or one the team runs).
 const deliver = notifyFromEnv();
 
+// Background runs. The runtime comes from runtime selection over the adapters; until one is
+// passed here as `runtime`, starting a run answers 503. SELFHOST_BACKGROUND=off turns them off.
+const background =
+  process.env.SELFHOST_BACKGROUND === "off"
+    ? undefined
+    : createBackground(ledger, {
+        config,
+        version: pkg.version,
+        ...(github.app ? { github: github.app } : {}),
+        ...(gateway ? { gateway } : {}),
+        ...(deliver ? { deliver } : {}),
+        ...(publicUrl ? { publicUrl } : {}),
+      });
+// Runs a previous process left going are marked failed and their sandboxes stopped. Installs
+// where several servers share one database set SELFHOST_BACKGROUND_RECOVER=off on all but one.
+if (background && process.env.SELFHOST_BACKGROUND_RECOVER !== "off") {
+  const recovered = await background.runner.recover();
+  if (recovered.length > 0)
+    console.log(`background runs: ${recovered.length} left from the last start marked failed`);
+}
+
 const server = serve(
   {
     fetch: createApp({
@@ -73,6 +95,7 @@ const server = serve(
       ...(clones ? { clones } : {}),
       ...(gateway ? { gateway } : {}),
       ...(deliver ? { notify: { deliver } } : {}),
+      ...(background ? { background } : {}),
     }).fetch,
     port,
     hostname,
@@ -130,12 +153,20 @@ const notifications =
 
 // SELFHOST_CACHE_ALERTS=off stops raising prompt cache alerts for sessions whose hit rate
 // collapsed, for installs where another server raises them from the same database.
+// SELFHOST_SCHEDULES=off stops starting [background] schedules, for installs where another
+// server starts them from the same database.
+const schedules =
+  background && process.env.SELFHOST_SCHEDULES !== "off"
+    ? startScheduleJob(ledger, background, allTeams(ledger))
+    : undefined;
+
 const cacheAlerts =
   process.env.SELFHOST_CACHE_ALERTS === "off" ? undefined : startCacheAlertJob(ledger, { config });
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
     retention?.stop();
+    schedules?.stop();
     cacheAlerts?.stop();
     notifications?.stop();
     gatewayJob?.stop();

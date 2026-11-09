@@ -27,6 +27,7 @@ import {
   type Router,
 } from "./access.js";
 import { requireBearerToken } from "./auth.js";
+import { type Background, backgroundRoutes } from "./background.js";
 import { contextRoutes } from "./context.js";
 import { eventRoutes, MAX_BODY_BYTES } from "./events.js";
 import { type Gateway, gatewayRoutes } from "./gateway.js";
@@ -63,6 +64,8 @@ export interface TeamRouteOptions {
   integrations?: IntegrationRouteOptions;
   /** The AI gateway selfhost configures; its routes answer 404 without one. */
   gateway?: Gateway;
+  /** Background runs; their routes answer 503 without them. */
+  background?: Background;
 }
 
 export type PersonEnv = { Bindings: { person: Person; caller: PersonCaller } };
@@ -113,6 +116,7 @@ export function teamRoutes(
     runs,
     integrations,
     gateway,
+    background,
   }: TeamRouteOptions,
 ): void {
   const { teams } = ledger;
@@ -192,7 +196,7 @@ export function teamRoutes(
       else person.on(method, path, run);
     },
   };
-  sharedRoutes(asPerson, ledger, now, provenance, runs, integrations, gateway);
+  sharedRoutes(asPerson, ledger, now, provenance, runs, integrations, gateway, background);
   personRoutes?.(person);
 
   app.use("*", async (c, next) => {
@@ -272,7 +276,7 @@ export function teamRoutes(
       else app.on(method, path, adminOnly, run);
     },
   };
-  sharedRoutes(asAdmin, ledger, now, provenance, runs, integrations, gateway);
+  sharedRoutes(asAdmin, ledger, now, provenance, runs, integrations, gateway, background);
 }
 
 /** The routes both kinds of token reach, each checking the caller's role. */
@@ -284,6 +288,7 @@ function sharedRoutes(
   runs: TeamRouteOptions["runs"],
   integrations: TeamRouteOptions["integrations"],
   gateway: Gateway | undefined,
+  background: Background | undefined,
 ): void {
   policyRoutes(router, ledger);
   contextRoutes(router, ledger, { ...(now ? { now } : {}), ...runs });
@@ -298,6 +303,7 @@ function sharedRoutes(
   runRoutes(router, ledger, { ...runs, ...(now ? { now } : {}) });
   tailRoutes(router, ledger, { ...runs, ...(now ? { now } : {}) });
   gatewayRoutes(router, ledger, gateway);
+  backgroundRoutes(router, ledger, background);
 }
 
 /**

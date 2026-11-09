@@ -18,7 +18,13 @@ import { doctor } from "./doctor.js";
 import { registerGateway } from "./gateway/commands.js";
 import { registerGuard } from "./guard/commands.js";
 import { readStdin, runHook } from "./hooks/receive.js";
-import { type ImportCommandOptions, type ImportIo, runImport, runWatch } from "./import.js";
+import {
+  type ImportCommandOptions,
+  type ImportIo,
+  printHookEvents,
+  runImport,
+  runWatch,
+} from "./import.js";
 import { registerInbox } from "./inbox/commands.js";
 import type { OpenLocalReviewList } from "./inbox/sync.js";
 import { registerInit } from "./init/commands.js";
@@ -38,6 +44,7 @@ import { localReviewList, registerReviewList } from "./review-list.js";
 import { registerReviewRoutes } from "./review-routes.js";
 import { registerReviewSetup } from "./review-setup.js";
 import { registerRoi } from "./roi.js";
+import { registerRuns } from "./runs.js";
 import { runtimeCheck } from "./runtime-check.js";
 import type { CollectAttribution } from "./scan/attribution.js";
 import { gitAttribution } from "./scan/git-attribution.js";
@@ -237,6 +244,10 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
     .option("--database <url>", "Postgres url (default: DATABASE_URL, else the embedded ledger)")
     .option("--data-dir <path>", "embedded ledger folder (default: ~/.selfhost/data)")
     .option("--json", "print JSON (one line per batch with --watch)")
+    .option(
+      "--hook-events",
+      "print the hook spool's events as JSON lines and write nothing (background runs read them)",
+    )
     .action(async (options: ImportCommandOptions) => {
       const importIo: ImportIo = {
         env: deps.env,
@@ -249,7 +260,8 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
         laptop: laptop(),
       };
       try {
-        if (options.watch) await runWatch(options, importIo);
+        if (options.hookEvents) await printHookEvents(options, importIo);
+        else if (options.watch) await runWatch(options, importIo);
         else if ((await runImport(options, importIo)).sync?.error) deps.setExitCode(1);
       } catch (error) {
         fail(error, options.json);
@@ -689,6 +701,19 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
       localReviewList: openLocalList,
       stdinIsTTY: deps.stdinIsTTY === true,
+    }),
+    fail,
+  );
+
+  registerRuns(
+    program,
+    () => ({
+      cwd: deps.cwd,
+      write: deps.write,
+      setExitCode: deps.setExitCode,
+      configPath: deps.configPath ?? defaultConfigPath(),
+      fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
+      ...(deps.sleep ? { sleep: deps.sleep } : {}),
     }),
     fail,
   );

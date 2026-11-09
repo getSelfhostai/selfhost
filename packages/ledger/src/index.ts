@@ -1,3 +1,8 @@
+export type {
+  BackgroundRunFilter,
+  BackgroundRunStore,
+  KillSwitch,
+} from "./background.js";
 export {
   type ContextStore,
   proposalInfo,

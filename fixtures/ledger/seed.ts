@@ -97,6 +97,18 @@ export const SEEDS: readonly (readonly [table: string, sql: string])[] = [
      SELECT 'alice@example.com', 'phone', 'test', 'seed', true
      WHERE NOT EXISTS (SELECT 1 FROM notify_sends WHERE subject = 'seed')`,
   ],
+  [
+    "background_runs",
+    `INSERT INTO background_runs (id, team, repo, state, created_at, updated_at, body)
+     VALUES ('seed-run', 'seed', 'acme/web', 'succeeded', '2026-11-09T09:30:00Z',
+       '2026-11-09T09:40:00Z', '{}') ON CONFLICT DO NOTHING`,
+  ],
+  [
+    "background_kills",
+    `INSERT INTO background_kills (id, scope, target, killed_by, killed_at, cleared_by, cleared_at)
+     VALUES ('5eed0000-0000-4000-8000-000000000013', 'team', 'seed', 'alice@example.com',
+       '2026-11-09T09:30:00Z', 'alice@example.com', '2026-11-09T09:35:00Z') ON CONFLICT DO NOTHING`,
+  ],
 ];
 
 /** Seeds every table of SEEDS the database has; tables a release does not have are skipped. */

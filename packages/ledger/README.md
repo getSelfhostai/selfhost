@@ -218,6 +218,15 @@ already there, so a delivery that arrives twice is handled once (two racing clai
 true); `release(id)` forgets it after a failed sync so GitHub's redelivery runs again. Each claim
 deletes ids older than `DELIVERY_RETENTION_DAYS` (7); GitHub redelivers only the last 3 days.
 
+## Background runs
+
+`ledger.backgroundRuns` keeps background run records (`selfhost.background_run/v1`, one row per
+run in `background_runs`) and the team and org kill switches (`background_kills`). `save` writes a
+run as it is now but keeps a cancel recorded since it was read, so a cancel from the API is never
+lost to the run's own next write; `requestCancel` records one once. `countSince` and
+`countActive` back the per-team rate limits. A kill switch is on until cleared, and the row keeps
+who turned it on and off. What happened during a run is in `events`, under its `run_id`.
+
 ## Sources
 
 Every event records its `source`, so a session one source misses still shows up from another,

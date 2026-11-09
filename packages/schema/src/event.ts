@@ -51,6 +51,12 @@ export const EVENT_KINDS = [
   "credential.issued",
   "credential.revoked",
   "egress.blocked",
+  // Background runs (src/background.ts), added 2026-11-09.
+  "run.triggered",
+  "run.updated",
+  "run.output",
+  "run.health",
+  "run.gate",
 ] as const;
 
 export const ACTOR_KINDS = ["person", "agent", "system"] as const;

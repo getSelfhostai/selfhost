@@ -1,0 +1,43 @@
+{
+  "name": "@selfhost/background",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Background runs: an existing agent CLI (Claude Code, Codex, OpenCode, Goose) working in a sandbox on the team's runtime, with the team's hooks inside, run health, a tests-first gate and one pull request per run. Triggers from the CLI, API, GitHub, signed webhooks and schedules.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@selfhost/agents": "workspace:*",
+    "@selfhost/package-guard": "workspace:*",
+    "@selfhost/pr": "workspace:*",
+    "@selfhost/runtime": "workspace:*",
+    "@selfhost/schema": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

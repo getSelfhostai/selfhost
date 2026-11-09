@@ -12,11 +12,12 @@ import type { Ledger } from "@selfhost/ledger";
 import { type ApiError, parseConfig, type ResolvedSelfhostConfig } from "@selfhost/schema";
 import type { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { type Background, githubRunTrigger } from "./background.js";
 import { autoApprover, recordAutoApproval } from "./github-approve.js";
 import { type AgentPull, desiredPull, type GitHubProviders } from "./github-pull.js";
 import { pullReads } from "./github-reads.js";
 import { reviewBrief, reviewOwner, reviewRoute, reviewRouting } from "./github-review.js";
-import { eeRisk } from "./github-risk.js";
+import { backgroundRunTests, eeRisk } from "./github-risk.js";
 import {
   isReviewerEvent,
   ledgerSecondOpinions,
@@ -62,6 +63,8 @@ export interface GitHubRouteOptions {
   log?: (line: string) => void;
   /** Clock for auto-approve's ledger records. Default: the system clock. */
   now?: () => Date;
+  /** Background runs, which `/selfhost run` comments and the run label start. */
+  background?: Background;
 }
 
 /** What POST /v1/github/webhooks answers to a verified delivery. */
@@ -211,7 +214,13 @@ export function pullSync(
 ): PullSync {
   const routing = reviewRouting(ledger, options.team);
   const providers: GitHubProviders = {
-    risk: eeRisk(undefined, options.clones, ledger, ledgerSecondOpinions(ledger)),
+    risk: eeRisk(
+      undefined,
+      options.clones,
+      ledger,
+      ledgerSecondOpinions(ledger),
+      backgroundRunTests(ledger),
+    ),
     owner: reviewOwner(ledger, options.team, routing),
     brief: reviewBrief(ledger),
     route: reviewRoute(ledger, options.team, routing),
@@ -366,6 +375,36 @@ export function githubRoutes(
         payload = JSON.parse(body);
       } catch {
         return c.json(apiError("invalid_webhook", "Expected a JSON body"), 400);
+      }
+
+      if (options.background) {
+        try {
+          const run = await githubRunTrigger(
+            ledger,
+            options.background,
+            event,
+            payload,
+            options.team,
+            () => ledger.deliveries.claim(delivery, { event }),
+          );
+          if (run?.duplicate) {
+            return c.json({ delivery, handled: false, duplicate: true } satisfies WebhookResponse);
+          }
+          if (run) {
+            log(
+              `github: delivery ${delivery} ${event}: ${run.started ? `started run ${run.started}` : `refused a run: ${run.refused}`}`,
+            );
+            return c.json(
+              (run.started
+                ? { delivery, handled: true }
+                : { delivery, handled: false, skipped: run.refused }) satisfies WebhookResponse,
+            );
+          }
+        } catch (error) {
+          await ledger.deliveries.release(delivery);
+          log(`github: delivery ${delivery} ${event} run trigger failed: ${errorLine(error)}`);
+          return c.json(apiError("run_trigger_failed", "Could not start the run"), 500);
+        }
       }
 
       if (isReviewerEvent(event)) {

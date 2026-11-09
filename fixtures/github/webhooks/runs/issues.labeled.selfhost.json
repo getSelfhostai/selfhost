@@ -1,0 +1,78 @@
+{
+  "action": "labeled",
+  "issue": {
+    "url": "https://api.github.com/repos/acme/acme-api/issues/42",
+    "id": 2700000042,
+    "node_id": "I_42",
+    "number": 42,
+    "title": "Login accepts an empty password",
+    "user": {
+      "login": "alice",
+      "id": 5100001,
+      "node_id": "U_5100001",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5100001?v=4",
+      "url": "https://api.github.com/users/alice",
+      "html_url": "https://github.com/alice",
+      "type": "User",
+      "site_admin": false
+    },
+    "labels": [
+      {
+        "id": 800001,
+        "node_id": "LA_800001",
+        "name": "selfhost",
+        "color": "0e8a16",
+        "default": false
+      }
+    ],
+    "state": "open",
+    "locked": false,
+    "comments": 0,
+    "created_at": "2026-11-09T09:00:00Z",
+    "updated_at": "2026-11-09T09:30:00Z",
+    "closed_at": null,
+    "author_association": "MEMBER",
+    "body": "Steps: submit the form with no password.",
+    "html_url": "https://github.com/acme/acme-api/issues/42"
+  },
+  "label": {
+    "id": 800001,
+    "node_id": "LA_800001",
+    "name": "selfhost",
+    "color": "0e8a16",
+    "default": false
+  },
+  "repository": {
+    "id": 810000001,
+    "node_id": "R_810000001",
+    "name": "acme-api",
+    "full_name": "acme/acme-api",
+    "private": true,
+    "owner": {
+      "login": "acme",
+      "id": 5000001,
+      "node_id": "U_5000001",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5000001?v=4",
+      "url": "https://api.github.com/users/acme",
+      "html_url": "https://github.com/acme",
+      "type": "Organization",
+      "site_admin": false
+    },
+    "html_url": "https://github.com/acme/acme-api",
+    "default_branch": "main"
+  },
+  "sender": {
+    "login": "octocat",
+    "id": 5100009,
+    "node_id": "U_5100009",
+    "avatar_url": "https://avatars.githubusercontent.com/u/5100009?v=4",
+    "url": "https://api.github.com/users/octocat",
+    "html_url": "https://github.com/octocat",
+    "type": "User",
+    "site_admin": false
+  },
+  "installation": {
+    "id": 61000001,
+    "node_id": "MDIzOkludGVncmF0aW9uSW5zdGFsbGF0aW9uNjEwMDAwMDE="
+  }
+}

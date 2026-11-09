@@ -1575,6 +1575,164 @@
                     "type": "string"
                   }
                 }
+              },
+              "background": {
+                "additionalProperties": false,
+                "description": "Background runs: an agent CLI working in a sandbox on the team's runtime, started from the CLI, the console, GitHub, a signed webhook or a schedule.",
+                "type": "object",
+                "properties": {
+                  "agent": {
+                    "default": "claude",
+                    "description": "The agent CLI a run uses when none is named.",
+                    "type": "string",
+                    "enum": [
+                      "claude",
+                      "codex",
+                      "opencode",
+                      "goose"
+                    ]
+                  },
+                  "timeout_minutes": {
+                    "minimum": 1,
+                    "maximum": 1440,
+                    "default": 60,
+                    "description": "A run is stopped with its sandbox after this long and marked timed_out. A run can ask for less or more, up to 1440.",
+                    "type": "integer"
+                  },
+                  "max_retries": {
+                    "minimum": 0,
+                    "maximum": 5,
+                    "default": 1,
+                    "description": "Times a run is tried again after a runtime error (the sandbox could not be created or stopped answering). The agent's own failures are not retried.",
+                    "type": "integer"
+                  },
+                  "allowed": {
+                    "default": [],
+                    "uniqueItems": true,
+                    "description": "Person ids who may start runs from GitHub, webhooks and the API. Empty lets every person in the team. GitHub senders are mapped to people through [review] github_logins.",
+                    "type": "array",
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "rate_limit_per_hour": {
+                    "minimum": 0,
+                    "default": 20,
+                    "description": "Most runs the team may start in any hour. 0 for no limit.",
+                    "type": "integer"
+                  },
+                  "max_concurrent": {
+                    "minimum": 0,
+                    "default": 5,
+                    "description": "Most runs of the team going at once. 0 for no limit.",
+                    "type": "integer"
+                  },
+                  "test_command": {
+                    "minLength": 1,
+                    "description": "The command the tests-first gate runs in the sandbox. Unset: detected from package.json, pyproject.toml, Cargo.toml, go.mod or the CI workflow.",
+                    "type": "string"
+                  },
+                  "tests_first": {
+                    "default": "observe",
+                    "description": "The tests-first gate: the run must add or change a test that fails on the base and passes on the head, every added package must exist and the diff must be under pr_size_cap. observe reports it as a check on the pull request; enforce opens no pull request when it fails; off skips it.",
+                    "type": "string",
+                    "enum": [
+                      "off",
+                      "observe",
+                      "enforce"
+                    ]
+                  },
+                  "pr_size_cap": {
+                    "minimum": 0,
+                    "default": 0,
+                    "description": "Most changed lines (added plus removed) a run's diff may have. 0 for no cap.",
+                    "type": "integer"
+                  },
+                  "stall_minutes": {
+                    "minimum": 1,
+                    "default": 10,
+                    "description": "Run health stops a run whose agent printed nothing for this long.",
+                    "type": "integer"
+                  },
+                  "loop_repeats": {
+                    "minimum": 2,
+                    "default": 6,
+                    "description": "Run health stops a run that made the same tool call this many times in a row.",
+                    "type": "integer"
+                  },
+                  "heartbeat_seconds": {
+                    "minimum": 5,
+                    "default": 30,
+                    "description": "How often the sandbox is checked, the cost read and the health line updated.",
+                    "type": "integer"
+                  },
+                  "webhook_secret_env": {
+                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                    "description": "Environment variable on the server that holds the secret signed webhooks are checked with. Unset: the webhook trigger is off.",
+                    "type": "string"
+                  },
+                  "github_label": {
+                    "minLength": 1,
+                    "default": "selfhost",
+                    "description": "Adding this label to an issue starts a run on it, with the issue as the task.",
+                    "type": "string"
+                  },
+                  "github_command": {
+                    "minLength": 1,
+                    "default": "/selfhost run",
+                    "description": "A comment on an issue or pull request that starts with this starts a run; the rest of the comment is the task.",
+                    "type": "string"
+                  },
+                  "schedules": {
+                    "default": [],
+                    "description": "Runs started on a schedule.",
+                    "type": "array",
+                    "items": {
+                      "additionalProperties": false,
+                      "description": "A run started on a schedule, with the team's key.",
+                      "type": "object",
+                      "required": [
+                        "name",
+                        "cron",
+                        "repo",
+                        "task"
+                      ],
+                      "properties": {
+                        "name": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+                          "description": "Unique name.",
+                          "type": "string"
+                        },
+                        "cron": {
+                          "minLength": 1,
+                          "description": "Five-field cron in UTC: minute hour day-of-month month day-of-week, with *, lists, ranges and steps.",
+                          "type": "string"
+                        },
+                        "repo": {
+                          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+                          "description": "Repository the run works on, as owner/name.",
+                          "type": "string"
+                        },
+                        "task": {
+                          "minLength": 1,
+                          "description": "What the agent is asked to do.",
+                          "type": "string"
+                        },
+                        "agent": {
+                          "description": "Default: [background] agent.",
+                          "type": "string",
+                          "enum": [
+                            "claude",
+                            "codex",
+                            "opencode",
+                            "goose"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
               }
             }
           },
@@ -2424,7 +2582,12 @@
               "review.submitted",
               "credential.issued",
               "credential.revoked",
-              "egress.blocked"
+              "egress.blocked",
+              "run.triggered",
+              "run.updated",
+              "run.output",
+              "run.health",
+              "run.gate"
             ]
           },
           "team": {
@@ -2618,7 +2781,12 @@
                     "review.submitted",
                     "credential.issued",
                     "credential.revoked",
-                    "egress.blocked"
+                    "egress.blocked",
+                    "run.triggered",
+                    "run.updated",
+                    "run.output",
+                    "run.health",
+                    "run.gate"
                   ]
                 },
                 "actor": {
@@ -3161,7 +3329,12 @@
                     "review.submitted",
                     "credential.issued",
                     "credential.revoked",
-                    "egress.blocked"
+                    "egress.blocked",
+                    "run.triggered",
+                    "run.updated",
+                    "run.output",
+                    "run.health",
+                    "run.gate"
                   ]
                 },
                 "actor": {
@@ -4859,7 +5032,12 @@
                   "review.submitted",
                   "credential.issued",
                   "credential.revoked",
-                  "egress.blocked"
+                  "egress.blocked",
+                  "run.triggered",
+                  "run.updated",
+                  "run.output",
+                  "run.health",
+                  "run.gate"
                 ]
               },
               "actor": {

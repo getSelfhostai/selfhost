@@ -4,7 +4,8 @@ import { createPublicKey, type KeyObject, verify } from "node:crypto";
  * An in-memory GitHub REST API for tests, served through a fetch function handed to Octokit, so
  * nothing reaches the network. It keeps the state of each pull request (labels, check runs,
  * review requests, reviews, comments, files, commits) and records every request, so a test can
- * check exactly what was read and written. Only the routes the GitHub delivery uses are served;
+ * check exactly what was read and written. Only the routes the GitHub delivery and background
+ * runs use (repository, pull request creation) are served;
  * any other request answers 404 and is recorded under `unknown`.
  */
 
@@ -103,6 +104,9 @@ export interface FakeGitHubOptions {
    */
   repositoriesOf?: (installationId: number) => string[];
 }
+
+/** The head commit of pull requests opened through the fake. */
+export const FAKE_HEAD_SHA = "3".repeat(40);
 
 /** The token the fake hands out for installations; not shaped like a real one. */
 export const FAKE_INSTALLATION_TOKEN = "fake-installation-token";
@@ -250,7 +254,29 @@ export class FakeGitHub {
 
     match = /^\/repos\/([^/]+)\/([^/]+)$/.exec(path);
     if (match && method === "GET") {
-      return json(200, { full_name: `${match[1]}/${match[2]}`, name: match[2], private: true });
+      return json(200, {
+        full_name: `${match[1]}/${match[2]}`,
+        name: match[2],
+        private: true,
+        default_branch: "main",
+      });
+    }
+    match = /^\/repos\/([^/]+)\/([^/]+)\/pulls$/.exec(path);
+    if (match && method === "POST") {
+      const repo = `${match[1]}/${match[2]}`;
+      const input = request.body as { head: string; base: string; title: string; body?: string };
+      const taken = [...this.pulls.keys()]
+        .filter((key) => key.startsWith(`${repo}#`))
+        .map((key) => Number(key.split("#")[1]));
+      const number = Math.max(0, ...taken) + 1;
+      const pull = this.addPull(repo, number, {
+        author: this.options.botLogin ?? "selfhost[bot]",
+        title: input.title,
+        ...(input.body ? { body: input.body } : {}),
+        head: { sha: FAKE_HEAD_SHA, ref: input.head },
+        base: { sha: "1".repeat(40), ref: input.base },
+      });
+      return json(201, this.pullObject(match[1] as string, match[2] as string, number, pull));
     }
 
     match = /^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)$/.exec(path);

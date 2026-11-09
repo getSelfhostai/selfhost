@@ -154,7 +154,12 @@
         "review.submitted",
         "credential.issued",
         "credential.revoked",
-        "egress.blocked"
+        "egress.blocked",
+        "run.triggered",
+        "run.updated",
+        "run.output",
+        "run.health",
+        "run.gate"
       ]
     },
     "actor": {
