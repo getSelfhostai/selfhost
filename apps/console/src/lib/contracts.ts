@@ -1,4 +1,4 @@
-import type { AgentRef, LedgerEvent } from "@selfhost/schema";
+import type { AgentRef, LedgerEvent, SecondOpinion } from "@selfhost/schema";
 
 /**
  * Bodies of routes the server is gaining in other changes. The console reads them when they
@@ -48,7 +48,8 @@ export interface RunReport {
     tokens: number;
   };
   events: LedgerEvent[];
-  prs: { url: string; state: string }[];
+  /** second_opinions: the newest verdict of each AI reviewer on the pull request. */
+  prs: { url: string; state: string; second_opinions?: SecondOpinion[] }[];
   trace_url: string | null;
   /** Pass as cursor for the next page of events; null on the last page. */
   next_cursor: string | null;

@@ -13,6 +13,12 @@ export {
   type ReviewListQuery,
 } from "./list.js";
 export {
+  mergeOpinions,
+  opinionFloor,
+  SECOND_OPINION_REASON,
+  withSecondOpinionRisk,
+} from "./opinions.js";
+export {
   buildPolicyReport,
   type CountedHit,
   countedHits,

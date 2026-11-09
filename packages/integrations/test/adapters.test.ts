@@ -464,13 +464,14 @@ describe("reviewers", () => {
   it("pr-agent: says how to add the workflow when no repository has it", async () => {
     const { state } = await check({ reviewer: { tool: "pr-agent" } }, "reviewer", {}, {}, view({}));
     expectStatus(state, "error", "No workflow in acme/api and acme/web runs PR-Agent");
-    expect(state.detail).toContain("uses: the-pr-agent/pr-agent@main");
+    expect(state.detail).toContain("selfhost review setup pr-agent");
   });
 
   it("claude-code-action: finds the action and notes a key no workflow passes", async () => {
     const repos = view({
       "acme/web:.github/workflows/claude.yml":
-        "steps:\n  - uses: anthropics/claude-code-action@v1\n    with:\n      claude_code_oauth_token: x\n",
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: a GitHub Actions expression, kept as written.
+        "steps:\n  - uses: anthropics/claude-code-action@v1\n    with:\n      anthropic_api_key: ${{ secrets.ORG_KEY }}\n",
     });
     const { state } = await check(
       { reviewer: { tool: "claude-code-action", api_key_env: "ANTHROPIC_API_KEY" } },
@@ -483,12 +484,30 @@ describe("reviewers", () => {
     expect(state.detail).toContain("No workflow mentions ANTHROPIC_API_KEY");
   });
 
-  it("claude-code-action: points at /install-github-app, and at setup without repositories", async () => {
+  it("claude-code-action: refuses a workflow on one person's subscription login", async () => {
+    const repos = view({
+      "acme/web:.github/workflows/claude.yml":
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: a GitHub Actions expression, kept as written.
+        "steps:\n  - uses: anthropics/claude-code-action@v1\n    with:\n      claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}\n",
+    });
+    const { state } = await check(
+      { reviewer: { tool: "claude-code-action" } },
+      "reviewer",
+      {},
+      {},
+      repos,
+    );
+    expectStatus(state, "error", ".github/workflows/claude.yml in acme/web");
+    expect(state.detail).toContain("one person's Claude subscription");
+    expect(state.detail).toContain("anthropic_api_key");
+  });
+
+  it("claude-code-action: points at selfhost review setup, and at setup without repositories", async () => {
     expectStatus(
       (await check({ reviewer: { tool: "claude-code-action" } }, "reviewer", {}, {}, view({})))
         .state,
       "error",
-      "/install-github-app",
+      "selfhost review setup claude-code-action",
     );
     expectStatus(
       (await check({ reviewer: { tool: "claude-code-action" } }, "reviewer", {})).state,

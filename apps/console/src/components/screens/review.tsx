@@ -2,6 +2,7 @@ import type { DecisionResponse, ReviewAction, ReviewItem, ReviewItemsPage } from
 import { Check, ExternalLink, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Empty, Failed, Loading, PageHeader } from "@/components/common";
+import { SecondOpinionBadges, SecondOpinions } from "@/components/second-opinions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -158,6 +159,7 @@ function ItemCard({
           <Badge variant="outline" className={risk.className}>
             {risk.label} {item.risk.score}
           </Badge>
+          {item.second_opinions ? <SecondOpinionBadges opinions={item.second_opinions} /> : null}
           {item.snoozed_until && Date.parse(item.snoozed_until) > now.getTime() ? (
             <Badge variant="outline">Snoozed until {formatTime(item.snoozed_until)}</Badge>
           ) : null}
@@ -213,6 +215,7 @@ function ItemCard({
                 ))}
               </ul>
             ) : null}
+            {item.second_opinions ? <SecondOpinions opinions={item.second_opinions} /> : null}
             {item.brief ? (
               <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-lg bg-muted/50 p-3 font-sans text-sm">
                 {item.brief}

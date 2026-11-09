@@ -35,6 +35,7 @@ const INPUT_NAMES: Record<RiskInput, string> = {
   guardrails: "Guardrail blocks",
   reverts: "Revert rate",
   module_reverts: "Module revert rate",
+  second_opinion: "Second opinion",
 };
 
 const LEVEL_NAMES: Record<RiskLevel, string> = { low: "Low", medium: "Medium", high: "High" };

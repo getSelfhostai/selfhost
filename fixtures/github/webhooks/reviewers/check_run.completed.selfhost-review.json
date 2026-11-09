@@ -1,0 +1,93 @@
+{
+  "action": "completed",
+  "check_run": {
+    "id": 9332,
+    "node_id": "CR_9332",
+    "head_sha": "5786c5c9d81ca4218b7e44bf0007f5580f66c489",
+    "external_id": "",
+    "url": "https://api.github.com/repos/acme/acme-api/check-runs/9332",
+    "html_url": "https://github.com/acme/acme-api/actions/runs/8332/job/9332",
+    "details_url": "https://github.com/acme/acme-api/actions/runs/8332/job/9332",
+    "status": "completed",
+    "conclusion": "neutral",
+    "started_at": "2026-10-05T09:02:00Z",
+    "completed_at": "2026-10-05T09:01:00Z",
+    "output": {
+      "title": null,
+      "summary": null,
+      "text": null,
+      "annotations_count": 1
+    },
+    "name": "selfhost/review",
+    "check_suite": {
+      "id": 9832,
+      "head_branch": "claude/add-rate-limit",
+      "head_sha": "5786c5c9d81ca4218b7e44bf0007f5580f66c489",
+      "status": "completed",
+      "conclusion": "neutral"
+    },
+    "app": {
+      "id": 1000001,
+      "slug": "selfhost-dev",
+      "name": "selfhost (dev)"
+    },
+    "pull_requests": [
+      {
+        "url": "https://api.github.com/repos/acme/acme-api/pulls/101",
+        "id": 2700000101,
+        "number": 101,
+        "head": {
+          "ref": "claude/add-rate-limit",
+          "sha": "5786c5c9d81ca4218b7e44bf0007f5580f66c489",
+          "repo": {
+            "id": 810000001,
+            "url": "https://api.github.com/repos/acme/acme-api",
+            "name": "acme-api"
+          }
+        },
+        "base": {
+          "ref": "main",
+          "sha": "c3b8739bdcca2b4e2f5bdead2a8f238916813446",
+          "repo": {
+            "id": 810000001,
+            "url": "https://api.github.com/repos/acme/acme-api",
+            "name": "acme-api"
+          }
+        }
+      }
+    ]
+  },
+  "repository": {
+    "id": 810000001,
+    "node_id": "R_810000001",
+    "name": "acme-api",
+    "full_name": "acme/acme-api",
+    "private": true,
+    "owner": {
+      "login": "acme",
+      "id": 5000001,
+      "node_id": "U_5000001",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5000001?v=4",
+      "url": "https://api.github.com/users/acme",
+      "html_url": "https://github.com/acme",
+      "type": "Organization",
+      "site_admin": false
+    },
+    "html_url": "https://github.com/acme/acme-api",
+    "default_branch": "main"
+  },
+  "sender": {
+    "login": "selfhost-dev[bot]",
+    "id": 9300003,
+    "node_id": "BOT_9300003",
+    "avatar_url": "https://avatars.githubusercontent.com/in/9300003?v=4",
+    "url": "https://api.github.com/users/selfhost-dev%5Bbot%5D",
+    "html_url": "https://github.com/apps/selfhost-dev",
+    "type": "Bot",
+    "site_admin": false
+  },
+  "installation": {
+    "id": 61000001,
+    "node_id": "MDIzOkludGVncmF0aW9uSW5zdGFsbGF0aW9uNjEwMDAwMDE="
+  }
+}

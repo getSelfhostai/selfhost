@@ -29,6 +29,12 @@ sync, with a person actor and `data.heartbeat` in its own versioned shape,
 `selfhost.laptop_heartbeat/v1` (`src/laptop.ts`): a random machine id, the platform, the CLI
 version, the team policy hash it runs (its config version) and where its managed settings files
 stand. `GET /v1/teams/{team}/laptops` reads the newest one per laptop.
+`review.submitted` events are a second opinion: what the team's AI reviewer (PR-Agent, the
+Claude Code GitHub Action, CodeRabbit) said about an agent pull request, written by the GitHub
+App with a system actor (the reviewer's login) and `data.second_opinion`
+(`SecondOpinionDataSchema` in `src/second-opinion.ts`: tool, reviewer, verdict `approve`,
+`changes`, `comment` or `failed`, findings, severity, url, head_sha). Review items carry the
+newest per tool as `second_opinions` and the strictest as `second_opinion`.
 
 ```ts
 import { validateEvent, validateEventBatch } from "@selfhost/schema";

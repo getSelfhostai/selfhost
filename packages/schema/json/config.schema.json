@@ -1085,8 +1085,27 @@
             },
             "api_key_env": {
               "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-              "description": "Environment variable that holds the reviewer's model API key, in CI or on the server.",
+              "description": "Environment variable that holds the reviewer's model API key, in CI or on the server. selfhost review setup reads it from the repository secret of this name. Unset: OPENAI_KEY for pr-agent (ANTHROPIC_KEY with an anthropic/ model), ANTHROPIC_API_KEY for claude-code-action; coderabbit takes no key.",
               "type": "string"
+            },
+            "model": {
+              "minLength": 1,
+              "description": "The model the reviewer runs, as the reviewer names it: anthropic/claude-sonnet-4-5 or gpt-5 for pr-agent, claude-sonnet-4-5 for claude-code-action. Unset: the reviewer's own default. CodeRabbit picks its own models and ignores this.",
+              "type": "string"
+            },
+            "pull_requests": {
+              "default": "agent",
+              "description": "Which pull requests the reviewer runs on: agent (the default) for those an agent opened, as selfhost attributes them, or all.",
+              "type": "string",
+              "enum": [
+                "agent",
+                "all"
+              ]
+            },
+            "style": {
+              "default": false,
+              "description": "Let the reviewer comment on style, formatting and naming. Off by default: it is told to break the change instead (a failing input, a missed case, a broken flow) and prove each finding with a test or a repro.",
+              "type": "boolean"
             }
           }
         }

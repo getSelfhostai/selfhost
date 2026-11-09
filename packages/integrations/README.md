@@ -56,7 +56,7 @@ values, and a URL with a user name or password in it is refused rather than call
 | `modal`              | No call: Modal has no HTTP API to test a token. Checks the token id (`ak-`, `MODAL_TOKEN_ID`) and secret (`as-`, `MODAL_TOKEN_SECRET`, or `api_secret_env`) are set and well formed.               | [modal token](https://modal.com/docs/cli/latest/token)                                     |
 | `coder`              | `GET /api/v2/buildinfo`, then `GET /api/v2/users/me` with `Coder-Session-Token`. url is required; key `CODER_SESSION_TOKEN`.                                                                       | [Coder users API](https://coder.com/docs/reference/api/users)                              |
 | `pr-agent`           | A workflow in `.github/workflows` uses `the-pr-agent/pr-agent` (or its earlier `qodo-ai`, `Codium-ai` names, or the `pragent/pr-agent` image).                                                     | [PR-Agent](https://github.com/the-pr-agent/pr-agent)                                       |
-| `claude-code-action` | A workflow in `.github/workflows` uses `anthropics/claude-code-action`. The fix points at `/install-github-app` in Claude Code.                                                                    | [claude-code-action](https://github.com/anthropics/claude-code-action)                     |
+| `claude-code-action` | A workflow in `.github/workflows` uses `anthropics/claude-code-action` with `anthropic_api_key`; one signing in with `claude_code_oauth_token` alone fails. The fix points at `selfhost review setup`. | [claude-code-action](https://github.com/anthropics/claude-code-action)                     |
 | `coderabbit`         | The `coderabbitai` GitHub App is installed on the org (needs the selfhost App to have Administration read), else `coderabbitai[bot]` commented on recent pull requests.                            | [CodeRabbit on GitHub](https://docs.coderabbit.ai/platforms/github-com)                    |
 
 Reviewer checks never call the reviewer: they read the team's repositories, through the selfhost
@@ -79,6 +79,38 @@ const text = setIntegrationTable(selfhostToml, "runtime", { tool: "e2b", templat
 keeps every other line, comments included. A table written inline or with dotted keys is refused
 (`IntegrationEditError`) instead of rewritten. Validating the result is the caller's job, with
 `parseConfig` or `checkLayer` from `@selfhost/schema`.
+
+## Reviewers: second opinions
+
+selfhost does not review code. It wires an existing reviewer into a repository, reads its
+verdict back and uses it: on the pull request's item in the review list, and as one input to
+the risk score. `reviewerSetup(tool, options)` builds the file (pure; `selfhost review setup`
+writes it) and `reviewerDelivery(event, payload)` reads a verdict from a GitHub webhook.
+
+| Tool                 | Setup writes                                                                                                                                                                                                                         | Key                                                                                         | Verdict read from                                                                                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pr-agent`           | `.github/workflows/selfhost-pr-agent.yml`: `docker://pragent/pr-agent:0.49.0-github_action@sha256:...` (v0.49.0). `/review` on open, push and agent label, with the merge recommendation and risk level on, labels off              | Repository or org secret `OPENAI_KEY`, or `ANTHROPIC_KEY` for an `anthropic/` model; `api_key_env` renames it | Its `/review` comment (`<!-- pr-agent:review:full -->`): merge recommendation (No concerns found, Needs review, Changes required), focus areas plus a security concern as findings, risk level |
+| `claude-code-action` | `.github/workflows/selfhost-claude-review.yml`: `actions/checkout` and `anthropics/claude-code-action` pinned to release commits (v1.0.259). Inline comments plus one summary comment                                                | Secret `ANTHROPIC_API_KEY` as `anthropic_api_key`. `claude_code_oauth_token` (one person's subscription) is refused, and the check fails a workflow that uses it | The last line of its summary: `<!-- selfhost:second-opinion tool=claude-code-action verdict=changes findings=2 severity=high -->`                                                  |
+| `coderabbit`         | `.coderabbit.yaml`: profile chill (assertive with `style`), automatic approvals off, auto review filtered to the `selfhost:agent-*` labels                                                                                          | None: CodeRabbit runs on its own plan (free on public repositories, paid seats on private) | Its review: state as the verdict, `Actionable comments posted: N` plus outside-diff comments as findings (nitpicks left out), severity labels (Critical, Major, Minor, Trivial)     |
+
+All three run on agent pull requests only unless `[integrations.reviewer] pull_requests = "all"`:
+the workflows' `if:` is `agentPullCondition()` from
+[`@selfhost/attribution`](../attribution/README.md), the same signals a webhook is attributed by,
+plus the App's agent label. Each is told to break the change (a failing input, a missed case, a
+broken flow), to prove each finding with a failing test or a repro, and to skip style unless
+`style = true`. The two workflows hand the reviewer the selfhost brief comment, which describes
+the run behind the pull request (plan, tests run, guardrail hits, cost), and say to review the diff
+alone, and say so, when there is none. Model calls go from the team's runner to the vendor on the
+team's key; selfhost pays nothing per review.
+
+A failed reviewer job (`check_run` with a failure from the job names setup writes) is the verdict
+`failed`. Verdicts are `approve`, `changes`, `comment` and `failed`; findings and severity
+(`critical`, `high`, `medium`, `low`) come with them when the reviewer reports them. Reviews and
+comments by people never count. The fixtures for each tool are in
+[`fixtures/github/webhooks/reviewers`](../../fixtures/github/webhooks/reviewers).
+
+Versions are pinned to releases at least two weeks old when picked (`REVIEWER_PINS` in
+`src/reviewers/setup.ts`): actions by commit, the PR-Agent image by digest. Bump them there.
 
 ## Adding a tool
 

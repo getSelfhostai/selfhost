@@ -1,6 +1,7 @@
 import { databaseOf, type Ledger } from "@selfhost/ledger";
 import {
   type LedgerEvent,
+  latestSecondOpinions,
   type ResolvedSelfhostConfig,
   RUN_EVENTS_LIMIT_DEFAULT,
   RUN_SCHEMA,
@@ -8,6 +9,9 @@ import {
   type RunResponse,
   redactEvent,
   redactionSettings,
+  SECOND_OPINION_EVENT_KIND,
+  type SecondOpinion,
+  secondOpinionOf,
 } from "@selfhost/schema";
 import { runEvents, runExported, teamOfRun } from "./export.js";
 import { tracerRunUrl } from "./links.js";
@@ -48,7 +52,10 @@ function decodeCursor(cursor: string): Pick<LedgerEvent, "ts" | "id"> | undefine
   return { ts, id };
 }
 
-/** The pull requests a run's events link to, with each one's state from its newest pr event. */
+/**
+ * The pull requests a run's events link to, with each one's state from its newest pr event and
+ * the newest verdict of each AI reviewer on it.
+ */
 async function runPulls(ledger: Ledger, events: LedgerEvent[]): Promise<RunPullRequest[]> {
   const urls: string[] = [];
   for (const event of events) {
@@ -68,7 +75,29 @@ async function runPulls(ledger: Ledger, events: LedgerEvent[]): Promise<RunPullR
   );
   const state = new Map<string, RunPullRequest["state"]>();
   for (const row of rows) state.set(row.url, PR_STATE[row.kind] ?? "open");
-  return urls.map((url) => ({ url, state: state.get(url) ?? "open" }));
+  const reviews = await databaseOf(ledger).query<{ url: string; body: unknown }>(
+    `SELECT coalesce(body#>>'{links,pr_url}', body#>>'{target,value}') AS url, body
+     FROM events
+     WHERE kind = $2
+       AND coalesce(body#>>'{links,pr_url}', body#>>'{target,value}')
+         IN (SELECT jsonb_array_elements_text($1::text::jsonb))
+     ORDER BY ts, id`,
+    [JSON.stringify(urls), SECOND_OPINION_EVENT_KIND],
+  );
+  const opinions = new Map<string, SecondOpinion[]>();
+  for (const row of reviews) {
+    const body = typeof row.body === "string" ? JSON.parse(row.body) : row.body;
+    const opinion = secondOpinionOf(body as LedgerEvent);
+    if (opinion) opinions.set(row.url, [...(opinions.get(row.url) ?? []), opinion]);
+  }
+  return urls.map((url) => {
+    const latest = latestSecondOpinions(opinions.get(url) ?? []);
+    return {
+      url,
+      state: state.get(url) ?? "open",
+      ...(latest.length > 0 ? { second_opinions: latest } : {}),
+    };
+  });
 }
 
 /**

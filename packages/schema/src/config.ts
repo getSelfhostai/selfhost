@@ -553,6 +553,9 @@ export type RouterTool = (typeof ROUTER_TOOLS)[number];
 export type TracerTool = (typeof TRACER_TOOLS)[number];
 export type RuntimeTool = (typeof RUNTIME_TOOLS)[number];
 export type ReviewerTool = (typeof REVIEWER_TOOLS)[number];
+/** Which pull requests the reviewer runs on: those an agent opened, or all of them. */
+export const REVIEWER_PULL_REQUESTS = ["agent", "all"] as const;
+export type ReviewerPullRequests = (typeof REVIEWER_PULL_REQUESTS)[number];
 
 /** The jobs a team picks a tool for, in the order selfhost lists them. */
 export const INTEGRATION_KINDS = ["router", "tracer", "runtime", "reviewer"] as const;
@@ -669,8 +672,28 @@ export const IntegrationsSchema = Type.Object(
           }),
           api_key_env: Type.Optional(
             EnvName(
-              "Environment variable that holds the reviewer's model API key, in CI or on the server.",
+              "Environment variable that holds the reviewer's model API key, in CI or on the server. selfhost review setup reads it from the repository secret of this name. Unset: OPENAI_KEY for pr-agent (ANTHROPIC_KEY with an anthropic/ model), ANTHROPIC_API_KEY for claude-code-action; coderabbit takes no key.",
             ),
+          ),
+          model: Type.Optional(
+            NonEmpty({
+              description:
+                "The model the reviewer runs, as the reviewer names it: anthropic/claude-sonnet-4-5 or gpt-5 for pr-agent, claude-sonnet-4-5 for claude-code-action. Unset: the reviewer's own default. CodeRabbit picks its own models and ignores this.",
+            }),
+          ),
+          pull_requests: Type.Optional(
+            StringEnum(REVIEWER_PULL_REQUESTS, {
+              default: "agent",
+              description:
+                "Which pull requests the reviewer runs on: agent (the default) for those an agent opened, as selfhost attributes them, or all.",
+            }),
+          ),
+          style: Type.Optional(
+            Type.Boolean({
+              default: false,
+              description:
+                "Let the reviewer comment on style, formatting and naming. Off by default: it is told to break the change instead (a failing input, a missed case, a broken flow) and prove each finding with a test or a repro.",
+            }),
           ),
         },
         { additionalProperties: false, description: "The AI code reviewer." },

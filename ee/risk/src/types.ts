@@ -1,6 +1,7 @@
 import type { AgentRef } from "@selfhost/attribution";
 import type { ToolCall } from "@selfhost/policy";
 import type { ChangedFile, GuardrailHit, NewDependency } from "@selfhost/pr";
+import type { FindingSeverity, ReviewerTool, SecondOpinionVerdict } from "@selfhost/schema";
 
 export type { ChangedFile, GuardrailHit, NewDependency };
 
@@ -17,6 +18,7 @@ export const RISK_INPUTS = [
   "guardrails",
   "reverts",
   "module_reverts",
+  "second_opinion",
 ] as const;
 
 export type RiskInput = (typeof RISK_INPUTS)[number];
@@ -58,6 +60,16 @@ export interface ModuleReverts {
   modules: ModuleRevertRate[];
 }
 
+/** What the team's AI reviewer said about the pull request: the newest review from one tool. */
+export interface SecondOpinionInput {
+  tool: ReviewerTool;
+  verdict: SecondOpinionVerdict;
+  findings?: number;
+  severity?: FindingSeverity;
+  /** The commit it reviewed, when known; the check notes a review of an earlier commit. */
+  head_sha?: string;
+}
+
 /**
  * Everything `scoreRisk` reads besides selfhost.toml. An input left undefined is missing: the
  * score uses the rest and the result names it, with the reason from `unavailable` when given.
@@ -69,6 +81,14 @@ export interface RiskInputs {
   run?: RunInput;
   reverts?: RevertHistory;
   modules?: ModuleReverts;
+  /**
+   * The newest review from each AI reviewer ([integrations.reviewer]) on the pull request. Left
+   * undefined with no reason in `unavailable`, the input is not part of the score and not listed
+   * as missing: a team without a reviewer has nothing missing.
+   */
+  secondOpinions?: SecondOpinionInput[];
+  /** The pull request's head commit, to tell a review of an earlier commit. */
+  headSha?: string;
   /** The agent and model the pull request is attributed to. */
   agent?: AgentRef;
   /** Why an input is missing, for the check result. */

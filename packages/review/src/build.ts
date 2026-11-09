@@ -8,6 +8,7 @@ import {
   type ReviewItem,
   type ReviewItemKind,
 } from "@selfhost/schema";
+import { withSecondOpinionRisk } from "./opinions.js";
 import { type Routing, routeItem } from "./routing.js";
 import type { Draft } from "./signals.js";
 
@@ -104,7 +105,11 @@ function routed(item: ReviewItem, paths: readonly string[], ctx: BuildContext, d
     item.kind === "exception" && ctx.approvers !== undefined
       ? exceptionRoute(ctx.approvers, item.requested_by ?? person, ctx.config)
       : routeItem(ctx.config, { paths, person, team: draft.team });
-  const risk = withPathRisk(item.risk, paths, ctx.config);
+  const risk = withSecondOpinionRisk(
+    withPathRisk(item.risk, paths, ctx.config),
+    item.second_opinions,
+    ctx.config,
+  );
   return { ...item, owners, route, risk, delivery: deliveryOf({ ...item, risk }, ctx.config) };
 }
 

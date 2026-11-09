@@ -22,7 +22,7 @@ export const prAgent: Adapter<"reviewer"> = {
         name: "PR-Agent",
         uses: USES,
         howTo:
-          "Add .github/workflows/pr-agent.yml that runs on pull_request with a step `uses: the-pr-agent/pr-agent@main` and OPENAI_KEY and GITHUB_TOKEN in its env, from the repository secrets. See https://github.com/the-pr-agent/pr-agent.",
+          "Run selfhost review setup pr-agent in the repository: it writes a pinned workflow that reviews agent pull requests on the repository secret OPENAI_KEY. See https://github.com/the-pr-agent/pr-agent.",
         ...(settings.api_key_env ? { keyEnv: settings.api_key_env } : {}),
       },
       repos,

@@ -68,6 +68,8 @@ export interface FakePull {
   comments: FakeComment[];
   files: FakeFile[];
   commits: FakeCommit[];
+  /** Inline comments of each review, by review id: GET .../pulls/{n}/reviews/{id}/comments. */
+  reviewComments?: Record<number, { id: number; body: string; user: FakeUser }[]>;
 }
 
 export interface FakeGitHubOptions {
@@ -278,6 +280,10 @@ export class FakeGitHub {
   private pullRoute(pull: FakePull, method: string, rest: string, body: unknown): Response {
     const bot: FakeUser = { login: this.options.botLogin ?? "selfhost[bot]", type: "Bot" };
     const labels = () => pull.labels.map((name) => ({ name }));
+    const reviewComments = /^reviews\/(\d+)\/comments$/.exec(rest);
+    if (reviewComments && method === "GET") {
+      return json(200, pull.reviewComments?.[Number(reviewComments[1])] ?? []);
+    }
     if (rest === "labels" && method === "GET") return json(200, labels());
     if (rest === "labels" && method === "POST") {
       for (const name of (body as { labels: string[] }).labels) {

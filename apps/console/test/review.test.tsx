@@ -134,6 +134,47 @@ describe("the review list", () => {
     expect(link.getAttribute("href")).toBe("https://langfuse.example.com/trace/run-7");
   });
 
+  it("shows the AI reviewer's second opinion on a pull request", async () => {
+    const reviewed = {
+      ...RISKY_PR,
+      second_opinions: [
+        {
+          tool: "coderabbit" as const,
+          reviewer: "coderabbitai[bot]",
+          verdict: "changes" as const,
+          findings: 3,
+          severity: "critical" as const,
+          url: "https://github.com/acme/api/pull/7#pullrequestreview-1",
+          head_sha: "5786c5c",
+          at: "2026-11-08T09:30:00.000Z",
+          event_id: "0193ffff-0000-7000-8000-0000000000a1",
+        },
+        {
+          tool: "pr-agent" as const,
+          reviewer: "github-actions[bot]",
+          verdict: "failed" as const,
+          at: "2026-11-08T09:20:00.000Z",
+          event_id: "0193ffff-0000-7000-8000-0000000000a2",
+        },
+      ],
+    };
+    mockServer({ "GET /v1/review-items": { items: [reviewed], next_cursor: null } });
+    renderConsole(OWNER, "?screen=review");
+    await screen.findByText(RISKY_PR.title);
+    const [card] = screen.getAllByTestId("review-item");
+    const scoped = within(card as HTMLElement);
+    // Visible without opening the item.
+    expect(scoped.getByText("CodeRabbit: requested changes")).toBeTruthy();
+    expect(scoped.getByText("PR-Agent: failed to run")).toBeTruthy();
+    fireEvent.click(scoped.getByRole("button", { name: RISKY_PR.title }));
+    expect(
+      scoped.getByText("CodeRabbit requested changes: 3 findings, highest critical"),
+    ).toBeTruthy();
+    expect(scoped.getByRole("link", { name: "Open the review" }).getAttribute("href")).toBe(
+      "https://github.com/acme/api/pull/7#pullrequestreview-1",
+    );
+  });
+
   it("says when nothing is waiting", async () => {
     mockServer({ "GET /v1/review-items": { items: [], next_cursor: null } });
     renderConsole(OWNER, "?screen=review");

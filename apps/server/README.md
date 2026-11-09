@@ -366,6 +366,8 @@ setup is reported at start by variable name. It needs no bearer token: the reque
   `github_deliveries`, migration `0005_github_deliveries.sql`, kept 7 days); the same delivery
   again answers `{ delivery, handled: false, duplicate: true }` without a single GitHub call. A
   sync that fails forgets the id and answers 500, so GitHub's redelivery runs it again.
+- `pull_request_review`, `issue_comment` and `check_run` deliveries that carry a verdict from
+  the team's AI reviewer on an agent pull request are its **second opinion** (see below).
 - Every other signed delivery (other events, actions, closed pull requests, pull requests by
   people, `ping`) answers 200 with `handled: false` and `skipped`, the reason, which shows in
   the App's delivery log on GitHub.
@@ -416,7 +418,35 @@ made still gets a brief, with every run section saying no run was found and why.
 point at the console's run view, `<SELFHOST_PUBLIC_URL>/runs/<id>` (or the origin the delivery
 was sent to when that is unset), and at the run in the team's tracer when `[integrations.tracer]`
 has a `run_url`. The risk score does not read the run yet: the agent run, tests and revert
-history are listed as missing inputs in the check.
+history are listed as missing inputs in the check. It does read the second opinion: the newest
+`review.submitted` verdict of each reviewer on the pull request, listed as missing until the
+reviewer in `[integrations.reviewer]` has reviewed.
+
+### Second opinions from the team's AI reviewer
+
+selfhost reviews nothing itself. The team runs an existing reviewer (PR-Agent, the Claude Code
+GitHub Action or CodeRabbit, wired with `selfhost review setup`, see
+[`@selfhost/integrations`](../../packages/integrations/README.md#reviewers-second-opinions)), and
+the App reads what it posts back:
+
+| Reviewer           | Delivery                                                   | Verdict                                                                                                                                 |
+| ------------------ | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| PR-Agent           | `issue_comment` created or edited, by a bot                | Its `/review` comment: merge recommendation, focus-area findings plus a security concern, risk level as the severity                   |
+| Claude Code action | `issue_comment` (or a review) by a bot                     | The `<!-- selfhost:second-opinion ... -->` line the workflow tells it to end its summary with                                           |
+| CodeRabbit         | `pull_request_review` submitted by `coderabbitai[bot]`     | The review state; actionable plus outside-diff comments as findings; severity from its labels, reading the review's inline comments once |
+| Any of the CI ones | `check_run` completed with a failure, job name from setup  | `failed`: the reviewer did not get to a review                                                                                          |
+
+Each verdict on a pull request an agent opened (read through the App when the payload has no
+branch) is written once as a `review.submitted` ledger event, `data.second_opinion` holding
+the tool, reviewer login, verdict (`approve`, `changes`, `comment`, `failed`), findings,
+severity, link and reviewed commit. Its id comes from the repository and GitHub's id for the
+review or comment (with its edit time), so redeliveries add nothing and every new PR-Agent review
+of its one comment does. The pull request is then synced again, so the risk check counts the
+second opinion as an input. The review list attaches the newest verdict from each tool to the
+pull request's item on its next refresh, and `GET /v1/runs/{id}` returns them on each pull
+request (`second_opinions`). Comments and reviews by people, the placeholder PR-Agent posts
+before reviewing, and this App's own check runs are skipped. No migration: the events table
+takes the new kind as it is.
 
 ### Proof receipts
 
@@ -456,7 +486,8 @@ capped by the action); bodies over 2 MB are refused. On GitHub Enterprise Server
 2. Repository permissions: Checks read and write, Pull requests read and write, Issues read and
    write (labels and comments on pull requests), Contents read-only (changed manifests for the
    risk score and the brief), Metadata read-only. Proof receipts need nothing more.
-3. Subscribe to the **Pull request** event.
+3. Subscribe to the **Pull request** event, and for second opinions from an AI reviewer to
+   **Pull request review**, **Issue comment** and **Check run**.
 4. Generate a private key, and set `SELFHOST_GITHUB_APP_ID`, `SELFHOST_GITHUB_PRIVATE_KEY_FILE`
    (or `SELFHOST_GITHUB_PRIVATE_KEY`) and `SELFHOST_GITHUB_WEBHOOK_SECRET` on the server, plus
    `SELFHOST_GITHUB_TEAM` on a team server.

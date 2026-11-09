@@ -16,7 +16,7 @@
     { "number": 111, "state": "open", "case": "One Claude Code commit and one Codex commit: conflicting evidence, so unattributed." }
   ],
   "webhooks": {
-    "description": "Webhook deliveries as a GitHub App receives them, for the decision mapper in packages/attribution and the GitHub delivery in apps/server (POST /v1/github/webhooks): the body, with the X-GitHub-Event header as the first part of the file name and the action as the second.",
+    "description": "Webhook deliveries as a GitHub App receives them, for the decision mapper in packages/attribution and the GitHub delivery in apps/server (POST /v1/github/webhooks): the body, with the X-GitHub-Event header as the first part of the file name and the action as the second. reviewers/ holds what PR-Agent, the Claude Code GitHub Action and CodeRabbit post, for the second-opinion ingest in packages/integrations and apps/server.",
     "files": [
       { "file": "webhooks/pull_request_review.approved.json", "case": "bob approves Claude Code pull request 101 with a reason." },
       { "file": "webhooks/pull_request_review.changes_requested.json", "case": "bob requests changes on Codex pull request 103." },
@@ -24,7 +24,16 @@
       { "file": "webhooks/pull_request.opened.json", "case": "alice opens pull request 101 from a claude/ branch: an agent pull request, at head 5786c5c9." },
       { "file": "webhooks/pull_request.synchronize.json", "case": "A push moves pull request 101 to head b2e4f6a8; it already carries selfhost:risk-low and selfhost:agent-claude-code." },
       { "file": "webhooks/pull_request.labeled.json", "case": "carol adds selfhost:risk-medium to pull request 101 by hand." },
-      { "file": "webhooks/pull_request.opened.person.json", "case": "bob opens plain pull request 106: no agent, so nothing is synced." }
+      { "file": "webhooks/pull_request.opened.person.json", "case": "bob opens plain pull request 106: no agent, so nothing is synced." },
+      { "file": "webhooks/reviewers/pull_request_review.submitted.coderabbit.json", "case": "coderabbitai[bot] reviews Claude Code pull request 101 (commented): 2 actionable comments and 1 outside the diff (Major), plus a Minor nitpick that does not count." },
+      { "file": "webhooks/reviewers/coderabbit-review-comments.json", "case": "GET /repos/acme/acme-api/pulls/101/reviews/9301/comments: the inline comments of that review, one Critical and one Minor." },
+      { "file": "webhooks/reviewers/pull_request_review.submitted.coderabbit-approved.json", "case": "coderabbitai[bot] approves pull request 101 once its comments are resolved." },
+      { "file": "webhooks/reviewers/issue_comment.created.pr-agent.json", "case": "PR-Agent v0.49 as a GitHub Action (github-actions[bot]) posts its /review comment on 101: merge recommendation Changes required, risk level High, a security concern and two focus areas, as pr_agent/algo/utils.py convert_to_markdown_v2 renders it." },
+      { "file": "webhooks/reviewers/issue_comment.edited.pr-agent-clean.json", "case": "PR-Agent edits the same comment with a later clean review: No concerns found, risk Low, no major issues." },
+      { "file": "webhooks/reviewers/issue_comment.created.pr-agent-preparing.json", "case": "PR-Agent's placeholder comment before a review: no verdict." },
+      { "file": "webhooks/reviewers/issue_comment.created.claude-code-action.json", "case": "The Claude Code action's summary comment from the workflow selfhost review setup writes: two findings with a failing test and a repro, ending in the selfhost:second-opinion marker line." },
+      { "file": "webhooks/reviewers/check_run.completed.claude-code-action-failure.json", "case": "The Claude Code review job (GitHub Actions) fails on pull request 101." },
+      { "file": "webhooks/reviewers/check_run.completed.selfhost-review.json", "case": "The selfhost App's own selfhost/review check run completes: not a reviewer." }
     ]
   }
 }

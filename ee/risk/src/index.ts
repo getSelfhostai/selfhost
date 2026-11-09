@@ -45,5 +45,6 @@ export {
   type RiskLevel,
   type RiskResult,
   type RunInput,
+  type SecondOpinionInput,
   type TestStatus,
 } from "./types.js";

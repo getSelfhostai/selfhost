@@ -1,0 +1,90 @@
+{
+  "action": "created",
+  "issue": {
+    "url": "https://api.github.com/repos/acme/acme-api/issues/101",
+    "id": 2700000101,
+    "node_id": "PR_101",
+    "number": 101,
+    "title": "Add per-key rate limiting",
+    "user": {
+      "login": "alice",
+      "id": 5100001,
+      "node_id": "U_5100001",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5100001?v=4",
+      "url": "https://api.github.com/users/alice",
+      "html_url": "https://github.com/alice",
+      "type": "User",
+      "site_admin": false
+    },
+    "state": "open",
+    "locked": false,
+    "comments": 1,
+    "created_at": "2026-10-05T09:00:00Z",
+    "updated_at": "2026-10-05T12:30:00Z",
+    "closed_at": null,
+    "author_association": "MEMBER",
+    "body": "Adds a token bucket per API key.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+    "html_url": "https://github.com/acme/acme-api/pull/101",
+    "pull_request": {
+      "url": "https://api.github.com/repos/acme/acme-api/pulls/101",
+      "html_url": "https://github.com/acme/acme-api/pull/101",
+      "diff_url": "https://github.com/acme/acme-api/pull/101.diff",
+      "patch_url": "https://github.com/acme/acme-api/pull/101.patch",
+      "merged_at": null
+    }
+  },
+  "comment": {
+    "url": "https://api.github.com/repos/acme/acme-api/issues/comments/9321",
+    "html_url": "https://github.com/acme/acme-api/pull/101#issuecomment-9321",
+    "issue_url": "https://api.github.com/repos/acme/acme-api/issues/101",
+    "id": 9321,
+    "node_id": "IC_9321",
+    "user": {
+      "login": "github-actions[bot]",
+      "id": 9300002,
+      "node_id": "BOT_9300002",
+      "avatar_url": "https://avatars.githubusercontent.com/in/9300002?v=4",
+      "url": "https://api.github.com/users/github-actions%5Bbot%5D",
+      "html_url": "https://github.com/apps/github-actions",
+      "type": "Bot",
+      "site_admin": false
+    },
+    "created_at": "2026-10-05T09:08:00Z",
+    "updated_at": "2026-10-05T09:08:00Z",
+    "author_association": "NONE",
+    "body": "## Second opinion\n\nThe selfhost brief shows the agent ran `pnpm test` once, on src/limits only. I tried to break the change.\n\n### 1. The refill is 1000 times too fast (high)\n\n`elapsed` is in milliseconds and `ratePerSecond` is per second. This test fails on the pull request head:\n\n```ts\nit(\"rejects the 11th request in one second\", () => {\n  const bucket = newBucket({ capacity: 10, ratePerSecond: 10 });\n  for (let i = 0; i < 10; i++) expect(take(bucket, 0)).toBe(true);\n  expect(take(bucket, 5)).toBe(false);\n});\n```\n\n### 2. Requests without a key skip the limiter (medium)\n\nRepro: `curl -i https://localhost:3000/v1/items` eleven times in a second; every call answers 200.\n\n<!-- selfhost:second-opinion tool=claude-code-action verdict=changes findings=2 severity=high -->\n"
+  },
+  "repository": {
+    "id": 810000001,
+    "node_id": "R_810000001",
+    "name": "acme-api",
+    "full_name": "acme/acme-api",
+    "private": true,
+    "owner": {
+      "login": "acme",
+      "id": 5000001,
+      "node_id": "U_5000001",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5000001?v=4",
+      "url": "https://api.github.com/users/acme",
+      "html_url": "https://github.com/acme",
+      "type": "Organization",
+      "site_admin": false
+    },
+    "html_url": "https://github.com/acme/acme-api",
+    "default_branch": "main"
+  },
+  "sender": {
+    "login": "github-actions[bot]",
+    "id": 9300002,
+    "node_id": "BOT_9300002",
+    "avatar_url": "https://avatars.githubusercontent.com/in/9300002?v=4",
+    "url": "https://api.github.com/users/github-actions%5Bbot%5D",
+    "html_url": "https://github.com/apps/github-actions",
+    "type": "Bot",
+    "site_admin": false
+  },
+  "installation": {
+    "id": 61000001,
+    "node_id": "MDIzOkludGVncmF0aW9uSW5zdGFsbGF0aW9uNjEwMDAwMDE="
+  }
+}

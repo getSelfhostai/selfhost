@@ -95,6 +95,16 @@ Approvals, questions and alerts older than seven days open nothing.
   context layer; the server applies it the next time anyone reads the team's context. A newer
   proposal of the same item replaces the open one.
 - Items from one run share `group: "run:<run_id>"`, else one session `group: "session:<id>"`.
+- `review.submitted` (the GitHub App's record of an AI reviewer's verdict, see
+  [`@selfhost/integrations`](../integrations/README.md#reviewers-second-opinions)) adds the
+  verdict to the open `pr` item of its pull request: `second_opinions` keeps the newest from each
+  tool, and `second_opinion` is the strictest of them (`changes`, then `failed`, `comment`,
+  `approve`, with a summary line), which approval routing reads. A request for changes holds the
+  score at `[review] high_risk_threshold` when its highest finding is critical or high, else at
+  half of it; a critical or high finding left as a comment holds it at half. The reason reads
+  "Second opinion: CodeRabbit requested changes: 3 findings, highest critical". A later approval
+  does not lower the score. A verdict that arrives before the PR's item is picked up when the
+  item opens. Closed items are left alone.
 - `pr.merged` and `pr.closed` dismiss the PR's item. A `decision.recorded` event from a person
   with `item_id` (or, for a PR, its `pr_url`) answers the open item; a later decision that
   replaces the answer updates it. Decisions from a person token answer only that team's items.

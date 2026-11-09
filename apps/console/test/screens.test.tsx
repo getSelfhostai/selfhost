@@ -251,6 +251,31 @@ describe("the run view", () => {
     expect(link.getAttribute("href")).toBe("https://langfuse.example.com/trace/run-7");
   });
 
+  it("shows each pull request's second opinion in the run view", async () => {
+    const report = runFromEvents("run-7", events as never);
+    mockServer({
+      "GET /v1/runs/run-7": {
+        ...report,
+        prs: report.prs.map((pr) => ({
+          ...pr,
+          second_opinions: [
+            {
+              tool: "claude-code-action",
+              reviewer: "github-actions[bot]",
+              verdict: "approve",
+              findings: 0,
+              at: "2026-11-08T10:30:00.000Z",
+              event_id: "0193ffff-0000-7000-8000-0000000000b1",
+            },
+          ],
+        })),
+      },
+    });
+    renderConsole(OWNER, "?screen=run&run=run-7");
+    await screen.findByText("Claude Code Action: approved");
+    expect(screen.getByText("Claude Code Action approved: 0 findings")).toBeTruthy();
+  });
+
   it("pages through a long run's events with the run route's cursor", async () => {
     const [first, second, third] = events;
     const server = mockServer({

@@ -34,6 +34,7 @@ which the review brief shares, and the revert history from git.
 | Guardrail blocks   | `policy.evaluated` events with a block verdict on the run's sessions, once per tool call and rule, observe or enforce                                                                                                                                                                                 |
 | Revert rate        | The agent and model's commits on the repository in the last 90 days, and how many a later `This reverts commit <sha>` line names                                                                                                                                                                      |
 | Module revert rate | The modules the change touches ([`@selfhost/provenance`](../../packages/provenance/README.md): `[review] modules` globs, else top folders), with the share of their agent-written lines merged in the last 90 days that was reverted or reworked within `[review] revert_window_days`                 |
+| Second opinion     | The newest verdict of each AI reviewer on the pull request (`review.submitted` events the GitHub App records from PR-Agent, the Claude Code action or CodeRabbit). Left out, not missing, when the team has no `[integrations.reviewer]` and none has reviewed; missing until the configured reviewer has; a failed reviewer run is missing with that reason |
 
 The run is the set of ledger sessions behind the change: sessions with a `commit.created` event
 for one of its commits, and sessions `readCommits` matches to its commits by session link or by
@@ -60,6 +61,7 @@ rates from (the GitHub App on a server with no clone of the repo; see `SELFHOST_
 | Guardrail blocks   | 10 each, at most 20                                                  |
 | Revert rate        | 10 from 10%, 20 from 25%                                             |
 | Module revert rate | 10 for the first module above the threshold, 5 each more, at most 20 |
+| Second opinion     | changes requested 15, findings left as a comment 5, plus 10 when the highest is critical or high; at most 25; an approval adds nothing |
 
 A module is above the threshold when more than `[review] revert_rate_threshold` (default 25%) of
 its agent-written lines were reverted or reworked and it holds at least 50 of them

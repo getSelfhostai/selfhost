@@ -10,6 +10,7 @@ import {
   Uuidv7,
 } from "./common.js";
 import { AgentRefSchema, VerdictSchema } from "./event.js";
+import { OverallSecondOpinionSchema, SecondOpinionSchema } from "./second-opinion.js";
 import { createValidator, requiredWhenErrors, type ValidationResult } from "./validate.js";
 
 export const REVIEW_ITEM_SCHEMA = "selfhost.review_item/v1";
@@ -182,6 +183,13 @@ export const ReviewItemSchema = Type.Object(
       DateTime({ description: "Snoozed: ranked after every other item until this time." }),
     ),
     snoozed_by: Type.Optional(Type.String({ description: "Person who snoozed the item." })),
+    second_opinion: Type.Optional(OverallSecondOpinionSchema),
+    second_opinions: Type.Optional(
+      Type.Array(SecondOpinionSchema, {
+        description:
+          "For a pr item: what the team's AI reviewers ([integrations.reviewer]) said about the pull request, the newest review from each tool. A request for changes or a severe finding raises the risk score; a later approval does not lower it.",
+      }),
+    ),
   },
   {
     $id: schemaId("review-item.schema.json"),

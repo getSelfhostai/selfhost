@@ -7,6 +7,7 @@ import {
   type SyncResult,
   syncPullRequest,
 } from "@selfhost/github";
+import { type ReviewerDelivery, reviewerDelivery } from "@selfhost/integrations";
 import type { Ledger } from "@selfhost/ledger";
 import { type ApiError, parseConfig, type ResolvedSelfhostConfig } from "@selfhost/schema";
 import type { Hono } from "hono";
@@ -15,6 +16,13 @@ import { type AgentPull, desiredState, type GitHubProviders } from "./github-pul
 import { pullReads } from "./github-reads.js";
 import { reviewBrief, reviewOwner } from "./github-review.js";
 import { eeRisk } from "./github-risk.js";
+import {
+  isReviewerEvent,
+  ledgerSecondOpinions,
+  reviewedPull,
+  secondOpinionEvent,
+  withInlineSeverity,
+} from "./github-second-opinion.js";
 import type { GitClones } from "./provenance.js";
 
 export const GITHUB_WEBHOOK_PATH = "/v1/github/webhooks";
@@ -157,7 +165,7 @@ export function pullSync(
   options: Omit<GitHubRouteOptions, "app">,
 ): PullSync {
   const providers: GitHubProviders = {
-    risk: eeRisk(undefined, options.clones, ledger),
+    risk: eeRisk(undefined, options.clones, ledger, ledgerSecondOpinions(ledger)),
     owner: reviewOwner(ledger, options.team),
     brief: reviewBrief(ledger),
     ...options.providers,
@@ -208,7 +216,11 @@ function queue() {
  *
  * pull_request deliveries (opened, reopened, synchronize, ready_for_review, and labeled by a
  * person) on open agent pull requests sync the risk and agent labels, the selfhost/review check
- * run, the brief comment and the review request. Each X-GitHub-Delivery id is handled once: a
+ * run, the brief comment and the review request. pull_request_review, issue_comment and
+ * check_run deliveries carrying a verdict from the team's AI reviewer (PR-Agent, the Claude Code
+ * action, CodeRabbit) on an agent pull request are recorded as review.submitted events and sync
+ * the pull request again, so its risk counts the second opinion. Each X-GitHub-Delivery id is
+ * handled once: a
  * delivery that arrives again answers `duplicate: true` and touches nothing. A failed sync
  * forgets the id and answers 500, so a redelivery from GitHub runs it again. Everything else
  * that is signed answers 200 with `handled: false`.
@@ -228,6 +240,45 @@ export function githubRoutes(
   }
   const pulls = pullSync(github, ledger, options);
   const log = options.log ?? console.log;
+  const installed = github;
+
+  /**
+   * A reviewer's verdict on an agent pull request: recorded once as a review.submitted event
+   * (the review list attaches it to the pull request's item on its next refresh), then the pull
+   * request is synced again so its risk label and check count the second opinion.
+   */
+  async function secondOpinion(
+    delivery: string,
+    event: string,
+    found: ReviewerDelivery,
+    server: string,
+  ): Promise<{ line?: string; response: WebhookResponse }> {
+    const skip = (skipped: string) => ({ response: { delivery, handled: false, skipped } });
+    const installation = found.installation;
+    if (!installation) return skip("no App installation in the payload");
+    const octokit = installed.installation(installation);
+    const pull = await reviewedPull(octokit, found);
+    const attributed = webhookPullAgent({ user: pull.user, body: pull.body, head: pull.head });
+    if (!attributed) return skip("not an agent pull request");
+    if (!(await ledger.deliveries.claim(delivery, { event }))) {
+      return { response: { delivery, handled: false, duplicate: true } };
+    }
+    const opinion = await withInlineSeverity(octokit, found);
+    const record = secondOpinionEvent(found, opinion, found.url ?? pull.html_url, attributed.agent);
+    await ledger.append([record], options.team ? { team: options.team } : {});
+    const target = agentPullOf(found.owner, found.name, pull);
+    let writes = 0;
+    if ((pull.state ?? "open") === "open") {
+      const result = await pulls.serial(installation, pullKey(target), () =>
+        pulls.sync(installation, target, attributed.agent, server),
+      );
+      writes = result.writes.length;
+    }
+    return {
+      line: `${pullKey(target)}: ${opinion.tool} ${opinion.verdict}, ${writes} changes`,
+      response: { delivery, handled: true, writes },
+    };
+  }
 
   app.post(
     GITHUB_WEBHOOK_PATH,
@@ -260,6 +311,31 @@ export function githubRoutes(
         payload = JSON.parse(body);
       } catch {
         return c.json(apiError("invalid_webhook", "Expected a JSON body"), 400);
+      }
+
+      if (isReviewerEvent(event)) {
+        const parsed = reviewerDelivery(event, payload);
+        if ("skip" in parsed) {
+          return c.json({
+            delivery,
+            handled: false,
+            skipped: parsed.skip,
+          } satisfies WebhookResponse);
+        }
+        const server = options.publicUrl ?? new URL(c.req.url).origin;
+        try {
+          const answer = await secondOpinion(delivery, event, parsed.delivery, server);
+          if (answer.line) log(`github: delivery ${delivery} ${event} ${answer.line}`);
+          return c.json(answer.response);
+        } catch (error) {
+          await ledger.deliveries.release(delivery);
+          const where = `${parsed.delivery.repo}#${parsed.delivery.number}`;
+          log(`github: delivery ${delivery} for ${where} failed: ${errorLine(error)}`);
+          return c.json(
+            apiError("github_sync_failed", `Could not record the review on ${where}`),
+            500,
+          );
+        }
       }
 
       const target = agentPull(event, payload);

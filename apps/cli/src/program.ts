@@ -35,6 +35,7 @@ import { registerPolicyPackage } from "./policy/mdm.js";
 import { registerProvenance } from "./provenance.js";
 import { registerReview } from "./review.js";
 import { localReviewList, registerReviewList } from "./review-list.js";
+import { registerReviewSetup } from "./review-setup.js";
 import { registerRoi } from "./roi.js";
 import type { CollectAttribution } from "./scan/attribution.js";
 import { gitAttribution } from "./scan/git-attribution.js";
@@ -486,6 +487,11 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
   );
 
   registerReview(
+    program,
+    () => ({ env: deps.env, cwd: deps.cwd, write: deps.write, now: deps.now }),
+    fail,
+  );
+  registerReviewSetup(
     program,
     () => ({ env: deps.env, cwd: deps.cwd, write: deps.write, now: deps.now }),
     fail,

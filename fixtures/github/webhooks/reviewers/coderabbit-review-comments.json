@@ -1,0 +1,38 @@
+[
+  {
+    "id": 9401,
+    "pull_request_review_id": 9301,
+    "path": "src/limits/bucket.ts",
+    "line": 18,
+    "user": {
+      "login": "coderabbitai[bot]",
+      "id": 9300001,
+      "node_id": "BOT_9300001",
+      "avatar_url": "https://avatars.githubusercontent.com/in/9300001?v=4",
+      "url": "https://api.github.com/users/coderabbitai%5Bbot%5D",
+      "html_url": "https://github.com/apps/coderabbitai",
+      "type": "Bot",
+      "site_admin": false
+    },
+    "html_url": "https://github.com/acme/acme-api/pull/101#discussion_r9401",
+    "body": "_⚠️ Potential issue_ | _🔴 Critical_\n\n**The refill uses milliseconds as seconds.**\n\nA key refills 1000 times faster than `ratePerSecond` says."
+  },
+  {
+    "id": 9402,
+    "pull_request_review_id": 9301,
+    "path": "src/limits/middleware.ts",
+    "line": 41,
+    "user": {
+      "login": "coderabbitai[bot]",
+      "id": 9300001,
+      "node_id": "BOT_9300001",
+      "avatar_url": "https://avatars.githubusercontent.com/in/9300001?v=4",
+      "url": "https://api.github.com/users/coderabbitai%5Bbot%5D",
+      "html_url": "https://github.com/apps/coderabbitai",
+      "type": "Bot",
+      "site_admin": false
+    },
+    "html_url": "https://github.com/acme/acme-api/pull/101#discussion_r9402",
+    "body": "_⚠️ Potential issue_ | _🟡 Minor_\n\n**Requests without X-API-Key skip the limiter.**"
+  }
+]

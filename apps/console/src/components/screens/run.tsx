@@ -1,7 +1,13 @@
-import type { EventsPage, LedgerEvent } from "@selfhost/schema";
+import {
+  describeSecondOpinion,
+  type EventsPage,
+  type LedgerEvent,
+  secondOpinionOf,
+} from "@selfhost/schema";
 import { ExternalLink } from "lucide-react";
 import { useState } from "react";
 import { Empty, Failed, Loading, PageHeader, Section } from "@/components/common";
+import { SecondOpinionBadges, SecondOpinions } from "@/components/second-opinions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -150,6 +156,13 @@ export function eventLine(event: LedgerEvent, blocked = false): { title: string;
       return { title: "Pull request closed", detail: event.links?.pr_url };
     case "alert.raised":
       return { title: "Alert", detail: String(event.data?.alert ?? "") };
+    case "review.submitted": {
+      const opinion = secondOpinionOf(event);
+      return {
+        title: opinion ? `Second opinion: ${describeSecondOpinion(opinion)}` : "Second opinion",
+        detail: event.links?.pr_url,
+      };
+    }
     default:
       return { title: event.kind };
   }
@@ -278,6 +291,14 @@ export function RunScreen() {
                       {pr.url}
                     </a>
                     <Badge variant="outline">{pr.state}</Badge>
+                    {pr.second_opinions ? (
+                      <>
+                        <SecondOpinionBadges opinions={pr.second_opinions} />
+                        <div className="basis-full">
+                          <SecondOpinions opinions={pr.second_opinions} />
+                        </div>
+                      </>
+                    ) : null}
                   </li>
                 ))}
               </ul>

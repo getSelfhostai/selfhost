@@ -48,6 +48,11 @@ export const CO_AUTHORS: CoAuthorRule[] = [
 export interface FooterRule {
   vendor: AgentVendor;
   pattern: RegExp;
+  /**
+   * Fixed parts of what the pattern matches, for matchers that cannot run a regex, such as a
+   * GitHub Actions `contains()` (which ignores case).
+   */
+  texts: string[];
 }
 
 /** Attribution lines a vendor adds to commit messages or pull request bodies. */
@@ -58,12 +63,17 @@ export const FOOTERS: FooterRule[] = [
     vendor: "claude_code",
     pattern:
       /Generated with \[Claude Code\]\(https:\/\/(?:claude\.com\/claude-code|claude\.ai\/code)\/?\)/,
+    texts: ["Generated with [Claude Code]("],
   },
   // codex-rs/ext/git-attribution/src/world_state.rs
-  { vendor: "codex", pattern: /Generated with \[Codex\]\(https:\/\/openai\.com\/codex\/?\)/ },
+  {
+    vendor: "codex",
+    pattern: /Generated with \[Codex\]\(https:\/\/openai\.com\/codex\/?\)/,
+    texts: ["Generated with [Codex]("],
+  },
   // attribution.attributeCommitsToAgent, https://cursor.com/docs/cli/reference/configuration;
   // the trailer text is observed.
-  { vendor: "cursor", pattern: /^Made-with:\s*Cursor\s*$/im },
+  { vendor: "cursor", pattern: /^Made-with:\s*Cursor\s*$/im, texts: ["Made-with: Cursor"] },
 ];
 
 /** GitHub App accounts that write code. Logins ending in [bot] belong to apps only. */
@@ -120,30 +130,54 @@ export interface SessionLinkRule {
   vendor: AgentVendor;
   /** The first group is the session id. */
   pattern: RegExp;
+  /** Fixed parts of what the pattern matches, as for FooterRule. */
+  texts: string[];
 }
 
 /** Session links agents put in commit trailers and pull request bodies. */
 export const SESSION_LINKS: SessionLinkRule[] = [
   // "Claude-Session: https://claude.ai/code/session_..." trailer and the PR body line.
   // https://code.claude.com/docs/en/cloud-environments
-  { vendor: "claude_code", pattern: /https:\/\/claude\.ai\/code\/(session_[A-Za-z0-9]+)/g },
+  {
+    vendor: "claude_code",
+    pattern: /https:\/\/claude\.ai\/code\/(session_[A-Za-z0-9]+)/g,
+    texts: ["https://claude.ai/code/session_"],
+  },
   // Codex cloud task footer (observed), old and new path.
   {
     vendor: "codex",
     pattern: /https:\/\/chatgpt\.com\/codex\/(?:cloud\/)?tasks\/(task_[a-z]_[0-9a-f]+)/g,
+    texts: ["https://chatgpt.com/codex/tasks/task_", "https://chatgpt.com/codex/cloud/tasks/task_"],
   },
   // https://cursor.com/docs/cloud-agent/api/endpoints; background-agent?bcId= is observed.
   {
     vendor: "cursor",
     pattern:
       /https:\/\/(?:www\.)?cursor\.com\/(?:agents\/|background-agent\?bcId=)(bc-[0-9a-f-]+)/g,
+    texts: ["cursor.com/agents/bc-", "cursor.com/background-agent?bcId=bc-"],
   },
   // OpenCode share links, packages/opencode/src/cli/cmd/github.ts.
-  { vendor: "opencode", pattern: /https:\/\/opencode\.ai\/s\/([A-Za-z0-9]+)/g },
+  {
+    vendor: "opencode",
+    pattern: /https:\/\/opencode\.ai\/s\/([A-Za-z0-9]+)/g,
+    texts: ["https://opencode.ai/s/"],
+  },
   // Amp-Thread-ID trailer. https://ampcode.com/docs/cli/settings
-  { vendor: "other", pattern: /https:\/\/ampcode\.com\/threads\/(T-[0-9a-f-]+)/g },
+  {
+    vendor: "other",
+    pattern: /https:\/\/ampcode\.com\/threads\/(T-[0-9a-f-]+)/g,
+    texts: ["https://ampcode.com/threads/T-"],
+  },
   // Devin session link (observed).
-  { vendor: "other", pattern: /https:\/\/app\.devin\.ai\/sessions\/([0-9a-f]{32})/g },
+  {
+    vendor: "other",
+    pattern: /https:\/\/app\.devin\.ai\/sessions\/([0-9a-f]{32})/g,
+    texts: ["https://app.devin.ai/sessions/"],
+  },
   // Jules task link (observed).
-  { vendor: "other", pattern: /https:\/\/jules\.google\.com\/task\/(\d+)/g },
+  {
+    vendor: "other",
+    pattern: /https:\/\/jules\.google\.com\/task\/(\d+)/g,
+    texts: ["https://jules.google.com/task/"],
+  },
 ];

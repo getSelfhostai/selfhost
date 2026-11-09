@@ -150,7 +150,8 @@
         "pr.closed",
         "policy.evaluated",
         "alert.raised",
-        "config.reported"
+        "config.reported",
+        "review.submitted"
       ]
     },
     "actor": {

@@ -111,6 +111,7 @@ paths:
               - policy.evaluated
               - alert.raised
               - config.reported
+              - review.submitted
         - name: team
           in: query
           required: false
@@ -8276,6 +8277,67 @@ components:
             - open
             - merged
             - closed
+        second_opinions:
+          description: What the team's AI reviewers said about it, the newest review from each tool. Absent when no reviewer has reviewed it.
+          type: array
+          items:
+            additionalProperties: false
+            description: "What the team's AI reviewer said about the pull request: the newest review from one tool."
+            type: object
+            required:
+              - tool
+              - reviewer
+              - verdict
+              - at
+              - event_id
+            properties:
+              tool:
+                description: "The reviewer: pr-agent, claude-code-action or coderabbit."
+                type: string
+                enum:
+                  - pr-agent
+                  - claude-code-action
+                  - coderabbit
+              reviewer:
+                minLength: 1
+                description: GitHub login the review was posted under, such as coderabbitai[bot].
+                type: string
+              verdict:
+                description: approve (nothing to fix), changes (asks for changes before merge), comment (findings without a verdict) or failed (the reviewer's run failed).
+                type: string
+                enum:
+                  - approve
+                  - changes
+                  - comment
+                  - failed
+              findings:
+                minimum: 0
+                description: Findings the reviewer reported, when it says how many. Style nitpicks are not counted.
+                type: integer
+              severity:
+                description: The highest severity among the findings, when the reviewer grades them.
+                type: string
+                enum:
+                  - critical
+                  - high
+                  - medium
+                  - low
+              url:
+                format: uri
+                description: The review, comment or CI run on GitHub.
+                type: string
+              head_sha:
+                pattern: ^[0-9a-f]{7,64}$
+                description: The commit that was reviewed.
+                type: string
+              at:
+                format: date-time
+                description: When the reviewer posted it.
+                type: string
+              event_id:
+                pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+                description: The review.submitted ledger event that holds it.
+                type: string
     RunResponse:
       additionalProperties: false
       title: RunResponse
@@ -8407,6 +8469,67 @@ components:
                   - open
                   - merged
                   - closed
+              second_opinions:
+                description: What the team's AI reviewers said about it, the newest review from each tool. Absent when no reviewer has reviewed it.
+                type: array
+                items:
+                  additionalProperties: false
+                  description: "What the team's AI reviewer said about the pull request: the newest review from one tool."
+                  type: object
+                  required:
+                    - tool
+                    - reviewer
+                    - verdict
+                    - at
+                    - event_id
+                  properties:
+                    tool:
+                      description: "The reviewer: pr-agent, claude-code-action or coderabbit."
+                      type: string
+                      enum:
+                        - pr-agent
+                        - claude-code-action
+                        - coderabbit
+                    reviewer:
+                      minLength: 1
+                      description: GitHub login the review was posted under, such as coderabbitai[bot].
+                      type: string
+                    verdict:
+                      description: approve (nothing to fix), changes (asks for changes before merge), comment (findings without a verdict) or failed (the reviewer's run failed).
+                      type: string
+                      enum:
+                        - approve
+                        - changes
+                        - comment
+                        - failed
+                    findings:
+                      minimum: 0
+                      description: Findings the reviewer reported, when it says how many. Style nitpicks are not counted.
+                      type: integer
+                    severity:
+                      description: The highest severity among the findings, when the reviewer grades them.
+                      type: string
+                      enum:
+                        - critical
+                        - high
+                        - medium
+                        - low
+                    url:
+                      format: uri
+                      description: The review, comment or CI run on GitHub.
+                      type: string
+                    head_sha:
+                      pattern: ^[0-9a-f]{7,64}$
+                      description: The commit that was reviewed.
+                      type: string
+                    at:
+                      format: date-time
+                      description: When the reviewer posted it.
+                      type: string
+                    event_id:
+                      pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+                      description: The review.submitted ledger event that holds it.
+                      type: string
         trace_url:
           description: "The run in the team's tracer: [integrations.tracer] run_url with {run_id} and {trace_id} filled in. null when no tracer is set up, it has no run_url, or the run has not been sent yet."
           anyOf:

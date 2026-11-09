@@ -66,7 +66,10 @@ export const INTEGRATION_SETTINGS = {
     { key: "api_key_env", label: "API key variable" },
     { key: "template", label: "Template" },
   ],
-  reviewer: [{ key: "api_key_env", label: "API key variable" }],
+  reviewer: [
+    { key: "api_key_env", label: "API key variable" },
+    { key: "model", label: "Model" },
+  ],
 } as const;
 
 export const TOOL_NAMES: Record<string, string> = {

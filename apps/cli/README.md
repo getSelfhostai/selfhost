@@ -546,6 +546,34 @@ outside effects come from the ledger when there is one (`--database` / `--data-d
 runs exist. Nothing is posted to GitHub. The scoring is commercial code in
 [`ee/risk`](../../ee/risk/README.md), loaded only when this command runs.
 
+## Second opinion: `selfhost review setup`
+
+`selfhost review setup [pr-agent|claude-code-action|coderabbit]` wires an existing AI reviewer
+into the repository; selfhost writes no reviewer of its own. It writes one file, pinned:
+
+| Tool                 | File                                          | Runs on                                                                    |
+| -------------------- | --------------------------------------------- | -------------------------------------------------------------------------- |
+| `pr-agent`           | `.github/workflows/selfhost-pr-agent.yml`     | The PR-Agent image by digest, on the secret `OPENAI_KEY` (`ANTHROPIC_KEY` with an `anthropic/` model) |
+| `claude-code-action` | `.github/workflows/selfhost-claude-review.yml` | `anthropics/claude-code-action` by commit, on the secret `ANTHROPIC_API_KEY` |
+| `coderabbit`         | `.coderabbit.yaml`                            | The CodeRabbit GitHub App, on CodeRabbit's own plan                        |
+
+The tool and its settings come from `[integrations.reviewer]` (`api_key_env` names the secret,
+`model`, `pull_requests`, `style`) when it picks the same tool; `--model`, `--all-prs` and
+`--style` override them. By default the reviewer runs on agent pull requests only: the
+workflow's `if:` is the attribution signals selfhost reads from a webhook, or an agent label from
+the selfhost GitHub App (CodeRabbit filters on those labels). The reviewer is told to break the
+change, proving each finding with a failing test or a repro, and to skip style unless `style`.
+The workflows read the selfhost brief comment, so the review sees the run behind the pull request
+(plan, tests run, guardrail hits, cost), and say so when there is none.
+
+It prints the secret to add by name (never a value), and refuses a secret named like a
+subscription login (`CLAUDE_CODE_OAUTH_TOKEN`): a reviewer runs on every pull request the team
+opens, so it runs on the org's API key. `--app-bot <login>` names the selfhost App's bot so the
+Claude Code action also runs when the App labels a pull request. A file that exists and differs
+is kept unless `--force`; `--print` writes nothing; `--json` prints `selfhost.review_setup/v1`.
+With the selfhost GitHub App installed, each review lands on the pull request's review item and
+counts in its risk score ([`apps/server`](../server/README.md#second-opinions-from-the-teams-ai-reviewer)).
+
 ## Agent-written code: `selfhost provenance`
 
 `selfhost provenance [--since 30d] [--until <when>] [--branch <ref>] [--vendor-stats <file>]

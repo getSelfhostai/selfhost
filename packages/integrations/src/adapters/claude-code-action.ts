@@ -23,7 +23,12 @@ export const claudeCodeAction: Adapter<"reviewer"> = {
         name: "the Claude Code GitHub Action",
         uses: USES,
         howTo:
-          "Run /install-github-app in Claude Code, or add .github/workflows/claude.yml with a step `uses: anthropics/claude-code-action@v1` and anthropic_api_key set from the repository secret ANTHROPIC_API_KEY. See https://github.com/anthropics/claude-code-action.",
+          "Run selfhost review setup claude-code-action in the repository: it writes a pinned workflow that reviews agent pull requests on the repository secret ANTHROPIC_API_KEY. See https://github.com/anthropics/claude-code-action.",
+        refuse: {
+          test: (text) =>
+            /claude_code_oauth_token\s*:/.test(text) && !/anthropic_api_key\s*:/.test(text),
+          why: "the Claude Code action signs in with claude_code_oauth_token, one person's Claude subscription. A reviewer runs on every pull request the team opens, so give it the org's API key: anthropic_api_key from a repository or org secret.",
+        },
         ...(settings.api_key_env ? { keyEnv: settings.api_key_env } : {}),
       },
       repos,

@@ -22,6 +22,7 @@ export * from "./request-type.js";
 export * from "./review-item.js";
 export * from "./roi.js";
 export * from "./run.js";
+export * from "./second-opinion.js";
 export * from "./team.js";
 export { TomlLineIndex } from "./toml-lines.js";
 export * from "./usage.js";

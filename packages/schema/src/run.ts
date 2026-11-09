@@ -1,6 +1,7 @@
 import { type Static, Type } from "@sinclair/typebox";
 import { DateTime, StringEnum } from "./common.js";
 import { AgentRefSchema, LedgerEventSchema } from "./event.js";
+import { SecondOpinionSchema } from "./second-opinion.js";
 
 /**
  * One agent run for the console's run view: GET /v1/runs/{run_id}. A run is one agent session,
@@ -52,6 +53,12 @@ export const RunPullRequestSchema = Type.Object(
     state: StringEnum(RUN_PR_STATES, {
       description: "From the newest pr.opened, pr.merged or pr.closed event for it.",
     }),
+    second_opinions: Type.Optional(
+      Type.Array(SecondOpinionSchema, {
+        description:
+          "What the team's AI reviewers said about it, the newest review from each tool. Absent when no reviewer has reviewed it.",
+      }),
+    ),
   },
   { additionalProperties: false, title: "RunPullRequest" },
 );

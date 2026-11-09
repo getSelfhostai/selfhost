@@ -47,6 +47,7 @@ export const EVENT_KINDS = [
   "policy.evaluated",
   "alert.raised",
   "config.reported",
+  "review.submitted",
 ] as const;
 
 export const ACTOR_KINDS = ["person", "agent", "system"] as const;

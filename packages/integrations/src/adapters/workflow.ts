@@ -9,6 +9,8 @@ export interface WorkflowTool {
   howTo: string;
   /** api_key_env: the workflow should pass it, so the check says when none mentions it. */
   keyEnv?: string;
+  /** A workflow that runs the tool this way fails the check, with why. */
+  refuse?: { test(text: string): boolean; why: string };
 }
 
 const list = (items: readonly string[]) =>
@@ -45,6 +47,8 @@ export async function workflowCheck(
     const using = files.filter((file) => tool.uses.test(file.text));
     if (using.length === 0) missing.push(repo);
     for (const file of using) {
+      if (tool.refuse?.test(file.text))
+        return failed(`${file.path} in ${repo}: ${tool.refuse.why}`);
       found.push(`${file.path} in ${repo}`);
       if (tool.keyEnv && file.text.includes(tool.keyEnv)) mentionsKey = true;
     }

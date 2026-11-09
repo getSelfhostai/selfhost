@@ -1,0 +1,94 @@
+{
+  "action": "submitted",
+  "review": {
+    "id": 9301,
+    "node_id": "PRR_9301",
+    "user": {
+      "login": "coderabbitai[bot]",
+      "id": 9300001,
+      "node_id": "BOT_9300001",
+      "avatar_url": "https://avatars.githubusercontent.com/in/9300001?v=4",
+      "url": "https://api.github.com/users/coderabbitai%5Bbot%5D",
+      "html_url": "https://github.com/apps/coderabbitai",
+      "type": "Bot",
+      "site_admin": false
+    },
+    "body": "**Actionable comments posted: 2**\n\n<details>\n<summary>⚠️ Outside diff range comments (1)</summary><blockquote>\n\n<details>\n<summary>src/limits/config.ts (1)</summary><blockquote>\n\n`12-14`: **A capacity of 0 from the environment disables every key.**\n\n_⚠️ Potential issue_ | _🟠 Major_\n\n`Number(process.env.RATE_LIMIT ?? \"\")` is 0 when the variable is empty, and a bucket of 0 rejects every request.\n\n</blockquote></details>\n\n</blockquote></details>\n<details>\n<summary>🧹 Nitpick comments (1)</summary><blockquote>\n\n<details>\n<summary>src/limits/bucket.ts (1)</summary><blockquote>\n\n`3-3`: **Name the magic number.**\n\n_🧹 Nitpick_ | _🟡 Minor_\n\n`1000` would read better as `MS_PER_SECOND`.\n\n</blockquote></details>\n\n</blockquote></details>\n\n<details>\n<summary>📜 Review details</summary>\n\n**Configuration used**: Path: .coderabbit.yaml\n\n**Review profile**: CHILL\n\n</details>\n",
+    "commit_id": "5786c5c9d81ca4218b7e44bf0007f5580f66c489",
+    "submitted_at": "2026-10-05T09:06:00Z",
+    "state": "commented",
+    "html_url": "https://github.com/acme/acme-api/pull/101#pullrequestreview-9301",
+    "pull_request_url": "https://api.github.com/repos/acme/acme-api/pulls/101",
+    "author_association": "NONE"
+  },
+  "pull_request": {
+    "url": "https://api.github.com/repos/acme/acme-api/pulls/101",
+    "id": 2700000101,
+    "node_id": "PR_101",
+    "html_url": "https://github.com/acme/acme-api/pull/101",
+    "number": 101,
+    "state": "open",
+    "locked": false,
+    "title": "Add per-key rate limiting",
+    "user": {
+      "login": "alice",
+      "id": 5100001,
+      "node_id": "U_5100001",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5100001?v=4",
+      "url": "https://api.github.com/users/alice",
+      "html_url": "https://github.com/alice",
+      "type": "User",
+      "site_admin": false
+    },
+    "body": "Adds a token bucket per API key.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+    "created_at": "2026-10-05T09:00:00Z",
+    "updated_at": "2026-10-05T09:06:00Z",
+    "closed_at": null,
+    "merged_at": null,
+    "draft": false,
+    "head": {
+      "label": "acme:claude/add-rate-limit",
+      "ref": "claude/add-rate-limit",
+      "sha": "5786c5c9d81ca4218b7e44bf0007f5580f66c489"
+    },
+    "base": {
+      "label": "acme:main",
+      "ref": "main",
+      "sha": "c3b8739bdcca2b4e2f5bdead2a8f238916813446"
+    },
+    "author_association": "MEMBER"
+  },
+  "repository": {
+    "id": 810000001,
+    "node_id": "R_810000001",
+    "name": "acme-api",
+    "full_name": "acme/acme-api",
+    "private": true,
+    "owner": {
+      "login": "acme",
+      "id": 5000001,
+      "node_id": "U_5000001",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5000001?v=4",
+      "url": "https://api.github.com/users/acme",
+      "html_url": "https://github.com/acme",
+      "type": "Organization",
+      "site_admin": false
+    },
+    "html_url": "https://github.com/acme/acme-api",
+    "default_branch": "main"
+  },
+  "sender": {
+    "login": "coderabbitai[bot]",
+    "id": 9300001,
+    "node_id": "BOT_9300001",
+    "avatar_url": "https://avatars.githubusercontent.com/in/9300001?v=4",
+    "url": "https://api.github.com/users/coderabbitai%5Bbot%5D",
+    "html_url": "https://github.com/apps/coderabbitai",
+    "type": "Bot",
+    "site_admin": false
+  },
+  "installation": {
+    "id": 61000001,
+    "node_id": "MDIzOkludGVncmF0aW9uSW5zdGFsbGF0aW9uNjEwMDAwMDE="
+  }
+}

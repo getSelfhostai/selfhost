@@ -1,7 +1,11 @@
 import { anyGlobMatches, effectiveRules, evaluate, globMatches } from "@selfhost/policy";
 import { compare, isLockfile } from "@selfhost/pr";
 import { MIN_MODULE_LINES } from "@selfhost/provenance";
-import type { ResolvedSelfhostConfig } from "@selfhost/schema";
+import {
+  describeSecondOpinion,
+  REVIEWER_NAMES,
+  type ResolvedSelfhostConfig,
+} from "@selfhost/schema";
 import { type OutsideEffect, outsideEffects } from "./effects.js";
 import {
   type ChangedFile,
@@ -13,6 +17,7 @@ import {
   type RiskLevel,
   type RiskResult,
   type RunInput,
+  type SecondOpinionInput,
 } from "./types.js";
 
 /**
@@ -61,6 +66,13 @@ export const WEIGHTS = {
   firstHotModule: 10,
   eachMoreHotModule: 5,
   hotModulesMax: 20,
+  /** An AI reviewer asked for changes. */
+  secondOpinionChanges: 15,
+  /** It left findings without asking for changes. */
+  secondOpinionFindings: 5,
+  /** Added when a finding is critical or high. */
+  secondOpinionSevere: 10,
+  secondOpinionMax: 25,
 } as const;
 
 export const IRREVERSIBLE_FLOOR = 90;
@@ -79,6 +91,7 @@ const DEFAULT_MISSING: Record<MissableInput, string> = {
   guardrails: "no agent run found in the ledger",
   reverts: "no revert history yet",
   module_reverts: "no module revert rates: they need the repository's git history",
+  second_opinion: "no review from [integrations.reviewer] on this pull request yet",
 };
 
 const MAX_LISTED = 5;
@@ -339,6 +352,25 @@ export function scoreRisk(inputs: RiskInputs, config: ResolvedSelfhostConfig): R
     isMissing("module_reverts");
   }
 
+  const opinions = inputs.secondOpinions;
+  const reviewed = opinions?.filter((opinion) => opinion.verdict !== "failed") ?? [];
+  if (reviewed.length > 0) {
+    const points = reviewed.reduce((sum, opinion) => sum + secondOpinionPoints(opinion), 0);
+    factors.push({
+      input: "second_opinion",
+      points: Math.min(points, WEIGHTS.secondOpinionMax),
+      forcesHigh: false,
+      detail: reviewed.map((opinion) => opinionDetail(opinion, inputs.headSha)).join("; "),
+    });
+  } else if (opinions && opinions.length > 0) {
+    missing.push({
+      input: "second_opinion",
+      reason: opinions.map((opinion) => `${REVIEWER_NAMES[opinion.tool]} failed to run`).join("; "),
+    });
+  } else if (opinions || why.second_opinion) {
+    isMissing("second_opinion");
+  }
+
   const order = (input: RiskInput) => RISK_INPUTS.indexOf(input);
   factors.sort((a, b) => order(a.input) - order(b.input));
   missing.sort((a, b) => order(a.input) - order(b.input));
@@ -372,6 +404,25 @@ export function scoreRisk(inputs: RiskInputs, config: ResolvedSelfhostConfig): R
     .map((factor) => factor.detail);
 
   return { level, score, reasons, missing, factors };
+}
+
+const SEVERE = new Set(["critical", "high"]);
+
+function secondOpinionPoints(opinion: SecondOpinionInput): number {
+  const severe = SEVERE.has(opinion.severity ?? "") ? WEIGHTS.secondOpinionSevere : 0;
+  if (opinion.verdict === "changes") return WEIGHTS.secondOpinionChanges + severe;
+  if (opinion.verdict === "comment" && (opinion.findings ?? 0) > 0) {
+    return WEIGHTS.secondOpinionFindings + severe;
+  }
+  return 0;
+}
+
+function opinionDetail(opinion: SecondOpinionInput, headSha: string | undefined): string {
+  const earlier =
+    opinion.head_sha && headSha && !headSha.toLowerCase().startsWith(opinion.head_sha.toLowerCase())
+      ? ` (on earlier commit ${opinion.head_sha.slice(0, 7)})`
+      : "";
+  return `${describeSecondOpinion(opinion)}${earlier}`;
 }
 
 /** Half of `[review] high_risk_threshold`, rounded up. */

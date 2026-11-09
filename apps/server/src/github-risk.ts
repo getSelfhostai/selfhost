@@ -6,7 +6,7 @@ import {
   settingsFromConfig,
   touchedModules,
 } from "@selfhost/provenance";
-import type { LedgerEvent } from "@selfhost/schema";
+import type { LedgerEvent, SecondOpinion } from "@selfhost/schema";
 import { loadRisk } from "./ee.js";
 import type { GitHubProviders, PullContext } from "./github-pull.js";
 import type { GitClones } from "./provenance.js";
@@ -72,7 +72,9 @@ export async function cloneModuleReverts(
  * The risk provider backed by ee/risk: the score from the pull request's files, new
  * dependencies and agent, read from GitHub with the installation token (the same reads the
  * brief uses, made once per delivery), the revert and rework rates of the modules it touches
- * when the server has a clone of the repo, and the check text that lists every input. Inputs
+ * when the server has a clone of the repo, the newest verdict of each AI reviewer on it (the
+ * second opinion, once [integrations.reviewer] is set or a reviewer has reviewed), and the check
+ * text that lists every input. Inputs
  * the score does not read on the server (the agent run, tests, revert history) are named as
  * missing, as `selfhost review risk` does. Without ee/ in the build it scores nothing.
  */
@@ -80,6 +82,7 @@ export function eeRisk(
   load: () => Promise<RiskModule | undefined> = loadRisk,
   clones?: GitClones,
   ledger?: Pick<Ledger, "query">,
+  secondOpinions?: (url: string) => Promise<SecondOpinion[]>,
 ): GitHubProviders["risk"] {
   let loaded: Promise<RiskModule | undefined> | undefined;
   return async (ctx) => {
@@ -94,8 +97,22 @@ export function eeRisk(
     const modules = await cloneModuleReverts(clones, ctx, files, risk.REVERT_WINDOW_DAYS, {
       ...(ledger ? { ledger } : {}),
     });
+    const opinions = await secondOpinions?.(ctx.pull.url);
+    const reviewer = ctx.config.integrations.reviewer;
     const inputs: RiskInputs = {
       files,
+      headSha: ctx.pull.headSha,
+      ...(opinions && (opinions.length > 0 || reviewer)
+        ? {
+            secondOpinions: opinions.map(({ tool, verdict, findings, severity, head_sha }) => ({
+              tool,
+              verdict,
+              ...(findings !== undefined ? { findings } : {}),
+              ...(severity ? { severity } : {}),
+              ...(head_sha ? { head_sha } : {}),
+            })),
+          }
+        : {}),
       ...(problem ? {} : { dependencies: newDependencies(manifests) }),
       ...(typeof modules === "string" ? {} : { modules }),
       agent: ctx.agent,

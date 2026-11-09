@@ -17,6 +17,7 @@ import { actionsFor, type BuildContext, deliveryOf, mergeItem, newItem } from ".
 import { decisionSubject, internalsOf, type ReviewList } from "./list.js";
 import { buildPolicyReport } from "./policy-report.js";
 import { routeItem } from "./routing.js";
+import { applySecondOpinion, catchUpOpinions } from "./second-opinion.js";
 import { closedPullRequest, type Draft, draftFor } from "./signals.js";
 import {
   claimItem,
@@ -75,7 +76,7 @@ interface Run {
 const SIGNALS = `
 SELECT e.id::text AS id, e.body, e.team, e.ingested_at FROM events e
 WHERE e.ingested_at >= $1::timestamptz
-  AND (e.kind IN ('pr.opened', 'pr.merged', 'pr.closed', 'decision.recorded')
+  AND (e.kind IN ('pr.opened', 'pr.merged', 'pr.closed', 'decision.recorded', 'review.submitted')
     OR (e.ts >= $2::timestamptz AND (
       e.kind IN ('approval.requested', 'alert.raised')
       OR (e.kind = 'policy.evaluated'
@@ -343,13 +344,25 @@ async function applySignal(
   run: Run,
 ): Promise<string | undefined> {
   if (event.kind === "decision.recorded") return applyDecision(tx, event, team, run);
+  if (event.kind === "review.submitted") {
+    const done = await applySecondOpinion(tx, event, team, {
+      config: run.configFor(team),
+      now: run.now,
+    });
+    if (done.updated) run.result.updated += 1;
+    return done.itemId;
+  }
   const closedPr = closedPullRequest(event);
   if (closedPr) {
     const open = await openItemByKey(tx, team, `pr:${closedPr}`);
     if (open) await close(tx, open, event.id, run, "dismissed");
     return open?.item.id;
   }
-  return applyDraft(tx, event, team, run);
+  const itemId = await applyDraft(tx, event, team, run);
+  if (itemId && event.kind === "pr.opened") {
+    await catchUpOpinions(tx, itemId, { config: run.configFor(team), now: run.now });
+  }
+  return itemId;
 }
 
 /** Reads every signal the list has not read yet, oldest first. */
