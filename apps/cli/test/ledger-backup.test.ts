@@ -145,17 +145,18 @@ describe("selfhost ledger status and migrate", () => {
   it("rolls back to a version and upgrades again", async () => {
     const data = tempDir("migrate").path("data");
     await seeded(data);
+    const [target, previous] = MIGRATIONS.slice(-3, -1).map((m) => m.version) as [string, string];
     const down = json<LedgerMigrateReport>(
-      await run(["ledger", "migrate", "--to", "0007", "--data-dir", data, "--json"]),
+      await run(["ledger", "migrate", "--to", target.slice(0, 4), "--data-dir", data, "--json"]),
     );
     expect(down).toMatchObject({
-      rolled_back: [LATEST, "0008_receipts"],
+      rolled_back: [LATEST, previous],
       applied: [],
-      current: "0007_orgs",
-      pending: ["0008_receipts", LATEST],
+      current: target,
+      pending: [previous, LATEST],
     });
     const up = await run(["ledger", "migrate", "--data-dir", data]);
-    expect(up.out).toContain(`Applied 0008_receipts, ${LATEST}`);
+    expect(up.out).toContain(`Applied ${previous}, ${LATEST}`);
     expect((await status(data)).pending).toEqual([]);
   });
 
