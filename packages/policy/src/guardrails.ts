@@ -231,8 +231,7 @@ function recursiveRm(args: string[]): boolean {
 /**
  * Recursive rm of a path outside the workspace and the temp folders, or of the workspace or home
  * folder itself, blocks; of a path that cannot be resolved before it runs, asks. A temp folder
- * the workspace is in does not count as one, so a repository under /tmp cannot delete its
- * neighbours there.
+ * stays fine when the workspace is in it, but the workspace and the folders that hold it do not.
  */
 function rmOutsideWorkspace(
   commands: ShellCommand[],
@@ -244,13 +243,7 @@ function rmOutsideWorkspace(
     if (basename(command.argv[0] ?? "") !== "rm") continue;
     const args = command.argv.slice(1);
     if (!recursiveRm(args)) continue;
-    // A temp folder that holds the workspace is no exception: its other folders sit next to the
-    // workspace, like any other folder outside it.
-    const temps = tempDirs(command, context).filter((dir) => {
-      const realDir = canonical(dir, context);
-      return !roots.some((root) => within(dir, root) || within(realDir, canonical(root, context)));
-    });
-    const allowed = [...roots, ...temps];
+    const allowed = [...roots, ...tempDirs(command, context)];
     const allowedReal = allowed.map((dir) => canonical(dir, context));
     // The workspace, the home folder and the folders that hold them are never fine, even
     // inside a temp folder.
