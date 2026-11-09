@@ -172,17 +172,18 @@ describe("a workspace inside a temp folder", () => {
   const repo = "/tmp/acme-api";
   const inTmp = (command: string) => bash(command, { cwd: repo, root: repo });
 
-  it("blocks rm -rf on the workspace's neighbours and on the temp folder itself", () => {
-    for (const command of ["rm -rf /tmp/other-repo", "rm -rf ../other-repo", "rm -rf /tmp"]) {
-      expect(ids(guardrailHits(policy, inTmp(command), { env: ENV }))).toEqual([
+  it("blocks rm -rf on the workspace and the temp folder that holds it", () => {
+    for (const command of ["rm -rf /tmp/acme-api", "rm -rf .", "rm -rf /tmp", "rm -rf .."]) {
+      expect(ids(guardrailHits(policy, inTmp(command), { env: ENV })), command).toEqual([
         "guard.rm_outside_workspace",
       ]);
     }
   });
 
-  it("still allows rm -rf inside the workspace and in other temp folders", () => {
+  it("still allows rm -rf inside the workspace and on other folders in temp folders", () => {
     const env = { ...ENV, TMPDIR: "/var/folders/xy/T" };
     expect(guardrailHits(policy, inTmp("rm -rf build"), { env })).toEqual([]);
+    expect(guardrailHits(policy, inTmp("rm -rf /tmp/other-build"), { env })).toEqual([]);
     expect(guardrailHits(policy, inTmp("rm -rf /var/folders/xy/T/cache"), { env })).toEqual([]);
     // From a workspace elsewhere, /tmp stays a temp folder.
     expect(guardrailHits(policy, bash("rm -rf /tmp/other-repo"), { env: ENV })).toEqual([]);

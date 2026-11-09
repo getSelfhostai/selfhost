@@ -45,12 +45,24 @@ export interface HooksSpec {
   opencodePlugin?: string;
 }
 
+/** An AI gateway that takes the agent's model traffic, with the person's virtual key. */
+export interface GatewaySpec {
+  /** Base URL for Anthropic-style clients, without /v1, such as https://host/llm/anthropic. */
+  anthropic: string;
+  /** Base URL for OpenAI-style clients, ending in /v1. */
+  openai: string;
+  /** The virtual key the gateway issued: never a provider key. */
+  key: string;
+}
+
 export interface AgentConfigInput {
   hooks?: HooksSpec;
   /** Environment variables for the agent's own process. */
   env?: Record<string, string>;
   mcpServers?: Record<string, McpServerSpec>;
   otel?: OtelSpec;
+  /** Send the agent's model traffic through an AI gateway. Use it with the gateway profile. */
+  gateway?: GatewaySpec;
 }
 
 export interface PlanOptions extends AgentConfigInput {
@@ -160,6 +172,8 @@ export interface TomlBlock {
   start: string;
   end: string;
   note: string;
+  /** start puts the block before everything else, so it can hold top-level keys. Default: end. */
+  at?: "start";
 }
 
 /** A TOML file, where selfhost keeps its settings in one marked block. */

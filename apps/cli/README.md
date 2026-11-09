@@ -984,9 +984,10 @@ the AI gateway (Bifrost) next to it; see [AI gateway](#ai-gateway-selfhost-gatew
 ```sh
 selfhost gateway                          # health, the team's hard limits, your key and what is left
 selfhost gateway keys                     # the team's keys and limits, never their values (owners, admins)
-selfhost gateway connect claude-code --write   # issue your key, write it into ~/.claude/settings.json
-selfhost gateway connect codex            # print the Codex provider block and the key to export
-selfhost gateway connect env --run run-42 # a key for one background run, for 24 hours
+selfhost gateway connect claude-code      # issue your key, write it into ~/.claude/settings.json
+selfhost gateway connect codex            # or opencode, goose: the provider in their own config
+selfhost gateway disconnect               # put every file connect changed back, byte for byte
+selfhost gateway connect env --run run-42 # print a key for one background run, for 24 hours
 ```
 
 The team server configures an AI gateway: the bundled Bifrost (`selfhost up --gateway`, see
@@ -1007,12 +1008,31 @@ person, per team and per run, each named `selfhost:<kind>:<team>:<who>`.
   forecast include them. A person whose tokens are revoked has their key turned off.
 - A key's value is shown once, to the person it is for (`connect`), and kept nowhere. `connect
   --rotate` gives a new one. Provider keys never leave the gateway.
-- Agents: `claude-code` (`ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN`), `codex` (a
-  `model_providers` block reading `SELFHOST_GATEWAY_KEY`), `opencode` (provider `baseURL` and
-  `apiKey`) and `env` for anything built on the Anthropic or OpenAI SDKs. Cursor and GitHub
-  Copilot send model traffic from their own servers and cannot use it.
-- Subscription logins (Claude Pro or Max, ChatGPT plans) go straight to the vendor, so they
-  cannot be capped from outside: for them selfhost keeps the forecast and the alerts.
+- `connect <agent>` writes the gateway and the key into the agent's own config, with a
+  `.selfhost-backup-*` copy of each file it changes and a record in
+  `~/.selfhost/gateway-connect.json`; `disconnect [agent]` (or `connect <agent> --undo`) puts
+  each file back byte for byte while it still holds what connect wrote, and says where the
+  backup is when it does not. `--print` prints the settings to paste instead.
+  - `claude-code`: `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN` in the `env` block of
+    `~/.claude/settings.json`. `--managed` prints a `managed-settings.d/selfhost-gateway.json`
+    file instead, for an admin to install: managed settings win over every project's.
+  - `codex`: `model_provider = "selfhost"` and `model_providers.selfhost` (`base_url`,
+    `experimental_bearer_token`) in a marked block at the top of `~/.codex/config.toml`.
+  - `opencode`: `baseURL` and `apiKey` on the `anthropic` and `openai` providers in
+    `opencode.json`.
+  - `goose`: a custom provider, `custom_providers/selfhost.json`, picked with
+    `goose session --provider selfhost` or made the default in `goose configure`.
+  - `env` prints `ANTHROPIC_*` and `OPENAI_*` exports for anything built on those SDKs.
+  - Settings that would take traffic past the gateway (a provider or key the user set, Claude
+    Code's `apiKeyHelper` or `ANTHROPIC_API_KEY`) stop it before a key is issued.
+- Cursor and GitHub Copilot send model traffic from their own servers and can't use a gateway:
+  `connect cursor` and `connect copilot` change nothing and say their usage is read from the
+  vendor's admin API.
+- Subscription logins (Claude plans, ChatGPT plans) go straight to the vendor, so the gateway's
+  budgets and usage cover API key traffic only. For an agent signed in that way, `connect`
+  changes nothing and issues no key; `--api-billing` sends it through the gateway on API
+  billing anyway. Which CLI versions connect works on is on the
+  [compatibility page](../../docs/compatibility/index.html#gateway-connect).
 
 ## Binaries
 

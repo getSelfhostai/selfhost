@@ -1,8 +1,9 @@
 name: Vendor compatibility
 
 # Installs the newest Claude Code, Codex, Cursor and OpenCode CLIs and checks them against
-# selfhost's hooks, log importers and compilers, then updates docs/compatibility/ and opens an
-# issue for a release that broke. See packages/vendor-compat/README.md.
+# selfhost's hooks, log importers, compilers and gateway connect, then updates
+# docs/compatibility/ and opens an issue for a release that broke. See
+# packages/vendor-compat/README.md.
 #
 # Weekly every check runs. Every six hours a release check (one short job, no install) looks up
 # the newest release of each CLI and runs the checks only for one the page has not tested, or
@@ -79,6 +80,9 @@ jobs:
         run: pnpm --silent --filter @selfhost/vendor-compat compat probe --results "$COMPAT_RESULTS"
       - name: Run the fixture sessions through the hooks, importers and compilers
         run: pnpm --silent --filter @selfhost/vendor-compat compat suites --results "$COMPAT_RESULTS"
+      # No key needed: each CLI sends one request to a stand-in gateway on 127.0.0.1.
+      - name: Check selfhost gateway connect against a stand-in gateway
+        run: pnpm --silent --filter @selfhost/vendor-compat compat connect --results "$COMPAT_RESULTS"
       # Skipped per CLI when its secret is not set; nothing is marked broken for a skip.
       - name: Run live sessions
         env:

@@ -15,6 +15,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@selfhost/agents": "workspace:*",
     "@selfhost/compile": "workspace:*",
     "@selfhost/importers": "workspace:*",
     "@selfhost/ledger": "workspace:*",

@@ -24,11 +24,14 @@ export interface RecordedFile {
 }
 
 interface InitRecord {
-  schema: "selfhost.init_record/v1";
+  schema: string;
   files: RecordedFile[];
 }
 
 const SCHEMA = "selfhost.init_record/v1";
+
+/** `selfhost gateway connect` keeps the same kind of record of the files it changed. */
+export const GATEWAY_RECORD_SCHEMA = "selfhost.gateway_record/v1";
 
 export const recordPath = (home: string) => join(home, ".selfhost", "init.json");
 
@@ -51,22 +54,22 @@ export function sameBytes(path: string, text: string): boolean {
   return bytes?.equals(Buffer.from(text, "utf8")) === true;
 }
 
-export function readRecord(path: string): RecordedFile[] {
+export function readRecord(path: string, schema = SCHEMA): RecordedFile[] {
   try {
     const value = JSON.parse(readFileSync(path, "utf8")) as Partial<InitRecord>;
-    return value.schema === SCHEMA && Array.isArray(value.files) ? value.files : [];
+    return value.schema === schema && Array.isArray(value.files) ? value.files : [];
   } catch {
     return [];
   }
 }
 
-function writeRecord(path: string, files: RecordedFile[]): void {
+function writeRecord(path: string, files: RecordedFile[], schema = SCHEMA): void {
   if (files.length === 0) {
     rmSync(path, { force: true });
     return;
   }
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  const record: InitRecord = { schema: SCHEMA, files };
+  const record: InitRecord = { schema, files };
   writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600 });
 }
 
@@ -78,8 +81,9 @@ export function recordApplied(
   path: string,
   plans: AgentConfigPlan[],
   backups: ReadonlyMap<string, string | null>,
+  schema = SCHEMA,
 ): void {
-  const files = readRecord(path);
+  const files = readRecord(path, schema);
   for (const plan of plans) {
     for (const change of plan.changes) {
       const wrote = hashOf(change.after);
@@ -101,7 +105,7 @@ export function recordApplied(
       else files.push(entry);
     }
   }
-  writeRecord(path, files);
+  writeRecord(path, files, schema);
 }
 
 /** Adds files init created in `.selfhost/context/`; undo deletes them while they are unchanged. */
@@ -163,9 +167,28 @@ export interface UndoReport {
  */
 export function undoInit(home: string, dryRun: boolean): UndoReport {
   const path = recordPath(home);
-  const files = readRecord(path);
+  return {
+    schema: "selfhost.init_undo/v1",
+    dry_run: dryRun,
+    record: path,
+    ...undoRecorded(path, dryRun),
+  };
+}
+
+/**
+ * Puts back the files in a record, byte for byte, while each still holds what selfhost last
+ * wrote. `only` picks the agents to undo; the others stay in the record as they are.
+ */
+export function undoRecorded(
+  path: string,
+  dryRun: boolean,
+  { schema = SCHEMA, only }: { schema?: string; only?: ReadonlySet<AgentId | null> } = {},
+): { files: UndoFile[]; left: number } {
+  const recorded = readRecord(path, schema);
+  const files = only ? recorded.filter((file) => only.has(file.agent)) : recorded;
   const results: UndoFile[] = [];
-  const kept: RecordedFile[] = [];
+  const kept: RecordedFile[] = only ? recorded.filter((file) => !only.has(file.agent)) : [];
+  const left = kept.length;
   const blocked = new Set<AgentId | null>();
   const order = [
     ...files.filter((file) => file.role === "config"),
@@ -213,12 +236,6 @@ export function undoInit(home: string, dryRun: boolean): UndoReport {
     }
     results.push(result(original === null ? "deleted" : "restored"));
   }
-  if (!dryRun) writeRecord(path, kept);
-  return {
-    schema: "selfhost.init_undo/v1",
-    dry_run: dryRun,
-    record: path,
-    files: results,
-    left: kept.length,
-  };
+  if (!dryRun) writeRecord(path, kept, schema);
+  return { files: results, left: kept.length - left };
 }

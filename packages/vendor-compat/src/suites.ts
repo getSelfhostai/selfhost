@@ -62,6 +62,21 @@ export const SUITES: Suite[] = [
     vendors: ["claude_code", "codex", "cursor"],
   },
   {
+    id: "gateway-connect",
+    what: "selfhost gateway connect's settings on fixture configs per agent, and disconnect restoring them byte for byte",
+    args: [
+      "--filter",
+      "@selfhost/agents",
+      "--filter",
+      "@selfhost/cli",
+      "exec",
+      "vitest",
+      "run",
+      "test/gateway.test.ts",
+    ],
+    vendors: ["claude_code", "codex", "opencode"],
+  },
+  {
     id: "context",
     what: "Context compile golden files per agent",
     args: ["--filter", "@selfhost/context", "test"],

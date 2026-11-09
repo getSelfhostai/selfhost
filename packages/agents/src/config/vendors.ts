@@ -11,11 +11,12 @@ import {
   mcpTransport,
   opencodeMcpServer,
 } from "./mcp.js";
-import { tomlKey, tomlTable } from "./toml.js";
+import { tomlKey, tomlTable, tomlValue } from "./toml.js";
 import type {
   AgentConfigInput,
   DesiredItem,
   Edit,
+  GatewaySpec,
   McpServerSpec,
   OtelSpec,
   PlanItem,
@@ -119,10 +120,120 @@ function claudeOtelEnv(otel: OtelSpec): Record<string, string> {
 const envEdits = (vars: Record<string, string>): Edit[] =>
   Object.entries(vars).map(([key, value]) => ({ kind: "key", path: ["env", key], value }));
 
-function claudeCode(input: AgentConfigInput, loc: AgentLocations): VendorTargets {
+// The AI gateway, from each vendor's docs, checked 2026-11-09:
+// - Claude Code: ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN (Authorization: Bearer) in the env
+//   block of ~/.claude/settings.json; ANTHROPIC_API_KEY and apiKeyHelper would send a second
+//   credential: https://code.claude.com/docs/en/llm-gateway-connect
+// - Codex: model_provider and model_providers.<id> with base_url, wire_api and
+//   experimental_bearer_token; built-in provider ids can't be overridden:
+//   https://developers.openai.com/codex/config-reference
+// - OpenCode: provider.<id>.options.baseURL and apiKey: https://opencode.ai/docs/providers/
+// - Goose: a custom provider file in custom_providers/, with requires_auth false and the key in
+//   headers, since Goose reads no key from its config files:
+//   https://goose-docs.ai/docs/getting-started/providers
+
+/** The provider id selfhost adds to Codex and Goose. */
+export const GATEWAY_PROVIDER = "selfhost";
+
+const conflict = (item: string, path: string, message: string): PlanItem => ({
+  item,
+  status: "conflict",
+  path,
+  message: `left as is: ${message}`,
+});
+
+/** Settings that would send Claude Code's requests elsewhere, or with a second credential. */
+const CLAUDE_GATEWAY_RIVALS = [
+  "ANTHROPIC_API_KEY",
+  "CLAUDE_CODE_USE_BEDROCK",
+  "CLAUDE_CODE_USE_VERTEX",
+  "CLAUDE_CODE_USE_FOUNDRY",
+];
+
+function claudeGateway(
+  gateway: GatewaySpec,
+  path: string,
+  readJson: (path: string) => unknown,
+): DesiredItem | PlanItem {
+  const settings = readJson(path);
+  const env = isPlainObject(settings) && isPlainObject(settings.env) ? settings.env : {};
+  const rivals = CLAUDE_GATEWAY_RIVALS.filter((name) => env[name] !== undefined).map(
+    (name) => `env.${name}`,
+  );
+  if (isPlainObject(settings) && settings.apiKeyHelper !== undefined) rivals.push("apiKeyHelper");
+  if (rivals.length > 0) {
+    return conflict(
+      "gateway",
+      path,
+      `${rivals.join(" and ")} ${rivals.length > 1 ? "are" : "is"} set, which would send Claude Code past the gateway or with another key; take ${rivals.length > 1 ? "them" : "it"} out and run again`,
+    );
+  }
+  return {
+    item: "gateway",
+    edits: envEdits({ ANTHROPIC_BASE_URL: gateway.anthropic, ANTHROPIC_AUTH_TOKEN: gateway.key }),
+  };
+}
+
+/** Top-level keys, so this goes in a block at the start of config.toml (the gateway profile). */
+function codexGatewayItem(gateway: GatewaySpec): TomlItem {
+  const provider = {
+    name: "selfhost gateway",
+    base_url: gateway.openai,
+    wire_api: "responses",
+    experimental_bearer_token: gateway.key,
+  };
+  return {
+    item: "gateway",
+    conflict(base) {
+      if (base.model_provider !== undefined) {
+        return `config.toml already sets model_provider = ${tomlValue(base.model_provider)}`;
+      }
+      if (base.model_providers !== undefined && !isPlainObject(base.model_providers)) {
+        return "model_providers is not a table";
+      }
+      if (isPlainObject(base.model_providers) && GATEWAY_PROVIDER in base.model_providers) {
+        return `config.toml already has [model_providers.${GATEWAY_PROVIDER}]`;
+      }
+      return undefined;
+    },
+    snippet: () =>
+      [
+        `model_provider = ${tomlValue(GATEWAY_PROVIDER)}`,
+        `model_providers.${GATEWAY_PROVIDER} = ${tomlValue(provider)}`,
+      ].join("\n"),
+    presentIn: (doc) => doc.model_provider !== undefined,
+  };
+}
+
+/** Goose's custom provider: the gateway's OpenAI-style chat completions, models listed by it. */
+export function gooseGatewayProvider(gateway: GatewaySpec): string {
+  const provider = {
+    name: GATEWAY_PROVIDER,
+    engine: "openai",
+    display_name: "selfhost gateway",
+    description: "Model traffic through the team's AI gateway, with your selfhost key",
+    base_url: `${gateway.openai}/chat/completions`,
+    models: [],
+    headers: { Authorization: `Bearer ${gateway.key}` },
+    supports_streaming: true,
+    requires_auth: false,
+  };
+  return `${JSON.stringify(provider, null, 2)}\n`;
+}
+
+function claudeCode(
+  input: AgentConfigInput,
+  loc: AgentLocations,
+  readJson: (path: string) => unknown,
+): VendorTargets {
   const paths = loc.claude_code;
   const other: PlanItem[] = [];
   const settings: DesiredItem[] = [];
+  if (input.gateway) {
+    const gateway = claudeGateway(input.gateway, paths.settings, readJson);
+    if ("edits" in gateway) settings.push(gateway);
+    else other.push(gateway);
+  }
   if (input.env && Object.keys(input.env).length > 0) {
     settings.push({ item: "env", edits: envEdits(input.env) });
   }
@@ -264,6 +375,14 @@ function codex(
   }
   const items: TomlItem[] = [];
   const targets: Target[] = [];
+  if (input.gateway) {
+    other.push({
+      item: "gateway",
+      status: "error",
+      path: paths.config,
+      message: "the gateway's settings are top-level keys: plan them with the gateway profile",
+    });
+  }
   if (input.otel) items.push(tomlTableItem("otel", ["otel"], codexOtelTable(input.otel)));
   if (input.hooks) {
     const command = hookCommand(input.hooks.command, "codex");
@@ -301,6 +420,30 @@ function codex(
   }
   targets.unshift({ kind: "toml", path: paths.config, items, block });
   return { targets, other };
+}
+
+/**
+ * Codex with a block at the start of config.toml, which holds the gateway's top-level keys. A
+ * table there would take in the user's own top-level keys after it, so nothing else goes in.
+ */
+function codexStart(input: AgentConfigInput, loc: AgentLocations, block: TomlBlock): VendorTargets {
+  const path = loc.codex.config;
+  const misplaced = [
+    ...(input.env ? ["env"] : []),
+    ...(input.otel ? ["otel"] : []),
+    ...(input.hooks ? ["hooks"] : []),
+    ...Object.keys(input.mcpServers ?? {}).map((name) => `mcp:${name}`),
+  ];
+  const other = misplaced.map(
+    (item): PlanItem => ({
+      item,
+      status: "error",
+      path,
+      message: "only the gateway's top-level keys go in this profile",
+    }),
+  );
+  const items = input.gateway ? [codexGatewayItem(input.gateway)] : [];
+  return { targets: [{ kind: "toml", path, items, block }], other };
 }
 
 /** OpenCode 1 keyed servers directly under `mcp`; OpenCode 2 uses `mcp.servers`. */
@@ -356,6 +499,23 @@ function opencode(
       ],
     };
   });
+  if (input.gateway) {
+    const { anthropic, openai, key } = input.gateway;
+    const option = (provider: string, name: string, value: string): Edit => ({
+      kind: "key",
+      path: ["provider", provider, "options", name],
+      value,
+    });
+    items.unshift({
+      item: "gateway",
+      edits: [
+        option("anthropic", "baseURL", `${anthropic}/v1`),
+        option("anthropic", "apiKey", key),
+        option("openai", "baseURL", openai),
+        option("openai", "apiKey", key),
+      ],
+    });
+  }
   targets.unshift({ kind: "tree", path: paths.config, format: "json", items });
   return { targets, other };
 }
@@ -394,7 +554,21 @@ function goose(input: AgentConfigInput, loc: AgentLocations): VendorTargets {
       edits: [{ kind: "key", path: ["extensions", name], value }],
     });
   }
-  return { targets: [{ kind: "tree", path: paths.config, format: "yaml", items }], other };
+  const targets: Target[] = [{ kind: "tree", path: paths.config, format: "yaml", items }];
+  if (input.gateway) {
+    targets.push({
+      kind: "file",
+      path: join(paths.configDir, "custom_providers", `${GATEWAY_PROVIDER}.json`),
+      items: [
+        {
+          item: "gateway",
+          content: gooseGatewayProvider(input.gateway),
+          note: `pick it with goose session --provider ${GATEWAY_PROVIDER}, or make it the default in goose configure`,
+        },
+      ],
+    });
+  }
+  return { targets, other };
 }
 
 function cursor(input: AgentConfigInput, loc: AgentLocations): VendorTargets {
@@ -404,6 +578,14 @@ function cursor(input: AgentConfigInput, loc: AgentLocations): VendorTargets {
     other.push(unsupported("env", "Cursor CLI has no environment setting"));
   }
   if (input.otel) other.push(unsupported("otel", "Cursor CLI has no OpenTelemetry export"));
+  if (input.gateway) {
+    other.push(
+      unsupported(
+        "gateway",
+        "Cursor sends model traffic from its own servers, so a gateway can't take it; its usage is read from Cursor's admin API",
+      ),
+    );
+  }
   const targets: Target[] = [];
   if (input.hooks) {
     const command = hookCommand(input.hooks.command, "cursor");
@@ -455,9 +637,11 @@ export function vendorTargets(
 ): VendorTargets {
   switch (agent) {
     case "claude_code":
-      return claudeCode(input, loc);
+      return claudeCode(input, loc, io.readJson);
     case "codex":
-      return codex(input, loc, block, io.exists);
+      return block.at === "start"
+        ? codexStart(input, loc, block)
+        : codex(input, loc, block, io.exists);
     case "opencode":
       return opencode(input, loc, io.readJson);
     case "goose":

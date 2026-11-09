@@ -10,13 +10,21 @@ const BLOCK_NOTE =
 
 const MAIN_BLOCK: TomlBlock = { start: BLOCK_START, end: BLOCK_END, note: BLOCK_NOTE };
 
-/** The block markers for a profile: the main setup's, or ones named after the profile. */
-export function tomlBlock(profile: string | undefined, writer?: string): TomlBlock {
+/**
+ * The block markers for a profile: the main setup's, or ones named after the profile. A block
+ * `at` the start of the file can hold top-level keys, which a block after the user's tables can't.
+ */
+export function tomlBlock(
+  profile: string | undefined,
+  writer?: string,
+  at?: TomlBlock["at"],
+): TomlBlock {
   if (profile === undefined) return MAIN_BLOCK;
   return {
     start: `# >>> selfhost ${profile} >>>`,
     end: `# <<< selfhost ${profile} <<<`,
     note: `# Written by \`${writer ?? `selfhost ${profile}`}\`. Edits inside this block are replaced.`,
+    ...(at ? { at } : {}),
   };
 }
 
@@ -48,7 +56,10 @@ export function tomlTable(header: string, body: Plain): string {
 
 type Extracted = { ok: true; base: string; block: string | null } | { ok: false; error: string };
 
-/** Splits a file into the user's part and selfhost's block (with the blank line before it). */
+/**
+ * Splits a file into the user's part and selfhost's block, with the blank line that separates
+ * them: the one before a block at the end, or after a block at the start of the file.
+ */
 export function extractBlock(
   text: string,
   path: string,
@@ -62,14 +73,17 @@ export function extractBlock(
     return { ok: false, error: `${path} has a selfhost block with no end marker; fix it by hand` };
   }
   const from = start > 0 && lines[start - 1] === "" ? start - 1 : start;
+  const first = markers.at === "start" && start === 0;
+  const to = first && lines[end + 1] === "" && end + 2 < lines.length ? end + 2 : end + 1;
   const block = lines.slice(start + 1, end).join("\n");
-  const base = [...lines.slice(0, from), ...lines.slice(end + 1)].join("\n");
+  const base = [...lines.slice(0, from), ...lines.slice(to)].join("\n");
   return { ok: true, base, block };
 }
 
 export function insertBlock(base: string, body: string, markers: TomlBlock = MAIN_BLOCK): string {
   const block = `${markers.start}\n${markers.note}\n${body}\n${markers.end}\n`;
   if (base.trim() === "") return block;
+  if (markers.at === "start") return `${block}\n${base}`;
   return `${base.endsWith("\n") ? base : `${base}\n`}\n${block}`;
 }
 
@@ -92,6 +106,7 @@ function blockItems(doc: Plain): string[] {
     for (const name of Object.keys(doc.mcp_servers)) items.push(`mcp:${name}`);
   }
   if (doc.hooks !== undefined) items.push("hooks");
+  if (doc.model_provider !== undefined) items.push("gateway");
   return items;
 }
 

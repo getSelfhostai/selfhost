@@ -9,7 +9,12 @@ export {
   mcpTransport,
   opencodeMcpServer,
 } from "./config/mcp.js";
-export { manifestPath, planAgentConfig, removeAgentConfig } from "./config/plan.js";
+export {
+  GATEWAY_PROFILE,
+  manifestPath,
+  planAgentConfig,
+  removeAgentConfig,
+} from "./config/plan.js";
 export {
   BLOCK_END,
   BLOCK_START,
@@ -24,6 +29,7 @@ export type {
   AgentConfigInput,
   AgentConfigPlan,
   FileChange,
+  GatewaySpec,
   HooksSpec,
   ItemStatus,
   McpServerSpec,
@@ -35,6 +41,8 @@ export type {
 } from "./config/types.js";
 export {
   CURSOR_HOOK_EVENTS,
+  GATEWAY_PROVIDER,
+  gooseGatewayProvider,
   OPENCODE_PLUGIN_FILE,
   PRE_TOOL_HOOK_EVENTS,
 } from "./config/vendors.js";
@@ -53,4 +61,9 @@ export { type DetectOptions, detectAgents, parseVersion, versionFromPath } from 
 export { redactLine, unifiedDiff } from "./diff.js";
 export { type AgentLocations, locate, PATH_ENV_VARS } from "./locations.js";
 export { macKeychain, pathLookup, systemProbes, versionProbe } from "./probes.js";
+export {
+  type SubscriptionLogin,
+  type SubscriptionOptions,
+  subscriptionLogin,
+} from "./subscription.js";
 export * from "./types.js";

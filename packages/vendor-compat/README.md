@@ -1,7 +1,7 @@
 # @selfhost/vendor-compat
 
 Checks each new Claude Code, Codex, Cursor and OpenCode CLI release against selfhost's hooks,
-log importers and compilers, and writes the compatibility page in
+log importers, compilers and `selfhost gateway connect`, and writes the compatibility page in
 [`docs/compatibility/`](../../docs/compatibility/): `index.html` and the same data in
 `compatibility.json`. `.github/workflows/vendor-compat.yml` runs it.
 
@@ -31,7 +31,15 @@ does not stop the others from being checked.
   runs on CI only). Each config check first feeds the CLI a known-bad file and is skipped if the
   CLI does not complain about it.
 - `compat suites`: the fixture sessions and hook payloads through the schemas, hook mappers,
-  importers, `selfhost hook`, and the policy and context compile golden files.
+  importers, `selfhost hook`, the policy and context compile golden files, and gateway connect
+  and disconnect on fixture configs per agent.
+- `compat connect`: no key needed. For Claude Code, Codex and OpenCode, the settings
+  `selfhost gateway connect` writes go into a fresh home, pointing at a stand-in gateway on
+  127.0.0.1 that answers 401; the CLI runs one prompt (`claude -p`, `codex exec`,
+  `opencode run`), and the `gateway-connect` check passes when the model request reaches the
+  stand-in at the gateway's path with the virtual key. Cursor can't use a gateway and gets no
+  check; Goose is not installed here, so only its fixture tests cover it. The page's Gateway
+  connect table shows the result for the newest tested version of each agent.
 - `compat live`: with `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` set, a short real session
   (`claude -p`, `codex exec`) with a hook on every event writing its payload to a folder. The
   payloads must match selfhost's schemas and map to valid ledger events, and the session log the
@@ -53,6 +61,7 @@ node packages/vendor-compat/scripts/latest.mjs --force          # newest version
 pnpm --filter @selfhost/vendor-compat compat install --versions '{"codex":"0.167.0"}' --dir "$S/vendors" --results "$S/results.json"
 pnpm --filter @selfhost/vendor-compat compat probe --results "$S/results.json"
 pnpm --filter @selfhost/vendor-compat compat suites --results "$S/results.json"
+pnpm --filter @selfhost/vendor-compat compat connect --results "$S/results.json"
 pnpm --filter @selfhost/vendor-compat compat report --results "$S/results.json" --out "$S/page"
 ```
 
@@ -68,9 +77,12 @@ pnpm --filter @selfhost/vendor-compat compat report --results "$S/results.json" 
 3. A config the CLI refuses: update `packages/compile/src/vendors/<vendor>.ts`, gating new syntax
    on the version, add the version to `VENDOR_VERSIONS` and its golden folder (see
    `fixtures/README.md`).
-4. A session log the importer cannot read: capture a scrubbed session with
+4. A failed `gateway-connect`: the CLI changed a setting connect writes. Check the vendor's
+   docs (cited in `packages/agents/src/config/vendors.ts`), update the gateway item there and
+   its fixture in `packages/agents/test/gateway.test.ts`.
+5. A session log the importer cannot read: capture a scrubbed session with
    `scripts/capture-fixtures.mjs` and fix `packages/importers`.
-5. Merge, then run the workflow by hand. The broken release is also retested every six hours.
+6. Merge, then run the workflow by hand. The broken release is also retested every six hours.
 
 ## Secrets and settings
 
