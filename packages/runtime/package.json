@@ -17,7 +17,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "engines": {
     "node": ">=20"
@@ -28,7 +29,29 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@selfhost/schema": "workspace:*"
+    "@selfhost/integrations": "workspace:*",
+    "@selfhost/schema": "workspace:*",
+    "@selfhost/spend": "workspace:*"
+  },
+  "peerDependencies": {
+    "@alibaba-group/opensandbox": "1.1.1",
+    "@daytona/sdk": "0.226.1",
+    "e2b": "2.59.0",
+    "modal": "0.11.1"
+  },
+  "peerDependenciesMeta": {
+    "@alibaba-group/opensandbox": {
+      "optional": true
+    },
+    "@daytona/sdk": {
+      "optional": true
+    },
+    "e2b": {
+      "optional": true
+    },
+    "modal": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/node": "catalog:",

@@ -1,4 +1,5 @@
 import { baseUrl, call, failed, isCheck, unexpected } from "../http.js";
+import { missingUrl, RUNTIME_KEYS } from "../runtime-keys.js";
 import type { Adapter } from "../types.js";
 import { keyedCheck } from "./keyed.js";
 
@@ -17,11 +18,7 @@ export const coder: Adapter<"runtime"> = {
     docs: "https://coder.com/docs/reference/api/users",
   }),
   async check(settings, env, fetch) {
-    if (!settings.url) {
-      return failed(
-        "Set url to your Coder deployment's access URL, such as https://coder.example.com.",
-      );
-    }
+    if (!settings.url) return missingUrl("coder") ?? failed("Set url.");
     const base = baseUrl(settings.url, "url");
     if (isCheck(base)) return base;
     const info = await call(fetch, `${base}/api/v2/buildinfo`);
@@ -33,9 +30,9 @@ export const coder: Adapter<"runtime"> = {
         name: "Coder",
         url: base,
         path: "/api/v2/users/me",
-        keyEnv: settings.api_key_env ?? "CODER_SESSION_TOKEN",
+        keyEnv: settings.api_key_env ?? RUNTIME_KEYS.coder.keyEnv,
         header: (key) => ["coder-session-token", key],
-        what: "a Coder session or API token (coder tokens create)",
+        what: RUNTIME_KEYS.coder.what,
       },
       env,
       fetch,

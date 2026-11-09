@@ -48,6 +48,8 @@ export const EVENT_KINDS = [
   "alert.raised",
   "config.reported",
   "review.submitted",
+  "sandbox.started",
+  "sandbox.stopped",
 ] as const;
 
 export const ACTOR_KINDS = ["person", "agent", "system"] as const;
@@ -84,6 +86,7 @@ export const EVENT_KIND_REQUIRES = {
   "decision.recorded": ["decision"],
   "policy.evaluated": ["decision"],
   "cost.recorded": ["cost"],
+  "sandbox.stopped": ["cost"],
 } as const satisfies Partial<Record<EventKind, readonly string[]>>;
 
 export const ActorSchema = Type.Object(

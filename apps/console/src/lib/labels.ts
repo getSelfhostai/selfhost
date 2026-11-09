@@ -47,7 +47,7 @@ export const INTEGRATION_NAMES = {
 export const INTEGRATION_TOOLS = {
   router: ["bifrost", "litellm"],
   tracer: ["langfuse", "phoenix", "datadog", "otlp"],
-  runtime: ["e2b", "daytona", "modal", "coder"],
+  runtime: ["e2b", "daytona", "modal", "coder", "opensandbox"],
   reviewer: ["pr-agent", "claude-code-action", "coderabbit"],
 } as const;
 
@@ -83,6 +83,7 @@ export const TOOL_NAMES: Record<string, string> = {
   daytona: "Daytona",
   modal: "Modal",
   coder: "Coder",
+  opensandbox: "OpenSandbox (your own server)",
   "pr-agent": "PR-Agent",
   "claude-code-action": "Claude Code Action",
   coderabbit: "CodeRabbit",

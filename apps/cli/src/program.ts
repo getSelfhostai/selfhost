@@ -38,6 +38,7 @@ import { localReviewList, registerReviewList } from "./review-list.js";
 import { registerReviewRoutes } from "./review-routes.js";
 import { registerReviewSetup } from "./review-setup.js";
 import { registerRoi } from "./roi.js";
+import { type RuntimeIo, registerRuntime } from "./runtime.js";
 import type { CollectAttribution } from "./scan/attribution.js";
 import { gitAttribution } from "./scan/git-attribution.js";
 import { runScan, type ScanCommandOptions } from "./scan/index.js";
@@ -102,6 +103,8 @@ export interface CliDeps {
   sleep?: (ms: number) => Promise<void>;
   /** Whether `selfhost up`'s image tag is in its registry. Default: ask the registry. */
   imageExists?: ImageCheck;
+  /** Opens a runtime's adapter for `selfhost runtime`. Default: the provider's SDK or API. */
+  openRuntime?: RuntimeIo["openAdapter"];
   /** Opens the console in a browser for `selfhost console`. Default: the system's opener. */
   openBrowser?: (url: string, platform: NodeJS.Platform) => void;
   /** Resolves when `selfhost console` should stop. Default: Ctrl-C or SIGTERM. */
@@ -132,6 +135,9 @@ function defaultDeps(): CliDeps {
 }
 
 const collect = (value: string, previous: string[]) => [...previous, value];
+
+/** The team client's fetch, whose init is required, as one whose init is optional. */
+const wrapFetch = (fetch: Fetch) => (url: string, init?: RequestInit) => fetch(url, init ?? {});
 
 export function createProgram(overrides: Partial<CliDeps> = {}): Command {
   const deps = { ...defaultDeps(), ...overrides };
@@ -586,6 +592,20 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       setExitCode: deps.setExitCode,
       configPath: deps.configPath ?? defaultConfigPath(),
       ...(deps.fetch ? { fetch: deps.fetch } : {}),
+    }),
+    fail,
+  );
+
+  registerRuntime(
+    program,
+    () => ({
+      env: deps.env,
+      cwd: deps.cwd,
+      write: deps.write,
+      setExitCode: deps.setExitCode,
+      ...(deps.now ? { now: () => deps.now as Date } : {}),
+      ...(deps.fetch ? { fetch: wrapFetch(deps.fetch) } : {}),
+      ...(deps.openRuntime ? { openAdapter: deps.openRuntime } : {}),
     }),
     fail,
   );

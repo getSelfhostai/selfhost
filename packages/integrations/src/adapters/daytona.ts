@@ -1,3 +1,4 @@
+import { RUNTIME_KEYS } from "../runtime-keys.js";
 import type { Adapter } from "../types.js";
 import { keyedCheck } from "./keyed.js";
 
@@ -20,9 +21,9 @@ export const daytona: Adapter<"runtime"> = {
         name: "Daytona",
         url: settings.url ?? DAYTONA_API_URL,
         path: "/api-keys/current",
-        keyEnv: settings.api_key_env ?? "DAYTONA_API_KEY",
+        keyEnv: settings.api_key_env ?? RUNTIME_KEYS.daytona.keyEnv,
         header: (key) => ["authorization", `Bearer ${key}`],
-        what: "a Daytona API key",
+        what: RUNTIME_KEYS.daytona.what,
       },
       env,
       fetch,

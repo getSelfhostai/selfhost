@@ -93,6 +93,16 @@ export {
   roiBaseline,
   roiReport,
 } from "./roi-query.js";
+export {
+  leftovers,
+  runEnds,
+  type SandboxSpan,
+  type SandboxWasteOptions,
+  sandboxSpans,
+  sandboxSpendIn,
+  sandboxWaste,
+  spanCost,
+} from "./sandbox.js";
 export { COST_SOURCE_PREFERENCE, oneSourcePerSession } from "./sources.js";
 export {
   DEFAULT_BASELINE_DAYS,

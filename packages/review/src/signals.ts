@@ -47,6 +47,7 @@ const ALERT_KINDS: Record<string, ReviewItemKind> = {
   usage_limit: "budget",
   budget: "budget",
   budget_exceeded: "budget",
+  sandbox_left_running: "budget",
   run_failed: "stuck_run",
   run_stuck: "stuck_run",
   api_error: "stuck_run",
@@ -424,7 +425,7 @@ function fromAlert(event: LedgerEvent): Draft | undefined {
       const hit = alert === "usage_limit";
       return {
         ...common,
-        dedupeKey: `budget:${alert}:${person ?? event.actor.id}:${text(data.plan) ?? event.agent?.vendor ?? ""}:${window}`,
+        dedupeKey: `budget:${alert}:${person ?? event.actor.id}:${text(data.plan) ?? text(data.cap) ?? event.agent?.vendor ?? ""}:${window}`,
         title: title(
           message ??
             (hit

@@ -90,6 +90,23 @@
           "cost"
         ]
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "sandbox.stopped"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "cost"
+        ]
+      }
     }
   ],
   "type": "object",
@@ -151,7 +168,9 @@
         "policy.evaluated",
         "alert.raised",
         "config.reported",
-        "review.submitted"
+        "review.submitted",
+        "sandbox.started",
+        "sandbox.stopped"
       ]
     },
     "actor": {

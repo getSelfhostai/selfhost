@@ -41,6 +41,7 @@ import { policyObservedRoutes } from "./policy-observe.js";
 import { type ProvenanceRouteOptions, provenanceRoutes } from "./provenance.js";
 import { roiRoutes } from "./roi.js";
 import { type RunRouteOptions, runRoutes } from "./runs.js";
+import { sandboxRoutes } from "./sandboxes.js";
 import { forwardedEmail, type SigninOptions, signedInPerson } from "./signin.js";
 import { tailRoutes } from "./tail.js";
 import { usageRoutes } from "./usage.js";
@@ -294,6 +295,7 @@ function sharedRoutes(
   orgRoutes(router, ledger, now ? { now } : {});
   usageRoutes(router, ledger, now ? { now } : {});
   roiRoutes(router, ledger, now ? { now } : {});
+  sandboxRoutes(router, ledger, now ? { now } : {});
   provenanceRoutes(router, ledger, { ...provenance, ...(now ? { now } : {}) });
   runRoutes(router, ledger, { ...runs, ...(now ? { now } : {}) });
   tailRoutes(router, ledger, { ...runs, ...(now ? { now } : {}) });

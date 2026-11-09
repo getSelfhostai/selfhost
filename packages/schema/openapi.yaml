@@ -112,6 +112,8 @@ paths:
               - alert.raised
               - config.reported
               - review.submitted
+              - sandbox.started
+              - sandbox.stopped
         - name: team
           in: query
           required: false
@@ -1458,6 +1460,52 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /v1/teams/{team}/sandboxes:
+    get:
+      operationId: getTeamSandboxWaste
+      summary: "Sandbox cost of a team's background runs: the idle share by runtime for 7 and 30 days, sandboxes left running after their run, and each run's sandbox and model cost."
+      description: The admin token, or a person token of anyone in the team. Computed on read from sandbox.started and sandbox.stopped events (data.sandbox a SandboxRecord), the runs' cost.recorded events and the events that end a run (session.ended, or alert.raised run_failed or run_stuck). Idle seconds are billed seconds with no command running. A runtime that bills reserved time with an idle share above 50% gets a cheaper billing model and its estimated monthly saving.
+      parameters:
+        - name: team
+          in: path
+          required: true
+          description: Team id.
+          schema:
+            type: string
+        - name: leftover_minutes
+          in: query
+          required: false
+          description: "Minutes a sandbox may outlive its run before it is listed as left running. Default: [runtime] leftover_minutes, else 15."
+          schema:
+            pattern: ^[1-9][0-9]{0,4}$
+            type: string
+      responses:
+        "200":
+          description: The report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SandboxWasteResponse"
+        "400":
+          description: Invalid query.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such team.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /v1/teams/{team}/provenance:
     get:
       operationId: getTeamProvenance
@@ -1658,7 +1706,7 @@ paths:
           required: false
           description: Comma-separated event kinds, or their first part (tool for tool.called and tool.result).
           schema:
-            pattern: ^(?:session\.started|session\.ended|prompt\.submitted|tool\.called|tool\.result|approval\.requested|decision\.recorded|cost\.recorded|commit\.created|pr\.opened|pr\.merged|pr\.closed|policy\.evaluated|alert\.raised|config\.reported|review\.submitted|session|prompt|tool|approval|decision|cost|commit|pr|policy|alert|config|review)(?:,(?:session\.started|session\.ended|prompt\.submitted|tool\.called|tool\.result|approval\.requested|decision\.recorded|cost\.recorded|commit\.created|pr\.opened|pr\.merged|pr\.closed|policy\.evaluated|alert\.raised|config\.reported|review\.submitted|session|prompt|tool|approval|decision|cost|commit|pr|policy|alert|config|review))*$
+            pattern: ^(?:session\.started|session\.ended|prompt\.submitted|tool\.called|tool\.result|approval\.requested|decision\.recorded|cost\.recorded|commit\.created|pr\.opened|pr\.merged|pr\.closed|policy\.evaluated|alert\.raised|config\.reported|review\.submitted|sandbox\.started|sandbox\.stopped|session|prompt|tool|approval|decision|cost|commit|pr|policy|alert|config|review|sandbox)(?:,(?:session\.started|session\.ended|prompt\.submitted|tool\.called|tool\.result|approval\.requested|decision\.recorded|cost\.recorded|commit\.created|pr\.opened|pr\.merged|pr\.closed|policy\.evaluated|alert\.raised|config\.reported|review\.submitted|sandbox\.started|sandbox\.stopped|session|prompt|tool|approval|decision|cost|commit|pr|policy|alert|config|review|sandbox))*$
             type: string
         - name: person
           in: query
@@ -7080,6 +7128,587 @@ components:
                   - minimum: 0
                     type: number
                   - type: "null"
+    SandboxSize:
+      additionalProperties: false
+      title: SandboxSize
+      type: object
+      properties:
+        cpu:
+          exclusiveMinimum: 0
+          description: vCPUs.
+          type: number
+        memory_gib:
+          exclusiveMinimum: 0
+          description: Memory in GiB.
+          type: number
+    SandboxRecord:
+      additionalProperties: false
+      title: SandboxRecord
+      type: object
+      required:
+        - schema
+        - runtime
+        - sandbox_id
+      properties:
+        schema:
+          description: Schema version tag.
+          const: selfhost.sandbox/v1
+          type: string
+        runtime:
+          description: Where the sandbox runs.
+          type: string
+          enum:
+            - e2b
+            - daytona
+            - modal
+            - coder
+            - opensandbox
+        sandbox_id:
+          minLength: 1
+          description: The provider's id for the sandbox.
+          type: string
+        size:
+          additionalProperties: false
+          title: SandboxSize
+          type: object
+          properties:
+            cpu:
+              exclusiveMinimum: 0
+              description: vCPUs.
+              type: number
+            memory_gib:
+              exclusiveMinimum: 0
+              description: Memory in GiB.
+              type: number
+        region:
+          description: Region the sandbox runs in.
+          type: string
+        usd_per_hour:
+          minimum: 0
+          description: List price of the sandbox per running hour. Absent when the runtime has none, such as the team's own server without [runtime.providers] usd_per_hour.
+          type: number
+        billing:
+          description: How the provider bills.
+          type: string
+          enum:
+            - reserved
+            - active_cpu
+        reason:
+          description: "sandbox.stopped: why it stopped."
+          type: string
+          enum:
+            - run_ended
+            - cap
+            - reaped
+            - timeout
+            - error
+            - manual
+        cap:
+          description: "sandbox.stopped with reason cap: the [budget] key that was reached, runtime_daily_usd or runtime_run_usd."
+          type: string
+        billed_seconds:
+          minimum: 0
+          description: "sandbox.stopped: seconds billed, as the provider counts them."
+          type: number
+        busy_seconds:
+          minimum: 0
+          description: "sandbox.stopped: billed seconds during which a command was running in the sandbox."
+          type: number
+        idle_seconds:
+          minimum: 0
+          description: "sandbox.stopped: billed seconds with no command running, billed_seconds - busy_seconds."
+          type: number
+        run_ended_at:
+          format: date-time
+          description: When the sandbox's run ended, if it had.
+          type: string
+        after_run_seconds:
+          minimum: 0
+          description: "sandbox.stopped: seconds the sandbox kept running after its run ended."
+          type: number
+    SandboxSuggestion:
+      additionalProperties: false
+      title: SandboxSuggestion
+      type: object
+      required:
+        - text
+        - monthly_saving_usd
+      properties:
+        text:
+          minLength: 1
+          description: The cheaper billing model, in one or two sentences.
+          type: string
+        monthly_saving_usd:
+          minimum: 0
+          description: "Estimated saving a month: idle cost in the window scaled to 30 days."
+          type: number
+    SandboxRuntimeWaste:
+      additionalProperties: false
+      title: SandboxRuntimeWaste
+      type: object
+      required:
+        - runtime
+        - billing
+        - sandboxes
+        - billed_seconds
+        - idle_seconds
+        - billed_usd
+        - idle_usd
+        - idle_share
+        - suggestion
+      properties:
+        runtime:
+          description: The runtime.
+          type: string
+        billing:
+          type: string
+          enum:
+            - reserved
+            - active_cpu
+        sandboxes:
+          minimum: 0
+          type: integer
+        billed_seconds:
+          minimum: 0
+          description: Billed sandbox seconds in the window.
+          type: number
+        idle_seconds:
+          minimum: 0
+          description: Of those, the seconds with no command running.
+          type: number
+        billed_usd:
+          minimum: 0
+          description: Sandbox cost in the window.
+          type: number
+        idle_usd:
+          minimum: 0
+          description: Share of billed_usd paid while idle.
+          type: number
+        idle_share:
+          minimum: 0
+          maximum: 1
+          description: idle_usd / billed_usd.
+          type: number
+        suggestion:
+          description: A cheaper billing model when idle_share is above 0.5 on a runtime that bills reserved time; null otherwise.
+          anyOf:
+            - additionalProperties: false
+              title: SandboxSuggestion
+              type: object
+              required:
+                - text
+                - monthly_saving_usd
+              properties:
+                text:
+                  minLength: 1
+                  description: The cheaper billing model, in one or two sentences.
+                  type: string
+                monthly_saving_usd:
+                  minimum: 0
+                  description: "Estimated saving a month: idle cost in the window scaled to 30 days."
+                  type: number
+            - type: "null"
+    SandboxWasteWindow:
+      additionalProperties: false
+      title: SandboxWasteWindow
+      type: object
+      required:
+        - days
+        - billed_usd
+        - idle_usd
+        - idle_share
+        - by_runtime
+      properties:
+        days:
+          minimum: 1
+          type: integer
+        billed_usd:
+          minimum: 0
+          description: Sandbox cost in the window, every runtime.
+          type: number
+        idle_usd:
+          minimum: 0
+          description: Of it, paid while idle.
+          type: number
+        idle_share:
+          minimum: 0
+          maximum: 1
+          type: number
+        by_runtime:
+          description: Highest cost first.
+          type: array
+          items:
+            additionalProperties: false
+            title: SandboxRuntimeWaste
+            type: object
+            required:
+              - runtime
+              - billing
+              - sandboxes
+              - billed_seconds
+              - idle_seconds
+              - billed_usd
+              - idle_usd
+              - idle_share
+              - suggestion
+            properties:
+              runtime:
+                description: The runtime.
+                type: string
+              billing:
+                type: string
+                enum:
+                  - reserved
+                  - active_cpu
+              sandboxes:
+                minimum: 0
+                type: integer
+              billed_seconds:
+                minimum: 0
+                description: Billed sandbox seconds in the window.
+                type: number
+              idle_seconds:
+                minimum: 0
+                description: Of those, the seconds with no command running.
+                type: number
+              billed_usd:
+                minimum: 0
+                description: Sandbox cost in the window.
+                type: number
+              idle_usd:
+                minimum: 0
+                description: Share of billed_usd paid while idle.
+                type: number
+              idle_share:
+                minimum: 0
+                maximum: 1
+                description: idle_usd / billed_usd.
+                type: number
+              suggestion:
+                description: A cheaper billing model when idle_share is above 0.5 on a runtime that bills reserved time; null otherwise.
+                anyOf:
+                  - additionalProperties: false
+                    title: SandboxSuggestion
+                    type: object
+                    required:
+                      - text
+                      - monthly_saving_usd
+                    properties:
+                      text:
+                        minLength: 1
+                        description: The cheaper billing model, in one or two sentences.
+                        type: string
+                      monthly_saving_usd:
+                        minimum: 0
+                        description: "Estimated saving a month: idle cost in the window scaled to 30 days."
+                        type: number
+                  - type: "null"
+    SandboxLeftover:
+      additionalProperties: false
+      title: SandboxLeftover
+      type: object
+      required:
+        - sandbox_id
+        - runtime
+        - run_id
+        - owner
+        - started_at
+        - run_ended_at
+        - stopped_at
+        - minutes_after_run
+        - cost_usd
+        - after_run_usd
+      properties:
+        sandbox_id:
+          type: string
+        runtime:
+          type: string
+        run_id:
+          anyOf:
+            - type: string
+            - type: "null"
+        owner:
+          description: The person who started the run, when the ledger says.
+          anyOf:
+            - type: string
+            - type: "null"
+        started_at:
+          format: date-time
+          type: string
+        run_ended_at:
+          format: date-time
+          description: When its run finished, failed or got stuck.
+          type: string
+        stopped_at:
+          description: When it stopped at last; null while it is still running.
+          anyOf:
+            - format: date-time
+              type: string
+            - type: "null"
+        minutes_after_run:
+          minimum: 0
+          type: number
+        cost_usd:
+          minimum: 0
+          description: Cost so far, or in total once stopped, at list price.
+          type: number
+        after_run_usd:
+          minimum: 0
+          description: The part of cost_usd billed after the run ended.
+          type: number
+    SandboxRunWaste:
+      additionalProperties: false
+      title: SandboxRunWaste
+      type: object
+      required:
+        - run_id
+        - runtime
+        - billed_seconds
+        - busy_seconds
+        - idle_seconds
+        - sandbox_usd
+        - model_usd
+      properties:
+        run_id:
+          type: string
+        runtime:
+          type: string
+        billed_seconds:
+          minimum: 0
+          description: Billed sandbox seconds.
+          type: number
+        busy_seconds:
+          minimum: 0
+          description: Seconds with a command running.
+          type: number
+        idle_seconds:
+          minimum: 0
+          description: Billed seconds with no command running.
+          type: number
+        sandbox_usd:
+          minimum: 0
+          description: The run's sandbox cost.
+          type: number
+        model_usd:
+          minimum: 0
+          description: The run's model cost, from its cost.recorded events.
+          type: number
+    SandboxWasteResponse:
+      additionalProperties: false
+      title: SandboxWasteResponse
+      type: object
+      required:
+        - team
+        - generated_at
+        - leftover_minutes
+        - windows
+        - leftovers
+        - runs
+      properties:
+        team:
+          anyOf:
+            - type: string
+            - type: "null"
+        generated_at:
+          format: date-time
+          type: string
+        leftover_minutes:
+          minimum: 1
+          type: integer
+        windows:
+          description: The last 7 and 30 days.
+          type: array
+          items:
+            additionalProperties: false
+            title: SandboxWasteWindow
+            type: object
+            required:
+              - days
+              - billed_usd
+              - idle_usd
+              - idle_share
+              - by_runtime
+            properties:
+              days:
+                minimum: 1
+                type: integer
+              billed_usd:
+                minimum: 0
+                description: Sandbox cost in the window, every runtime.
+                type: number
+              idle_usd:
+                minimum: 0
+                description: Of it, paid while idle.
+                type: number
+              idle_share:
+                minimum: 0
+                maximum: 1
+                type: number
+              by_runtime:
+                description: Highest cost first.
+                type: array
+                items:
+                  additionalProperties: false
+                  title: SandboxRuntimeWaste
+                  type: object
+                  required:
+                    - runtime
+                    - billing
+                    - sandboxes
+                    - billed_seconds
+                    - idle_seconds
+                    - billed_usd
+                    - idle_usd
+                    - idle_share
+                    - suggestion
+                  properties:
+                    runtime:
+                      description: The runtime.
+                      type: string
+                    billing:
+                      type: string
+                      enum:
+                        - reserved
+                        - active_cpu
+                    sandboxes:
+                      minimum: 0
+                      type: integer
+                    billed_seconds:
+                      minimum: 0
+                      description: Billed sandbox seconds in the window.
+                      type: number
+                    idle_seconds:
+                      minimum: 0
+                      description: Of those, the seconds with no command running.
+                      type: number
+                    billed_usd:
+                      minimum: 0
+                      description: Sandbox cost in the window.
+                      type: number
+                    idle_usd:
+                      minimum: 0
+                      description: Share of billed_usd paid while idle.
+                      type: number
+                    idle_share:
+                      minimum: 0
+                      maximum: 1
+                      description: idle_usd / billed_usd.
+                      type: number
+                    suggestion:
+                      description: A cheaper billing model when idle_share is above 0.5 on a runtime that bills reserved time; null otherwise.
+                      anyOf:
+                        - additionalProperties: false
+                          title: SandboxSuggestion
+                          type: object
+                          required:
+                            - text
+                            - monthly_saving_usd
+                          properties:
+                            text:
+                              minLength: 1
+                              description: The cheaper billing model, in one or two sentences.
+                              type: string
+                            monthly_saving_usd:
+                              minimum: 0
+                              description: "Estimated saving a month: idle cost in the window scaled to 30 days."
+                              type: number
+                        - type: "null"
+        leftovers:
+          description: Sandboxes that ran longer than leftover_minutes after their run ended, in the last 30 days, running ones first.
+          type: array
+          items:
+            additionalProperties: false
+            title: SandboxLeftover
+            type: object
+            required:
+              - sandbox_id
+              - runtime
+              - run_id
+              - owner
+              - started_at
+              - run_ended_at
+              - stopped_at
+              - minutes_after_run
+              - cost_usd
+              - after_run_usd
+            properties:
+              sandbox_id:
+                type: string
+              runtime:
+                type: string
+              run_id:
+                anyOf:
+                  - type: string
+                  - type: "null"
+              owner:
+                description: The person who started the run, when the ledger says.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              started_at:
+                format: date-time
+                type: string
+              run_ended_at:
+                format: date-time
+                description: When its run finished, failed or got stuck.
+                type: string
+              stopped_at:
+                description: When it stopped at last; null while it is still running.
+                anyOf:
+                  - format: date-time
+                    type: string
+                  - type: "null"
+              minutes_after_run:
+                minimum: 0
+                type: number
+              cost_usd:
+                minimum: 0
+                description: Cost so far, or in total once stopped, at list price.
+                type: number
+              after_run_usd:
+                minimum: 0
+                description: The part of cost_usd billed after the run ended.
+                type: number
+        runs:
+          description: Each run of the last 7 days with a sandbox, highest sandbox cost first.
+          type: array
+          items:
+            additionalProperties: false
+            title: SandboxRunWaste
+            type: object
+            required:
+              - run_id
+              - runtime
+              - billed_seconds
+              - busy_seconds
+              - idle_seconds
+              - sandbox_usd
+              - model_usd
+            properties:
+              run_id:
+                type: string
+              runtime:
+                type: string
+              billed_seconds:
+                minimum: 0
+                description: Billed sandbox seconds.
+                type: number
+              busy_seconds:
+                minimum: 0
+                description: Seconds with a command running.
+                type: number
+              idle_seconds:
+                minimum: 0
+                description: Billed seconds with no command running.
+                type: number
+              sandbox_usd:
+                minimum: 0
+                description: The run's sandbox cost.
+                type: number
+              model_usd:
+                minimum: 0
+                description: The run's model cost, from its cost.recorded events.
+                type: number
     ProvenanceAgentRow:
       additionalProperties: false
       title: ProvenanceAgentRow

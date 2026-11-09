@@ -44,6 +44,13 @@ rate over its last 10 requests falls under the floor raises one `alert.raised` e
 prompt, tool lists that reorder, model switches. The team server raises the same alert for the
 sessions it receives (`SELFHOST_CACHE_ALERTS=off` stops it).
 
+When background runs used sandboxes, `selfhost spend` adds their cost per runtime for 7 and 30
+days and the share paid while no command ran (idle: the agent waiting on the model), a `Cost
+tip:` with the cheaper billing model when more than half of a reserved-billing runtime's cost
+was idle, and the sandboxes left running more than `[runtime] leftover_minutes` (15) after their
+run. `sandboxes` in `--json` is the same report as `GET /v1/teams/{team}/sandboxes`, with each
+run's sandbox cost next to its model cost.
+
 `selfhost tail [--agent <agent>] [--repo <owner/name>] [--person <id>] [--kind <kinds>]
 [--session <id>] [--since 15m] [--json]` streams agent activity as it lands, one line each: time,
 who, agent, what happened (session start and end, prompt, tool call with its redacted input, rule
@@ -1030,6 +1037,36 @@ selfhost integrations set reviewer none                # remove the reviewer
   `status` and `detail` are null for a solo `list`, which checks nothing.
 
 Each tool and its check are in [`packages/integrations`](../../packages/integrations).
+
+## Runtimes: `selfhost runtime`
+
+Where background agents run (E2B, Daytona, Modal, Coder, or the team's own server through
+OpenSandbox), from `[runtime]` in `selfhost.toml`:
+
+```sh
+selfhost runtime list                  # each runtime: allowed, key set, billing, list price
+selfhost runtime check --reach         # also test each allowed runtime's key against its API
+selfhost runtime check e2b --conformance   # also start one small sandbox, run every check, stop it
+selfhost runtime reap --dry-run        # sandboxes still running after their run ended
+selfhost runtime reap                  # stop them, record each stop, tell the run's owner
+```
+
+- `list` prints the policy (`default` or `cheapest_allowed`), region, and per runtime whether
+  `allow` lists it, whether its key is set (by variable name, never the value), how it bills and
+  its list price an hour at its default size. `--json` prints `selfhost.runtimes/v1`.
+- `check --reach` makes the same call `selfhost integrations check` makes, for every allowed
+  runtime or the ones named, next to what `check` says about `[egress]` and `[secrets]`, and
+  exits 1 when one fails. `--conformance` runs the conformance suite on the team's account: one
+  small sandbox, stopped at the end, a few cents at most.
+- `reap` lists every sandbox selfhost made on the allowed runtimes that have a key, and stops
+  those whose run ended at least `--minutes` ago (default `[runtime] leftover_minutes`, 15), or
+  that the ledger says already stopped. Each stop is written to the ledger (`sandbox.stopped`,
+  reason `reaped`, with its cost) with an alert that puts a review item in front of the run's
+  owner. Sandboxes the ledger has no run for are listed and kept unless `--include-unknown`.
+  `--dry-run` stops nothing. Takes `--database` / `--data-dir`.
+
+Keys stay in the environment variables `[runtime.providers.<name>]` or `[integrations.runtime]`
+name. Providers, prices, caps and events: [`packages/runtime`](../../packages/runtime/README.md).
 
 ## Team server: `selfhost up`
 

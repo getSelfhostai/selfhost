@@ -1,0 +1,175 @@
+import type { Env, Fetch } from "@selfhost/integrations";
+import type { SecretResolver } from "./adapters/common.js";
+import { RuntimeGuard, runtimeCaps } from "./caps.js";
+import { openRuntime } from "./open.js";
+import { pickRuntime, type RuntimeRule } from "./select.js";
+import type { RuntimeConfig } from "./settings.js";
+import { type Emit, type TrackedSandbox, trackSandbox } from "./track.js";
+import { RUNTIME_KINDS, type RuntimeAdapter, type RuntimeKind, type Sandbox } from "./types.js";
+
+/** The fields of a background run runtime selection reads. `@selfhost/schema` BackgroundRun fits. */
+export interface RunForRuntime {
+  id: string;
+  team: string;
+  org?: string | null;
+  repo?: string | null;
+  person?: string | null;
+  /** The runtime the run asked for, or the [integrations.runtime] tool it defaulted to. */
+  runtime?: string;
+}
+
+/** Why a run gets no runtime: a [runtime] rule, a missing key, or a [budget] runtime cap. */
+export interface RuntimeRefusal {
+  rule: RuntimeRule | "runtime.key" | "budget.runtime_daily_usd";
+  message: string;
+}
+
+export interface RuntimeForOptions {
+  /** Where keys and env: secrets are read: the server's environment. */
+  env: Env;
+  secrets?: SecretResolver;
+  fetch?: Fetch;
+  now?: () => Date;
+  /** Where sandbox.started and sandbox.stopped go: the ledger. Without it nothing is tracked. */
+  emit?: Emit;
+  /**
+   * The team's sandbox spend today from the ledger, leaving out `exclude`, for [budget]
+   * runtime_daily_usd. Without it the daily cap counts only sandboxes this process started.
+   */
+  spentToday?: (
+    team: string,
+    exclude: ReadonlySet<string>,
+    day: { from: Date; to: Date },
+  ) => Promise<number>;
+  /** Told why a run got no runtime, so the refusal names the rule. */
+  onRefused?: (run: RunForRuntime, refusal: RuntimeRefusal) => void;
+  /** Opens an adapter. Default: openRuntime with the team's key from `env`. Tests pass a fake. */
+  open?: (kind: RuntimeKind, config: RuntimeConfig) => RuntimeAdapter;
+  /** How often running sandboxes are checked against the caps. Default 60 seconds. */
+  capCheckMs?: number;
+}
+
+const isKind = (value: string | undefined): value is RuntimeKind =>
+  value !== undefined && (RUNTIME_KINDS as readonly string[]).includes(value);
+
+/**
+ * The runtime seam of background runs: `(run, config) => RuntimeAdapter | undefined`, as
+ * `createBackground({ runtime })` takes it. It picks the runtime with pickRuntime ([runtime] in
+ * the team's selfhost.toml), opens it with the team's own key, and refuses (undefined, with the
+ * rule told to onRefused) a runtime the policy does not allow, a missing key, or a team over
+ * [budget] runtime_daily_usd. Sandboxes created through it are sized and placed as picked, write
+ * sandbox.started and sandbox.stopped with their cost and idle time, and are stopped at the
+ * team's runtime caps.
+ */
+export function runtimeFor(options: RuntimeForOptions) {
+  const now = options.now ?? (() => new Date());
+  const guards = new Map<string, RuntimeGuard>();
+  const open =
+    options.open ??
+    ((kind: RuntimeKind, config: RuntimeConfig) =>
+      openRuntime(kind, config, {
+        env: options.env,
+        ...(options.secrets ? { secrets: options.secrets } : {}),
+        ...(options.fetch ? { fetch: options.fetch } : {}),
+        ...(options.now ? { now: options.now } : {}),
+      }));
+
+  const guardFor = (team: string, config: RuntimeConfig) => {
+    const caps = runtimeCaps(config.budget);
+    if (caps.daily === undefined && caps.run === undefined) return undefined;
+    let guard = guards.get(team);
+    if (!guard) {
+      guard = new RuntimeGuard({
+        caps,
+        spentToday: (exclude, day) =>
+          options.spentToday?.(team, exclude, day) ?? Promise.resolve(0),
+        emit: options.emit ?? (() => {}),
+        now,
+      });
+      guard.start(options.capCheckMs);
+      guards.set(team, guard);
+    }
+    return guard;
+  };
+
+  return async (run: RunForRuntime, config: RuntimeConfig): Promise<RuntimeAdapter | undefined> => {
+    const refuse = (refusal: RuntimeRefusal) => {
+      options.onRefused?.(run, refusal);
+      return undefined;
+    };
+    // A run that names no runtime defaults to the [integrations.runtime] tool; under
+    // cheapest_allowed that default is not a request, so policy picks.
+    const asked =
+      isKind(run.runtime) &&
+      !(
+        config.runtime?.policy === "cheapest_allowed" &&
+        run.runtime === config.integrations?.runtime?.tool
+      )
+        ? run.runtime
+        : undefined;
+    const choice = pickRuntime(config, asked ? { kind: asked } : {}, { env: options.env });
+    if (!choice.ok) return refuse({ rule: choice.rule, message: choice.message });
+    let adapter: RuntimeAdapter;
+    try {
+      adapter = open(choice.kind, config);
+    } catch (error) {
+      return refuse({
+        rule: "runtime.key",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+    const guard = guardFor(run.team, config);
+    try {
+      await guard?.admit();
+    } catch (error) {
+      return refuse({
+        rule: "budget.runtime_daily_usd",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+    const context = {
+      run_id: run.id,
+      team: run.team,
+      ...(run.org ? { org: run.org } : {}),
+      ...(run.repo ? { repo: run.repo } : {}),
+      ...(run.person ? { owner: run.person } : {}),
+    };
+    return {
+      kind: adapter.kind,
+      capabilities: adapter.capabilities,
+      get: (id) => adapter.get(id),
+      list: (labels) => adapter.list(labels),
+      async create(spec) {
+        const sandbox = await adapter.create({
+          ...spec,
+          ...(spec.size ? {} : { size: choice.size }),
+          ...(spec.region || !choice.region ? {} : { region: choice.region }),
+          labels: { ...spec.labels, "selfhost-run": run.id },
+        });
+        if (!options.emit && !guard) return sandbox;
+        const tracked = await trackSandbox(sandbox, {
+          emit: options.emit ?? (() => {}),
+          context,
+          size: choice.size,
+          ...(choice.region ? { region: choice.region } : {}),
+          ...(choice.usdPerHour !== undefined ? { usdPerHour: choice.usdPerHour } : {}),
+          now,
+        });
+        guard?.watch(tracked);
+        return endsWithRun(tracked, () => guard?.forget(tracked.id));
+      },
+    };
+  };
+}
+
+/** The runner stops a run's sandbox when the run ends: that stop is recorded as run_ended. */
+function endsWithRun(tracked: TrackedSandbox, forget: () => void): Sandbox {
+  return {
+    ...tracked,
+    async stop() {
+      forget();
+      tracked.markRunEnded();
+      await tracked.stop();
+    },
+  };
+}

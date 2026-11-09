@@ -1,5 +1,12 @@
+import { readFileSync } from "node:fs";
 import { type Ledger, openLedger } from "@selfhost/ledger";
-import { type LedgerEvent, validateConfig } from "@selfhost/schema";
+import {
+  type LedgerEvent,
+  parseConfig,
+  RUNTIME_LEFTOVER_MINUTES,
+  type SandboxWasteResponse,
+  validateConfig,
+} from "@selfhost/schema";
 import {
   type CacheStats,
   cacheByGroup,
@@ -12,6 +19,7 @@ import {
   SPEND_DIMENSIONS,
   type SpendDimension,
   type SpendTotals,
+  sandboxWaste,
   sessionCaches,
   totalSpend,
   utcDay,
@@ -20,6 +28,7 @@ import {
 import type { Command } from "commander";
 import { type AlertSettings, loadAlertSettings } from "./alerts/settings.js";
 import { defaultConfigPath } from "./config-file.js";
+import { findConfig } from "./find-config.js";
 import { percent, table, tokens, usd } from "./format.js";
 import { parseSince } from "./import.js";
 
@@ -78,6 +87,11 @@ export interface SpendReport {
   cache_hit_floor: number;
   cache_tip_usd: number;
   cache_tips: CacheTip[];
+  /**
+   * Sandbox cost of background runs: idle share per runtime for 7 and 30 days, sandboxes left
+   * running past their run, and each run's sandbox cost next to its model cost.
+   */
+  sandboxes: SandboxWasteResponse;
 }
 
 const PAGE = 1000;
@@ -113,20 +127,27 @@ function parseMinUsd(value: string | undefined): number {
   return usd;
 }
 
-async function costEvents(ledger: Ledger, from: Date): Promise<LedgerEvent[]> {
+async function eventsOf(ledger: Ledger, kind: string, from: Date): Promise<LedgerEvent[]> {
   const events: LedgerEvent[] = [];
   let cursor: string | undefined;
   do {
-    const page = await ledger.query({
-      kind: "cost.recorded",
-      from: from.toISOString(),
-      limit: PAGE,
-      cursor,
-    });
+    const page = await ledger.query({ kind, from: from.toISOString(), limit: PAGE, cursor });
     events.push(...page.events);
     cursor = page.nextCursor;
   } while (cursor);
   return events;
+}
+
+const costEvents = (ledger: Ledger, from: Date) => eventsOf(ledger, "cost.recorded", from);
+
+/** Sandbox events and the events that end runs, for the sandbox waste report's 30 days. */
+const SANDBOX_KINDS = ["sandbox.started", "sandbox.stopped", "session.ended", "alert.raised"];
+const SANDBOX_DAYS = 30;
+
+async function sandboxEvents(ledger: Ledger, now: Date): Promise<LedgerEvent[]> {
+  const from = new Date(now.getTime() - SANDBOX_DAYS * 86_400_000);
+  const lists = await Promise.all(SANDBOX_KINDS.map((kind) => eventsOf(ledger, kind, from)));
+  return lists.flat();
 }
 
 const cacheOf = (stats: CacheStats | undefined): SpendCache => ({
@@ -146,16 +167,70 @@ function alertSettings(options: SpendCommandOptions, io: Io): AlertSettings["ale
   return loadAlertSettings(where, options.config, false).alerts;
 }
 
+/** [runtime] leftover_minutes from selfhost.toml, else the default. */
+function runtimeLeftoverMinutes(options: SpendCommandOptions, io: Io): number {
+  if (!io.configPath && !options.config) return RUNTIME_LEFTOVER_MINUTES;
+  try {
+    const path = findConfig(io.cwd ?? process.cwd(), options.config, io.env)?.path;
+    const parsed = path ? parseConfig(readFileSync(path, "utf8")) : undefined;
+    return (parsed?.ok && parsed.config.runtime?.leftover_minutes) || RUNTIME_LEFTOVER_MINUTES;
+  } catch {
+    return RUNTIME_LEFTOVER_MINUTES;
+  }
+}
+
 const DEFAULT_ALERTS = (() => {
   const result = validateConfig({ version: 1 });
   if (!result.ok) throw new Error("the default selfhost.toml does not validate");
   return result.config.alerts;
 })();
 
+/** The sandbox part of the report: printed only when the ledger has sandboxes. */
+function printSandboxes(waste: SandboxWasteResponse, write: (line: string) => void): void {
+  const month = waste.windows.find((window) => window.days === 30);
+  if (!month || month.by_runtime.length === 0) return;
+  write("");
+  write("Sandboxes of background runs: idle is billed time with no command running");
+  table(
+    [
+      ["runtime", "window", "sandboxes", "cost", "idle", "idle share"],
+      ...waste.windows.flatMap((window) =>
+        window.by_runtime.map((row) => [
+          row.runtime,
+          `${window.days}d`,
+          String(row.sandboxes),
+          usd(row.billed_usd),
+          usd(row.idle_usd),
+          percent(row.idle_share),
+        ]),
+      ),
+    ],
+    write,
+    4,
+  );
+  const week = waste.windows.find((window) => window.days === 7);
+  for (const row of week?.by_runtime ?? []) {
+    if (row.suggestion) write(`Cost tip: ${row.suggestion.text}`);
+  }
+  if (waste.leftovers.length > 0) {
+    write("");
+    write(`Left running more than ${waste.leftover_minutes} minutes after their run:`);
+    for (const left of waste.leftovers) {
+      write(
+        `  ${left.runtime} ${left.sandbox_id}  run ${left.run_id ?? "unknown"}  ${left.minutes_after_run} min after it ended  ${usd(left.after_run_usd)} of ${usd(left.cost_usd)}${left.stopped_at === null ? ", still running" : ""}`,
+      );
+    }
+    if (waste.leftovers.some((left) => left.stopped_at === null)) {
+      write("  selfhost runtime reap stops the ones still running.");
+    }
+  }
+}
+
 function printReport(report: SpendReport, write: (line: string) => void): void {
   write(`Spend from ${report.from} to ${report.to} (UTC days), by ${report.by.join(", ")}`);
   if (report.total.requests === 0) {
     write("No cost.recorded events in this window. Run selfhost import first.");
+    printSandboxes(report.sandboxes, write);
     return;
   }
   table(
@@ -191,6 +266,7 @@ function printReport(report: SpendReport, write: (line: string) => void): void {
   const rule = `${percent(report.threshold)} of a day's spend`;
   if (report.flags.length === 0) {
     write(`No request type crossed ${rule}.`);
+    printSandboxes(report.sandboxes, write);
     return;
   }
   write(`Flagged: request types that crossed ${rule}`);
@@ -203,6 +279,7 @@ function printReport(report: SpendReport, write: (line: string) => void): void {
         (trend ? `, trend ${trend}` : ""),
     );
   }
+  printSandboxes(report.sandboxes, write);
 }
 
 /** Groups the ledger's cost.recorded events and flags request types that crossed the threshold. */
@@ -259,6 +336,10 @@ export async function runSpend(
         requests: session.requests,
         text: cacheTipText(session),
       })),
+      sandboxes: sandboxWaste([...(await sandboxEvents(target, now)), ...events], {
+        now,
+        leftoverMinutes: runtimeLeftoverMinutes(options, io),
+      }),
     };
     if (options.json) io.write(JSON.stringify(report, null, 2));
     else printReport(report, io.write);

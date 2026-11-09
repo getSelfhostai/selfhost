@@ -74,6 +74,7 @@ describe("openapi.yaml", () => {
         "GET /v1/teams/{team}/provenance/modules",
         "GET /v1/teams/{team}/repos",
         "GET /v1/teams/{team}/roi",
+        "GET /v1/teams/{team}/sandboxes",
         "GET /v1/usage",
         "GET /v1/usage.csv",
         "PATCH /v1/teams/{team}",

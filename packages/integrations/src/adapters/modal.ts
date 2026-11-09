@@ -1,4 +1,5 @@
 import { connected, failed, isCheck, secret } from "../http.js";
+import { RUNTIME_KEYS } from "../runtime-keys.js";
 import type { Adapter } from "../types.js";
 
 /**
@@ -17,11 +18,11 @@ export const modal: Adapter<"runtime"> = {
     docs: "https://modal.com/docs/cli/latest/token",
   }),
   async check(settings, env) {
-    const idEnv = settings.api_key_env ?? "MODAL_TOKEN_ID";
-    const secretEnv = settings.api_secret_env ?? "MODAL_TOKEN_SECRET";
-    const id = secret(env, idEnv, "a Modal token id (ak-...)", "api_key_env");
+    const idEnv = settings.api_key_env ?? RUNTIME_KEYS.modal.keyEnv;
+    const secretEnv = settings.api_secret_env ?? RUNTIME_KEYS.modal.secretEnv ?? "";
+    const id = secret(env, idEnv, RUNTIME_KEYS.modal.what, "api_key_env");
     if (isCheck(id)) return id;
-    const value = secret(env, secretEnv, "a Modal token secret (as-...)", "api_secret_env");
+    const value = secret(env, secretEnv, RUNTIME_KEYS.modal.secretWhat ?? "", "api_secret_env");
     if (isCheck(value)) return value;
     if (!id.startsWith("ak-")) {
       return failed(`${idEnv} does not hold a Modal token id, which starts with ak-.`);

@@ -35,6 +35,13 @@ App with a system actor (the reviewer's login) and `data.second_opinion`
 (`SecondOpinionDataSchema` in `src/second-opinion.ts`: tool, reviewer, verdict `approve`,
 `changes`, `comment` or `failed`, findings, severity, url, head_sha). Review items carry the
 newest per tool as `second_opinions` and the strictest as `second_opinion`.
+`sandbox.started` and `sandbox.stopped` events are the life of a background run's sandbox, with a
+system actor and `data.sandbox` in its own versioned shape, `selfhost.sandbox/v1`
+(`SandboxRecordSchema` in `src/sandbox.ts`): runtime, sandbox id, size, region, list price per
+hour and billing model; a stop adds why it stopped (`run_ended`, `cap`, `reaped`, `timeout`,
+`error`, `manual`), the cap that stopped it, billed, busy and idle seconds and how long it
+outlived its run. `sandbox.stopped` requires `cost`: no tokens, `usd` the sandbox's cost.
+`GET /v1/teams/{team}/sandboxes` reads them (`SandboxWasteResponseSchema`).
 
 ```ts
 import { validateEvent, validateEventBatch } from "@selfhost/schema";
@@ -162,6 +169,9 @@ inherited: the org's is the org total, a team's is its own.
 
 `[budget]` sets `daily_usd`, `weekly_usd` (from Monday) and `monthly_usd`, UTC, in API-equivalent
 USD. Spend is shown against it; nothing is charged back and nothing is stopped.
+`runtime_daily_usd` and `runtime_run_usd` cap sandbox spend of background runs, and are always
+hard: past the daily cap new runs are refused and running sandboxes stopped; a run's sandbox is
+stopped at the run cap.
 
 ## Roles
 
@@ -269,6 +279,12 @@ the workspace folder with `RUNTIME_VARIABLES` set: `SELFHOST_WORKSPACE_NAME`,
 `$NAME` or `${NAME}`; names that start with `SELFHOST_` are reserved, and at most one run command
 is the default.
 
+It also says where background runs may run (`packages/runtime`): `default`, `allow`, `policy`
+(`default` or `cheapest_allowed`), `region`, `max_size` and `leftover_minutes`, and how to reach
+each runtime in `[runtime.providers.<name>]` (`url`, `api_key_env`, `api_secret_env`,
+`template`, `usd_per_hour`), the same fields as `[integrations.runtime]`. A `default` that
+`allow` leaves out is an error.
+
 ```toml
 [runtime]
 setup = """
@@ -293,7 +309,7 @@ API_BASE_URL = "http://localhost:${SELFHOST_PORT}"
 ## Integrations
 
 `[integrations]` names the tool for each job: `router` (bifrost, litellm), `tracer` (langfuse,
-phoenix, datadog, otlp), `runtime` (e2b, daytona, modal, coder) and `reviewer` (pr-agent,
+phoenix, datadog, otlp), `runtime` (e2b, daytona, modal, coder, opensandbox) and `reviewer` (pr-agent,
 claude-code-action, coderabbit), each with its address. Secrets are referenced by environment
 variable name only (`admin_key_env`, `api_key_env`, `api_secret_env`, `headers_env`), never
 written. In a team, a team's table for a job replaces the org's whole (see `src/layers.ts`).

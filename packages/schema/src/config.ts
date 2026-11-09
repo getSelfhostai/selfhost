@@ -421,6 +421,70 @@ export const RunCommandSchema = Type.Object(
 
 const variableList = Object.keys(RUNTIME_VARIABLES).join(", ");
 
+const EnvName = (description: string) => Type.String({ pattern: ENV_NAME_PATTERN, description });
+const HttpUrl = (description: string) => Type.String({ pattern: "^https?://", description });
+
+/**
+ * How selfhost reaches one runtime provider and where its key is. Shared by [integrations.runtime]
+ * and [runtime.providers.<name>]. Keys are only ever named here, never written.
+ */
+const RUNTIME_CONNECTION_FIELDS = {
+  url: Type.Optional(
+    HttpUrl(
+      "The provider's API address: required for coder and opensandbox (the team's own server), optional for the hosted ones.",
+    ),
+  ),
+  api_key_env: Type.Optional(
+    EnvName(
+      "Environment variable on the server that holds the provider's API key: for modal, its token id. Unset uses the provider's usual name, such as E2B_API_KEY.",
+    ),
+  ),
+  api_secret_env: Type.Optional(
+    EnvName(
+      "Environment variable on the server that holds the second half of a two-part key: for modal, its token secret (default MODAL_TOKEN_SECRET).",
+    ),
+  ),
+  template: Type.Optional(
+    NonEmpty({ description: "The provider's template, snapshot or image to start from." }),
+  ),
+};
+
+/** [runtime] policy: how a run that names no runtime gets one. */
+export const RUNTIME_POLICIES = ["default", "cheapest_allowed"] as const;
+export type RuntimePolicy = (typeof RUNTIME_POLICIES)[number];
+
+/** Minutes a sandbox may outlive its run before it counts as left running. */
+export const RUNTIME_LEFTOVER_MINUTES = 15;
+
+export const RuntimeProviderSchema = Type.Object(
+  {
+    ...RUNTIME_CONNECTION_FIELDS,
+    usd_per_hour: Type.Optional(
+      Type.Number({
+        minimum: 0,
+        description:
+          "What one sandbox costs an hour, in USD, when the provider publishes no rate: the team's own server (opensandbox) or Coder. Overrides the built-in list price for the others.",
+      }),
+    ),
+  },
+  {
+    additionalProperties: false,
+    description:
+      "How selfhost reaches this runtime. The key stays in the environment variable named here; selfhost never stores it.",
+  },
+);
+
+const RuntimeSizeSchema = (description: string) =>
+  Type.Object(
+    {
+      cpu: Type.Optional(Type.Number({ exclusiveMinimum: 0, description: "vCPUs." })),
+      memory_gib: Type.Optional(
+        Type.Number({ exclusiveMinimum: 0, description: "Memory in GiB." }),
+      ),
+    },
+    { additionalProperties: false, minProperties: 1, description },
+  );
+
 export const RuntimeSchema = Type.Object(
   {
     setup: Type.Optional(
@@ -454,6 +518,60 @@ export const RuntimeSchema = Type.Object(
         additionalProperties: false,
         description: `Environment variables for the setup, run and archive commands. Values may refer to the variables selfhost sets (${variableList}) as $NAME or \${NAME}. This file is shared: keep secrets out of it.`,
       }),
+    ),
+
+    default: Type.Optional(
+      StringEnum(RUNTIME_TOOLS, {
+        description:
+          "Runtime a background run uses when it names none and policy is default. Unset: the [integrations.runtime] tool.",
+      }),
+    ),
+    allow: Type.Optional(
+      Type.Array(StringEnum(RUNTIME_TOOLS), {
+        minItems: 1,
+        uniqueItems: true,
+        description:
+          "Runtimes a background run may use. A run that asks for another is refused, naming runtime.allow. Unset allows every runtime.",
+      }),
+    ),
+    policy: Type.Optional(
+      StringEnum(RUNTIME_POLICIES, {
+        description:
+          "default (the default) uses runtime.default for a run that names none. cheapest_allowed uses the allowed runtime with a key whose list price for the run's size is lowest.",
+      }),
+    ),
+    region: Type.Optional(
+      NonEmpty({
+        description:
+          "Region every sandbox must run in, as the provider names it (Daytona us or eu, Modal us-east). A runtime that cannot place a sandbox there is refused, naming runtime.region.",
+      }),
+    ),
+    max_size: Type.Optional(
+      RuntimeSizeSchema(
+        "Largest sandbox a run may ask for. A bigger one is refused, naming runtime.max_size.",
+      ),
+    ),
+    leftover_minutes: Type.Optional(
+      Type.Integer({
+        minimum: 1,
+        description: `Minutes a sandbox may keep running after its run finished, failed or got stuck before it counts as left running: flagged as waste, sent to the run's owner and stopped by selfhost runtime reap. Default: ${RUNTIME_LEFTOVER_MINUTES}.`,
+      }),
+    ),
+    providers: Type.Optional(
+      Type.Object(
+        {
+          e2b: Type.Optional(RuntimeProviderSchema),
+          daytona: Type.Optional(RuntimeProviderSchema),
+          modal: Type.Optional(RuntimeProviderSchema),
+          coder: Type.Optional(RuntimeProviderSchema),
+          opensandbox: Type.Optional(RuntimeProviderSchema),
+        },
+        {
+          additionalProperties: false,
+          description:
+            "How to reach each runtime a run may use, when it is not the [integrations.runtime] tool, for example [runtime.providers.daytona].",
+        },
+      ),
     ),
   },
   {
@@ -600,6 +718,21 @@ export const BudgetSchema = Type.Object(
           "Spend allowed per background run, in USD, on the gateway key issued for that run. The key stops working once it is spent (with mode = hard) or after 24 hours.",
       }),
     ),
+
+    runtime_daily_usd: Type.Optional(
+      Type.Number({
+        exclusiveMinimum: 0,
+        description:
+          "Sandbox spend allowed per UTC day across the team's background runs, in USD, at the runtime's list price. Always hard: once the day's sandbox spend reaches it, new runs are refused, running sandboxes are stopped and a review item names the cap.",
+      }),
+    ),
+    runtime_run_usd: Type.Optional(
+      Type.Number({
+        exclusiveMinimum: 0,
+        description:
+          "Sandbox spend allowed per background run, in USD. Always hard: the run's sandbox is stopped once it reaches it.",
+      }),
+    ),
   },
   {
     additionalProperties: false,
@@ -699,9 +832,6 @@ export const INTEGRATION_TOOLS: Readonly<Record<IntegrationKind, readonly string
   reviewer: REVIEWER_TOOLS,
 };
 
-const EnvName = (description: string) => Type.String({ pattern: ENV_NAME_PATTERN, description });
-const HttpUrl = (description: string) => Type.String({ pattern: "^https?://", description });
-
 export const IntegrationsSchema = Type.Object(
   {
     router: Type.Optional(
@@ -771,24 +901,10 @@ export const IntegrationsSchema = Type.Object(
       Type.Object(
         {
           tool: StringEnum(RUNTIME_TOOLS, {
-            description: "Where background agents run: e2b, daytona, modal or coder.",
+            description:
+              "Where background agents run: e2b, daytona, modal, coder, or opensandbox for the team's own server or cluster.",
           }),
-          url: Type.Optional(
-            HttpUrl("The provider's API address, for coder and self-hosted providers."),
-          ),
-          api_key_env: Type.Optional(
-            EnvName(
-              "Environment variable on the server that holds the provider's API key: for modal, its token id. Unset uses the provider's usual name, such as E2B_API_KEY.",
-            ),
-          ),
-          api_secret_env: Type.Optional(
-            EnvName(
-              "Environment variable on the server that holds the second half of a two-part key: for modal, its token secret (default MODAL_TOKEN_SECRET).",
-            ),
-          ),
-          template: Type.Optional(
-            NonEmpty({ description: "The provider's template, snapshot or image to start from." }),
-          ),
+          ...RUNTIME_CONNECTION_FIELDS,
         },
         { additionalProperties: false, description: "The runtime for background agents." },
       ),
@@ -1264,6 +1380,7 @@ export type RuleOverride = Static<typeof RuleOverrideSchema>;
 export type Team = Static<typeof TeamSchema>;
 export type PlanLimits = Static<typeof PlanLimitsSchema>;
 export type Runtime = Static<typeof RuntimeSchema>;
+export type RuntimeProvider = Static<typeof RuntimeProviderSchema>;
 export type RunCommand = Static<typeof RunCommandSchema>;
 export type ReceiptConfig = Static<typeof ReceiptConfigSchema>;
 export type Budget = Static<typeof BudgetSchema>;
@@ -1491,6 +1608,12 @@ function runtimeErrors(runtime: Runtime): SegmentError[] {
         message: `Only one run command can be the default; runtime.run.${firstDefault} already is`,
       });
     }
+  }
+  if (runtime.default && runtime.allow && !runtime.allow.includes(runtime.default)) {
+    errors.push({
+      segments: ["runtime", "default"],
+      message: `runtime.default is ${runtime.default}, which runtime.allow does not list`,
+    });
   }
   for (const name of Object.keys(runtime.env ?? {})) {
     if (name.startsWith(RUNTIME_VARIABLE_PREFIX)) {

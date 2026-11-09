@@ -1,3 +1,4 @@
+import { RUNTIME_KEYS } from "../runtime-keys.js";
 import type { Adapter } from "../types.js";
 import { keyedCheck } from "./keyed.js";
 
@@ -20,9 +21,9 @@ export const e2b: Adapter<"runtime"> = {
         name: "E2B",
         url: settings.url ?? E2B_API_URL,
         path: "/v2/sandboxes?limit=1",
-        keyEnv: settings.api_key_env ?? "E2B_API_KEY",
+        keyEnv: settings.api_key_env ?? RUNTIME_KEYS.e2b.keyEnv,
         header: (key) => ["x-api-key", key],
-        what: "an E2B API key",
+        what: RUNTIME_KEYS.e2b.what,
       },
       env,
       fetch,

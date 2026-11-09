@@ -14,6 +14,7 @@ import { e2b } from "./adapters/e2b.js";
 import { langfuse } from "./adapters/langfuse.js";
 import { litellm } from "./adapters/litellm.js";
 import { modal } from "./adapters/modal.js";
+import { opensandbox } from "./adapters/opensandbox.js";
 import { otlp } from "./adapters/otlp.js";
 import { phoenix } from "./adapters/phoenix.js";
 import { prAgent } from "./adapters/pr-agent.js";
@@ -31,6 +32,7 @@ export const ADAPTERS: readonly AnyAdapter[] = [
   daytona,
   modal,
   coder,
+  opensandbox,
   prAgent,
   claudeCodeAction,
   coderabbit,

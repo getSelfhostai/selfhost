@@ -50,6 +50,7 @@
     "@selfhost/pr": "workspace:*",
     "@selfhost/provenance": "workspace:*",
     "@selfhost/review": "workspace:*",
+    "@selfhost/runtime": "workspace:*",
     "@selfhost/schema": "workspace:*",
     "@selfhost/spend": "workspace:*",
     "@selfhost/traces": "workspace:*",

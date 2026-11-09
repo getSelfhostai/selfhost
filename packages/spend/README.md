@@ -218,3 +218,23 @@ possible stolen key until shown otherwise.
 5. A runtime: pause it and its scheduled runs until the owner confirms the work.
 6. Tell the owner and the budget owner what was rotated. The alarm stays in the ledger as an
    `alert.raised` event with `data.alert: "spend_spike"`.
+
+## Sandbox waste
+
+`sandboxWaste(events, { now })` reads the `sandbox.started` and `sandbox.stopped` events
+background runs write (see [`packages/runtime`](../runtime/README.md)), the runs' `cost.recorded`
+events and the events that end a run (`session.ended`, or `alert.raised` `run_failed` or
+`run_stuck`). It reports:
+
+- per runtime, for 7 and 30 days: sandbox cost, the part paid while idle (billed seconds with no
+  command running) and its share, prorated when a sandbox straddles the window;
+- a cheaper billing model when more than half of a reserved-billing runtime's cost was idle:
+  providers that bill active CPU only, or pausing while the agent waits on the model, with the
+  saving scaled to 30 days;
+- sandboxes still running `leftover_minutes` (15) after their run ended, with their cost so far
+  and the part after the run;
+- each run of the last 7 days: billed, busy and idle seconds and sandbox cost next to its model
+  cost.
+
+`sandboxSpendIn(spans, from, to, now)` is the sandbox spend inside a range, each sandbox's cost
+split by how much of its life falls inside; the daily runtime cap reads it.

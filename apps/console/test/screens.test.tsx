@@ -100,6 +100,72 @@ describe("spend", () => {
     expect(screen.getByText("Codex")).toBeTruthy();
   });
 
+  it("shows sandbox cost, idle share, the cheaper billing model and boxes left running", async () => {
+    const e2b = (billed: number, idle: number, share: number) => ({
+      runtime: "e2b",
+      billing: "reserved",
+      sandboxes: 2,
+      billed_seconds: 9000,
+      idle_seconds: 6000,
+      billed_usd: billed,
+      idle_usd: idle,
+      idle_share: share,
+      suggestion:
+        share > 0.5
+          ? {
+              text: "E2B bills the CPU and memory a sandbox holds while it runs.",
+              monthly_saving_usd: 1.2,
+            }
+          : null,
+    });
+    mockServer({
+      "GET /v1/usage": USAGE,
+      "GET /v1/budget": { status: 404, message: "No team" },
+      "GET /v1/teams/web/sandboxes": {
+        team: "web",
+        generated_at: "2026-11-09T12:00:00.000Z",
+        leftover_minutes: 15,
+        windows: [
+          {
+            days: 7,
+            billed_usd: 0.41,
+            idle_usd: 0.29,
+            idle_share: 0.71,
+            by_runtime: [e2b(0.41, 0.29, 0.71)],
+          },
+          {
+            days: 30,
+            billed_usd: 2,
+            idle_usd: 0.8,
+            idle_share: 0.4,
+            by_runtime: [e2b(2, 0.8, 0.4)],
+          },
+        ],
+        leftovers: [
+          {
+            sandbox_id: "e2",
+            runtime: "e2b",
+            run_id: "run-2",
+            owner: null,
+            started_at: "2026-11-09T10:20:00.000Z",
+            run_ended_at: "2026-11-09T11:20:00.000Z",
+            stopped_at: null,
+            minutes_after_run: 40,
+            cost_usd: 0.27,
+            after_run_usd: 0.11,
+          },
+        ],
+        runs: [],
+      },
+    });
+    renderConsole(OWNER, "?screen=spend");
+    await screen.findByText("7 days $0.41, 71% idle.", { exact: false });
+    expect(screen.getByText(/30 days \$2\.00, 40% idle/)).toBeTruthy();
+    expect(screen.getByText(/E2B bills the CPU and memory/)).toBeTruthy();
+    expect(screen.getByText(/, still running/)).toBeTruthy();
+    expect(screen.getByText("$0.11 after 40 min")).toBeTruthy();
+  });
+
   it("says how far over a spent budget is, not $0.00 left", async () => {
     mockServer({
       "GET /v1/usage": USAGE,

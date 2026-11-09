@@ -38,6 +38,24 @@ export interface SandboxSpec {
   timeoutMinutes: number;
   /** Labels the adapter attaches where the provider supports them: run id, team, person. */
   labels?: Readonly<Record<string, string>>;
+  /**
+   * The provider's own egress and secret settings, as `@selfhost/credentials` writes them
+   * (`egressFor(kind).native`, `secretsFor(kind).native`). When set, they are applied as given
+   * and win over what the adapter derives from `egress`.
+   */
+  native?: NativeSettings;
+}
+
+/** Provider-native settings a sandbox is created with. */
+export interface NativeSettings {
+  /**
+   * Merged into the provider's create call: E2B `network` or `allowInternetAccess`, Daytona
+   * `domainAllowList`, `networkAllowList` or `networkBlockAll`, Modal `cidrAllowlist` or
+   * `blockNetwork`, OpenSandbox `networkPolicy`.
+   */
+  create?: Readonly<Record<string, unknown>>;
+  /** OpenSandbox's Credential Vault: the sandbox starts with its proxy on and gets these. */
+  credentialVault?: unknown;
 }
 
 export interface ExecOptions {
@@ -89,6 +107,16 @@ export interface RuntimeCapabilities {
   secrets: boolean;
   snapshot: boolean;
   regions: readonly string[];
+  /**
+   * Whether list() can filter by labels the provider stores. Absent means true. A Coder
+   * workspace has no labels, so its list() returns every workspace selfhost made.
+   */
+  labels?: boolean;
+  /**
+   * Whether exec keeps stderr apart from stdout. Absent means true. Daytona and Coder return the
+   * two merged in stdout.
+   */
+  stderr?: boolean;
 }
 
 export interface RuntimeAdapter {

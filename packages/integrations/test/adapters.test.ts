@@ -40,7 +40,7 @@ describe("adapters", () => {
   it("has one adapter per tool in the schema, each describing its check and docs", () => {
     const pairs = ADAPTERS.map((a) => `${a.kind}:${a.tool}`);
     expect(new Set(pairs).size).toBe(pairs.length);
-    expect(pairs).toHaveLength(13);
+    expect(pairs).toHaveLength(14);
     for (const adapter of ADAPTERS) {
       const description = adapter.describe();
       expect(description).toMatchObject({ kind: adapter.kind, tool: adapter.tool });
@@ -421,6 +421,47 @@ describe("runtimes", () => {
       ).state,
       "error",
       "Set the environment variable MY_SECRET (api_secret_env)",
+    );
+  });
+});
+
+describe("opensandbox", () => {
+  const url = "http://localhost:8080";
+  const list = `GET ${url}/v1/sandboxes?pageSize=1`;
+
+  it("lists sandboxes with the OPEN-SANDBOX-API-KEY header", async () => {
+    const answers = {
+      [list]: withHeader("open-sandbox-api-key", KEY, { status: 200, body: { items: [] } }),
+    };
+    const integrations: Integrations = { runtime: { tool: "opensandbox", url } };
+    expectStatus(
+      (await check(integrations, "runtime", answers, { OPEN_SANDBOX_API_KEY: KEY })).state,
+      "connected",
+      "accepts the key in OPEN_SANDBOX_API_KEY",
+    );
+    expectStatus(
+      (await check(integrations, "runtime", answers, { OPEN_SANDBOX_API_KEY: "wrong" })).state,
+      "error",
+      "refused the key in OPEN_SANDBOX_API_KEY (401)",
+    );
+  });
+
+  it("lets a server on this machine run without a key, and no other", async () => {
+    const answers = { [list]: { status: 200, body: { items: [] } } };
+    const local = await check({ runtime: { tool: "opensandbox", url } }, "runtime", answers);
+    expectStatus(local.state, "connected", "answers without a key");
+    expect(local.sent[0]?.headers["open-sandbox-api-key"]).toBeUndefined();
+    const remote = await check(
+      { runtime: { tool: "opensandbox", url: "https://sandbox.example.com/v1" } },
+      "runtime",
+      {},
+    );
+    expectStatus(remote.state, "error", "Set the environment variable OPEN_SANDBOX_API_KEY");
+    expect(remote.sent).toHaveLength(0);
+    expectStatus(
+      (await check({ runtime: { tool: "opensandbox" } }, "runtime", {})).state,
+      "error",
+      "Set url to your OpenSandbox server",
     );
   });
 });

@@ -930,6 +930,16 @@
                     "exclusiveMinimum": 0,
                     "description": "Spend allowed per background run, in USD, on the gateway key issued for that run. The key stops working once it is spent (with mode = hard) or after 24 hours.",
                     "type": "number"
+                  },
+                  "runtime_daily_usd": {
+                    "exclusiveMinimum": 0,
+                    "description": "Sandbox spend allowed per UTC day across the team's background runs, in USD, at the runtime's list price. Always hard: once the day's sandbox spend reaches it, new runs are refused, running sandboxes are stopped and a review item names the cap.",
+                    "type": "number"
+                  },
+                  "runtime_run_usd": {
+                    "exclusiveMinimum": 0,
+                    "description": "Sandbox spend allowed per background run, in USD. Always hard: the run's sandbox is stopped once it reaches it.",
+                    "type": "number"
                   }
                 }
               },
@@ -1122,6 +1132,236 @@
                         "type": "string"
                       }
                     }
+                  },
+                  "default": {
+                    "description": "Runtime a background run uses when it names none and policy is default. Unset: the [integrations.runtime] tool.",
+                    "type": "string",
+                    "enum": [
+                      "e2b",
+                      "daytona",
+                      "modal",
+                      "coder",
+                      "opensandbox"
+                    ]
+                  },
+                  "allow": {
+                    "minItems": 1,
+                    "uniqueItems": true,
+                    "description": "Runtimes a background run may use. A run that asks for another is refused, naming runtime.allow. Unset allows every runtime.",
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "e2b",
+                        "daytona",
+                        "modal",
+                        "coder",
+                        "opensandbox"
+                      ]
+                    }
+                  },
+                  "policy": {
+                    "description": "default (the default) uses runtime.default for a run that names none. cheapest_allowed uses the allowed runtime with a key whose list price for the run's size is lowest.",
+                    "type": "string",
+                    "enum": [
+                      "default",
+                      "cheapest_allowed"
+                    ]
+                  },
+                  "region": {
+                    "minLength": 1,
+                    "description": "Region every sandbox must run in, as the provider names it (Daytona us or eu, Modal us-east). A runtime that cannot place a sandbox there is refused, naming runtime.region.",
+                    "type": "string"
+                  },
+                  "max_size": {
+                    "additionalProperties": false,
+                    "minProperties": 1,
+                    "description": "Largest sandbox a run may ask for. A bigger one is refused, naming runtime.max_size.",
+                    "type": "object",
+                    "properties": {
+                      "cpu": {
+                        "exclusiveMinimum": 0,
+                        "description": "vCPUs.",
+                        "type": "number"
+                      },
+                      "memory_gib": {
+                        "exclusiveMinimum": 0,
+                        "description": "Memory in GiB.",
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "leftover_minutes": {
+                    "minimum": 1,
+                    "description": "Minutes a sandbox may keep running after its run finished, failed or got stuck before it counts as left running: flagged as waste, sent to the run's owner and stopped by selfhost runtime reap. Default: 15.",
+                    "type": "integer"
+                  },
+                  "providers": {
+                    "additionalProperties": false,
+                    "description": "How to reach each runtime a run may use, when it is not the [integrations.runtime] tool, for example [runtime.providers.daytona].",
+                    "type": "object",
+                    "properties": {
+                      "e2b": {
+                        "additionalProperties": false,
+                        "description": "How selfhost reaches this runtime. The key stays in the environment variable named here; selfhost never stores it.",
+                        "type": "object",
+                        "properties": {
+                          "url": {
+                            "pattern": "^https?://",
+                            "description": "The provider's API address: required for coder and opensandbox (the team's own server), optional for the hosted ones.",
+                            "type": "string"
+                          },
+                          "api_key_env": {
+                            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                            "description": "Environment variable on the server that holds the provider's API key: for modal, its token id. Unset uses the provider's usual name, such as E2B_API_KEY.",
+                            "type": "string"
+                          },
+                          "api_secret_env": {
+                            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                            "description": "Environment variable on the server that holds the second half of a two-part key: for modal, its token secret (default MODAL_TOKEN_SECRET).",
+                            "type": "string"
+                          },
+                          "template": {
+                            "minLength": 1,
+                            "description": "The provider's template, snapshot or image to start from.",
+                            "type": "string"
+                          },
+                          "usd_per_hour": {
+                            "minimum": 0,
+                            "description": "What one sandbox costs an hour, in USD, when the provider publishes no rate: the team's own server (opensandbox) or Coder. Overrides the built-in list price for the others.",
+                            "type": "number"
+                          }
+                        }
+                      },
+                      "daytona": {
+                        "additionalProperties": false,
+                        "description": "How selfhost reaches this runtime. The key stays in the environment variable named here; selfhost never stores it.",
+                        "type": "object",
+                        "properties": {
+                          "url": {
+                            "pattern": "^https?://",
+                            "description": "The provider's API address: required for coder and opensandbox (the team's own server), optional for the hosted ones.",
+                            "type": "string"
+                          },
+                          "api_key_env": {
+                            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                            "description": "Environment variable on the server that holds the provider's API key: for modal, its token id. Unset uses the provider's usual name, such as E2B_API_KEY.",
+                            "type": "string"
+                          },
+                          "api_secret_env": {
+                            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                            "description": "Environment variable on the server that holds the second half of a two-part key: for modal, its token secret (default MODAL_TOKEN_SECRET).",
+                            "type": "string"
+                          },
+                          "template": {
+                            "minLength": 1,
+                            "description": "The provider's template, snapshot or image to start from.",
+                            "type": "string"
+                          },
+                          "usd_per_hour": {
+                            "minimum": 0,
+                            "description": "What one sandbox costs an hour, in USD, when the provider publishes no rate: the team's own server (opensandbox) or Coder. Overrides the built-in list price for the others.",
+                            "type": "number"
+                          }
+                        }
+                      },
+                      "modal": {
+                        "additionalProperties": false,
+                        "description": "How selfhost reaches this runtime. The key stays in the environment variable named here; selfhost never stores it.",
+                        "type": "object",
+                        "properties": {
+                          "url": {
+                            "pattern": "^https?://",
+                            "description": "The provider's API address: required for coder and opensandbox (the team's own server), optional for the hosted ones.",
+                            "type": "string"
+                          },
+                          "api_key_env": {
+                            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                            "description": "Environment variable on the server that holds the provider's API key: for modal, its token id. Unset uses the provider's usual name, such as E2B_API_KEY.",
+                            "type": "string"
+                          },
+                          "api_secret_env": {
+                            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                            "description": "Environment variable on the server that holds the second half of a two-part key: for modal, its token secret (default MODAL_TOKEN_SECRET).",
+                            "type": "string"
+                          },
+                          "template": {
+                            "minLength": 1,
+                            "description": "The provider's template, snapshot or image to start from.",
+                            "type": "string"
+                          },
+                          "usd_per_hour": {
+                            "minimum": 0,
+                            "description": "What one sandbox costs an hour, in USD, when the provider publishes no rate: the team's own server (opensandbox) or Coder. Overrides the built-in list price for the others.",
+                            "type": "number"
+                          }
+                        }
+                      },
+                      "coder": {
+                        "additionalProperties": false,
+                        "description": "How selfhost reaches this runtime. The key stays in the environment variable named here; selfhost never stores it.",
+                        "type": "object",
+                        "properties": {
+                          "url": {
+                            "pattern": "^https?://",
+                            "description": "The provider's API address: required for coder and opensandbox (the team's own server), optional for the hosted ones.",
+                            "type": "string"
+                          },
+                          "api_key_env": {
+                            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                            "description": "Environment variable on the server that holds the provider's API key: for modal, its token id. Unset uses the provider's usual name, such as E2B_API_KEY.",
+                            "type": "string"
+                          },
+                          "api_secret_env": {
+                            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                            "description": "Environment variable on the server that holds the second half of a two-part key: for modal, its token secret (default MODAL_TOKEN_SECRET).",
+                            "type": "string"
+                          },
+                          "template": {
+                            "minLength": 1,
+                            "description": "The provider's template, snapshot or image to start from.",
+                            "type": "string"
+                          },
+                          "usd_per_hour": {
+                            "minimum": 0,
+                            "description": "What one sandbox costs an hour, in USD, when the provider publishes no rate: the team's own server (opensandbox) or Coder. Overrides the built-in list price for the others.",
+                            "type": "number"
+                          }
+                        }
+                      },
+                      "opensandbox": {
+                        "additionalProperties": false,
+                        "description": "How selfhost reaches this runtime. The key stays in the environment variable named here; selfhost never stores it.",
+                        "type": "object",
+                        "properties": {
+                          "url": {
+                            "pattern": "^https?://",
+                            "description": "The provider's API address: required for coder and opensandbox (the team's own server), optional for the hosted ones.",
+                            "type": "string"
+                          },
+                          "api_key_env": {
+                            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                            "description": "Environment variable on the server that holds the provider's API key: for modal, its token id. Unset uses the provider's usual name, such as E2B_API_KEY.",
+                            "type": "string"
+                          },
+                          "api_secret_env": {
+                            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                            "description": "Environment variable on the server that holds the second half of a two-part key: for modal, its token secret (default MODAL_TOKEN_SECRET).",
+                            "type": "string"
+                          },
+                          "template": {
+                            "minLength": 1,
+                            "description": "The provider's template, snapshot or image to start from.",
+                            "type": "string"
+                          },
+                          "usd_per_hour": {
+                            "minimum": 0,
+                            "description": "What one sandbox costs an hour, in USD, when the provider publishes no rate: the team's own server (opensandbox) or Coder. Overrides the built-in list price for the others.",
+                            "type": "number"
+                          }
+                        }
+                      }
+                    }
                   }
                 }
               },
@@ -1307,18 +1547,19 @@
                     ],
                     "properties": {
                       "tool": {
-                        "description": "Where background agents run: e2b, daytona, modal or coder.",
+                        "description": "Where background agents run: e2b, daytona, modal, coder, or opensandbox for the team's own server or cluster.",
                         "type": "string",
                         "enum": [
                           "e2b",
                           "daytona",
                           "modal",
-                          "coder"
+                          "coder",
+                          "opensandbox"
                         ]
                       },
                       "url": {
                         "pattern": "^https?://",
-                        "description": "The provider's API address, for coder and self-hosted providers.",
+                        "description": "The provider's API address: required for coder and opensandbox (the team's own server), optional for the hosted ones.",
                         "type": "string"
                       },
                       "api_key_env": {
@@ -2245,7 +2486,9 @@
               "policy.evaluated",
               "alert.raised",
               "config.reported",
-              "review.submitted"
+              "review.submitted",
+              "sandbox.started",
+              "sandbox.stopped"
             ]
           },
           "team": {
@@ -2375,6 +2618,23 @@
                       "cost"
                     ]
                   }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "sandbox.stopped"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "cost"
+                    ]
+                  }
                 }
               ],
               "type": "object",
@@ -2436,7 +2696,9 @@
                     "policy.evaluated",
                     "alert.raised",
                     "config.reported",
-                    "review.submitted"
+                    "review.submitted",
+                    "sandbox.started",
+                    "sandbox.stopped"
                   ]
                 },
                 "actor": {
@@ -2915,6 +3177,23 @@
                       "cost"
                     ]
                   }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "sandbox.stopped"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "cost"
+                    ]
+                  }
                 }
               ],
               "type": "object",
@@ -2976,7 +3255,9 @@
                     "policy.evaluated",
                     "alert.raised",
                     "config.reported",
-                    "review.submitted"
+                    "review.submitted",
+                    "sandbox.started",
+                    "sandbox.stopped"
                   ]
                 },
                 "actor": {
@@ -4610,6 +4891,23 @@
                     "cost"
                   ]
                 }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "const": "sandbox.stopped"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "cost"
+                  ]
+                }
               }
             ],
             "type": "object",
@@ -4671,7 +4969,9 @@
                   "policy.evaluated",
                   "alert.raised",
                   "config.reported",
-                  "review.submitted"
+                  "review.submitted",
+                  "sandbox.started",
+                  "sandbox.stopped"
                 ]
               },
               "actor": {
