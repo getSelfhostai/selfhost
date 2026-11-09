@@ -205,7 +205,8 @@ jobs:
           # Starts a release's server on the database in the background; no job writes on its own.
           serve() {
             SELFHOST_CONSOLE=off SELFHOST_TOKEN=ci-token SELFHOST_RETENTION_SWEEP=off \
-              SELFHOST_REVIEW_REFRESH=off SELFHOST_TRACE_EXPORT=off PORT=4400 \
+              SELFHOST_REVIEW_REFRESH=off SELFHOST_TRACE_EXPORT=off SELFHOST_BACKGROUND=off \
+              SELFHOST_CACHE_ALERTS=off SELFHOST_NOTIFY=off PORT=4400 \
               node "apps/server/$1/main.js" > "$RUNNER_TEMP/$1.log" 2>&1 &
             pid=$!
             for _ in $(seq 1 30); do
