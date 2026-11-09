@@ -49,6 +49,7 @@ describe("selfhost review risk", () => {
       "brief",
       "trace",
       "list",
+      "routes",
       "approve",
       "deny",
     ]);
