@@ -19,6 +19,8 @@ export interface TailFilter {
   /** owner/name: the event's repo, else the repo its run recorded. */
   repo?: string;
   session?: string;
+  /** run_id, as background runs write it. */
+  run?: string;
   /** The teams to read (events.team). null or absent: every event, with a team or none. */
   teams?: readonly string[] | null;
   /** Only events that happened at or after this time; it keeps every query on the ts index. */
@@ -105,6 +107,7 @@ export async function tailEvents(db: Queryable, options: TailOptions): Promise<T
   if (options.person !== undefined) conditions.push(`e.actor_id = ${param(options.person)}`);
   if (options.agent !== undefined) conditions.push(`e.agent = ${param(options.agent)}`);
   if (options.session !== undefined) conditions.push(`e.session_id = ${param(options.session)}`);
+  if (options.run !== undefined) conditions.push(`e.body->>'run_id' = ${param(options.run)}`);
   if (options.repo !== undefined) {
     conditions.push(`coalesce(lower(e.body->>'repo'), rr.repo) = lower(${param(options.repo)})`);
   }

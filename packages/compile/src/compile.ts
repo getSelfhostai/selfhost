@@ -2,6 +2,7 @@ import { policyChecks } from "@selfhost/policy";
 import {
   COMPILE_VENDORS,
   type CompileVendor,
+  EGRESS_ALLOW_RULE_ID,
   MCP_ALLOW_RULE_ID,
   type PolicyCoverage,
   type ResolvedSelfhostConfig,
@@ -61,6 +62,10 @@ export function checksOf(config: ResolvedSelfhostConfig, team?: string): Check[]
     };
     // policyChecks lists the rules first, in file order, then the allow lists.
     if (rule !== undefined) return { ...base, match: rule.match };
+    if (check.id === EGRESS_ALLOW_RULE_ID) {
+      const own = team === undefined ? undefined : config.teams[team]?.egress?.allow;
+      return { ...base, list: { kind: "egress", allow: [...(own ?? config.egress?.allow ?? [])] } };
+    }
     return check.id === MCP_ALLOW_RULE_ID
       ? { ...base, list: { kind: "mcp", allow: config.mcp.allow } }
       : { ...base, list: { kind: "models", allow: config.models.allow } };

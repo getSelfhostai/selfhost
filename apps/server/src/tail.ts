@@ -107,6 +107,7 @@ export function tailRoutes(router: Router, ledger: Ledger, options: TailRouteOpt
           ...(query.agent !== undefined ? { agent: query.agent } : {}),
           ...(query.repo !== undefined ? { repo: query.repo } : {}),
           ...(query.session !== undefined ? { session: query.session } : {}),
+          ...(query.run !== undefined ? { run: query.run } : {}),
           teams,
           ...(query.limit !== undefined ? { limit: query.limit } : {}),
           settleMs: db.kind === "postgres" ? POSTGRES_SETTLE_MS : 0,

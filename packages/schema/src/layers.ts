@@ -3,6 +3,7 @@ import {
   BUILT_IN_RULE_IDS,
   CONFIG_SCHEMA_DIRECTIVE,
   type ConfigResult,
+  EGRESS_ALLOW_RULE_ID,
   INSTALL_SCRIPT_ACTIONS,
   MCP_ALLOW_RULE_ID,
   MODELS_ALLOW_RULE_ID,
@@ -11,6 +12,7 @@ import {
   type ResolvedSelfhostConfig,
   type RuleMode,
 } from "./config.js";
+import { egressEntryCovered } from "./egress.js";
 import { TomlLineIndex } from "./toml-lines.js";
 import { type FieldError, formatField, type Segment } from "./validate.js";
 
@@ -27,7 +29,10 @@ import { type FieldError, formatField, type Segment } from "./validate.js";
  *   that widens the org's (an entry the org's list does not cover, or an empty list, which
  *   allows everything); `[packages]` with a lower mode, an allow entry the org's allow does not
  *   cover, a lower min_age_days or a softer install_scripts (allow < ask < block);
- *   `[guardrails]` with a lower mode or a guardrail the org keeps on in disable;
+ *   `[guardrails]` with a lower mode or a guardrail the org keeps on in disable; `[egress]` with a
+ *   lower mode or a host the org's allow list does not cover (an empty list allows none, so it
+ *   never widens);
+ * - a `[teams.<name>.egress]` host the org's list for that team does not cover;
  * - a `[[redaction]]` pattern with the name of an org pattern but another pattern;
  * - `log_prompts = true` when the org file sets `[ledger] log_prompts = false`;
  * - a `[[review.routes]]` entry with the id of an org route but other fields;
@@ -303,6 +308,44 @@ function floorErrors(floor: Floor, layer: Layer): (FloorError & { segments: Segm
     }
   }
 
+  const orgEgress = floor.config.egress;
+  if (orgEgress) {
+    const layerEgress = layer.raw.egress;
+    const mine = layer.config.egress;
+    if (isTable(layerEgress) && mine) {
+      if (
+        layerEgress.mode !== undefined &&
+        MODE_RANK[mine.mode ?? "observe"] < MODE_RANK[orgEgress.mode ?? "observe"]
+      ) {
+        add(
+          ["egress", "mode"],
+          "[egress] mode",
+          `Relaxes the org's [egress] ("${EGRESS_ALLOW_RULE_ID}"): mode "${mine.mode}" is below the org's "${orgEgress.mode ?? "observe"}"`,
+        );
+      }
+      (mine.allow ?? []).forEach((entry, index) => {
+        if (egressEntryCovered(entry, orgEgress.allow ?? [])) return;
+        add(
+          ["egress", "allow", index],
+          "[egress] allow",
+          `Widens the org's [egress] allow: "${entry}" is not in it`,
+        );
+      });
+    }
+    for (const [team, { egress }] of Object.entries(layer.config.teams)) {
+      if (!egress) continue;
+      const orgList = floor.config.teams[team]?.egress?.allow ?? orgEgress.allow ?? [];
+      egress.allow.forEach((entry, index) => {
+        if (egressEntryCovered(entry, orgList)) return;
+        add(
+          ["teams", team, "egress", "allow", index],
+          "[egress] allow",
+          `Widens the org's egress allow for team "${team}": "${entry}" is not in it`,
+        );
+      });
+    }
+  }
+
   const orgGuardrails = floor.raw.guardrails;
   const layerGuardrails = layer.raw.guardrails;
   if (isTable(orgGuardrails) && isTable(layerGuardrails)) {
@@ -410,6 +453,14 @@ function overrideFloor(floor: Floor, team: string, id: string): Required<RuleLik
   const own = floor.config.teams[team]?.rules[id] ?? {};
   const rule = floor.config.rules.find((r) => r.id === id);
   if (rule) return { mode: rule.mode, action: rule.action, agents: rule.agents, ...own };
+  if (id === EGRESS_ALLOW_RULE_ID && floor.config.egress) {
+    return {
+      mode: floor.config.egress.mode ?? "observe",
+      action: "block",
+      agents: ["all"],
+      ...own,
+    };
+  }
   const list = ALLOW_LISTS.find(([, ruleId]) => ruleId === id);
   if (!list || !isTable(floor.raw[list[0]])) return undefined;
   const section = floor.config[list[0]];
@@ -524,10 +575,15 @@ function mergeLayer(
             if (isBlocked("teams", name, "rules", id)) continue;
             rules[id] = { ...(isTable(rules[id]) ? rules[id] : {}), ...clone(override as Table) };
           }
+          const egress =
+            isTable(team.egress) && !isBlocked("teams", name, "egress")
+              ? { egress: clone(team.egress) }
+              : {};
           const merged = {
             ...current,
             ...(members.length > 0 ? { members } : {}),
             ...(Object.keys(rules).length > 0 ? { rules } : {}),
+            ...egress,
           };
           if (Object.keys(merged).length > 0) teams[name] = merged;
         }
@@ -558,6 +614,14 @@ function mergeLayer(
           } else section[field] = clone(fieldValue);
         }
         out[key] = section;
+        break;
+      }
+      case "egress": {
+        const section: Table = isTable(out.egress) ? clone(out.egress) : {};
+        for (const [field, fieldValue] of Object.entries(isTable(value) ? value : {})) {
+          if (!isBlocked("egress", field)) section[field] = clone(fieldValue);
+        }
+        out.egress = section;
         break;
       }
       case "integrations": {

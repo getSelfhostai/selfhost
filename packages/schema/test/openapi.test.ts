@@ -40,11 +40,14 @@ describe("openapi.yaml", () => {
     );
     expect(operations.sort()).toEqual(
       [
+        "DELETE /v1/background-runs/kill",
         "DELETE /v1/invites/{id}",
         "DELETE /v1/me/token",
         "DELETE /v1/notify/targets/{name}",
         "DELETE /v1/teams/{team}/people/{person}/tokens",
         "DELETE /v1/teams/{team}/repos/{owner}/{name}",
+        "GET /v1/background-runs",
+        "GET /v1/background-runs/{id}",
         "GET /v1/budget",
         "GET /v1/context",
         "GET /v1/decisions",
@@ -78,6 +81,10 @@ describe("openapi.yaml", () => {
         "GET /v1/usage",
         "GET /v1/usage.csv",
         "PATCH /v1/teams/{team}",
+        "POST /v1/background-runs",
+        "POST /v1/background-runs/kill",
+        "POST /v1/background-runs/webhook",
+        "POST /v1/background-runs/{id}/cancel",
         "POST /v1/context/proposals",
         "POST /v1/decisions",
         "POST /v1/events",
@@ -104,10 +111,11 @@ describe("openapi.yaml", () => {
     );
   });
 
-  it("leaves only the health check and joining unauthenticated", () => {
-    const open = ["/v1/health", "/v1/join"];
+  it("leaves only the health check, joining and the signed run webhook without a bearer token", () => {
+    const open = ["/v1/health", "/v1/join", "/v1/background-runs/webhook"];
     expect(doc.paths["/v1/health"].get.security).toEqual([]);
     expect(doc.paths["/v1/join"].post.security).toEqual([]);
+    expect(doc.paths["/v1/background-runs/webhook"].post.security).toEqual([]);
     for (const [path, item] of Object.entries<Record<string, { security?: unknown }>>(doc.paths)) {
       if (open.includes(path)) continue;
       for (const operation of Object.values(item)) expect(operation.security).toBeUndefined();

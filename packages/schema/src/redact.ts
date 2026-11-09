@@ -17,6 +17,38 @@ export interface RedactionSettings {
   logPrompts: boolean;
   /** `[[redaction]]` patterns, applied after the built-in secret and email patterns. */
   patterns: readonly RedactionPattern[];
+  /**
+   * Exact values to mask before anything else, such as the secrets a run was given. Each match
+   * becomes [redacted:<name>]. Values shorter than MIN_LITERAL_LENGTH are skipped.
+   */
+  literals?: readonly SecretLiteral[];
+}
+
+/** A known secret value and the name its mask carries. */
+export interface SecretLiteral {
+  name: string;
+  value: string;
+}
+
+/** Shorter values would mask ordinary text, so they are not masked by value. */
+export const MIN_LITERAL_LENGTH = 6;
+
+/**
+ * Masks every occurrence of each known value, longest first so a value that contains another is
+ * masked whole. Plain string search: no value is ever compiled or cached.
+ */
+export function maskLiterals(
+  text: string,
+  literals: readonly SecretLiteral[],
+): { text: string; masked: boolean } {
+  let out = text;
+  const ordered = [...literals]
+    .filter((literal) => literal.value.length >= MIN_LITERAL_LENGTH)
+    .sort((a, b) => b.value.length - a.value.length);
+  for (const { name, value } of ordered) {
+    if (out.includes(value)) out = out.split(value).join(`[redacted:${name}]`);
+  }
+  return { text: out, masked: out !== text };
 }
 
 /** The selfhost.toml defaults: no prompt or response text, built-in patterns only. */
@@ -128,8 +160,9 @@ export function redactEvent(
 ): LedgerEvent {
   const paths: string[] = [];
   const mask = (text: string, path: string): string => {
-    const result = maskSecrets(text, settings.patterns);
-    if (result.masked) paths.push(path);
+    const known = maskLiterals(text, settings.literals ?? []);
+    const result = maskSecrets(known.text, settings.patterns);
+    if (known.masked || result.masked) paths.push(path);
     return result.text;
   };
   const maskValue = (value: unknown, path: string): unknown => {

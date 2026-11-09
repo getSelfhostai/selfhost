@@ -259,6 +259,19 @@ team rule (a lower mode, fewer agents, another match) is ignored and the team's 
 `doctor`, `policy check`, the hooks and `policy test` all use the result. A file given with
 `--config` or `SELFHOST_CONFIG` is used as it is.
 
+With `[egress]` or `[secrets]` in the policy, `doctor` also lists, for the runtime in
+`[integrations.runtime]` and each local sandbox (Docker Sandboxes, Claude Code's sandbox
+runtime, a devcontainer), every rule that place cannot hold as written: unenforced (nothing
+there holds it; only the hooks check tool calls), weaker (held, but looser) or stricter (held
+tighter, so a run that needs it fails). `selfhost runtime check [targets...] [--team <name>]`
+prints the same per target, with `--json` the allow list in each target's own form (srt
+settings, `sbx policy` commands, a devcontainer's env, E2B, Daytona, Modal, Coder or OpenSandbox
+create options), and exits 1 when a checked target leaves a rule unenforced or weaker. Targets:
+`laptop`, `docker-sandboxes`, `sandbox-runtime`, `devcontainer`, `e2b`, `daytona`, `modal`,
+`coder`, `opensandbox`. The hooks record where each call ran (`laptop`, `local:<sandbox>` or
+`runtime:<kind>`, from `SELFHOST_LOCATION`) on its `policy.evaluated` event, and a call stopped
+under `egress.allow` also writes one `egress.blocked` event per host.
+
 `selfhost policy` works on the rules in `selfhost.toml` (found like `doctor` does, or
 `--config`). See [`packages/policy`](../../packages/policy/README.md) for how rules match.
 
@@ -986,6 +999,7 @@ The CLI calls only the configured server, and only its `/v1` API. Agents keep ca
 vendors directly; no model traffic goes through selfhost.
 
 Every command takes `--json` and prints one object with a `schema` tag: `selfhost.doctor/v1`,
+`selfhost.runtime_check/v1`,
 `selfhost.init/v1`, `selfhost.init_undo/v1`, `selfhost.import/v1` (plus one `selfhost.import_batch/v1` line per batch with `--watch`),
 `selfhost.ledger_prune/v1`, `selfhost.ledger_status/v1`, `selfhost.ledger_migrate/v1`, `selfhost.ledger_backup/v1`,
 `selfhost.ledger_restore/v1`, `selfhost.agents/v1`, `selfhost.agents_configure/v1`, `selfhost.scan/v1`,
@@ -1004,6 +1018,51 @@ Every command takes `--json` and prints one object with a `schema` tag: `selfhos
 `selfhost.context_propose/v1`, `selfhost.team_leave/v1`, `selfhost.integrations/v1` and `selfhost.up/v1`. Errors print `selfhost.error/v1` and exit 1. In solo mode no command
 needs a network connection, except `selfhost integrations check`, which calls the tools named in
 `[integrations]` to test them.
+
+## Background runs: `selfhost run`
+
+```sh
+selfhost run "fix the flaky login test" --agent claude --repo acme/web [--runtime e2b] [--wait]
+selfhost tail --run <id>          # its states, output, health and gate as they land
+selfhost runs [--state active]    # runs of your teams, with health and live cost
+selfhost runs show <id>
+selfhost runs cancel <id>
+selfhost runs kill [--team web | --org acme] [--reason ...] [--clear]
+```
+
+`selfhost run` asks the team server to start an agent CLI (claude, codex, opencode, goose) in a
+sandbox on the team's runtime, under your own login, so it keeps going after this machine
+disconnects. The repo defaults to this checkout's origin. The run gets its own branch, the team's
+hooks inside the sandbox, run health (stopped after `[background] stall_minutes` with no output,
+or the same tool call `loop_repeats` times in a row, or past `timeout_minutes`), the tests-first
+gate and one pull request. `--wait` follows it and exits 1 unless it succeeded.
+
+```toml
+[background]
+agent = "claude"
+timeout_minutes = 60
+max_retries = 1              # runtime errors only
+allowed = []                 # person ids; empty: everyone in the team
+rate_limit_per_hour = 20
+max_concurrent = 5
+tests_first = "observe"      # off, observe or enforce
+test_command = "pnpm test"   # unset: detected
+pr_size_cap = 800            # changed lines; 0 for no cap
+webhook_secret_env = "SELFHOST_RUNS_SECRET"
+
+[[background.schedules]]
+name = "nightly-deps"
+cron = "0 2 * * 1-5"
+repo = "acme/web"
+task = "Update dependencies and fix what breaks"
+```
+
+The gate needs a test file the run added or changed that fails on the base and passes on the
+head, every package the diff adds to exist in its registry, and the diff under `pr_size_cap`. In
+observe it is a neutral check on the pull request; in enforce a failure opens no pull request.
+
+`selfhost import --hook-events` prints the hook spool's events as JSON lines and writes nothing;
+background runs read their sandbox's hook events this way.
 
 ## Integrations: `selfhost integrations`
 

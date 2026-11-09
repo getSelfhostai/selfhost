@@ -1,0 +1,7 @@
+version = 1
+
+[egress]
+allow = ["github.com"]
+
+[teams.platform.egress]
+allow = ["github.com", "pypi.org"]

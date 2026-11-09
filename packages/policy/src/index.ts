@@ -8,6 +8,7 @@ export {
   type ToolCallDecision,
 } from "./check.js";
 export {
+  callHosts,
   effectiveRules,
   evaluate,
   type PolicyCheck,

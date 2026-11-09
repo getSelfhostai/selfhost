@@ -33,6 +33,8 @@ export interface GuardHit {
   /** What the agent was told to do instead. */
   alternative?: string;
   irreversible: boolean;
+  /** For egress.allow: the hosts outside the list. */
+  hosts?: string[];
 }
 
 /**
@@ -70,6 +72,8 @@ export interface GuardRecord {
   exception?: GuardException;
   /** Time the check took, in milliseconds. */
   ms: number;
+  /** Where the agent ran: laptop, local:<sandbox> or runtime:<kind> (see executionLocation). */
+  location?: string;
 }
 
 /** One line of a spool file. */

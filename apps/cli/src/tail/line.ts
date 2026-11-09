@@ -23,6 +23,8 @@ export interface TailLine {
   model: string | null;
   repo: string | null;
   session_id: string | null;
+  /** The background run the event belongs to. */
+  run_id: string | null;
   tool: string | null;
   /** tool.input_summary or target.value, redacted as stored. */
   input: string | null;
@@ -55,6 +57,7 @@ export interface TailFilter {
   agent?: string;
   repo?: string;
   session?: string;
+  run?: string;
 }
 
 const text = (value: unknown) => (typeof value === "string" && value !== "" ? value : null);
@@ -92,6 +95,7 @@ export function lineOf(
     model: event.model ?? null,
     repo: event.repo ?? options.repo ?? null,
     session_id: event.session_id ?? null,
+    run_id: event.run_id ?? null,
     tool: event.tool?.name ?? null,
     input:
       event.kind === "prompt.submitted"
@@ -105,9 +109,41 @@ export function lineOf(
       ? cost.input_tokens + cost.output_tokens + cost.cache_read_tokens + cost.cache_write_tokens
       : null,
     cache_hit_rate: options.cacheHitRate ?? null,
-    message: event.kind === "alert.raised" ? text(event.data?.message) : null,
+    message: event.kind === "alert.raised" ? text(event.data?.message) : runMessage(event),
     run_url: event.session_id ? runViewUrl(options.console, event.session_id) : null,
   };
+}
+
+const field = (value: unknown, key: string) =>
+  value !== null && typeof value === "object" ? (value as Record<string, unknown>)[key] : undefined;
+
+/** What a background run's event says, in one line: its state, output, health or gate verdict. */
+function runMessage(event: LedgerEvent): string | null {
+  const data = event.data ?? {};
+  switch (event.kind) {
+    case "run.triggered": {
+      const trigger = data.trigger;
+      const from = `${text(field(trigger, "source")) ?? "?"} by ${text(field(trigger, "sender")) ?? "?"}`;
+      return field(trigger, "accepted") === true
+        ? `accepted from ${from}`
+        : `refused from ${from}: ${text(field(trigger, "reason")) ?? ""}`;
+    }
+    case "run.updated": {
+      const run = data.background_run;
+      const reason = text(field(run, "reason"));
+      return `${text(field(run, "state")) ?? "?"}${reason ? `: ${reason}` : ""}`;
+    }
+    case "run.health":
+      return text(field(data.health, "line"));
+    case "run.gate":
+      return text(field(data.gate, "summary"));
+    case "run.output": {
+      const lines = field(data.output, "lines");
+      return Array.isArray(lines) ? lines.filter((l) => typeof l === "string").join(" | ") : null;
+    }
+    default:
+      return null;
+  }
 }
 
 export function reviewLine(item: ReviewItem, console: string): TailLine {
@@ -122,6 +158,7 @@ export function reviewLine(item: ReviewItem, console: string): TailLine {
     model: null,
     repo: item.repo ?? null,
     session_id: item.session_id ?? null,
+    run_id: null,
     tool: null,
     input: null,
     verdict: item.blocking ? "waiting" : null,
@@ -144,6 +181,7 @@ export function matches(line: TailLine, filter: TailFilter): boolean {
   if (filter.person !== undefined && line.who !== filter.person) return false;
   if (filter.agent !== undefined && line.agent !== filter.agent) return false;
   if (filter.session !== undefined && line.session_id !== filter.session) return false;
+  if (filter.run !== undefined && line.run_id !== filter.run) return false;
   if (filter.repo !== undefined && line.repo?.toLowerCase() !== filter.repo.toLowerCase()) {
     return false;
   }
@@ -202,6 +240,12 @@ function what(line: TailLine): string {
       return `pr ${line.kind.slice(3)}${input}`;
     case "commit.created":
       return "commit";
+    case "run.triggered":
+    case "run.updated":
+    case "run.health":
+    case "run.gate":
+    case "run.output":
+      return `${line.kind.slice(4)} ${clip(line.message ?? "", 400)}`;
     case REVIEW_OPENED:
       return `review item opened${line.verdict === "waiting" ? ", agent waiting" : ""}: ${clip(line.message ?? "", 120)}`;
     default:

@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { relative } from "node:path";
+import type { EnforcementReport } from "@selfhost/credentials";
 import { guardrailChecks } from "@selfhost/policy";
 import {
   formatConfigError,
@@ -8,6 +9,7 @@ import {
   validateConfig,
 } from "@selfhost/schema";
 import { type ConfigLocation, findConfig, policyText, type TeamPolicyFile } from "./find-config.js";
+import { defaultTargets, enforcementReports, reportLines } from "./runtime-check.js";
 
 export interface DoctorOptions {
   cwd: string;
@@ -48,6 +50,11 @@ export interface DoctorReport {
   guardrails: { mode: string; enforced: string[]; observed: string[] };
   /** Whether `selfhost` is on PATH, as the hooks call it; null when it was not looked up. */
   on_path: boolean | null;
+  /**
+   * What the configured runtime and each local sandbox make of [egress] and [secrets], with the
+   * rules each cannot hold. Empty without those sections.
+   */
+  enforcement: EnforcementReport[];
 }
 
 /** Which guardrails enforce and which only record, under a config. */
@@ -86,6 +93,7 @@ export function doctorReport({
     config: null,
     guardrails: defaultGuardrails(),
     on_path: which ? which("selfhost") !== undefined : null,
+    enforcement: [],
   };
   const location = findConfig(cwd, config, env, configPath);
   if (!location) return report;
@@ -102,7 +110,9 @@ export function doctorReport({
   if (result.ok) {
     // On a machine in a team, the rules in use are the team's with this file's added.
     const used = parseConfig(policyText(location).text);
-    const { rules } = used.ok ? used.config : result.config;
+    const inUse = used.ok ? used.config : result.config;
+    const { rules } = inUse;
+    report.enforcement = enforcementReports(inUse, defaultTargets(inUse));
     const enforced = rules.filter((rule) => rule.mode === "enforce").length;
     report.guardrails = guardrailModes(result.config);
     report.config = {
@@ -181,6 +191,11 @@ export function doctor(options: DoctorOptions): number {
       `valid, ${config.rules} rules (${config.enforced} enforced, ${config.rules - config.enforced} observe or off)`,
     );
     guardsRow();
+    const [first, ...rest] = reportLines(report.enforcement);
+    if (first !== undefined) {
+      row("sandbox", first);
+      for (const line of rest) write(`${" ".repeat(9)}${line}`);
+    }
     return 0;
   }
   row("status", `invalid, ${config.errors.length} error(s)`);

@@ -10,6 +10,7 @@ import {
   PAGE_LIMIT_DEFAULT,
   type RedactionSettings,
 } from "@selfhost/schema";
+import { type BackgroundRunStore, createBackgroundRunStore } from "./background.js";
 import { type ContextStore, createContextStore } from "./context.js";
 import { decodeCursor, encodeCursor, TS_KEY } from "./cursor.js";
 import { type ConnectOptions, connect, type Database, migrate } from "./db.js";
@@ -92,6 +93,8 @@ export interface Ledger {
   deliveries: DeliveryStore;
   /** Proof receipts the receipt step in CI posted, by pull request. */
   receipts: ReceiptStore;
+  /** Background runs and the team and org kill switches. */
+  backgroundRuns: BackgroundRunStore;
   close(): Promise<void>;
 }
 
@@ -232,6 +235,8 @@ export function createLedger(db: Database, options: LedgerOptions = {}): Ledger 
     deliveries: createDeliveryStore(db),
 
     receipts: createReceiptStore(db),
+
+    backgroundRuns: createBackgroundRunStore(db),
 
     close: () => db.close(),
   };

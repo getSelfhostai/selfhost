@@ -1,0 +1,224 @@
+import type { SecretRef } from "@selfhost/runtime";
+import type { CredentialSource, ResolvedSelfhostConfig, Secrets } from "@selfhost/schema";
+import type { CredentialTarget, EnforcementGap, SecretPlan } from "./translate.js";
+
+/** A secret declared in [secrets.env], parsed. */
+export interface DeclaredSecret {
+  name: string;
+  from: string;
+  source: CredentialSource;
+  injectFor?: SecretPlan["injectFor"];
+}
+
+const DEFAULT_HEADER = "Authorization";
+const DEFAULT_FORMAT = "Bearer {value}";
+
+export const DEFAULT_VAULT_TOKEN_ENV = "VAULT_TOKEN";
+export const DEFAULT_VAULT_MOUNT = "secret";
+export const DEFAULT_INFISICAL_URL = "https://app.infisical.com";
+export const DEFAULT_INFISICAL_TOKEN_ENV = "INFISICAL_TOKEN";
+
+export function sourceOf(from: string): CredentialSource {
+  const scheme = from.slice(0, from.indexOf(":"));
+  if (scheme === "vault" || scheme === "infisical" || scheme === "env") return scheme;
+  if (scheme === "gateway") return "gateway";
+  return "github-app";
+}
+
+/** The [secrets.env] declarations of a config, in name order. */
+export function declaredSecrets(config: Pick<ResolvedSelfhostConfig, "secrets">): DeclaredSecret[] {
+  return Object.entries(config.secrets?.env ?? {})
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([name, declared]) => {
+      if (typeof declared === "string") return { name, from: declared, source: sourceOf(declared) };
+      return {
+        name,
+        from: declared.from,
+        source: sourceOf(declared.from),
+        ...(declared.host
+          ? {
+              injectFor: {
+                host: declared.host,
+                header: declared.header ?? DEFAULT_HEADER,
+                format: declared.format ?? DEFAULT_FORMAT,
+              },
+            }
+          : {}),
+      };
+    });
+}
+
+export const refOf = (secret: Pick<DeclaredSecret, "name" | "from">): SecretRef => ({
+  name: secret.name,
+  from: secret.from,
+});
+
+/** Why a value could not be read. Names the reference and the store, never a value or token. */
+export class SecretResolveError extends Error {
+  override name = "SecretResolveError";
+}
+
+export interface ResolveDeps {
+  /** The server's environment: env: sources and the stores' tokens. */
+  env: NodeJS.ProcessEnv;
+  fetch?: typeof fetch;
+}
+
+/** `path#key`, or `key` alone (Infisical's root folder). */
+function splitRef(ref: string): { path: string; key: string } {
+  const hash = ref.lastIndexOf("#");
+  return hash === -1
+    ? { path: "/", key: ref }
+    : { path: ref.slice(0, hash), key: ref.slice(hash + 1) };
+}
+
+function storeToken(env: NodeJS.ProcessEnv, name: string, store: string): string {
+  const token = env[name]?.trim();
+  if (!token) throw new SecretResolveError(`${store}: ${name} is not set on the server`);
+  return token;
+}
+
+async function getJson(
+  fetcher: typeof fetch,
+  url: string,
+  headers: Record<string, string>,
+  what: string,
+): Promise<unknown> {
+  let response: Response;
+  try {
+    response = await fetcher(url, { headers });
+  } catch (error) {
+    throw new SecretResolveError(`${what}: no answer (${(error as Error).message})`);
+  }
+  if (!response.ok) throw new SecretResolveError(`${what}: HTTP ${response.status}`);
+  return response.json();
+}
+
+const trimSlash = (url: string) => url.replace(/\/+$/, "");
+
+/** A value from HashiCorp Vault's KV version 2 engine: GET /v1/<mount>/data/<path>. */
+async function fromVault(
+  ref: string,
+  settings: NonNullable<Secrets["vault"]>,
+  deps: ResolveDeps,
+): Promise<string> {
+  const { path, key } = splitRef(ref);
+  const what = `vault:${ref}`;
+  const token = storeToken(deps.env, settings.token_env ?? DEFAULT_VAULT_TOKEN_ENV, "Vault");
+  const mount = (settings.mount ?? DEFAULT_VAULT_MOUNT).replace(/^\/+|\/+$/g, "");
+  const url = `${trimSlash(settings.url)}/v1/${mount}/data/${path.replace(/^\/+/, "")}`;
+  const body = (await getJson(
+    deps.fetch ?? fetch,
+    url,
+    {
+      "X-Vault-Token": token,
+      ...(settings.namespace ? { "X-Vault-Namespace": settings.namespace } : {}),
+    },
+    what,
+  )) as { data?: { data?: Record<string, unknown> } };
+  const value = body.data?.data?.[key];
+  if (typeof value !== "string") throw new SecretResolveError(`${what}: no string at key ${key}`);
+  return value;
+}
+
+/** A value from Infisical: GET /api/v4/secrets/<name>?projectId&environment&secretPath. */
+async function fromInfisical(
+  ref: string,
+  settings: NonNullable<Secrets["infisical"]>,
+  deps: ResolveDeps,
+): Promise<string> {
+  const { path, key } = splitRef(ref);
+  const what = `infisical:${ref}`;
+  const token = storeToken(
+    deps.env,
+    settings.token_env ?? DEFAULT_INFISICAL_TOKEN_ENV,
+    "Infisical",
+  );
+  const query = new URLSearchParams({
+    projectId: settings.project_id,
+    environment: settings.environment,
+    secretPath: path.startsWith("/") ? path : `/${path}`,
+  });
+  const url = `${trimSlash(settings.url ?? DEFAULT_INFISICAL_URL)}/api/v4/secrets/${encodeURIComponent(key)}?${query}`;
+  const body = (await getJson(
+    deps.fetch ?? fetch,
+    url,
+    { Authorization: `Bearer ${token}` },
+    what,
+  )) as { secret?: { secretValue?: unknown } };
+  const value = body.secret?.secretValue;
+  if (typeof value !== "string") throw new SecretResolveError(`${what}: no secret value`);
+  return value;
+}
+
+/**
+ * Reads one declared secret's value from env, Vault or Infisical. github-app: and gateway:
+ * values are issued per run, not read, so they are not resolved here.
+ */
+export async function resolveSecret(
+  secret: Pick<DeclaredSecret, "from">,
+  config: Pick<ResolvedSelfhostConfig, "secrets">,
+  deps: ResolveDeps,
+): Promise<string> {
+  const colon = secret.from.indexOf(":");
+  const scheme = secret.from.slice(0, colon);
+  const ref = secret.from.slice(colon + 1);
+  switch (scheme) {
+    case "env": {
+      const value = deps.env[ref];
+      if (value === undefined || value === "") {
+        throw new SecretResolveError(`env:${ref}: not set on the server`);
+      }
+      return value;
+    }
+    case "vault": {
+      const settings = config.secrets?.vault;
+      if (!settings) throw new SecretResolveError(`vault:${ref}: [secrets.vault] is not set`);
+      return fromVault(ref, settings, deps);
+    }
+    case "infisical": {
+      const settings = config.secrets?.infisical;
+      if (!settings) {
+        throw new SecretResolveError(`infisical:${ref}: [secrets.infisical] is not set`);
+      }
+      return fromInfisical(ref, settings, deps);
+    }
+    default:
+      throw new SecretResolveError(`${secret.from}: issued per run, not read from a store`);
+  }
+}
+
+/** Provider key variables a gateway run never gets: model traffic goes through the gateway. */
+export const PROVIDER_KEY_NAMES = [
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "OPENAI_API_KEY",
+  "GEMINI_API_KEY",
+  "GOOGLE_API_KEY",
+  "AZURE_OPENAI_API_KEY",
+  "MISTRAL_API_KEY",
+  "GROQ_API_KEY",
+  "XAI_API_KEY",
+  "OPENROUTER_API_KEY",
+  "AWS_BEARER_TOKEN_BEDROCK",
+] as const;
+
+/**
+ * A provider key in a run without the gateway: it reaches the sandbox as is and lives past the
+ * run, since selfhost cannot revoke a provider's key.
+ */
+export function providerKeyGaps(
+  target: CredentialTarget,
+  names: readonly string[],
+): EnforcementGap[] {
+  return names
+    .filter((name) => (PROVIDER_KEY_NAMES as readonly string[]).includes(name))
+    .map((name) => ({
+      target,
+      rule: `secrets.env.${name}`,
+      entry: name,
+      effect: "weaker" as const,
+      message:
+        "A provider key enters the sandbox and outlives the run. Set [integrations.router] so each run gets a gateway key that is revoked when it ends.",
+    }));
+}

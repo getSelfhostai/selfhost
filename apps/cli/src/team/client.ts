@@ -1,5 +1,8 @@
 import { hashToken } from "@selfhost/ledger";
 import type {
+  BackgroundRun,
+  BackgroundRunsQuery,
+  BackgroundRunsResponse,
   ContextFile,
   ContextProposal,
   ContextProposalRequest,
@@ -18,6 +21,8 @@ import type {
   IssueGatewayKeyRequest,
   IssueGatewayKeyResponse,
   JoinResponse,
+  KillResponse,
+  KillScope,
   LedgerEvent,
   MeResponse,
   NotifyCadence,
@@ -35,6 +40,7 @@ import type {
   RoiQuery,
   RoiResponse,
   SetIntegrationRequest,
+  StartRunRequest,
   TailQuery,
   TailResponse,
   TeamLaptopsResponse,
@@ -305,6 +311,39 @@ export class TeamClient {
   /** Issues a gateway key; the answer is the only place its value ever appears. */
   issueGatewayKey(request: IssueGatewayKeyRequest): Promise<IssueGatewayKeyResponse> {
     return this.call("POST", "/v1/gateway/keys", request);
+  }
+
+  /** Starts a background run as this person. */
+  startRun(request: StartRunRequest): Promise<BackgroundRun> {
+    return this.call("POST", "/v1/background-runs", request);
+  }
+
+  runs(query: BackgroundRunsQuery = {}): Promise<BackgroundRunsResponse> {
+    const search = new URLSearchParams(
+      Object.entries(query).map(([key, value]): [string, string] => [key, String(value)]),
+    ).toString();
+    return this.call("GET", `/v1/background-runs${search ? `?${search}` : ""}`);
+  }
+
+  run(id: string): Promise<BackgroundRun> {
+    return this.call("GET", `/v1/background-runs/${encodeURIComponent(id)}`);
+  }
+
+  cancelRun(id: string): Promise<BackgroundRun> {
+    return this.call("POST", `/v1/background-runs/${encodeURIComponent(id)}/cancel`, {});
+  }
+
+  killRuns(scope: KillScope, target: string, reason?: string): Promise<KillResponse> {
+    return this.call("POST", "/v1/background-runs/kill", {
+      scope,
+      target,
+      ...(reason ? { reason } : {}),
+    });
+  }
+
+  clearKill(scope: KillScope, target: string): Promise<KillResponse> {
+    const query = `scope=${scope}&target=${encodeURIComponent(target)}`;
+    return this.call("DELETE", `/v1/background-runs/kill?${query}`);
   }
 
   private async call<T>(method: string, path: string, body?: unknown): Promise<T> {

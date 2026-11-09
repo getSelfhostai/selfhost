@@ -18,7 +18,13 @@ import { doctor } from "./doctor.js";
 import { registerGateway } from "./gateway/commands.js";
 import { registerGuard } from "./guard/commands.js";
 import { readStdin, runHook } from "./hooks/receive.js";
-import { type ImportCommandOptions, type ImportIo, runImport, runWatch } from "./import.js";
+import {
+  type ImportCommandOptions,
+  type ImportIo,
+  printHookEvents,
+  runImport,
+  runWatch,
+} from "./import.js";
 import { registerInbox } from "./inbox/commands.js";
 import type { OpenLocalReviewList } from "./inbox/sync.js";
 import { registerInit } from "./init/commands.js";
@@ -38,7 +44,9 @@ import { localReviewList, registerReviewList } from "./review-list.js";
 import { registerReviewRoutes } from "./review-routes.js";
 import { registerReviewSetup } from "./review-setup.js";
 import { registerRoi } from "./roi.js";
+import { registerRuns } from "./runs.js";
 import { type RuntimeIo, registerRuntime } from "./runtime.js";
+import { runtimeCheck } from "./runtime-check.js";
 import type { CollectAttribution } from "./scan/attribution.js";
 import { gitAttribution } from "./scan/git-attribution.js";
 import { runScan, type ScanCommandOptions } from "./scan/index.js";
@@ -203,6 +211,35 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
     });
 
   program
+    .command("runtime")
+    .description("where background agents run")
+    .command("check")
+    .description(
+      "show how [egress] and [secrets] are written into each runtime's and local sandbox's own controls, and every rule one cannot hold",
+    )
+    .argument(
+      "[targets...]",
+      "laptop, sandbox-runtime, docker-sandboxes, devcontainer, e2b, daytona, modal, coder or opensandbox (default: [integrations.runtime] and the local sandboxes)",
+    )
+    .option("-c, --config <path>", "path to selfhost.toml")
+    .option("--team <name>", "use this team's egress list")
+    .option("--json", "print JSON")
+    .action((targets: string[], options: { config?: string; team?: string; json?: boolean }) => {
+      deps.setExitCode(
+        runtimeCheck({
+          cwd: deps.cwd,
+          env: deps.env,
+          write: deps.write,
+          targets,
+          ...(options.config ? { config: options.config } : {}),
+          ...(options.team ? { team: options.team } : {}),
+          ...(options.json ? { json: true } : {}),
+          configPath: deps.configPath ?? defaultConfigPath(),
+        }),
+      );
+    });
+
+  program
     .command("import")
     .description("import local Claude Code and Codex session logs into the ledger")
     .option("--since <when>", "how far back to read, like 30d, 12h or a date", "30d")
@@ -213,6 +250,10 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
     .option("--database <url>", "Postgres url (default: DATABASE_URL, else the embedded ledger)")
     .option("--data-dir <path>", "embedded ledger folder (default: ~/.selfhost/data)")
     .option("--json", "print JSON (one line per batch with --watch)")
+    .option(
+      "--hook-events",
+      "print the hook spool's events as JSON lines and write nothing (background runs read them)",
+    )
     .action(async (options: ImportCommandOptions) => {
       const importIo: ImportIo = {
         env: deps.env,
@@ -225,7 +266,8 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
         laptop: laptop(),
       };
       try {
-        if (options.watch) await runWatch(options, importIo);
+        if (options.hookEvents) await printHookEvents(options, importIo);
+        else if (options.watch) await runWatch(options, importIo);
         else if ((await runImport(options, importIo)).sync?.error) deps.setExitCode(1);
       } catch (error) {
         fail(error, options.json);
@@ -679,6 +721,19 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
       localReviewList: openLocalList,
       stdinIsTTY: deps.stdinIsTTY === true,
+    }),
+    fail,
+  );
+
+  registerRuns(
+    program,
+    () => ({
+      cwd: deps.cwd,
+      write: deps.write,
+      setExitCode: deps.setExitCode,
+      configPath: deps.configPath ?? defaultConfigPath(),
+      fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
+      ...(deps.sleep ? { sleep: deps.sleep } : {}),
     }),
     fail,
   );

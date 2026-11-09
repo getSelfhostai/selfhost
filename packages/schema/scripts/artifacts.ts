@@ -5,6 +5,9 @@ import {
   AddPersonRequestSchema,
   AddRepoRequestSchema,
   ApiErrorSchema,
+  BackgroundRunSchema,
+  BackgroundRunsQuerySchema,
+  BackgroundRunsResponseSchema,
   BudgetQuerySchema,
   BudgetResponseSchema,
   ClaudeCodeHookInputSchema,
@@ -47,6 +50,8 @@ import {
   IssueGatewayKeyResponseSchema,
   JoinRequestSchema,
   JoinResponseSchema,
+  KillRequestSchema,
+  KillResponseSchema,
   LaptopHeartbeatSchema,
   LaptopManagedSchema,
   LaptopRowSchema,
@@ -110,6 +115,7 @@ import {
   SetPolicyRequestSchema,
   SetRoleRequestSchema,
   SnoozeRequestSchema,
+  StartRunRequestSchema,
   TailQuerySchema,
   TailResponseSchema,
   TeamInfoSchema,
@@ -127,6 +133,7 @@ import {
   UsageRowSchema,
   UsageTotalsSchema,
   VendorReportedRowSchema,
+  WebhookRunRequestSchema,
 } from "../src/index.js";
 
 /** Files generated from the TypeBox sources. The drift test fails when they are stale. */
@@ -288,6 +295,12 @@ const COMPONENT_SCHEMAS: ReadonlyArray<readonly [name: string, schema: TSchema]>
   ["RunPullRequest", RunPullRequestSchema],
   ["RunResponse", RunResponseSchema],
   ["TailResponse", TailResponseSchema],
+  ["BackgroundRun", BackgroundRunSchema],
+  ["BackgroundRunsResponse", BackgroundRunsResponseSchema],
+  ["StartRunRequest", StartRunRequestSchema],
+  ["WebhookRunRequest", WebhookRunRequestSchema],
+  ["KillRequest", KillRequestSchema],
+  ["KillResponse", KillResponseSchema],
   ["NotifyTarget", NotifyTargetSchema],
   ["NotifySettings", NotifySettingsSchema],
   ["AddNotifyTargetRequest", AddNotifyTargetRequestSchema],
@@ -967,6 +980,130 @@ function openApiDocument(): Json {
               "A person token whose teams do not include the run's team. The same answer whether or not the run exists, so it shows nothing of it.",
             ),
             "404": errorResponse("No such run (admin token)."),
+          },
+        },
+      },
+      "/v1/background-runs": {
+        post: {
+          operationId: "startBackgroundRun",
+          summary: "Start a background run: an agent CLI in a sandbox on the team's runtime.",
+          description:
+            "A person token only, with the work role in the team: the run works for that person and under their own agent login. The trigger is checked ([background] allowed, kill switches, rate_limit_per_hour, max_concurrent, a runtime) and recorded as a run.triggered event either way. The run goes on in the background: a sandbox, a clone on its own branch, the agent CLI and the team's hooks, the tests-first gate, one pull request. Read it back with GET /v1/background-runs/{id}.",
+          requestBody: { required: true, content: jsonContent("StartRunRequest") },
+          responses: {
+            "202": {
+              description: "Started; the run as queued.",
+              content: jsonContent("BackgroundRun"),
+            },
+            "400": errorResponse("Invalid body."),
+            ...authErrors,
+            "403": errorResponse(
+              "The admin token, a caller without the work role, or a person not on [background] allowed.",
+            ),
+            "409": errorResponse("A team or org kill switch is on."),
+            "429": errorResponse("The team's hourly or concurrent run limit is reached."),
+            "503": errorResponse("No runtime is set up for the team, or background runs are off."),
+          },
+        },
+        get: {
+          operationId: "listBackgroundRuns",
+          summary: "Background runs, newest first, with the kill switches in force.",
+          description: `${ROLE_NOTE.read} A person token sees the runs of every team of its org it is in.`,
+          parameters: queryParameters(BackgroundRunsQuerySchema),
+          responses: {
+            "200": { description: "The runs.", content: jsonContent("BackgroundRunsResponse") },
+            "400": errorResponse("Invalid query."),
+            ...authErrors,
+            "403": forbiddenResponse,
+          },
+        },
+      },
+      "/v1/background-runs/{id}": {
+        get: {
+          operationId: "getBackgroundRun",
+          summary: "One background run: state, health line, live cost, gate and pull request.",
+          description: `${ROLE_NOTE.read} cost rises while the run goes; once it is final it equals the cost on its last run.updated event.`,
+          parameters: [pathParameter("id", "Run id.")],
+          responses: {
+            "200": { description: "The run.", content: jsonContent("BackgroundRun") },
+            ...authErrors,
+            "403": errorResponse("No run the caller can read has this id."),
+            "404": errorResponse("No such run (admin token)."),
+          },
+        },
+      },
+      "/v1/background-runs/{id}/cancel": {
+        post: {
+          operationId: "cancelBackgroundRun",
+          summary: "Stop one run and its sandbox.",
+          description:
+            "The admin token, or a person token with the work role in the run's team. Who stopped it is recorded on the run. A final run is answered as it is.",
+          parameters: [pathParameter("id", "Run id.")],
+          responses: {
+            "200": { description: "The run.", content: jsonContent("BackgroundRun") },
+            ...authErrors,
+            "403": forbiddenResponse,
+            "404": errorResponse("No such run."),
+          },
+        },
+      },
+      "/v1/background-runs/kill": {
+        post: {
+          operationId: "killBackgroundRuns",
+          summary: "Turn a team or org kill switch on: stop every run in it, refuse new ones.",
+          description:
+            "A team switch needs the admin token or an owner or admin of the team; an org switch the admin token or an owner in the org. Who used it is kept.",
+          requestBody: { required: true, content: jsonContent("KillRequest") },
+          responses: {
+            "200": {
+              description: "The switch, and the runs stopped.",
+              content: jsonContent("KillResponse"),
+            },
+            "400": errorResponse("Invalid body."),
+            ...authErrors,
+            "403": forbiddenResponse,
+            "503": errorResponse("Background runs are off."),
+          },
+        },
+        delete: {
+          operationId: "clearBackgroundKill",
+          summary: "Turn a kill switch off, so runs may start again.",
+          description: "The same callers as turning it on. Who cleared it is kept.",
+          parameters: [
+            {
+              name: "scope",
+              in: "query",
+              required: true,
+              schema: { type: "string", enum: ["team", "org"] },
+            },
+            { name: "target", in: "query", required: true, schema: { type: "string" } },
+          ],
+          responses: {
+            "200": { description: "The switch.", content: jsonContent("KillResponse") },
+            "400": errorResponse("Invalid query."),
+            ...authErrors,
+            "403": forbiddenResponse,
+            "503": errorResponse("Background runs are off."),
+          },
+        },
+      },
+      "/v1/background-runs/webhook": {
+        post: {
+          operationId: "webhookBackgroundRun",
+          summary: "Start a run from a signed webhook (the Slack and Telegram bridges use it).",
+          description:
+            "No bearer token: X-Selfhost-Signature-256, sha256= and the HMAC-SHA256 of the body in hex under the secret in the server variable [background] webhook_secret_env names, is the credential. A missing or wrong signature starts nothing and is recorded as a refused run.triggered event. sender is the person the bridge mapped the message to; the same checks as POST /v1/background-runs apply.",
+          security: [],
+          requestBody: { required: true, content: jsonContent("WebhookRunRequest") },
+          responses: {
+            "202": { description: "Started.", content: jsonContent("BackgroundRun") },
+            "400": errorResponse("Invalid body, or no team."),
+            "401": errorResponse("The signature does not match, or webhooks are off for the team."),
+            "403": errorResponse("The sender may not start runs."),
+            "404": errorResponse("Background runs are off on this server."),
+            "409": errorResponse("A kill switch is on."),
+            "429": errorResponse("A run limit is reached."),
+            "503": errorResponse("No runtime is set up for the team."),
           },
         },
       },

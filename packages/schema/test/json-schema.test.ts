@@ -9,7 +9,8 @@ import { CONTRACTS, FIXTURES, listFiles, PACKAGE_ROOT, read } from "./contracts.
 // an independent validator, so they agree with the TypeBox validators on every fixture.
 // Config fixtures are checked after TOML parsing; semantic checks (duplicate ids, regex
 // syntax, unknown rule overrides, reserved rule ids, one default run command, reserved
-// SELFHOST_ variables) live in parseConfig only, so those fixtures are skipped.
+// SELFHOST_ variables, team egress lists inside [egress], secret stores a reference needs) live
+// in parseConfig only, so those fixtures are skipped.
 const SEMANTIC_ONLY = new Set([
   "bad-command-regex.toml",
   "duplicate-rule-id.toml",
@@ -19,6 +20,8 @@ const SEMANTIC_ONLY = new Set([
   "reserved-guardrail-id.toml",
   "runtime-two-defaults.toml",
   "runtime-reserved-env.toml",
+  "egress-team-widens.toml",
+  "secret-store-missing.toml",
   "not-toml.toml",
 ]);
 

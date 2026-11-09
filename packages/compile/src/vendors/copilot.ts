@@ -155,6 +155,9 @@ function mcpMapping(allow: string[]): Mapping<Entry> {
 
 function mapping(check: Check): Mapping<Entry> {
   if (check.list?.kind === "mcp") return mcpMapping(check.list.allow);
+  if (check.list?.kind === "egress") {
+    return notExpressible("Copilot's managed settings have no network allow list.", false);
+  }
   if (check.list?.kind === "models") {
     return notExpressible(
       "Copilot's managed settings pick a default model and have no allow list.",

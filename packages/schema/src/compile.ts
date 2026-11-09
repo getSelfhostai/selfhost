@@ -30,7 +30,7 @@ export type HookCoverage = (typeof HOOK_COVERAGES)[number];
 
 export const RuleCoverageSchema = Type.Object(
   {
-    rule_id: Type.String({ description: "Rule id, or mcp.allow and models.allow." }),
+    rule_id: Type.String({ description: "Rule id, or mcp.allow, models.allow and egress.allow." }),
     vendor: StringEnum(COMPILE_VENDORS),
     mode: StringEnum(RULE_MODES, { description: "Mode after the team's overrides." }),
     action: StringEnum(RULE_ACTIONS),
@@ -71,7 +71,7 @@ export const PolicyCoverageSchema = Type.Object(
     vendors: Type.Array(VendorCoverageSchema),
     rules: Type.Array(RuleCoverageSchema, {
       description:
-        "One entry per rule and vendor, in rule order then vendor order: rules in file order, then mcp.allow, then models.allow.",
+        "One entry per rule and vendor, in rule order then vendor order: rules in file order, then mcp.allow, models.allow and egress.allow.",
     }),
   },
   { additionalProperties: false, title: "PolicyCoverage" },

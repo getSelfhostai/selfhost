@@ -64,6 +64,9 @@ function mcpMapping(allow: string[]): Mapping<Entry> {
 
 function mapping(check: Check): Mapping<Entry> {
   if (check.list?.kind === "mcp") return mcpMapping(check.list.allow);
+  if (check.list?.kind === "egress") {
+    return notExpressible("Cursor has no network allow list.", true);
+  }
   if (check.list?.kind === "models") {
     return notExpressible(
       "Cursor sets model access in the team dashboard, which selfhost does not write, and its hooks don't report the model.",

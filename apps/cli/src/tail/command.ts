@@ -40,6 +40,7 @@ export interface TailCommandOptions {
   person?: string;
   kind?: string;
   session?: string;
+  run?: string;
   since?: string;
   json?: boolean;
   database?: string;
@@ -229,6 +230,7 @@ async function followServer(ctx: Context, membership: Membership): Promise<void>
     ...(ctx.filter.agent ? { agent: ctx.filter.agent as (typeof AGENT_VENDORS)[number] } : {}),
     ...(ctx.filter.repo ? { repo: ctx.filter.repo } : {}),
     ...(ctx.filter.session ? { session: ctx.filter.session } : {}),
+    ...(ctx.filter.run ? { run: ctx.filter.run } : {}),
   };
   let after: string | undefined;
   let down = false;
@@ -292,6 +294,7 @@ async function followDatabase(ctx: Context, url: string): Promise<void> {
         ...(ctx.filter.agent ? { agent: ctx.filter.agent } : {}),
         ...(ctx.filter.repo ? { repo: ctx.filter.repo } : {}),
         ...(ctx.filter.session ? { session: ctx.filter.session } : {}),
+        ...(ctx.filter.run ? { run: ctx.filter.run } : {}),
         limit: 1000,
         settleMs: 1000,
       });
@@ -419,6 +422,7 @@ export async function runTail(options: TailCommandOptions, io: TailIo): Promise<
     ...(options.agent ? { agent: parseAgent(options.agent) } : {}),
     ...(options.repo ? { repo: parseRepo(options.repo) } : {}),
     ...(options.session ? { session: options.session.trim() } : {}),
+    ...(options.run ? { run: options.run.trim() } : {}),
   };
   const since = options.since ? parseAlarmSince(options.since, now()) : undefined;
   const signal = io.signal ?? untilSignal();
@@ -459,6 +463,7 @@ export function registerTail(
       "event kinds or groups: session, tool, policy, cost, alert, review ...",
     )
     .option("--session <id>", "only this session")
+    .option("--run <id>", "only this background run: its states, output, health and gate")
     .option("--since <when>", "start with what happened since, like 15m, 2h or a date")
     .option("--json", "one JSON object per line")
     .option("--local", "in a team, follow this machine instead of the team server")

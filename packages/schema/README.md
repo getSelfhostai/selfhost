@@ -35,6 +35,16 @@ App with a system actor (the reviewer's login) and `data.second_opinion`
 (`SecondOpinionDataSchema` in `src/second-opinion.ts`: tool, reviewer, verdict `approve`,
 `changes`, `comment` or `failed`, findings, severity, url, head_sha). Review items carry the
 newest per tool as `second_opinions` and the strictest as `second_opinion`.
+Background runs (`src/background.ts`) add five kinds, each with its own versioned shape under
+`data`: `run.triggered` (`data.trigger`, `selfhost.run_trigger/v1`: source, sender, mapped person,
+accepted or refused and why, the run it started; written for every trigger), `run.updated`
+(`data.background_run`, `selfhost.background_run/v1`: state, attempt, reason, runtime, sandbox,
+branch, credential kind, cost), `run.output` (`data.output`, `selfhost.run_output/v1`: the agent's
+lines), `run.health` (`data.health`, `selfhost.run_health/v1`) and `run.gate` (`data.gate`,
+`selfhost.run_gate/v1`, the tests-first verdict). All carry `run_id`. `[background]` in
+`selfhost.toml` configures them; `backgroundSettings(config)` fills its defaults, and
+`parseCron` checks `[[background.schedules]]`.
+
 `sandbox.started` and `sandbox.stopped` events are the life of a background run's sandbox, with a
 system actor and `data.sandbox` in its own versioned shape, `selfhost.sandbox/v1`
 (`SandboxRecordSchema` in `src/sandbox.ts`): runtime, sandbox id, size, region, list price per

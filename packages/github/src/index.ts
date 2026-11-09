@@ -9,6 +9,9 @@ export {
   type GitHubAppEnv,
   type GitHubAppOptions,
   githubAppEnv,
+  RUN_TOKEN_PERMISSIONS,
+  type RunToken,
+  type TokenPermissions,
 } from "./app.js";
 export {
   AGENT_LABEL_PREFIX,

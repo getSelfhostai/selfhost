@@ -1,4 +1,4 @@
-import type { Ledger } from "@selfhost/ledger";
+import { databaseOf, type Ledger } from "@selfhost/ledger";
 import { ledgerEvents, newDependencies, readPullFiles } from "@selfhost/pr";
 import {
   readProvenance,
@@ -68,6 +68,27 @@ export async function cloneModuleReverts(
   }
 }
 
+/** What a background run's tests-first gate found for a pull request it opened. */
+export type GateTests = (url: string) => Promise<"passed" | "failed" | undefined>;
+
+/**
+ * The tests-first gate's result for a pull request a background run opened: the newest pr.opened
+ * event for it that carries data.tests. undefined for every other pull request.
+ */
+export function backgroundRunTests(ledger: Ledger): GateTests {
+  const db = databaseOf(ledger);
+  return async (url) => {
+    const [row] = await db.query<{ tests: string | null }>(
+      `SELECT body -> 'data' ->> 'tests' AS tests FROM events
+       WHERE kind = 'pr.opened' AND body -> 'links' ->> 'pr_url' = $1
+         AND body -> 'data' ->> 'tests' IS NOT NULL
+       ORDER BY ts DESC LIMIT 1`,
+      [url],
+    );
+    return row?.tests === "passed" || row?.tests === "failed" ? row.tests : undefined;
+  };
+}
+
 /**
  * The risk provider backed by ee/risk: the score from the pull request's files, new
  * dependencies and agent, read from GitHub with the installation token (the same reads the
@@ -83,6 +104,8 @@ export function eeRisk(
   clones?: GitClones,
   ledger?: Pick<Ledger, "query">,
   secondOpinions?: (url: string) => Promise<SecondOpinion[]>,
+  /** The tests-first gate of the background run that opened the pull request, if one did. */
+  gateTests?: GateTests,
 ): GitHubProviders["risk"] {
   let loaded: Promise<RiskModule | undefined> | undefined;
   return async (ctx) => {
@@ -98,6 +121,7 @@ export function eeRisk(
       ...(ledger ? { ledger } : {}),
     });
     const opinions = await secondOpinions?.(ctx.pull.url);
+    const tests = await gateTests?.(ctx.pull.url);
     const reviewer = ctx.config.integrations.reviewer;
     const inputs: RiskInputs = {
       files,
@@ -116,10 +140,11 @@ export function eeRisk(
       ...(problem ? {} : { dependencies: newDependencies(manifests) }),
       ...(typeof modules === "string" ? {} : { modules }),
       agent: ctx.agent,
+      ...(tests ? { tests } : {}),
       unavailable: {
         outside_effects: RUN_UNAVAILABLE,
         guardrails: RUN_UNAVAILABLE,
-        tests: "no sandbox run yet",
+        ...(tests ? {} : { tests: "no sandbox run yet" }),
         reverts: "the server has no git history to count reverts in",
         ...(problem ? { dependencies: problem } : {}),
         ...(typeof modules === "string" ? { module_reverts: modules } : {}),

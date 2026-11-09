@@ -55,6 +55,9 @@ export const TailQuerySchema = Type.Object(
       RepoSlug({ description: "owner/name: the event's repo, else its run's repo." }),
     ),
     session: Type.Optional(Type.String({ minLength: 1, description: "session_id." })),
+    run: Type.Optional(
+      Type.String({ minLength: 1, description: "run_id: one background run's events." }),
+    ),
     team: Type.Optional(
       Type.String({
         minLength: 1,

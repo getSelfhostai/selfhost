@@ -198,6 +198,7 @@ describe("navigation and roles", () => {
     expect(links.map((a) => a.textContent)).toEqual([
       "Overview",
       "Review list",
+      "Runs",
       "Rules",
       "Spend",
       "Code",

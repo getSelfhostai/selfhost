@@ -70,12 +70,25 @@ export function policyText(checks: Check[], team?: string): string {
   }
   for (const check of on) {
     if (check.list === undefined) continue;
+    const state = check.mode === "enforce" ? "enforced" : "observed";
+    if (check.list.kind === "egress") {
+      const hosts = check.list.allow.map(code).join(", ");
+      lines.push(
+        "",
+        "## Network",
+        "",
+        hosts === ""
+          ? `Reach no outside host (${state}).`
+          : `Reach only these hosts (${state}): ${hosts}.`,
+      );
+      continue;
+    }
     const what = check.list.kind === "mcp" ? "MCP servers" : "models";
     lines.push(
       "",
       `## ${check.list.kind === "mcp" ? "MCP servers" : "Models"}`,
       "",
-      `Use only these ${what} (${check.mode === "enforce" ? "enforced" : "observed"}): ${check.list.allow.map(code).join(", ")}.`,
+      `Use only these ${what} (${state}): ${check.list.allow.map(code).join(", ")}.`,
     );
   }
   return `${lines.join("\n")}\n`;

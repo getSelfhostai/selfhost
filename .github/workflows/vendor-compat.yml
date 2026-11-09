@@ -100,10 +100,12 @@ jobs:
           --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
+        continue-on-error: true
         with:
           name: vendor-compat-results
           path: ${{ runner.temp }}/compat/*.json
           if-no-files-found: warn
+          retention-days: 14
       - name: Commit the page
         if: ${{ !cancelled() }}
         run: |

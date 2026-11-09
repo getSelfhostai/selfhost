@@ -1,0 +1,4 @@
+version = 1
+
+[egress]
+allow = ["github.com", "https://pypi.org/simple"]
