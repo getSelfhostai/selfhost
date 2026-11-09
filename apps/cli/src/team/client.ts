@@ -20,6 +20,10 @@ import type {
   JoinResponse,
   LedgerEvent,
   MeResponse,
+  NotifyCadence,
+  NotifySendsResponse,
+  NotifySettings,
+  NotifyTestResponse,
   OrgContextResponse,
   Person,
   PersonRole,
@@ -242,6 +246,32 @@ export class TeamClient {
       "GET",
       `/v1/teams/${encodeURIComponent(team)}/roi${search ? `?${search}` : ""}`,
     );
+  }
+
+  /** The person's notification targets, masked, and digest cadence. */
+  notify(): Promise<NotifySettings> {
+    return this.call("GET", "/v1/notify");
+  }
+
+  /** Adds an Apprise URL; the server keeps it and never returns it. */
+  addNotifyTarget(url: string, name?: string): Promise<NotifySettings> {
+    return this.call("POST", "/v1/notify/targets", { url, ...(name ? { name } : {}) });
+  }
+
+  removeNotifyTarget(name: string): Promise<NotifySettings> {
+    return this.call("DELETE", `/v1/notify/targets/${encodeURIComponent(name)}`);
+  }
+
+  setNotifyDigest(digest: NotifyCadence): Promise<NotifySettings> {
+    return this.call("PUT", "/v1/notify/digest", { digest });
+  }
+
+  testNotify(name?: string): Promise<NotifyTestResponse> {
+    return this.call("POST", "/v1/notify/test", name ? { name } : {});
+  }
+
+  notifySends(limit?: number): Promise<NotifySendsResponse> {
+    return this.call("GET", `/v1/notify/sends${limit ? `?limit=${limit}` : ""}`);
   }
 
   /** The AI gateway: health, the team's limits and the caller's own key, never its value. */

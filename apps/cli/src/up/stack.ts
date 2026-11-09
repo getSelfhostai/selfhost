@@ -16,8 +16,16 @@ export const SERVER_FILES: readonly StackFile[] = STACK_FILES.filter(
 export const GATEWAY_PATHS: readonly string[] = ["compose.gateway.yml", "gateway-config.sh"];
 export const GATEWAY_FILES = SERVER_FILES.filter((file) => GATEWAY_PATHS.includes(file.path));
 
-/** What the bootstrap script writes: every server file but the gateway's. */
-export const BOOTSTRAP_FILES = SERVER_FILES.filter((file) => !GATEWAY_PATHS.includes(file.path));
+/**
+ * Opt-in overlays `selfhost up` leaves off the server, as user-data has no room for them:
+ * notifications (compose.notify.yml) are copied over and added to COMPOSE_FILE by hand.
+ */
+export const OPT_IN_PATHS: readonly string[] = ["compose.notify.yml"];
+
+/** What the bootstrap script writes: every server file but the gateway's and the opt-in ones. */
+export const BOOTSTRAP_FILES = SERVER_FILES.filter(
+  (file) => !GATEWAY_PATHS.includes(file.path) && !OPT_IN_PATHS.includes(file.path),
+);
 
 /** The release .env.example names, the one a server runs unless --image says otherwise. */
 export function defaultVersion(files: readonly StackFile[] = STACK_FILES): string {

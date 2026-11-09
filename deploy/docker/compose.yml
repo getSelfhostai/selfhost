@@ -59,6 +59,8 @@ services:
       SELFHOST_GATEWAY_URL: ${SELFHOST_GATEWAY_URL:-}
       SELFHOST_GATEWAY_PUBLIC_URL: ${SELFHOST_GATEWAY_PUBLIC_URL:-}
       SELFHOST_GATEWAY_ADMIN_KEY: ${SELFHOST_GATEWAY_ADMIN_KEY:-}
+      # An Apprise API server the team already runs (compose.notify.yml sets its own).
+      SELFHOST_APPRISE_URL: ${SELFHOST_APPRISE_URL:-}
     ports:
       - "${SELFHOST_BIND:-0.0.0.0}:${SELFHOST_PORT:-4400}:4400"
     # Health check: HEALTHCHECK in the image, GET /v1/health.

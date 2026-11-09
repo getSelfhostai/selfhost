@@ -228,6 +228,23 @@ key = "team-overflow"       # gateway key alias
 monthly_cap_usd = 500
 ```
 
+## Notifications
+
+`[notify]` sets the team's defaults for phone, chat and email notifications, which go through
+Apprise ([`packages/notify`](../notify/src/index.ts)). Each person adds their own targets (Apprise
+URLs) with `selfhost notify add`; the URLs are kept on the server only, never in this file. The
+defaults are shown.
+
+```toml
+[notify]
+digest = "daily"            # for people who did not pick their own: daily, weekly (Mondays) or off
+digest_hour = 9             # UTC
+budget_owners = []          # who gets budget alerts and the spend digest; default the team's owners
+spend_digest = true         # daily: top spenders, fastest-growing teams, runs that hit caps
+```
+
+The person's own settings and targets are `/v1/notify` (`src/notify.ts`), for a person token only.
+
 ## Runtime
 
 `[runtime]` says how each agent workspace is set up, run and cleaned up; the runtime plugin reads

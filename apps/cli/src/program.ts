@@ -25,6 +25,7 @@ import { registerIntegrations } from "./integrations.js";
 import { registerLedger } from "./ledger.js";
 import { registerMcp } from "./mcp/commands.js";
 import { registerMigrate } from "./migrate/commands.js";
+import { registerNotify } from "./notify/commands.js";
 import { registerPackages } from "./packages.js";
 import { registerPolicy } from "./policy/commands.js";
 import { registerPolicyCompile } from "./policy/compile.js";
@@ -188,6 +189,7 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
     .action(async (options: ImportCommandOptions) => {
       const importIo: ImportIo = {
         env: deps.env,
+        cwd: deps.cwd,
         write: deps.write,
         configPath: deps.configPath,
         fetch: deps.fetch,
@@ -591,6 +593,23 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
       localReviewList: openLocalList,
       stdinIsTTY: deps.stdinIsTTY === true,
+    }),
+    fail,
+  );
+
+  registerNotify(
+    program,
+    () => ({
+      env: deps.env,
+      cwd: deps.cwd,
+      platform: deps.platform,
+      ...(deps.probes.which ? { which: deps.probes.which } : {}),
+      write: deps.write,
+      setExitCode: deps.setExitCode,
+      now: deps.now,
+      configPath: deps.configPath ?? defaultConfigPath(),
+      fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
+      readStdin: () => readStdin(),
     }),
     fail,
   );

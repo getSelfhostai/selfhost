@@ -695,6 +695,8 @@ const DECISION_COMMANDS: readonly { words: readonly string[]; flag?: string }[] 
   { words: ["guard", "uninstall"] },
   { words: ["agents", "configure"], flag: "--remove" },
   { words: ["init"], flag: "--undo" },
+  { words: ["notify", "add"] },
+  { words: ["notify", "remove"] },
 ];
 
 /** The words of a selfhost decision command a shell command runs, if it runs one. */

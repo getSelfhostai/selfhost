@@ -204,6 +204,8 @@ describe("selfhost decision commands", () => {
     "bash -c 'selfhost guard uninstall'",
     "selfhost team policy push selfhost.toml",
     "selfhost init --undo",
+    "selfhost notify add - < url.txt",
+    "selfhost notify remove phone",
     "selfhost agents configure --remove",
     "cd /tmp && selfhost team leave",
   ])("blocks %s, even with the guardrails off", async (command) => {

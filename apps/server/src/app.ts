@@ -16,6 +16,7 @@ import { type Gateway, gatewayAdminRoutes } from "./gateway.js";
 import { type GitHubRouteOptions, githubRoutes } from "./github.js";
 import { githubRepos, type IntegrationRouteOptions } from "./integrations.js";
 import { adminMcpRoute, mcpRoutes } from "./mcp.js";
+import { type NotifyRouteOptions, notifyRoutes } from "./notify.js";
 import { otlpRoutes } from "./otlp.js";
 import type { GitClones } from "./provenance.js";
 import { type ReceiptRouteOptions, receiptReadRoutes, receiptRoutes } from "./receipts.js";
@@ -55,6 +56,8 @@ export interface AppOptions {
   integrations?: IntegrationRouteOptions;
   /** The AI gateway selfhost configures (see gateway.ts). */
   gateway?: Gateway;
+  /** How notifications are delivered: the Apprise API in SELFHOST_APPRISE_URL (see notify.ts). */
+  notify?: Pick<NotifyRouteOptions, "deliver">;
 }
 
 export function createApp({
@@ -70,6 +73,7 @@ export function createApp({
   receipts = {},
   integrations = {},
   gateway,
+  notify = {},
 }: AppOptions): Hono {
   const app = new Hono();
   const review = {
@@ -114,6 +118,11 @@ export function createApp({
           refuseContextDecision(c, ledger, (c.env as PersonEnv["Bindings"]).caller, id),
       });
       mcpRoutes(person, ledger, { version, ...review });
+      notifyRoutes(person, ledger, {
+        ...notify,
+        ...(config ? { config } : {}),
+        ...(now ? { now } : {}),
+      });
     },
   });
   // The console's files hold no data, so they need no token; what they read from /v1 does.

@@ -44,6 +44,7 @@ from the same code.
 | `packages/policy`        | Evaluates `selfhost.toml` rules against tool calls and records would-block events           |
 | `packages/compile`       | Compiles `selfhost.toml` into each vendor's native controls, with coverage per rule         |
 | `packages/review`        | The review list: items from ledger signals, deduped, routed, ranked, with approval timeouts |
+| `packages/notify`        | Phone, chat and email alerts and digests through Apprise, every send recorded, no secrets   |
 | `packages/agents`        | Agent and login detection, context file listing, and config writing for five agent CLIs     |
 | `packages/attribution`   | Links commits and pull requests to the agent and model that produced them, with merge stats |
 | `packages/pr`            | Reads a pull request or local commits: hunks, new dependencies, test changes, the agent run |

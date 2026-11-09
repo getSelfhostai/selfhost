@@ -10,6 +10,7 @@ export * from "./hooks/claude-code.js";
 export * from "./hooks/codex.js";
 export * from "./layers.js";
 export * from "./mcp.js";
+export * from "./notify.js";
 export * from "./org.js";
 export * from "./policy-observed.js";
 export * from "./policy-test.js";

@@ -39,6 +39,7 @@
     "@selfhost/integrations": "workspace:*",
     "@selfhost/ledger": "workspace:*",
     "@selfhost/mcp": "workspace:*",
+    "@selfhost/notify": "workspace:*",
     "@selfhost/policy": "workspace:*",
     "@selfhost/pr": "workspace:*",
     "@selfhost/provenance": "workspace:*",

@@ -1,0 +1,28 @@
+# Notifications: the Apprise API server (github.com/caronc/apprise-api, BSD-2) next to the
+# selfhost server. selfhost decides what to send and when; Apprise delivers it to Telegram,
+# Slack, email, Teams, Discord, ntfy and 100+ other services. Only the server reaches it, on the
+# compose network: no port is published, and it keeps no configuration of its own (stateless
+# /notify only), so the target URLs, which hold secrets, stay in selfhost's database.
+# Add it to COMPOSE_FILE:
+#   COMPOSE_FILE=compose.yml:compose.tls.yml:compose.notify.yml
+# A team that already runs Apprise leaves this file out and sets SELFHOST_APPRISE_URL in .env.
+services:
+  apprise:
+    image: caronc/apprise:2.0.2
+    restart: unless-stopped
+    environment:
+      APPRISE_STATEFUL_MODE: disabled
+      APPRISE_ATTACH_SIZE: "0"
+      APPRISE_WORKER_COUNT: "1"
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+
+  selfhost:
+    depends_on:
+      apprise:
+        condition: service_started
+    environment:
+      SELFHOST_APPRISE_URL: http://apprise:8000
