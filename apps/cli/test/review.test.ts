@@ -46,6 +46,7 @@ describe("selfhost review risk", () => {
     const review = createProgram().commands.find((command) => command.name() === "review");
     expect(review?.commands.map((command) => command.name())).toEqual([
       "risk",
+      "setup",
       "brief",
       "trace",
       "list",

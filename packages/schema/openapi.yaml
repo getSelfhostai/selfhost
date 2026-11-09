@@ -1658,7 +1658,7 @@ paths:
           required: false
           description: Comma-separated event kinds, or their first part (tool for tool.called and tool.result).
           schema:
-            pattern: ^(?:session\.started|session\.ended|prompt\.submitted|tool\.called|tool\.result|approval\.requested|decision\.recorded|cost\.recorded|commit\.created|pr\.opened|pr\.merged|pr\.closed|policy\.evaluated|alert\.raised|config\.reported|session|prompt|tool|approval|decision|cost|commit|pr|policy|alert|config)(?:,(?:session\.started|session\.ended|prompt\.submitted|tool\.called|tool\.result|approval\.requested|decision\.recorded|cost\.recorded|commit\.created|pr\.opened|pr\.merged|pr\.closed|policy\.evaluated|alert\.raised|config\.reported|session|prompt|tool|approval|decision|cost|commit|pr|policy|alert|config))*$
+            pattern: ^(?:session\.started|session\.ended|prompt\.submitted|tool\.called|tool\.result|approval\.requested|decision\.recorded|cost\.recorded|commit\.created|pr\.opened|pr\.merged|pr\.closed|policy\.evaluated|alert\.raised|config\.reported|review\.submitted|session|prompt|tool|approval|decision|cost|commit|pr|policy|alert|config|review)(?:,(?:session\.started|session\.ended|prompt\.submitted|tool\.called|tool\.result|approval\.requested|decision\.recorded|cost\.recorded|commit\.created|pr\.opened|pr\.merged|pr\.closed|policy\.evaluated|alert\.raised|config\.reported|review\.submitted|session|prompt|tool|approval|decision|cost|commit|pr|policy|alert|config|review))*$
             type: string
         - name: person
           in: query

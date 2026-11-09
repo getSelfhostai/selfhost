@@ -3,6 +3,7 @@ import { Value } from "@sinclair/typebox/value";
 import { parse as parseToml, TomlError } from "smol-toml";
 import { NonEmpty, StringEnum, Url } from "./common.js";
 import { AGENT_VENDORS } from "./event.js";
+import { REVIEWER_TOOLS, ROUTER_TOOLS, RUNTIME_TOOLS, TRACER_TOOLS } from "./integration-tools.js";
 import { NOTIFY_CADENCES } from "./notify.js";
 import { REVIEW_ITEM_KINDS } from "./review-item.js";
 import { TomlLineIndex } from "./toml-lines.js";
@@ -672,14 +673,16 @@ export const RoiConfigSchema = Type.Object(
   },
 );
 
-export const ROUTER_TOOLS = ["bifrost", "litellm"] as const;
-export const TRACER_TOOLS = ["langfuse", "phoenix", "datadog", "otlp"] as const;
-export const RUNTIME_TOOLS = ["e2b", "daytona", "modal", "coder"] as const;
-export const REVIEWER_TOOLS = ["pr-agent", "claude-code-action", "coderabbit"] as const;
-export type RouterTool = (typeof ROUTER_TOOLS)[number];
-export type TracerTool = (typeof TRACER_TOOLS)[number];
-export type RuntimeTool = (typeof RUNTIME_TOOLS)[number];
-export type ReviewerTool = (typeof REVIEWER_TOOLS)[number];
+export {
+  REVIEWER_TOOLS,
+  type ReviewerTool,
+  ROUTER_TOOLS,
+  type RouterTool,
+  RUNTIME_TOOLS,
+  type RuntimeTool,
+  TRACER_TOOLS,
+  type TracerTool,
+} from "./integration-tools.js";
 /** Which pull requests the reviewer runs on: those an agent opened, or all of them. */
 export const REVIEWER_PULL_REQUESTS = ["agent", "all"] as const;
 export type ReviewerPullRequests = (typeof REVIEWER_PULL_REQUESTS)[number];

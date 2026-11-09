@@ -1,7 +1,7 @@
 import { type Static, Type } from "@sinclair/typebox";
 import { DateTime, NonEmpty, StringEnum, Url, Uuidv7 } from "./common.js";
-import { REVIEWER_TOOLS } from "./config.js";
 import type { LedgerEvent } from "./event.js";
+import { REVIEWER_TOOLS } from "./integration-tools.js";
 import { createValidator } from "./validate.js";
 
 /**
