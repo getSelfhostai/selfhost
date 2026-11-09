@@ -1,7 +1,8 @@
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Ledger, mapOtelLogs, openLedger } from "@selfhost/ledger";
+import { EVENT_SCHEMA, type LedgerEvent } from "@selfhost/schema";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { runImport } from "../src/import.js";
 import { createProgram } from "../src/program.js";
@@ -38,6 +39,7 @@ describe("spend options", () => {
       "--json",
       "--database",
       "--data-dir",
+      "--config",
     ]);
   });
 });
@@ -88,9 +90,11 @@ describe("selfhost spend", () => {
     const status = report.groups.find((group) => group.group.request_type === "status_line");
     expect(status?.share).toBeCloseTo(0.164, 3);
     expect(lines[0]).toBe("Spend from 2026-10-26 to 2026-11-01 (UTC days), by request_type");
-    expect(lines[1]).toMatch(/^request_type\s+requests\s+tokens\s+usd\s+share$/);
+    expect(lines[1]).toMatch(/^request_type\s+requests\s+tokens\s+usd\s+share\s+cache hits$/);
     expect(
-      lines.some((line) => /^status_line\s+\d+\s+[\d.]+[kM]\s+\$\d+\.\d\d\s+16\.4%$/.test(line)),
+      lines.some((line) =>
+        /^status_line\s+\d+\s+[\d.]+[kM]\s+\$\d+\.\d\d\s+16\.4%\s+\d+\.\d%$/.test(line),
+      ),
     ).toBe(true);
     expect(lines).toContain("Flagged: request types that crossed 10.0% of a day's spend");
     expect(lines.at(-1)).toMatch(/^ {2}2026-10-28 {2}status_line {2}16\.5% of \$/);
@@ -136,5 +140,103 @@ describe("selfhost spend", () => {
       "Spend from 2026-11-30 to 2026-12-01 (UTC days), by request_type",
       "No cost.recorded events in this window. Run selfhost import first.",
     ]);
+  });
+});
+
+describe("selfhost spend cache hit rates", () => {
+  let ledger: Ledger;
+  let n = 0;
+  const request = (
+    session: string,
+    vendor: "claude_code" | "cursor",
+    tokens: { input: number; read?: number; write?: number },
+    usd: number,
+  ): LedgerEvent => ({
+    id: `01930c4e-2f1a-7b2c-9d3e-${(++n).toString(16).padStart(12, "0")}`,
+    schema: EVENT_SCHEMA,
+    ts: new Date(Date.UTC(2026, 10, 8, 10, 0) + n * 60_000).toISOString(),
+    source: "local_log",
+    kind: "cost.recorded",
+    actor: { kind: "person", id: "ada@example.com" },
+    agent: { vendor },
+    model: vendor === "cursor" ? "gpt-5" : "claude-sonnet-4-5",
+    session_id: session,
+    cost: {
+      input_tokens: tokens.input,
+      output_tokens: 100,
+      cache_read_tokens: tokens.read ?? 0,
+      cache_write_tokens: tokens.write ?? 0,
+      usd,
+      estimated: true,
+    },
+  });
+
+  beforeAll(async () => {
+    ledger = await openLedger({ dataDir: "memory://" });
+    await ledger.append([
+      // Warm: written once, then read.
+      request("warm-session", "claude_code", { input: 100, write: 9000 }, 0.1),
+      ...Array.from({ length: 5 }, () =>
+        request("warm-session", "claude_code", { input: 100, read: 9000 }, 0.05),
+      ),
+      // Rewrites its cache on every request, and costs enough for a tip.
+      ...Array.from({ length: 6 }, () =>
+        request("churn-session", "claude_code", { input: 100, write: 9000 }, 1.5),
+      ),
+      // An agent whose logs carry no cache fields.
+      ...Array.from({ length: 3 }, () => request("cursor-1", "cursor", { input: 5000 }, 0.4)),
+    ]);
+  });
+
+  afterAll(async () => {
+    await ledger.close();
+  });
+
+  const run = async (options: Parameters<typeof runSpend>[0], io: { configPath?: string } = {}) => {
+    const lines: string[] = [];
+    const report = await runSpend(
+      options,
+      { env: {}, write: (line) => lines.push(line), now: new Date("2026-11-09T00:00:00Z"), ...io },
+      ledger,
+    );
+    return { report, lines };
+  };
+
+  it("shows a rate per agent, unknown for one with no cache fields, and one tip line", async () => {
+    const { report, lines } = await run({ since: "2d", by: "agent" });
+    const agent = (name: string) => report.groups.find((g) => g.group.agent === name);
+    expect(agent("cursor")).toMatchObject({ cache_hit_rate: null, cache_unknown_requests: 3 });
+    const read = 5 * 9000;
+    expect(agent("claude_code")?.cache_hit_rate).toBeCloseTo(read / (read + 1200 + 7 * 9000), 9);
+    expect(report.total.cache_hit_rate).toBe(agent("claude_code")?.cache_hit_rate);
+    expect(report.cache_tips.map((tip) => [tip.session_id, tip.cache_hit_rate])).toEqual([
+      ["churn-session", 0],
+    ]);
+    expect(lines.some((line) => /^cursor\s.*\sunknown$/.test(line))).toBe(true);
+    const tips = lines.filter((line) => line.startsWith("Cost tip: "));
+    expect(tips).toEqual([
+      "Cost tip: Session churn-se (claude_code, ada@example.com) cost $9.00 at 0% cache hits: usually a value that changes early in the prompt (such as a timestamp), tool lists that reorder, or a model switch.",
+    ]);
+  });
+
+  it("puts the same in --json, with the thresholds from [alerts]", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "selfhost-spend-cache-"));
+    const config = join(dir, "selfhost.toml");
+    writeFileSync(config, "version = 1\n\n[alerts]\ncache_hit_floor = 0.9\ncache_tip_usd = 0.3\n");
+    const { report, lines } = await run(
+      { since: "2d", by: "agent", json: true, config },
+      { configPath: join(dir, "config.json") },
+    );
+    const parsed = JSON.parse(lines.join("\n"));
+    expect(parsed.cache_hit_floor).toBe(0.9);
+    expect(parsed.cache_tip_usd).toBe(0.3);
+    expect(parsed.cache_tips.map((tip: { session_id: string }) => tip.session_id)).toEqual([
+      "churn-session",
+      "warm-session",
+    ]);
+    expect(
+      parsed.groups.find((g: { group: { agent: string } }) => g.group.agent === "cursor"),
+    ).toMatchObject({ cache_hit_rate: null });
+    expect(report.cache_tips).toHaveLength(2);
   });
 });

@@ -221,6 +221,9 @@ spike_factor = 10           # band is at least this multiple of the usual spend 
 spike_floor_usd = 5         # spend under this in 15 minutes never alarms
 spike_baseline_days = 14
 forecast_warn_hours = 24
+cache_hit_floor = 0.5       # prompt cache hit rate (0 to 1) under which a long session alerts
+cache_min_requests = 20     # requests a session needs before its hit rate can alert
+cache_tip_usd = 5           # sessions under the floor that cost this much get a cost tip
 # runbook_url = "https://wiki.example.com/key-rotation"
 
 [plans]                     # API-equivalent USD per window, overriding the built-in table per tier

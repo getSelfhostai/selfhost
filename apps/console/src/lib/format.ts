@@ -62,6 +62,10 @@ const percent = new Intl.NumberFormat("en-US", { style: "percent", maximumFracti
 export const formatShare = (value: number | null | undefined) =>
   value === null || value === undefined ? "-" : percent.format(value);
 
+/** A prompt cache hit rate: 87% cache hits, or unknown when the agent reports no cache tokens. */
+export const formatCacheHits = (rate: number | null | undefined) =>
+  rate === null || rate === undefined ? "unknown" : `${Math.round(rate * 100)}%`;
+
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;

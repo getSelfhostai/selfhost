@@ -1,17 +1,25 @@
 import { type Ledger, openLedger } from "@selfhost/ledger";
-import type { LedgerEvent } from "@selfhost/schema";
+import { type LedgerEvent, validateConfig } from "@selfhost/schema";
 import {
+  type CacheStats,
+  cacheByGroup,
+  cacheTips,
+  cacheTipText,
   detectWaste,
+  groupKey,
   groupSpend,
   oneSourcePerSession,
   SPEND_DIMENSIONS,
   type SpendDimension,
   type SpendTotals,
+  sessionCaches,
   totalSpend,
   utcDay,
   type WasteFlag,
 } from "@selfhost/spend";
 import type { Command } from "commander";
+import { type AlertSettings, loadAlertSettings } from "./alerts/settings.js";
+import { defaultConfigPath } from "./config-file.js";
 import { percent, table, tokens, usd } from "./format.js";
 import { parseSince } from "./import.js";
 
@@ -23,12 +31,35 @@ export interface SpendCommandOptions {
   json?: boolean;
   database?: string;
   dataDir?: string;
+  config?: string;
 }
 
 interface Io {
   env: NodeJS.ProcessEnv;
   write: (line: string) => void;
   now?: Date;
+  /** Where selfhost.toml is looked for, for [alerts]. Without configPath the defaults apply. */
+  cwd?: string;
+  configPath?: string;
+}
+
+/** A group's or the total's prompt cache hit rate: null when no session reported cache tokens. */
+export interface SpendCache {
+  cache_hit_rate: number | null;
+  /** Requests of sessions that reported no cache tokens, left out of the rate. */
+  cache_unknown_requests: number;
+}
+
+/** A session that cost at least [alerts] cache_tip_usd at a hit rate under cache_hit_floor. */
+export interface CacheTip {
+  session_id: string;
+  agent: string;
+  person: string;
+  model: string;
+  usd: number;
+  cache_hit_rate: number;
+  requests: number;
+  text: string;
 }
 
 export interface SpendReport {
@@ -39,9 +70,14 @@ export interface SpendReport {
   /** Share of a day's spend, 0 to 1, that flags a request type. */
   threshold: number;
   min_usd: number;
-  total: SpendTotals;
-  groups: (SpendTotals & { group: Partial<Record<SpendDimension, string>>; share: number })[];
+  total: SpendTotals & SpendCache;
+  groups: (SpendTotals &
+    SpendCache & { group: Partial<Record<SpendDimension, string>>; share: number })[];
   flags: WasteFlag[];
+  /** [alerts] cache_hit_floor and cache_tip_usd, and the sessions they flag. */
+  cache_hit_floor: number;
+  cache_tip_usd: number;
+  cache_tips: CacheTip[];
 }
 
 const PAGE = 1000;
@@ -93,6 +129,29 @@ async function costEvents(ledger: Ledger, from: Date): Promise<LedgerEvent[]> {
   return events;
 }
 
+const cacheOf = (stats: CacheStats | undefined): SpendCache => ({
+  cache_hit_rate: stats?.hit_rate ?? null,
+  cache_unknown_requests: stats?.unknown_requests ?? 0,
+});
+
+const cacheText = (rate: number | null) => (rate === null ? "unknown" : percent(rate));
+
+/** Cost tips printed at most; --json lists them all. */
+const TIPS_SHOWN = 3;
+
+/** [alerts] from selfhost.toml; the defaults when the caller gives no config path (tests). */
+function alertSettings(options: SpendCommandOptions, io: Io): AlertSettings["alerts"] {
+  if (!io.configPath && !options.config) return DEFAULT_ALERTS;
+  const where = { cwd: io.cwd ?? process.cwd(), env: io.env, configPath: io.configPath ?? "" };
+  return loadAlertSettings(where, options.config, false).alerts;
+}
+
+const DEFAULT_ALERTS = (() => {
+  const result = validateConfig({ version: 1 });
+  if (!result.ok) throw new Error("the default selfhost.toml does not validate");
+  return result.config.alerts;
+})();
+
 function printReport(report: SpendReport, write: (line: string) => void): void {
   write(`Spend from ${report.from} to ${report.to} (UTC days), by ${report.by.join(", ")}`);
   if (report.total.requests === 0) {
@@ -101,13 +160,14 @@ function printReport(report: SpendReport, write: (line: string) => void): void {
   }
   table(
     [
-      [...report.by, "requests", "tokens", "usd", "share"],
+      [...report.by, "requests", "tokens", "usd", "share", "cache hits"],
       ...report.groups.map((group) => [
         ...report.by.map((dimension) => group.group[dimension] ?? ""),
         String(group.requests),
         tokens(group.tokens),
         usd(group.usd),
         percent(group.share),
+        cacheText(group.cache_hit_rate),
       ]),
       [
         "total",
@@ -116,12 +176,18 @@ function printReport(report: SpendReport, write: (line: string) => void): void {
         tokens(report.total.tokens),
         usd(report.total.usd),
         "100.0%",
+        cacheText(report.total.cache_hit_rate),
       ],
     ],
     write,
-    4,
+    5,
   );
   write("");
+  for (const tip of report.cache_tips.slice(0, TIPS_SHOWN)) write(`Cost tip: ${tip.text}`);
+  if (report.cache_tips.length > TIPS_SHOWN) {
+    write(`  and ${report.cache_tips.length - TIPS_SHOWN} more in --json.`);
+  }
+  if (report.cache_tips.length > 0) write("");
   const rule = `${percent(report.threshold)} of a day's spend`;
   if (report.flags.length === 0) {
     write(`No request type crossed ${rule}.`);
@@ -150,6 +216,7 @@ export async function runSpend(
   const by = parseBy(options.by);
   const threshold = parseThreshold(options.threshold);
   const minUsd = parseMinUsd(options.minUsd);
+  const alerts = alertSettings(options, io);
   const target =
     ledger ??
     (await openLedger({ url: options.database ?? io.env.DATABASE_URL, dataDir: options.dataDir }));
@@ -161,15 +228,37 @@ export async function runSpend(
       ? series
       : groupSpend(events, { by: ["request_type"], ...range });
     const { total, groups } = totalSpend(series);
+    const inRange = events.filter((event) => {
+      const day = utcDay(event.ts);
+      return day !== undefined && day >= (utcDay(since) ?? "") && day <= (utcDay(now) ?? "");
+    });
+    const cache = cacheByGroup(inRange, by);
+    const floor = alerts.cache_hit_floor ?? 0.5;
+    const tipUsd = alerts.cache_tip_usd ?? 5;
     const report: SpendReport = {
       from: utcDay(since) ?? "",
       to: utcDay(now) ?? "",
       by,
       threshold,
       min_usd: minUsd,
-      total,
-      groups,
+      total: { ...total, ...cacheOf(cache.total) },
+      groups: groups.map((group) => ({
+        ...group,
+        ...cacheOf(cache.groups.get(groupKey(group.group, by))),
+      })),
       flags: detectWaste(byType, { shareThreshold: threshold, minUsd }),
+      cache_hit_floor: floor,
+      cache_tip_usd: tipUsd,
+      cache_tips: cacheTips(sessionCaches(inRange), { floor, minUsd: tipUsd }).map((session) => ({
+        session_id: session.session_id,
+        agent: session.agent,
+        person: session.person,
+        model: session.model,
+        usd: Math.round(session.usd * 1e6) / 1e6,
+        cache_hit_rate: session.hit_rate ?? 0,
+        requests: session.requests,
+        text: cacheTipText(session),
+      })),
     };
     if (options.json) io.write(JSON.stringify(report, null, 2));
     else printReport(report, io.write);
@@ -182,7 +271,9 @@ export async function runSpend(
 export function registerSpend(program: Command): void {
   program
     .command("spend")
-    .description("spend by request type, agent, model or person, with request types that grew")
+    .description(
+      "spend by request type, agent, model or person, with cache hit rates and request types that grew",
+    )
     .option("--since <when>", "how far back to read, like 7d, 12h or a date", "7d")
     .option("--by <dimensions>", "request_type, agent, model, person (comma-separated)")
     .option("--threshold <percent>", "flag a request type at this share of a day's spend", "10")
@@ -190,8 +281,13 @@ export function registerSpend(program: Command): void {
     .option("--json", "print the report as JSON")
     .option("--database <url>", "Postgres url (default: DATABASE_URL, else the embedded ledger)")
     .option("--data-dir <path>", "embedded ledger folder (default: ~/.selfhost/data)")
+    .option("-c, --config <path>", "path to selfhost.toml, for the [alerts] cache settings")
     .action(async (options: SpendCommandOptions) => {
-      const io = { env: process.env, write: (line: string) => console.log(line) };
+      const io = {
+        env: process.env,
+        write: (line: string) => console.log(line),
+        configPath: defaultConfigPath(),
+      };
       try {
         await runSpend(options, io);
       } catch (error) {

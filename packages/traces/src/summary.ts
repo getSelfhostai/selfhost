@@ -1,5 +1,11 @@
 import type { AgentRef, LedgerEvent, RunSummary } from "@selfhost/schema";
-import { oneSourcePerSession } from "@selfhost/spend";
+import {
+  type CacheTipOptions,
+  cacheTips,
+  cacheTipText,
+  oneSourcePerSession,
+  sessionCaches,
+} from "@selfhost/spend";
 
 /** A run with no session.ended counts as over once its last event is this old. */
 export const RUN_IDLE_MS = 30 * 60_000;
@@ -46,7 +52,7 @@ export function tokensOf(event: LedgerEvent): number {
 export function summarizeRun(
   id: string,
   events: readonly LedgerEvent[],
-  options: { now: Date; team?: string | null; idleMs?: number },
+  options: { now: Date; team?: string | null; idleMs?: number; cacheTip?: CacheTipOptions },
 ): RunSummary {
   const sorted = [...events].sort((a, b) => time(a) - time(b) || a.id.localeCompare(b.id));
   const costs = runCosts(sorted);
@@ -54,6 +60,9 @@ export function summarizeRun(
     sorted.find((e) => e.agent && e.agent.vendor !== "other") ?? sorted.find((e) => e.agent);
   const agent: AgentRef | null = agentEvent?.agent ? { ...agentEvent.agent } : null;
   const usd = costs.reduce((sum, e) => sum + (e.cost?.usd ?? 0), 0);
+  // The run's requests as one session, whatever session ids its sources gave them.
+  const [cache] = sessionCaches(costs.map((e) => ({ ...e, session_id: id })));
+  const tip = cache && options.cacheTip ? cacheTips([cache], options.cacheTip)[0] : undefined;
   return {
     id,
     agent,
@@ -65,5 +74,10 @@ export function summarizeRun(
     ended_at: runEnd(sorted, options.now, options.idleMs)?.at ?? null,
     cost_usd: Math.round(usd * 1e6) / 1e6,
     tokens: costs.reduce((sum, e) => sum + tokensOf(e), 0),
+    cache_hit_rate:
+      cache?.hit_rate === null || cache === undefined
+        ? null
+        : Math.round(cache.hit_rate * 1e6) / 1e6,
+    cache_tip: tip ? cacheTipText(tip) : null,
   };
 }

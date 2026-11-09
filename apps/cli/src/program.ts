@@ -41,6 +41,7 @@ import { gitAttribution } from "./scan/git-attribution.js";
 import { runScan, type ScanCommandOptions } from "./scan/index.js";
 import { type Ask, askOnTerminal, type SendPing } from "./scan/telemetry.js";
 import { registerSpend } from "./spend.js";
+import { registerTail } from "./tail/command.js";
 import type { Fetch } from "./team/client.js";
 import { registerTeam } from "./team/commands.js";
 import type { LaptopIo } from "./team/laptop.js";
@@ -343,6 +344,17 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
   );
 
   registerSpend(program);
+  registerTail(
+    program,
+    () => ({
+      env: deps.env,
+      write: deps.write,
+      note: deps.writeError,
+      configPath: deps.configPath ?? defaultConfigPath(),
+      ...(deps.fetch ? { fetch: deps.fetch } : {}),
+    }),
+    fail,
+  );
   registerAlerts(
     program,
     () => ({

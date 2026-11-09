@@ -35,6 +35,8 @@ import type {
   RoiQuery,
   RoiResponse,
   SetIntegrationRequest,
+  TailQuery,
+  TailResponse,
   TeamLaptopsResponse,
   TeamPeopleResponse,
   TeamRepo,
@@ -213,6 +215,16 @@ export class TeamClient {
   /** One POST /v1/events, at most 1000 events. RemoteWriter adds batching and retries. */
   pushEvents(events: LedgerEvent[]): Promise<IngestEventsResponse> {
     return this.call("POST", "/v1/events", { events });
+  }
+
+  /** The events that reached the server after `after`, held up to `wait` seconds (selfhost tail). */
+  tailEvents(query: TailQuery): Promise<TailResponse> {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined) params.set(key, String(value));
+    }
+    const search = params.toString();
+    return this.call("GET", `/v1/events/tail${search ? `?${search}` : ""}`);
   }
 
   /** One page of review items. */

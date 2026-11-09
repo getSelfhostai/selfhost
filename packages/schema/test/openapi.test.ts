@@ -49,6 +49,7 @@ describe("openapi.yaml", () => {
         "GET /v1/context",
         "GET /v1/decisions",
         "GET /v1/events",
+        "GET /v1/events/tail",
         "GET /v1/gateway",
         "GET /v1/gateway/keys",
         "GET /v1/health",

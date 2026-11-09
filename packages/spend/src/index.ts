@@ -1,5 +1,25 @@
 export { BUDGET_KEY, budgetResponse, periodRange } from "./budget.js";
 export {
+  CACHE_HIT_ALERT,
+  CACHE_RECENT_REQUESTS,
+  type CacheDropOptions,
+  type CacheStats,
+  type CacheTipOptions,
+  cacheAlert,
+  cacheByGroup,
+  cacheDrops,
+  cacheDropText,
+  cacheSessionKey,
+  cacheStats,
+  cacheTips,
+  cacheTipText,
+  emptyCacheStats,
+  hitRate,
+  knownCacheSessions,
+  type SessionCache,
+  sessionCaches,
+} from "./cache.js";
+export {
   CALIBRATION_DAYS,
   DEFAULT_WARN_HOURS,
   DEFAULT_WEEK_ANCHOR,

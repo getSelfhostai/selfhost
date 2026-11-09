@@ -3,6 +3,7 @@ import { openLedger, resolveDataDir } from "@selfhost/ledger";
 import { redactionSettings } from "@selfhost/schema";
 import pkg from "../package.json" with { type: "json" };
 import { createApp } from "./app.js";
+import { startCacheAlertJob } from "./cache-alerts.js";
 import { findConsoleDir } from "./console.js";
 import { gatewayFromEnv, startGatewayJob } from "./gateway.js";
 import { githubAppFromEnv, githubConfig } from "./github.js";
@@ -124,9 +125,15 @@ const notifications =
     ? startNotifyJob(ledger, { deliver, config, ...(publicUrl ? { publicUrl } : {}) })
     : undefined;
 
+// SELFHOST_CACHE_ALERTS=off stops raising prompt cache alerts for sessions whose hit rate
+// collapsed, for installs where another server raises them from the same database.
+const cacheAlerts =
+  process.env.SELFHOST_CACHE_ALERTS === "off" ? undefined : startCacheAlertJob(ledger, { config });
+
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
     retention?.stop();
+    cacheAlerts?.stop();
     notifications?.stop();
     gatewayJob?.stop();
     reviews?.stop();

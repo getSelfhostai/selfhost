@@ -111,13 +111,21 @@ export async function readRun(
   const limit = options.limit ?? RUN_EVENTS_LIMIT_DEFAULT;
   const page = visible.slice(start, start + limit);
   const last = page.at(-1);
-  const tracer = (await options.configFor(team)).integrations.tracer;
+  const config = await options.configFor(team);
+  const tracer = config.integrations.tracer;
   const exported = tracer?.run_url ? await runExported(ledger, runId) : false;
   return {
     ok: true,
     response: {
       schema: RUN_SCHEMA,
-      run: summarizeRun(runId, visible, { now: options.now, team }),
+      run: summarizeRun(runId, visible, {
+        now: options.now,
+        team,
+        cacheTip: {
+          floor: config.alerts.cache_hit_floor ?? 0.5,
+          minUsd: config.alerts.cache_tip_usd ?? 5,
+        },
+      }),
       events: page,
       next_cursor: last && start + limit < visible.length ? encodeCursor(last) : null,
       prs: await runPulls(ledger, visible),

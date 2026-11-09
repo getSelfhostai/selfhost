@@ -968,11 +968,37 @@ export const SelfhostConfigSchema = Type.Object(
           runbook_url: Type.Optional(
             Url({ description: "Key rotation runbook linked from spend spike alarms." }),
           ),
+          cache_hit_floor: Type.Optional(
+            Type.Number({
+              minimum: 0,
+              maximum: 1,
+              default: 0.5,
+              description:
+                "Prompt cache hit rate, 0 to 1, below which a long session raises a cache alert and an expensive one gets a cost tip.",
+            }),
+          ),
+          cache_min_requests: Type.Optional(
+            Type.Integer({
+              minimum: 2,
+              default: 20,
+              description:
+                "Model requests a session needs before its cache hit rate can raise an alert.",
+            }),
+          ),
+          cache_tip_usd: Type.Optional(
+            Type.Number({
+              minimum: 0,
+              default: 5,
+              description:
+                "Sessions that cost at least this many USD below cache_hit_floor get a cost tip in selfhost spend and the run view.",
+            }),
+          ),
         },
         {
           additionalProperties: false,
           default: {},
-          description: "When the spend spike alarm and the plan limit forecast speak up.",
+          description:
+            "When the spend spike alarm, the plan limit forecast and the prompt cache alert speak up.",
         },
       ),
     ),

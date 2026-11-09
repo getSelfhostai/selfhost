@@ -157,6 +157,8 @@ describe("GET /v1/runs/{run_id}", () => {
       ended_at: "2026-10-12T09:10:00.000Z",
       cost_usd: 0.0123,
       tokens: 4200,
+      cache_hit_rate: 0.75,
+      cache_tip: null,
     });
     expect(body.events.map((e) => e.kind)).toEqual(RUN_EVENTS.map((e) => e.kind));
     expect(body.next_cursor).toBeNull();

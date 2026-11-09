@@ -477,12 +477,24 @@ prompt text only with `[ledger] log_prompts` on. `SELFHOST_TRACE_EXPORT=off` tur
 for a second server on the same database.
 
 - `GET /v1/runs/{run_id}?limit&cursor` (anyone in the run's team): `selfhost.run/v1`, the run's
-  summary (agent, model, person, team, repo, start and end, cost and tokens), its ledger events
+  summary (agent, model, person, team, repo, start and end, cost and tokens, `cache_hit_rate`,
+  null when the run reported no cache tokens, and a one-line `cache_tip` when it cost at least
+  `[alerts] cache_tip_usd` under `cache_hit_floor`), its ledger events
   oldest first, the pull requests they link to and `trace_url`, the run in the tracer from
   `run_url` (`{run_id}` and `{trace_id}` filled in) once it has been sent. Anyone else gets 403,
   whether or not the run exists. The console's `/runs/<id>` page reads it.
 - Review items that name a session carry `run_url` (the console's run view) and, once the run is
   in the tracer, `trace_url`.
+- `GET /v1/events/tail?after&since&kind&person&agent&repo&session&team&wait&limit` (both kinds of
+  token): `selfhost.tail/v1`, the events that reached the ledger after the cursor `after`, oldest
+  first, redacted again like the run view, and the next `cursor`. With `wait` (up to 30 seconds)
+  the request is held until something lands. A person token reads the teams of its org it is in;
+  `team` narrows it, and a team they are not in answers 403. `selfhost tail` in a team follows it.
+
+Every minute the server also looks at the requests of the last hour for sessions past `[alerts]
+cache_min_requests` whose prompt cache hit rate over their last 10 requests fell under
+`cache_hit_floor`, and records one `alert.raised` (`data.alert: "cache_hit_low"`) per session in
+its team, naming the usual causes. `SELFHOST_CACHE_ALERTS=off` turns it off.
 
 ## Privacy and retention
 
@@ -530,6 +542,7 @@ Environment:
 | `SELFHOST_RETENTION_SWEEP`         | `daily`            | `off` keeps every event instead of deleting expired ones daily.                                                     |
 | `SELFHOST_REVIEW_REFRESH`          | `15s`              | `off` stops building review items and timing out approvals on this server.                                          |
 | `SELFHOST_TRACE_EXPORT`            | `1m`               | `off` stops sending finished runs to each team's `[integrations.tracer]` from this server.                          |
+| `SELFHOST_CACHE_ALERTS`            | `1m`               | `off` stops raising prompt cache alerts for sessions whose hit rate collapsed, from this server.                    |
 | `SELFHOST_APPRISE_URL`             | unset              | Apprise API server notifications go through (`compose.notify.yml`: `http://apprise:8000`). Unset sends none.        |
 | `SELFHOST_NOTIFY`                  | `1m`               | `off` stops sending notifications from this server, when another one sends them from the same database.             |
 | `SELFHOST_GITHUB_APP_ID`           | unset              | GitHub App id. With the key and secret, turns on `POST /v1/github/webhooks`.                                        |

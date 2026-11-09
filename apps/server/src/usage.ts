@@ -123,7 +123,8 @@ export function usageRoutes(router: Router, ledger: Ledger, options: UsageRouteO
 /** A spreadsheet runs text that starts with one of these as a formula. */
 const FORMULA_START = /^[=+\-@\t\r]/;
 
-function csvField(value: string | number): string {
+function csvField(value: string | number | null): string {
+  if (value === null) return "";
   if (typeof value === "number") return String(value);
   const text = FORMULA_START.test(value) ? `'${value}` : value;
   return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;

@@ -18,6 +18,7 @@ import { refreshGrants } from "./inbox/grants.js";
 import { type OpenLocalReviewList, watchInbox } from "./inbox/sync.js";
 import { type LaptopNotifyReport, notifyOnLaptop } from "./notify/laptop.js";
 import { describeManaged } from "./policy/managed.js";
+import { feedDir, startFeed } from "./tail/feed.js";
 import type { Fetch } from "./team/client.js";
 import { type Membership, readMembership, readSyncState } from "./team/config.js";
 import type { LaptopIo } from "./team/laptop.js";
@@ -348,7 +349,10 @@ export async function runWatch(options: ImportCommandOptions, io: ImportIo): Pro
     env: io.env,
     configPath: configPathOf(io),
   });
-  writer = monitor.tap(writer);
+  // The live feed selfhost tail follows, so it never opens the ledger this process holds. It
+  // sits under the monitor, so the alerts the monitor raises reach it too.
+  const feed = startFeed(feedDir(io.env, configPathOf(io)), { warn: io.write });
+  writer = monitor.tap(feed.tap(writer));
   // The saved inbox copy the statusline counts from, and the inbox queue sent on reconnect.
   const inbox = await watchInbox(ledger, {
     membership,
@@ -409,5 +413,6 @@ export async function runWatch(options: ImportCommandOptions, io: ImportIo): Pro
   await notifying;
   await monitor.close();
   await inbox?.close();
+  feed.close();
   await ledger.close();
 }
