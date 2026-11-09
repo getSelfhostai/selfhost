@@ -345,7 +345,7 @@ describe("[packages] rules", () => {
   });
 
   it("records hits in observe mode, and does nothing in mode off", async () => {
-    const observe = config("min_age_days = 60");
+    const observe = config('mode = "observe"\nmin_age_days = 60');
     expect((await check("npm i shell-quote", observe)).hits).toMatchObject([
       { rule_id: "packages.too_new", mode: "observe", verdict: "ask" },
     ]);

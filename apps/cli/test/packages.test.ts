@@ -40,7 +40,7 @@ function io(dir: ReturnType<typeof repo>, fetch: Fetch) {
 
 describe("selfhost packages check", () => {
   it("says so when the command installs nothing, without a lookup", async () => {
-    const dir = repo();
+    const dir = repo('version = 1\n[packages]\nmode = "observe"\n');
     const result = await run(["packages", "check", "npm test && git status"], { cwd: dir.root });
     expect(result).toEqual({ code: 0, out: "No package installs in this command.", err: "" });
   });
@@ -67,7 +67,7 @@ describe("selfhost packages check", () => {
   });
 
   it("prints JSON with the installs, the hits and the policy file", async () => {
-    const dir = repo('version = 1\n[packages]\nallow = ["@acme/*"]\n');
+    const dir = repo('version = 1\n[packages]\nmode = "observe"\nallow = ["@acme/*"]\n');
     const t = io(dir, nothingExists);
     await packagesCheckCommand("pnpm add @acme/ui made-up-pkg", { json: true }, t.io);
     const report = JSON.parse(t.out.join("\n")) as PackagesCheckReport;
