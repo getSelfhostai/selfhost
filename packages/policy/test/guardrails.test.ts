@@ -9,6 +9,7 @@ import {
   guardrailHits,
   isSecretPath,
   type PolicyHit,
+  selfhostDecisionCommand,
   shellCommands,
   type ToolCall,
   type ToolCallChecker,
@@ -164,6 +165,73 @@ describe("rm outside the workspace", () => {
     expect(guardrailHits(policy, call, { env: ENV })).toEqual([
       expect.objectContaining({ rule_id: "guard.rm_outside_workspace", verdict: "ask" }),
     ]);
+  });
+});
+
+describe("a workspace inside a temp folder", () => {
+  const repo = "/tmp/acme-api";
+  const inTmp = (command: string) => bash(command, { cwd: repo, root: repo });
+
+  it("blocks rm -rf on the workspace's neighbours and on the temp folder itself", () => {
+    for (const command of ["rm -rf /tmp/other-repo", "rm -rf ../other-repo", "rm -rf /tmp"]) {
+      expect(ids(guardrailHits(policy, inTmp(command), { env: ENV }))).toEqual([
+        "guard.rm_outside_workspace",
+      ]);
+    }
+  });
+
+  it("still allows rm -rf inside the workspace and in other temp folders", () => {
+    const env = { ...ENV, TMPDIR: "/var/folders/xy/T" };
+    expect(guardrailHits(policy, inTmp("rm -rf build"), { env })).toEqual([]);
+    expect(guardrailHits(policy, inTmp("rm -rf /var/folders/xy/T/cache"), { env })).toEqual([]);
+    // From a workspace elsewhere, /tmp stays a temp folder.
+    expect(guardrailHits(policy, bash("rm -rf /tmp/other-repo"), { env: ENV })).toEqual([]);
+  });
+});
+
+describe("selfhost decision commands", () => {
+  const off = config('version = 1\n[guardrails]\nmode = "off"\n');
+
+  it.each([
+    "selfhost inbox approve 019a5b01",
+    "CLAUDECODE=1 selfhost inbox approve 019a5b01 < /dev/null",
+    "env -i selfhost review deny 019a5b01",
+    "npx -y selfhostai inbox approve 019a5b01",
+    "pnpm exec selfhost decide 019a5b01 approve",
+    "/usr/local/bin/selfhost policy promote no-curl --to off",
+    "node apps/cli/dist/main.js inbox approve 019a5b01",
+    "pnpm --filter @selfhost/cli dev inbox approve 019a5b01",
+    "bash -c 'selfhost guard uninstall'",
+    "selfhost team policy push selfhost.toml",
+    "selfhost init --undo",
+    "selfhost agents configure --remove",
+    "cd /tmp && selfhost team leave",
+  ])("blocks %s, even with the guardrails off", async (command) => {
+    const decision = await checkToolCall(off, bash(command), { env: ENV });
+    expect(decision.verdict).toBe("block");
+    expect(decision.hit).toEqual(
+      expect.objectContaining({ rule_id: "guard.selfhost_decision", mode: "enforce" }),
+    );
+  });
+
+  it.each([
+    "selfhost inbox",
+    "selfhost inbox open 019a5b01",
+    "selfhost review list",
+    "selfhost init",
+    "selfhost agents configure",
+    "git commit -m 'selfhost inbox approve'",
+    "pnpm install",
+  ])("allows %s", (command) => {
+    expect(guardrailHits(off, bash(command), { env: ENV })).toEqual([]);
+  });
+
+  it("names the command it found", () => {
+    expect(selfhostDecisionCommand(["npx", "selfhostai", "inbox", "approve", "x"])).toBe(
+      "inbox approve",
+    );
+    expect(selfhostDecisionCommand(["selfhost", "init", "--undo"])).toBe("init --undo");
+    expect(selfhostDecisionCommand(["ls", "inbox", "approve"])).toBeUndefined();
   });
 });
 

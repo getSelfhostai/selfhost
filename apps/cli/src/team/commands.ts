@@ -19,12 +19,17 @@ import {
   saveMembership,
   writableConfig,
 } from "./config.js";
+import { registerTeamPolicy } from "./policy.js";
 
 export interface TeamIo {
   env: NodeJS.ProcessEnv;
   write: (line: string) => void;
   configPath: string;
   fetch: Fetch;
+  /** Where `team policy push` looks for selfhost.toml. Default: the process's folder. */
+  cwd?: string;
+  /** Whether stdin is a terminal; `team policy push` refuses without one. */
+  stdinIsTTY?: boolean;
 }
 
 /** `selfhost team init --json`. */
@@ -502,7 +507,9 @@ export function status(options: JsonOption, io: TeamIo): StatusReport {
     ? [
         `Team mode: team ${membership.team} on ${membership.server}, as ${membership.person}.`,
         `Last sync: ${report.last_sync ?? "never, run selfhost import"}.`,
-        `Team policy: ${report.policy_hash ? report.policy_hash.slice(0, 12) : "none pulled yet"}.`,
+        report.policy_hash
+          ? `Team policy: ${report.policy_hash.slice(0, 12)}.`
+          : "Team policy: none pulled yet. If the team has none, an owner or admin sets one with selfhost team policy push selfhost.toml.",
       ]
     : ["Solo mode: everything stays on this machine."];
   print(io, options.json, report, lines);
@@ -654,6 +661,15 @@ export function registerTeam(
       }
       return teamRepo(action, repo, options, io());
     }),
+  );
+
+  registerTeamPolicy(
+    team,
+    () => {
+      const teamIo = io();
+      return { ...teamIo, cwd: teamIo.cwd ?? process.cwd() };
+    },
+    fail,
   );
 
   team

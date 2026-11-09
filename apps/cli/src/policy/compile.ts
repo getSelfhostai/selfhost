@@ -24,6 +24,8 @@ import { checkTeam, loadPolicy, type PolicyIo } from "./commands.js";
 
 export interface PolicyCompileIo extends PolicyIo {
   platform: NodeJS.Platform;
+  /** Finds a program on PATH, to warn when the hooks' `selfhost` is not there. */
+  which?: (name: string) => string | undefined;
   /** HTTP for the GitHub API, used only with --apply. Default: the global fetch. */
   fetch?: Fetch;
 }
@@ -80,7 +82,13 @@ export interface PolicyCompileReport {
     /** Steps outside this machine: device management and vendor dashboards. */
     steps: string[];
   } | null;
+  /** What may keep the compiled files from working on this machine. */
+  warnings: string[];
 }
+
+/** The note for compiled hooks that call `selfhost hook` when selfhost is not on PATH. */
+export const NOT_ON_PATH_WARNING =
+  "selfhost is not on PATH here, and the compiled hooks run selfhost hook: install it (npm install -g selfhostai) on every machine that gets these files, or pass --hook-command.";
 
 const VENDOR_ALIASES: Record<string, CompileVendor> = {
   claude: "claude_code",
@@ -457,6 +465,10 @@ export async function policyCompile(
       message: null,
     })),
     apply: null,
+    warnings:
+      options.hookCommand === undefined && io.which && !io.which("selfhost")
+        ? [NOT_ON_PATH_WARNING]
+        : [],
   };
 
   if (options.apply) {
@@ -482,6 +494,7 @@ function print(report: PolicyCompileReport, io: PolicyCompileIo): void {
     return rel === "" || rel.startsWith("..") ? path : rel;
   };
   const vendors = report.coverage.vendors.map((vendor) => `${vendor.vendor} ${vendor.version}`);
+  for (const warning of report.warnings) io.write(`Note: ${warning}`);
   io.write(
     `Compiled ${shown(report.config)}${report.team ? ` for team ${report.team}` : ""} for ${vendors.join(", ")} into ${shown(report.out)}.`,
   );

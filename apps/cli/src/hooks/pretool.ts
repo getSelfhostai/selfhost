@@ -11,6 +11,7 @@ import {
   formatConfigError,
   parseConfig,
   type ResolvedSelfhostConfig,
+  SELFHOST_DECISION_RULE_ID,
   validateConfig,
 } from "@selfhost/schema";
 import { findConfig } from "../find-config.js";
@@ -200,7 +201,11 @@ function exceptionFor(
   try {
     const key = exceptionKey(dir, true);
     if (!key) return {};
-    const fingerprint = callFingerprint(key, { ...toolCall, agent: call.vendor });
+    const fingerprint = callFingerprint(key, {
+      ...toolCall,
+      agent: call.vendor,
+      ...(call.sessionId !== undefined ? { session: call.sessionId } : {}),
+    });
     const grant = findGrant(dir, key, fingerprint, rules, now);
     if (grant && (call.deferred || claimGrant(dir, grant))) return { grant };
     const request: ExceptionRequest = {
@@ -283,8 +288,9 @@ export async function checkPreToolCall(
   const rules = [
     ...new Set(decision.hits.filter((hit) => hit.mode === "enforce").map((hit) => hit.rule_id)),
   ];
+  // A person's own decision commands are never allowed once: the person runs them.
   const exception =
-    answer === "deny" && decision.hit
+    answer === "deny" && decision.hit && !rules.includes(SELFHOST_DECISION_RULE_ID)
       ? exceptionFor(
           home ? exceptionsDir(join(home, ".selfhost")) : undefined,
           call,

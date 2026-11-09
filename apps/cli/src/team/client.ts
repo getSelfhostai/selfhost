@@ -145,14 +145,20 @@ export class TeamClient {
     return this.call("POST", "/v1/join", { invite, person, ...(name ? { name } : {}) });
   }
 
-  /** The team's policy, or undefined when the team has none yet. */
-  async policy(): Promise<PolicyResponse | undefined> {
+  /** The team's policy, or undefined when the team has none yet. Default: the token's team. */
+  async policy(team?: string): Promise<PolicyResponse | undefined> {
+    const query = team === undefined ? "" : `?team=${encodeURIComponent(team)}`;
     try {
-      return await this.call<PolicyResponse>("GET", "/v1/policy");
+      return await this.call<PolicyResponse>("GET", `/v1/policy${query}`);
     } catch (error) {
       if (error instanceof TeamApiError && error.code === "no_policy") return undefined;
       throw error;
     }
+  }
+
+  /** Replaces the team's selfhost.toml; only the team's owners and admins can. */
+  setPolicy(text: string, team: string): Promise<PolicyResponse> {
+    return this.call("PUT", `/v1/policy?team=${encodeURIComponent(team)}`, { text });
   }
 
   /** The team's router, tracer, runtime and reviewer, each checked by the server. */

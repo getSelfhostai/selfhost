@@ -8,9 +8,9 @@
 #   the rest the web console, which the selfhost server serves: each person signs in with their
 #            own token, or with GitHub or Google when compose.signin.yml is in use
 
-# Without compose.signin.yml the console asks each person for their token (a person token from
-# selfhost team join, or the admin token). Its pages hold no data; everything it shows comes
-# from /v1 with that token.
+# Without compose.signin.yml the console asks each person for their token (selfhost console
+# opens it with their person token from selfhost join, or the admin token). Its pages hold no
+# data; everything it shows comes from /v1 with that token.
 (console-token) {
 	handle {
 		reverse_proxy selfhost:4400

@@ -296,8 +296,11 @@ function fromPolicyVerdict(event: LedgerEvent): Draft | undefined {
   const exception = exceptionRequest(event);
   if (exception) {
     const alternative = text(event.data?.alternative);
+    // The hook's verdict is a system event; the person who sent it is the one whose agent it was.
+    const person = eventPerson(event) ?? personId(event.data?.sent_by);
     return {
       ...base(event),
+      ...(person ? { person } : {}),
       kind: "exception",
       id: exception.id,
       // One open request per call: a retry replaces it, since the agent was given the new id.
@@ -310,8 +313,10 @@ function fromPolicyVerdict(event: LedgerEvent): Draft | undefined {
         ...irreversibleReason,
       ],
       scored: false,
-      blocking: live,
-      timesOut: live,
+      // The hook denied the call and the agent went on: nobody waits on this answer. An agent
+      // that makes its case over MCP and waits for the answer makes it blocking then.
+      blocking: false,
+      timesOut: false,
       ...(tool ? { tool } : {}),
     };
   }

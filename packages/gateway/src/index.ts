@@ -14,10 +14,12 @@ export {
   teamName,
 } from "./policy.js";
 export {
+  BUDGET_ALERT_PERCENTS,
   BUDGET_SPENT_ALERT,
   budgetAlerts,
   type SyncOptions,
   type SyncResult,
+  spendAlerts,
   syncGateway,
   type TeamInput,
 } from "./sync.js";

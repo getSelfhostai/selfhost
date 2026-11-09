@@ -1,5 +1,6 @@
 import type { Fetch } from "../team/client.js";
 import type { PublicKey } from "./cloud-api.js";
+import type { ImageCheck } from "./registry.js";
 import type { Exec, Tracker } from "./resources.js";
 import type { Provider, SizeRecommendation } from "./size.js";
 import type { DomainSource, SigninSettings, StackSettings } from "./stack.js";
@@ -17,6 +18,8 @@ export interface UpIo {
   sleep: (ms: number) => Promise<void>;
   now?: Date;
   randomHex?: (bytes: number) => string;
+  /** Whether the image tag is in its registry. Default: an anonymous manifest check. */
+  imageExists?: ImageCheck;
 }
 
 export interface SshTarget {

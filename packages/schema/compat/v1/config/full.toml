@@ -43,6 +43,7 @@ message = "Agents do not call production services."
 [review]
 high_risk_paths = ["db/migrations/**", "infra/**"]
 high_risk_threshold = 65
+self_approve_exceptions = true
 
 [review.owners]
 "infra/**" = ["alice@example.com"]

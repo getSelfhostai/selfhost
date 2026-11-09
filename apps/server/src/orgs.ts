@@ -71,11 +71,11 @@ function breakdown(events: LedgerEvent[], dimension: SpendDimension) {
 }
 
 /** Each session's spend from one source only, as selfhost spend counts it. */
-function costsOf(costs: TeamCost[], team: string): LedgerEvent[] {
+export function costsOf(costs: TeamCost[], team: string): LedgerEvent[] {
   return oneSourcePerSession(costs.filter((c) => c.team === team).map((c) => c.event));
 }
 
-function totalOf(events: LedgerEvent[]): SpendTotals {
+export function totalOf(events: LedgerEvent[]): SpendTotals {
   const totals = emptyTotals();
   for (const event of events) addCost(totals, event);
   return rounded(totals);

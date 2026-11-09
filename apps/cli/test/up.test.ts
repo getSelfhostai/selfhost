@@ -12,6 +12,7 @@ import { runUp, type UpReport } from "../src/up/commands.js";
 import { DIGITALOCEAN_METADATA } from "../src/up/digitalocean.js";
 import { HETZNER_METADATA } from "../src/up/hetzner.js";
 import type { UpIo } from "../src/up/plan.js";
+import { imageLocation, registryImageCheck } from "../src/up/registry.js";
 import type { ExecOptions, ExecResult } from "../src/up/resources.js";
 import {
   BOOTSTRAP_FILES,
@@ -183,6 +184,8 @@ function io(
       throw new Error("no programs in this test");
     },
     sleep: async () => {},
+    // The image is published; its own tests below check the registry question.
+    imageExists: async () => true,
     now: new Date("2026-11-08T10:00:00Z"),
     // The server name.
     randomHex: () => "ab12",
@@ -1414,5 +1417,74 @@ describe("selfhost up flags", () => {
       configPath: dir.path("config.json"),
     });
     expect(bad.err).toMatch(/other\.pub is not an OpenSSH public key/);
+  });
+});
+
+describe("the image check before anything is created", () => {
+  it("asks the registry anonymously, following its token challenge", async () => {
+    const calls: string[] = [];
+    const registry = async (url: string, init: RequestInit) => {
+      calls.push(`${init.method} ${url}`);
+      const auth = (init.headers as Record<string, string>).authorization;
+      if (url.startsWith("https://ghcr.io/token")) {
+        return new Response(JSON.stringify({ token: "anon" }), { status: 200 });
+      }
+      if (auth !== "Bearer anon") {
+        return new Response(null, {
+          status: 401,
+          headers: {
+            "www-authenticate":
+              'Bearer realm="https://ghcr.io/token",service="ghcr.io",scope="repository:getselfhostai/selfhost:pull"',
+          },
+        });
+      }
+      return new Response(null, { status: url.endsWith("/manifests/0.1.0") ? 200 : 404 });
+    };
+    const check = registryImageCheck(registry);
+    expect(await check("ghcr.io/getselfhostai/selfhost", "0.1.0")).toBe(true);
+    expect(calls).toEqual([
+      "HEAD https://ghcr.io/v2/getselfhostai/selfhost/manifests/0.1.0",
+      "GET https://ghcr.io/token?service=ghcr.io&scope=repository%3Agetselfhostai%2Fselfhost%3Apull",
+      "HEAD https://ghcr.io/v2/getselfhostai/selfhost/manifests/0.1.0",
+    ]);
+    expect(await check("ghcr.io/getselfhostai/selfhost", "0.0.0")).toBe(false);
+    const down = registryImageCheck(async () => {
+      throw new Error("offline");
+    });
+    expect(await down("ghcr.io/getselfhostai/selfhost", "0.1.0")).toBeUndefined();
+    expect(imageLocation("postgres")).toEqual({
+      host: "registry-1.docker.io",
+      repository: "library/postgres",
+    });
+  });
+
+  it("stops before any cloud call when the tag is not published, unless told not to check", async () => {
+    const dir = home();
+    const api = vi.fn(async () => {
+      throw new Error("no cloud call expected");
+    });
+    const missing = await run(
+      ["up", "--provider", "hetzner", "--image", "ghcr.io/me/selfhost:9.9.9"],
+      {
+        env: { HOME: dir.root, HCLOUD_TOKEN: "t" },
+        configPath: dir.path("config.json"),
+        fetch: api,
+        imageExists: async () => false,
+      },
+    );
+    expect(missing.code).toBe(1);
+    expect(missing.err).toMatch(
+      /^The server image ghcr\.io\/me\/selfhost:9\.9\.9 is not in its registry, so nothing was created\. Check the tag in --image\./,
+    );
+    expect(api).not.toHaveBeenCalled();
+    const unknown = await run(["up", "--provider", "hetzner"], {
+      env: { HOME: dir.root, HCLOUD_TOKEN: "t" },
+      configPath: dir.path("config.json"),
+      fetch: api,
+      imageExists: async () => undefined,
+    });
+    expect(unknown.err).toContain("Could not check that the server image");
+    expect(unknown.err).toContain("--skip-image-check");
+    expect(api).not.toHaveBeenCalled();
   });
 });

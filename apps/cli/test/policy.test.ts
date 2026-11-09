@@ -147,6 +147,27 @@ describe("selfhost policy test", () => {
     });
   });
 
+  it("reads a file tool's file as the hook does, so guard.secret_read fires on .env", async () => {
+    const dir = repo({ "selfhost.toml": CATEGORIES });
+    for (const tool of ["Read", "Grep", "read"]) {
+      const result = await run(["policy", "test", "--tool", tool, "--path", ".env", "--json"], {
+        cwd: dir.root,
+      });
+      expect(JSON.parse(result.out)).toMatchObject({
+        call: { tool, path: ".env", access: "read" },
+        decision: "block",
+        mode: "enforce",
+        hits: expect.arrayContaining([
+          expect.objectContaining({ rule_id: "guard.secret_read", mode: "enforce" }),
+        ]),
+      });
+    }
+    const write = await run(["policy", "test", "--tool", "Write", "--path", "a.env", "--json"], {
+      cwd: dir.root,
+    });
+    expect(JSON.parse(write.out).call.access).toBe("write");
+  });
+
   it("applies a team's overrides and reads the MCP server from the tool name", async () => {
     const dir = repo({ "selfhost.toml": RULES_ONLY });
     const result = await run(

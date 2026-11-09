@@ -9,6 +9,7 @@ import {
 import type { Hono } from "hono";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
+import { policyObservedReport } from "../src/policy-observe.js";
 import { caller, TOKEN } from "./helpers.js";
 
 const NOW = new Date("2026-11-08T12:00:00.000Z");
@@ -170,5 +171,31 @@ describe("GET /v1/policy/observed", () => {
       "/v1/policy/observed?team=web&from=2026-11-08T00:00:00.000Z&to=2026-11-01T00:00:00.000Z",
     );
     expect(backwards.status).toBe(400);
+  });
+});
+
+describe("policyObservedReport", () => {
+  it("counts an observe rule that fired next to an enforced guardrail", () => {
+    // The hook blocked under guard.force_push; no-force-push only recorded, in data.hits.
+    const blocked = verdict("guard.force_push", "enforce", "block", {
+      data: {
+        tool_event_id: "tool-both",
+        hits: [
+          { rule_id: "no-force-push", mode: "observe", verdict: "block" },
+          { rule_id: "guard.force_push", mode: "enforce", verdict: "block" },
+        ],
+      },
+    });
+    const report = policyObservedReport([blocked], {
+      team: "web",
+      from: new Date("2026-11-01T00:00:00.000Z"),
+      to: NOW,
+      modes: new Map([["no-force-push", "observe"]]),
+    });
+    expect(report.totals).toEqual({ would_block: 1, would_ask: 0, blocked: 1, asked: 0 });
+    expect(report.rules.map((rule) => [rule.rule_id, rule.would_block, rule.blocked])).toEqual([
+      ["guard.force_push", 0, 1],
+      ["no-force-push", 1, 0],
+    ]);
   });
 });

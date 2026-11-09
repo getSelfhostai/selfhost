@@ -124,6 +124,15 @@ async function teamConfigs(
   return (team) => (team === null ? defaults : (configs.get(team) ?? defaults));
 }
 
+/** A team's owners and admins, who approve its exceptions. */
+async function approvers(tx: Queryable, team: string): Promise<string[]> {
+  const rows = await tx.query<{ id: string }>(
+    `SELECT id FROM people WHERE team_id = $1 AND role IN ('owner', 'admin') ORDER BY id`,
+    [team],
+  );
+  return rows.map((row) => row.id);
+}
+
 /** The person a session belongs to: the actor of its first event written as a person. */
 async function sessionPerson(
   tx: Queryable,
@@ -271,6 +280,9 @@ async function applyDraft(
     ...(draft.person
       ? {}
       : { sessionPerson: await sessionPerson(tx, team, event.session_id, run) }),
+    ...(draft.kind === "exception" && team !== null
+      ? { approvers: await approvers(tx, team) }
+      : {}),
   };
   if (draft.attach && draft.id !== undefined) {
     return attachTo(tx, { ...draft, id: draft.id }, event, team, ctx, run);

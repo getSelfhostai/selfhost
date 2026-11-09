@@ -18,6 +18,7 @@ describe("parseConfig", () => {
           fallback: [],
           approval_timeout_minutes: 30,
           exception_expiry_minutes: 30,
+          self_approve_exceptions: false,
           github_logins: {},
           block_merge_on_high: false,
           revert_rate_threshold: 0.25,
@@ -26,7 +27,7 @@ describe("parseConfig", () => {
           module_depth: 1,
         },
         packages: {
-          mode: "observe",
+          mode: "off",
           allow: [],
           deny: [],
           blocked_registries: [],

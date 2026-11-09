@@ -71,6 +71,8 @@ export interface CallIdentity {
   url?: string;
   mcpServer?: string;
   root?: string;
+  /** The agent session that was blocked: a grant is for that session only. */
+  session?: string;
 }
 
 /** Reads a review item, from the local list or the team server. */
@@ -140,8 +142,9 @@ export function exceptionKey(dir: string, create: boolean): Buffer | undefined {
 /**
  * A keyed hash of one call: the agent, the tool, the command with runs of white space made one
  * space, the file (relative to the repository root inside it) and what is done with it, the URL,
- * the MCP server and the repository root. The same call in the same repository gives the same
- * fingerprint; without the key nothing about the call can be read back from it.
+ * the MCP server, the repository root and the agent session. The same call in the same session
+ * and repository gives the same fingerprint, so an exception approved for one session is never
+ * used by another; without the key nothing about the call can be read back from it.
  */
 export function callFingerprint(key: Buffer, call: CallIdentity): string {
   const parts = [
@@ -153,6 +156,7 @@ export function callFingerprint(key: Buffer, call: CallIdentity): string {
     call.url ?? null,
     call.mcpServer ?? null,
     call.root ?? null,
+    call.session ?? null,
   ];
   return createHmac("sha256", key)
     .update(`call\n${JSON.stringify(parts)}`)

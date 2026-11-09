@@ -37,10 +37,14 @@ the repository.
 - `~/.selfhost/`: the ledger (`data/`), hook events waiting for import (`spool/`), the list of
   files init changed (`init.json`) and, with `--team`, the membership (`config.json`).
 - `selfhost.toml` at the git repository root, only when none exists: four starter rules, all in
-  observe mode, or the preset given with `--preset`. The hooks still apply the built-in guardrails
-  before each tool call: force pushes, `git reset --hard`, `rm -rf` outside the workspace and reads
-  of `.env` and key files are blocked unless `[guardrails] mode` in `selfhost.toml` is `observe`
-  or `off`.
+  observe mode, the guardrails in enforce and the package guard in observe, or the preset given
+  with `--preset`. The hooks apply the built-in guardrails before each tool call from the first
+  run: force pushes, `git reset --hard`, `rm -rf` outside the workspace and reads of `.env` and
+  key files are blocked unless `[guardrails] mode` in `selfhost.toml` is `observe` or `off`.
+- Approving or denying a review item, `selfhost decide`, `policy promote`, `team policy push`
+  and the commands that take selfhost out are a person's: the hooks block an agent that runs
+  them (`guard.selfhost_decision`), and the commands refuse inside an agent session or without a
+  terminal. Do not run them; tell the person what to approve.
 - With `--import-context`: new files in `.selfhost/context/` at the repository root. The context
   files they come from are not changed.
 - Nothing else: no shell profile, no API key, no sign-in.
@@ -55,7 +59,11 @@ from and any team membership (`selfhost team leave` ends that).
 ## Where data goes
 
 Solo mode, the default: nothing leaves the laptop and no command makes a network request, except
-`selfhost integrations check`, which calls the tools named in `[integrations]` to test them. Logs
+`selfhost integrations check`, which calls the tools named in `[integrations]` to test them, and
+the package guard while `[packages] mode` is `observe` or `enforce`: it looks each package an
+agent installs up in its public registry (npm, PyPI, crates.io, the Go proxy). It is off without
+a `[packages]` table; the starter `selfhost.toml` and the presets turn it on in observe, and
+`mode = "off"` keeps the laptop offline. Logs
 and hook events go into the local ledger only, which keeps no prompt text. Raw hook payloads wait
 in `~/.selfhost/spool` (readable by this user only) until the next import. With `--team`, each
 `selfhost import` also sends the ledger to the team's server.
@@ -65,5 +73,7 @@ in `~/.selfhost/spool` (readable by this user only) until the next import. With 
 - Hook events wait in `~/.selfhost/spool` until the next `selfhost import`; keep
   `selfhost import --watch` running to see them as they happen.
 - Look around with `selfhost spend`, `selfhost review list`, `selfhost policy report` and `selfhost scan`. `selfhost console` opens the same ledger in the web console for a person to read.
-- If `selfhost` is not on PATH, the hooks call the node binary and script that ran init by
-  absolute path. Install it globally and run `selfhost init` again for a path that lasts.
+- If `selfhost` is not on PATH, each hook looks for it when it runs: `selfhost` on PATH by then,
+  else the node binary and script that ran init while both exist, else `npx selfhostai`.
+  `selfhost doctor` says when it is not on PATH. Install it globally and run `selfhost init`
+  again for the plain `selfhost hook` command.

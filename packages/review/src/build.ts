@@ -8,7 +8,7 @@ import {
   type ReviewItem,
   type ReviewItemKind,
 } from "@selfhost/schema";
-import { routeItem } from "./routing.js";
+import { type Routing, routeItem } from "./routing.js";
 import type { Draft } from "./signals.js";
 
 const MINUTE_MS = 60_000;
@@ -20,6 +20,11 @@ export interface BuildContext {
   team: string | null;
   /** The session's person when the signal names none. */
   sessionPerson?: string;
+  /**
+   * The team's owners and admins, on a team server: exception items go to them instead of
+   * through [review.owners]. Undefined on a laptop.
+   */
+  approvers?: readonly string[];
 }
 
 const iso = (ts: string) => new Date(ts).toISOString();
@@ -68,12 +73,37 @@ export function deliveryOf(
     : "digest";
 }
 
+/**
+ * Who approves an exception on a team server: the team's owners and admins, without the person
+ * whose agent was blocked unless [review] self_approve_exceptions lets them.
+ */
+function exceptionRoute(
+  approvers: readonly string[],
+  requester: string | undefined,
+  config: ResolvedSelfhostConfig,
+): Routing {
+  const self = config.review.self_approve_exceptions;
+  const same = (person: string) => person.toLowerCase() === requester?.toLowerCase();
+  const others = approvers.filter((person) => !same(person));
+  const owners = [...new Set(self && requester ? [requester, ...others] : others)];
+  if (owners.length > 0) {
+    return { owners, route: { step: "team", from: "the team's owners and admins" } };
+  }
+  return {
+    owners: [],
+    route: {
+      step: "none",
+      from: "the team has no owner or admin but the person whose agent was blocked; [review] self_approve_exceptions lets them approve it",
+    },
+  };
+}
+
 function routed(item: ReviewItem, paths: readonly string[], ctx: BuildContext, draft: Draft) {
-  const { owners, route } = routeItem(ctx.config, {
-    paths,
-    person: draft.person ?? ctx.sessionPerson,
-    team: draft.team,
-  });
+  const person = draft.person ?? ctx.sessionPerson;
+  const { owners, route } =
+    item.kind === "exception" && ctx.approvers !== undefined
+      ? exceptionRoute(ctx.approvers, item.requested_by ?? person, ctx.config)
+      : routeItem(ctx.config, { paths, person, team: draft.team });
   const risk = withPathRisk(item.risk, paths, ctx.config);
   return { ...item, owners, route, risk, delivery: deliveryOf({ ...item, risk }, ctx.config) };
 }
@@ -96,6 +126,9 @@ export function newItem(draft: Draft, event: LedgerEvent, ctx: BuildContext): Re
     ...(draft.url ? { url: draft.url } : {}),
     owners: [],
     ...(event.agent ? { agent: event.agent } : {}),
+    ...(draft.kind === "exception" && (draft.person ?? ctx.sessionPerson)
+      ? { requested_by: draft.person ?? ctx.sessionPerson }
+      : {}),
     ...(event.session_id ? { session_id: event.session_id } : {}),
     ...(event.run_id ? { run_id: event.run_id } : {}),
     source_event_ids: [event.id],

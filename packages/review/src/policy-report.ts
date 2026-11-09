@@ -257,15 +257,78 @@ export function falsePositiveReason(event: LedgerEvent, rule: Rule | undefined):
   return null;
 }
 
-function isObservedHit(event: LedgerEvent): boolean {
+/** One rule's verdict on one call, from a policy.evaluated event. */
+export interface EvaluatedHit {
+  rule_id: string;
+  mode: "observe" | "enforce";
+  verdict: "block" | "ask";
+}
+
+function asHit(value: unknown): EvaluatedHit | undefined {
+  if (value === null || typeof value !== "object") return undefined;
+  const { rule_id, mode, verdict } = value as Record<string, unknown>;
+  if (typeof rule_id !== "string" || rule_id === "") return undefined;
+  if (mode !== "observe" && mode !== "enforce") return undefined;
+  if (verdict !== "block" && verdict !== "ask") return undefined;
+  return { rule_id, mode, verdict };
+}
+
+/**
+ * Every rule that stopped or would have stopped the call of a policy.evaluated event: the hook
+ * lists them all in data.hits, where decision names only the one that decided. An observe rule
+ * that fired next to an enforced guardrail is in data.hits only. Events without data.hits give
+ * their decision.
+ */
+export function evaluatedHits(event: LedgerEvent): EvaluatedHit[] {
+  if (event.kind !== "policy.evaluated") return [];
+  const listed = event.data?.hits;
+  if (Array.isArray(listed)) {
+    const seen = new Set<string>();
+    return listed.flatMap((value) => {
+      const hit = asHit(value);
+      if (!hit || seen.has(hit.rule_id)) return [];
+      seen.add(hit.rule_id);
+      return [hit];
+    });
+  }
   const decision = event.decision;
-  return (
-    event.kind === "policy.evaluated" &&
-    decision?.mode === "observe" &&
-    (decision.verdict === "block" || decision.verdict === "ask") &&
-    typeof decision.rule_id === "string" &&
-    decision.rule_id !== ""
-  );
+  const hit = asHit({
+    rule_id: decision?.rule_id,
+    mode: decision?.mode ?? "enforce",
+    verdict: decision?.verdict,
+  });
+  return hit ? [hit] : [];
+}
+
+/** One counted hit: a rule's verdict on a call, with the event that recorded it. */
+export interface CountedHit extends EvaluatedHit {
+  event: LedgerEvent;
+}
+
+/**
+ * The hits in `mode` across events, oldest first. The same tool call evaluated twice by one rule
+ * (data.tool_event_id) counts once.
+ */
+export function countedHits(
+  events: readonly LedgerEvent[],
+  mode: EvaluatedHit["mode"],
+): CountedHit[] {
+  const seen = new Set<string>();
+  const out: CountedHit[] = [];
+  for (const event of [...events].sort(byTimeThenId)) {
+    for (const hit of evaluatedHits(event)) {
+      if (hit.mode !== mode) continue;
+      const toolEventId = event.data?.tool_event_id;
+      const key =
+        typeof toolEventId === "string"
+          ? `${hit.rule_id}\u0000${toolEventId}`
+          : `${hit.rule_id}\u0000${event.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ ...hit, event });
+    }
+  }
+  return out;
 }
 
 const byTimeThenId = (a: LedgerEvent, b: LedgerEvent) =>
@@ -274,32 +337,27 @@ const byTimeThenId = (a: LedgerEvent, b: LedgerEvent) =>
 const compareText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 /**
- * Groups observe-mode would-block and would-ask hits by rule, most hits first. The same tool
- * call evaluated twice by one rule (data.tool_event_id) counts once.
+ * Groups observe-mode would-block and would-ask hits by rule, most hits first, counting every
+ * hit an event lists (evaluatedHits). The same tool call evaluated twice by one rule
+ * (data.tool_event_id) counts once.
  */
 export function observedRules(
   events: readonly LedgerEvent[],
   rules?: readonly Rule[],
 ): ObservedRule[] {
   const ruleById = new Map((rules ?? []).map((rule) => [rule.id, rule]));
-  const seen = new Set<string>();
-  const groups = new Map<string, LedgerEvent[]>();
-  for (const event of [...events].filter(isObservedHit).sort(byTimeThenId)) {
-    const ruleId = event.decision?.rule_id as string;
-    const toolEventId = event.data?.tool_event_id;
-    const key = typeof toolEventId === "string" ? `${ruleId}\u0000${toolEventId}` : event.id;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const group = groups.get(ruleId);
-    if (group) group.push(event);
-    else groups.set(ruleId, [event]);
+  const groups = new Map<string, CountedHit[]>();
+  for (const hit of countedHits(events, "observe")) {
+    const group = groups.get(hit.rule_id);
+    if (group) group.push(hit);
+    else groups.set(hit.rule_id, [hit]);
   }
 
   const observed = [...groups].map(([ruleId, hits]): ObservedRule => {
     const rule = ruleById.get(ruleId);
     const calls = new Map<string, ObservedExample>();
     let falsePositives = 0;
-    for (const event of hits) {
+    for (const { event } of hits) {
       const tool = event.tool?.name ?? "(unknown tool)";
       const input = event.tool?.input_summary || event.target?.value || null;
       const reason = falsePositiveReason(event, rule);
@@ -313,8 +371,10 @@ export function observedRules(
       (a, b) =>
         b.hits - a.hits || compareText(a.tool, b.tool) || compareText(a.input ?? "", b.input ?? ""),
     );
-    const verdicts = new Set(hits.map((event) => event.decision?.verdict as ObservedVerdict));
-    const sessions = new Set(hits.flatMap((event) => (event.session_id ? [event.session_id] : [])));
+    const verdicts = new Set<ObservedVerdict>(hits.map((hit) => hit.verdict));
+    const sessions = new Set(
+      hits.flatMap(({ event }) => (event.session_id ? [event.session_id] : [])),
+    );
     return {
       rule_id: ruleId,
       verdicts: (["block", "ask"] as const).filter((verdict) => verdicts.has(verdict)),
@@ -324,7 +384,7 @@ export function observedRules(
       examples: examples.slice(0, MAX_EXAMPLES),
       more_examples: Math.max(0, examples.length - MAX_EXAMPLES),
       mode: rule ? (rule.mode ?? "observe") : null,
-      event_ids: hits.map((event) => event.id),
+      event_ids: hits.map(({ event }) => event.id),
     };
   });
   return observed.sort((a, b) => b.hits - a.hits || compareText(a.rule_id, b.rule_id));

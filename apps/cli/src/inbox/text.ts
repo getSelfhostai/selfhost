@@ -52,6 +52,10 @@ export function closedText(item: ReviewItem): string {
 
 const age = (item: ReviewItem, now: Date) => duration(now.getTime() - Date.parse(item.created_at));
 
+/** The kind as the list shows it: an exception item is a request, the call already denied. */
+const kindText = (item: ReviewItem) =>
+  item.kind === "exception" ? "exception requested" : item.kind;
+
 /** The list as aligned columns, with the shortest ids that tell the items apart. */
 export function itemRows(items: readonly ReviewItem[], now: Date): string[][] {
   const short = shortIds(items.map((item) => item.id));
@@ -59,7 +63,7 @@ export function itemRows(items: readonly ReviewItem[], now: Date): string[][] {
     ["ID", "KIND", "RISK", "AGE", "TITLE"],
     ...items.map((item) => [
       short.get(item.id) ?? item.id,
-      item.blocking ? `${item.kind}, blocking` : item.kind,
+      item.blocking ? `${kindText(item)}, blocking` : kindText(item),
       String(item.risk.score),
       age(item, now),
       item.repo ? `${item.title} (${item.repo})` : item.title,
@@ -86,7 +90,7 @@ export function writeItems(
 /** Everything `inbox open` shows about an item, its brief last. */
 export function itemLines(item: ReviewItem, now: Date): string[] {
   const facts = [
-    `${item.kind}${item.blocking ? ", an agent is waiting" : ""}`,
+    `${kindText(item)}${item.blocking ? ", an agent is waiting" : ""}`,
     `risk ${item.risk.score}`,
     item.state,
     `${age(item, now)} old`,

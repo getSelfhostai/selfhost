@@ -5,7 +5,9 @@ import type { FetchLike } from "@modelcontextprotocol/sdk/shared/transport.js";
 import {
   CallToolRequestSchema,
   type CallToolResult,
+  ErrorCode,
   ListToolsRequestSchema,
+  McpError,
 } from "@modelcontextprotocol/sdk/types.js";
 import { MCP_SERVER_NAME, MCP_WAIT_MAX_SECONDS } from "@selfhost/schema";
 import { McpToolError } from "./errors.js";
@@ -88,6 +90,10 @@ export function createProxyServer(options: ProxyOptions): Server {
         timeout: CALL_TIMEOUT_MS,
       })) as CallToolResult;
     } catch (error) {
+      // The server answered with a protocol error, such as an unknown tool: pass it on as it
+      // is, as solo mode's server gives it. Only a call that never got an answer is unavailable.
+      const lost = [ErrorCode.RequestTimeout, ErrorCode.ConnectionClosed] as number[];
+      if (error instanceof McpError && !lost.includes(error.code)) throw error;
       connecting = undefined;
       return failed("unavailable", unreachable(error));
     }

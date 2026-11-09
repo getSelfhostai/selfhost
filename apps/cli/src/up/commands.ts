@@ -11,6 +11,7 @@ import { digitalocean } from "./digitalocean.js";
 import { hetzner } from "./hetzner.js";
 import type { Deployed, ProviderDriver, UpIo, UpPlan } from "./plan.js";
 import { saveDeployment } from "./record.js";
+import { registryImageCheck } from "./registry.js";
 import { type CreatedResource, deleteCommands, Tracker, UpError } from "./resources.js";
 import {
   launchDiskGb,
@@ -46,6 +47,8 @@ export interface UpOptions {
   name?: string;
   domain?: string;
   image?: string;
+  /** Deploy without asking the registry whether the image tag exists. */
+  skipImageCheck?: boolean;
   signin?: string;
   signinClientId?: string;
   signinClientSecret?: string;
@@ -643,6 +646,26 @@ export async function runUp(options: UpOptions, io: UpIo): Promise<UpReport> {
     return report;
   }
 
+  // Nothing is created for an image tag that was never published.
+  if (!options.skipImageCheck) {
+    const { image, version } = plan.settings;
+    const found = await (io.imageExists ?? registryImageCheck(io.fetch))(image, version);
+    if (found !== true) {
+      const ref = `${image}:${version}`;
+      throw new Error(
+        [
+          found === false
+            ? `The server image ${ref} is not in its registry, so nothing was created.`
+            : `Could not check that the server image ${ref} is in its registry (no answer, or it needs a sign-in), so nothing was created.`,
+          options.image
+            ? "Check the tag in --image."
+            : `It is the release in deploy/docker/.env.example (SELFHOST_VERSION=${version}). Pass --image <image>:<tag> with a published tag.`,
+          "To deploy an image the registry check cannot see, such as a private one, pass --skip-image-check.",
+        ].join(" "),
+      );
+    }
+  }
+
   const tracker = new Tracker();
   let deployed: Deployed;
   try {
@@ -786,7 +809,11 @@ export function registerUp(
     .option("--events-per-day <n>", "expected agent events a day (default: 1500 a person)")
     .option("--name <name>", "name for the server and its firewall (default: selfhost-<random>)")
     .option("--domain <name>", "hostname for HTTPS (default: <server IP>.sslip.io)")
-    .option("--image <ref>", "server image with its tag (default: the release this CLI ships with)")
+    .option(
+      "--image <ref>",
+      "server image with its tag (default: SELFHOST_VERSION of the stack this CLI ships with); it must be in its registry",
+    )
+    .option("--skip-image-check", "deploy without checking the image tag is in its registry")
     .option("--signin <provider>", "console sign-in: github or google")
     .option("--signin-client-id <id>", "OAuth app client id (default: SELFHOST_SIGNIN_CLIENT_ID)")
     .option(

@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   existsSync,
@@ -15,9 +16,10 @@ import { createApp } from "@selfhost/server/app";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { appendToSpool } from "../src/hooks/receive.js";
 import { runImport } from "../src/import.js";
-import { HOSTED_URL, parseInvite } from "../src/init/commands.js";
+import { HOSTED_URL, hookCommand, parseInvite } from "../src/init/commands.js";
 import { PRESETS } from "../src/init/presets.generated.js";
 import { STARTER_CONFIG } from "../src/init/starter.js";
+import { createProgram } from "../src/program.js";
 import { runSpend } from "../src/spend.js";
 import { blockNetwork } from "./network.js";
 import { run, tempDir } from "./run.js";
@@ -95,7 +97,13 @@ describe("selfhost init", () => {
       /^ {2}OpenCode +not found +~\/\.config\/opencode\/opencode\.json \(none yet\)$/m,
     );
     expect(text.out).toMatch(/^ {2}Claude Code {2}would be added {2}~\/\.claude\/settings\.json$/m);
-    expect(text.out).toContain("Policy: would write selfhost.toml, 4 rules, all in observe mode.");
+    expect(text.out).toContain(
+      "Policy: would write selfhost.toml, 4 rules, all in observe mode: they record and block nothing yet.",
+    );
+    // The rules block nothing, but the guardrails do, and init says which.
+    expect(text.out).toContain(
+      "Guardrails: guard.force_push, guard.reset_hard, guard.rm_outside_workspace, guard.secret_read, guard.prod_sql, guard.prod_credentials block in every hook from the start",
+    );
     expect(text.out).toMatch(/Would import 6 log files from the last 30d and 0 hook events/);
 
     const json = await init(
@@ -207,7 +215,7 @@ describe("selfhost init", () => {
   it("writes the starter selfhost.toml once and keeps it on the next run", async () => {
     const { repo, init } = laptop();
     const first = await init("--data-dir", "memory://");
-    expect(first.out).toContain("Policy: wrote selfhost.toml, 4 rules, all in observe mode.");
+    expect(first.out).toContain("Policy: wrote selfhost.toml, 4 rules, all in observe mode:");
     const path = repo.path("selfhost.toml");
     expect(readFileSync(path, "utf8")).toBe(STARTER_CONFIG);
     writeFileSync(path, `${STARTER_CONFIG}# edited\n`);
@@ -530,7 +538,54 @@ describe("parseInvite", () => {
   });
 });
 
+describe("the hook command", () => {
+  it("is selfhost hook on PATH, else finds selfhost each time it runs, falling back to npx", () => {
+    expect(hookCommand(() => "/usr/local/bin/selfhost")).toEqual({
+      command: "selfhost hook {agent}",
+    });
+    const { command, warning } = hookCommand(() => undefined);
+    expect(command).toMatch(
+      /^if command -v selfhost >\/dev\/null 2>&1; then exec selfhost hook \{agent\}; elif \[ -x \S+ \]/,
+    );
+    expect(command).toContain(" hook {agent}; else exec npx -y selfhostai hook {agent}; fi");
+    expect(warning).toContain("selfhost is not on PATH");
+    // The hook still runs from a shell: the command parses as one.
+    expect(() =>
+      execFileSync("sh", ["-n", "-c", command.replaceAll("{agent}", "claude_code")]),
+    ).not.toThrow();
+  });
+});
+
+describe("init --agent", () => {
+  it("names every agent in its help and takes them all, hooking Claude Code and Codex", async () => {
+    const init = createProgram().commands.find((command) => command.name() === "init");
+    const agent = init?.options.find((option) => option.long === "--agent");
+    expect(agent?.description).toMatch(/^claude, codex, cursor, opencode or goose/);
+    const { init: run } = laptop();
+    const result = await run("--dry-run", "--json", "--agent", "cursor");
+    expect(result.code).toBe(0);
+    const cursor = JSON.parse(result.out).agents.find((a: { id: string }) => a.id === "cursor");
+    expect(cursor.message).toMatch(/selfhost guard install adds the guardrail hook/);
+    const bad = await run("--dry-run", "--agent", "vim");
+    expect(bad.err).toContain(
+      '--agent: expected claude, codex, cursor, opencode or goose, got "vim"',
+    );
+  });
+});
+
 describe("starter selfhost.toml", () => {
+  it("says the guardrails block, and turns the package guard on in observe with a note", () => {
+    expect(STARTER_CONFIG).toContain("The built-in guardrails block from the start");
+    expect(STARTER_CONFIG).toMatch(/public registry .*\n# makes network requests/);
+    const result = parseConfig(STARTER_CONFIG);
+    if (!result.ok) throw new Error(JSON.stringify(result.errors));
+    expect(result.config.guardrails.mode).toBe("enforce");
+    expect(result.config.packages.mode).toBe("observe");
+    // Without the file the package guard is off, so a solo laptop asks no registry.
+    const bare = parseConfig("version = 1\n");
+    expect(bare.ok && bare.config.packages.mode).toBe("off");
+  });
+
   it("parses, keeps every rule in observe mode and catches what its comments say", () => {
     expect(STARTER_CONFIG.split("\n")[0]).toBe(CONFIG_SCHEMA_DIRECTIVE);
     const result = parseConfig(STARTER_CONFIG);

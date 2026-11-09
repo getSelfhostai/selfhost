@@ -236,6 +236,33 @@ describe("observedRules", () => {
   });
 });
 
+describe("hits behind another rule's decision", () => {
+  it("counts an observe rule that fired next to an enforced guardrail", () => {
+    const [tool, evaluated] = observed(
+      "both",
+      day(7),
+      "s-both",
+      bash("git push --force origin main"),
+      "guard.force_push",
+      { mode: "enforce" },
+    );
+    const withHits: LedgerEvent = {
+      ...evaluated,
+      source: "hook",
+      data: {
+        ...evaluated.data,
+        hits: [
+          { rule_id: "no-force-push", mode: "observe", verdict: "block" },
+          { rule_id: "guard.force_push", mode: "enforce", verdict: "block" },
+        ],
+      },
+    };
+    expect(
+      observedRules([tool, withHits], rules).map((r) => [r.rule_id, r.hits, r.event_ids]),
+    ).toEqual([["no-force-push", 1, [withHits.id]]]);
+  });
+});
+
 describe("buildPolicyReport", () => {
   const item = buildPolicyReport(events, { ...window, now, rules, policyPath: "selfhost.toml" });
 

@@ -1010,3 +1010,57 @@ describe("syncingWriter", () => {
     expect(catchUp).toHaveBeenCalledOnce();
   });
 });
+
+describe("selfhost team policy", () => {
+  it("pushes a selfhost.toml as an owner, shows and pulls it, and refuses a member", async () => {
+    const server = await teamServer();
+    const owner = laptop();
+    const member = laptop();
+    const repo = tempDir("team-policy-repo");
+    repo.write(".git/HEAD", "ref: refs/heads/main\n");
+    const text = 'version = 1\n[guardrails]\nmode = "enforce"\n';
+    repo.write("selfhost.toml", text);
+    const admin = {
+      configPath: owner.configPath,
+      fetch: server.fetch,
+      env: { SELFHOST_TOKEN: ADMIN },
+    };
+    const { invite } = parse(
+      (await run(["team", "init", "--server", SERVER, "--json"], admin)).out,
+    );
+    const asOwner = { configPath: owner.configPath, fetch: server.fetch, cwd: repo.root };
+    const asMember = { configPath: member.configPath, fetch: server.fetch, cwd: repo.root };
+    await run(["join", SERVER, invite, "--person", PERSON], asOwner);
+    await run(["join", SERVER, invite, "--person", "bob@example.com"], asMember);
+
+    const status = await run(["status"], asOwner);
+    expect(status.out).toContain("selfhost team policy push selfhost.toml");
+    const none = await run(["team", "policy", "show"], asOwner);
+    expect(none.code).toBe(1);
+    expect(none.err).toContain("has no policy");
+
+    const pushed = await run(["team", "policy", "push", "--json"], asOwner);
+    expect(pushed.code).toBe(0);
+    expect(parse(pushed.out)).toMatchObject({
+      schema: "selfhost.team_policy/v1",
+      team: "default",
+      file: repo.path("selfhost.toml"),
+      text,
+    });
+    const shown = await run(["team", "policy", "show"], asMember);
+    expect(shown.out).toBe(text.trimEnd());
+    const pulled = await run(["team", "policy", "pull", "team.toml"], asMember);
+    expect(pulled.code).toBe(0);
+    expect(readFileSync(repo.path("team.toml"), "utf8")).toBe(text);
+    expect((await run(["team", "policy", "pull", "team.toml"], asMember)).err).toContain("--force");
+
+    const refused = await run(["team", "policy", "push"], asMember);
+    expect(refused.code).toBe(1);
+    expect(refused.err).toMatch(/owner or admin role in team default; you are a member/);
+    repo.write("bad.toml", 'version = 1\n[guardrails]\nmode = "loud"\n');
+    const invalid = await run(["team", "policy", "push", "bad.toml"], asOwner);
+    expect(invalid.err).toMatch(/bad\.toml is not valid, so nothing was sent/);
+    const agent = await run(["team", "policy", "push"], { ...asOwner, env: { CLAUDECODE: "1" } });
+    expect(agent.err).toContain("inside a coding agent session");
+  });
+});

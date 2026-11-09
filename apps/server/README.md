@@ -21,7 +21,11 @@ The selfhost HTTP API, specified in
   (`{ verdict, reason?, by? }`): one `decision.recorded` event, then the item is answered. `POST
   /v1/review-items/{id}/snooze` (`{ until, by? }`) ranks it last until then. An item that is no
   longer open answers 409 with `{ error, item }` and nothing is written. With the admin token
-  `by` is required; a person token acts as its own person.
+  `by` is required; a person token acts as its own person. A one-time exception (`kind:
+  exception`) goes to the team's owners and admins; approving one needs that role, and the person
+  whose agent was blocked (`requested_by`) cannot approve their own unless the team's
+  `selfhost.toml` sets `[review] self_approve_exceptions = true`. Both answer 403; denying is
+  always allowed.
 - `GET /v1/decisions`: `decision.recorded` and `policy.evaluated` events, newest first, by
   `path` (a file, the files under a folder, the folders that hold it), `topic` (every word in
   the question or reason), `text`, `rule_id`, `verdict`, `repo`, `target`, `person`,
@@ -112,7 +116,10 @@ bootstrap admin; everything else is a token the server issues and keeps only as 
 - `GET /v1/teams/{team}/overview?from&to` (anyone in the team): spend (totals, by person, agent
   and model), this month against `[budget] monthly_usd` of the team's file, people, repos and
   open review items. `GET /v1/budget?team&person&period` answers `BudgetResponse` for the day,
-  week or month, as the MCP tool `get_budget` does.
+  week or month, as the MCP tool `get_budget` does. The review refresh job also checks each
+  team's spend against its `[budget]` once a minute and raises an `alert.raised` at 50%, 80% and
+  100% of each period's budget, once per window, which the review list files as budget items;
+  requests go on (only a gateway with `[budget] mode = "hard"` stops them).
 - `GET /v1/teams/{team}/provenance?from&to&repo` (anyone in the team): for each repo the team
   owns, lines merged to the main branch by agent, model, person and module, and how many were
   reverted or reworked within `[review] revert_window_days`, computed on read by
@@ -286,8 +293,10 @@ How people sign in to it:
   `http://127.0.0.1:4400/` and opens `/#token=<admin token>`. The console keeps the token in the
   browser's localStorage and takes it out of the address bar; a fragment is never sent to a
   server. Nothing else is needed on localhost.
-- **On a team server**, each person pastes their own token (a person token from `selfhost team
-  join`, kept in `~/.selfhost/config.json`, or the admin token) and sees what that token reads.
+- **On a team server**, each person runs `selfhost console` on a laptop that joined the team
+  with `selfhost join <server> <invite>`: it opens `<server>/#token=<person token>`, the same
+  fragment sign-in, and they see what their token reads. The admin token can be pasted on the
+  sign-in page. The console's invite box shows the whole `selfhost join <server> <invite>` line.
 - **With a sign-in proxy** (`compose.signin.yml`, see
   [`deploy/docker`](../../deploy/docker/README.md)), no token is needed: set
   `SELFHOST_SIGNIN_PROXY_SECRET` (32 characters or more) on the server and have the proxy send

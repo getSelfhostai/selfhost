@@ -36,7 +36,9 @@ function BudgetCard({ team }: { team: string }) {
 function BudgetBody({ budget }: { budget: BudgetResponse }) {
   const { spent_usd, limit_usd, remaining_usd, forecast_usd } = budget;
   const share = limit_usd ? Math.min(1, spent_usd / limit_usd) : 0;
-  const over = limit_usd !== null && forecast_usd !== null && forecast_usd > limit_usd;
+  const spentOver = limit_usd !== null && spent_usd > limit_usd;
+  const over =
+    spentOver || (limit_usd !== null && forecast_usd !== null && forecast_usd > limit_usd);
   return (
     <div className="space-y-2">
       <div className="flex items-baseline justify-between gap-2">
@@ -56,7 +58,9 @@ function BudgetBody({ budget }: { budget: BudgetResponse }) {
       <p className="text-muted-foreground">
         {limit_usd === null
           ? "Set [budget] monthly_usd in the team's selfhost.toml to track it here."
-          : `${formatUsd(remaining_usd ?? 0)} left.`}{" "}
+          : spentOver
+            ? `${formatUsd(spent_usd - limit_usd)} over.`
+            : `${formatUsd(remaining_usd ?? 0)} left.`}{" "}
         {forecast_usd === null
           ? "Too early in the month to forecast."
           : `On pace for ${formatUsd(forecast_usd)} by month end${over ? ", over budget" : ""}.`}

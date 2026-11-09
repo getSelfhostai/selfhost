@@ -324,5 +324,86 @@ describe.each(BACKENDS)("review items API on $name", (backend) => {
         (await page(await send("/v1/review-items?team=blue"))).map((item) => item.session_id),
       ).toEqual(["blue-1"]);
     });
+
+    it("sends exceptions to owners and admins, and nobody approves their own", async () => {
+      const { send, post, refresh } = await setup();
+      const created = (await (await post("/v1/teams", { name: "Red" })).json()) as {
+        invite: string;
+      };
+      const join = async (person: string) =>
+        (
+          (await (
+            await post("/v1/join", { invite: created.invite, person })
+          ).json()) as JoinResponse
+        ).token;
+      const lead = await join("lead@example.com");
+      const dev = await join("dev@example.com");
+      const dev2 = await join("dev2@example.com");
+      let n = 0;
+      /** A force push dev's hook blocked, with the one-time exception it asked for. */
+      const blocked = async (token: string) => {
+        n += 1;
+        const id = `019a7000-0000-7000-8000-${String(n).padStart(12, "0")}`;
+        const event: LedgerEvent = {
+          id: `019a7000-0000-7000-9000-${String(n).padStart(12, "0")}`,
+          schema: "selfhost.event/v1",
+          ts: NOW,
+          source: "hook",
+          kind: "policy.evaluated",
+          actor: { kind: "system", id: "selfhost-policy" },
+          session_id: `push-${n}`,
+          tool: { name: "Bash", input_summary: "git push -f" },
+          decision: {
+            verdict: "block",
+            by: "selfhost-policy",
+            rule_id: "guard.force_push",
+            mode: "enforce",
+          },
+          data: { exception: { id, fingerprint: `f${n}` } },
+        };
+        expect((await post("/v1/events", { events: [event] }, token)).status).toBe(200);
+        await refresh();
+        return id;
+      };
+      const decide = (id: string, verdict: string, token: string) =>
+        post(`/v1/review-items/${id}/decision`, { verdict }, token);
+
+      const id = await blocked(dev);
+      const item = (await (await send(`/v1/review-items/${id}`, {}, lead)).json()) as ReviewItem;
+      expect(item).toMatchObject({
+        kind: "exception",
+        requested_by: "dev@example.com",
+        owners: ["lead@example.com"],
+        route: { step: "team", from: "the team's owners and admins" },
+      });
+      const own = await decide(id, "approve", dev);
+      expect(own.status).toBe(403);
+      expect(((await own.json()) as ApiError).error.message).toMatch(
+        /^You cannot approve an exception your own agent asked for/,
+      );
+      const member = await decide(id, "approve", dev2);
+      expect(member.status).toBe(403);
+      expect(((await member.json()) as ApiError).error.message).toMatch(
+        /needs the owner or admin role in team red; you are a member there/,
+      );
+      expect((await decide(id, "approve", lead)).status).toBe(200);
+      // Denying your own request is fine.
+      expect((await decide(await blocked(dev), "deny", dev)).status).toBe(200);
+
+      // The team can let people approve their own.
+      const policy = "version = 1\n[review]\nself_approve_exceptions = true\n";
+      const put = await send(
+        "/v1/policy",
+        { method: "PUT", body: JSON.stringify({ text: policy }) },
+        lead,
+      );
+      expect(put.status).toBe(200);
+      const mine = await blocked(dev);
+      const allowed = (await (
+        await send(`/v1/review-items/${mine}`, {}, dev)
+      ).json()) as ReviewItem;
+      expect(allowed.owners).toEqual(["dev@example.com", "lead@example.com"]);
+      expect((await decide(mine, "approve", dev)).status).toBe(200);
+    });
   });
 });

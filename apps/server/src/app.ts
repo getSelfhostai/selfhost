@@ -6,6 +6,7 @@ import {
   type ResolvedSelfhostConfig,
 } from "@selfhost/schema";
 import { Hono } from "hono";
+import { roleIn } from "./access.js";
 import { requireBearerToken } from "./auth.js";
 import { consoleRoutes } from "./console.js";
 import { decisionRoutes } from "./decisions.js";
@@ -107,6 +108,7 @@ export function createApp({
           const { memberships } = await caller.scope();
           return [own.team, ...memberships.map((m) => m.team).filter((t) => t !== own.team)];
         },
+        role: (c, team) => roleIn((c.env as PersonEnv["Bindings"]).caller, team),
       });
       mcpRoutes(person, ledger, { version, ...review });
     },

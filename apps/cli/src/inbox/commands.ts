@@ -11,6 +11,7 @@ import { plural } from "../format.js";
 import { drainSpool } from "../hooks/drain.js";
 import type { ExceptionGrant, GrantsReport, LookupItem } from "../hooks/exceptions.js";
 import { spoolDir } from "../hooks/receive.js";
+import { requireHuman } from "../human.js";
 import { type Fetch, TeamClient } from "../team/client.js";
 import { readMembership } from "../team/config.js";
 import { grantLine, refreshGrants } from "./grants.js";
@@ -65,6 +66,8 @@ export interface InboxIo {
   isTTY?: boolean;
   /** Opens a link in the browser. Default: the OS opener. */
   openUrl?: (url: string) => void;
+  /** Whether stdin is a terminal; approve and deny refuse without one. */
+  stdinIsTTY?: boolean;
 }
 
 interface CommonOptions {
@@ -686,6 +689,18 @@ function withLedger(command: Command): Command {
 
 const ID_HELP = "item id, or enough of its start to tell it apart";
 
+/** approve or deny from the command line: only a person at a terminal, never an agent. */
+function decideAsPerson(
+  what: string,
+  verdict: "approve" | "deny",
+  id: string,
+  options: InboxDecideOptions,
+  io: InboxIo,
+): Promise<InboxActionReport> {
+  requireHuman(what, { env: io.env, stdinIsTTY: io.stdinIsTTY === true });
+  return runInboxDecide(verdict, id, options, io);
+}
+
 /**
  * `selfhost inbox` and its approve, deny, snooze, open and sync commands, and `selfhost review
  * approve|deny`, the same answers under the review command.
@@ -715,7 +730,7 @@ export function registerInbox(program: Command, io: () => InboxIo, fail: Fail): 
         .option("--reason <text>", "why, in your own words"),
     ).action(async (id: string, options: InboxDecideOptions) => {
       try {
-        await runInboxDecide(verdict, id, options, io());
+        await decideAsPerson(`selfhost inbox ${verdict}`, verdict, id, options, io());
       } catch (error) {
         fail(error, options.json);
       }
@@ -734,7 +749,7 @@ export function registerInbox(program: Command, io: () => InboxIo, fail: Fail): 
         .option("--reason <text>", "why, in your own words"),
     ).action(async (id: string, options: InboxDecideOptions) => {
       try {
-        await runInboxDecide(verdict, id, options, io());
+        await decideAsPerson(`selfhost review ${verdict}`, verdict, id, options, io());
       } catch (error) {
         fail(error, options.json);
       }

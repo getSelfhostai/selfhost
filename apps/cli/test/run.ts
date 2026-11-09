@@ -26,6 +26,10 @@ export async function run(args: string[], deps: Partial<CliDeps> = {}): Promise<
     },
     // Never wait on the terminal: tests that prompt pass their own answer.
     ask: undefined,
+    // A person at a terminal, as the decision commands need; tests of refusals pass false.
+    stdinIsTTY: true,
+    // selfhost up never asks a real registry: the image is taken as published.
+    imageExists: async () => true,
     // Never read or write the real ~/.selfhost/config.json.
     configPath: tempDir("config").path("config.json"),
     // Never read the real home directory's context files.

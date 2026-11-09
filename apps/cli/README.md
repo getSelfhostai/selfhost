@@ -39,7 +39,10 @@ import` writes, or `--database` / `--data-dir`) and opens it in the browser, sig
 the URL, the link with the API token in its fragment, and the token (kept in `<data dir>/token`).
 Usage, cost, sessions and PRs by team, developer, agent and model, with filters and CSV export.
 It listens on 127.0.0.1 unless `--host` says otherwise and stops on Ctrl-C. The embedded ledger
-is one process at a time, so stop `selfhost import --watch` first, or use Postgres.
+is one process at a time, so stop `selfhost import --watch` first, or use Postgres. On a laptop
+that joined a team it opens the team server's console instead, signed in as this person
+(`<server>/#token=<person token>`, the same fragment sign-in); `--local` serves this machine's
+own ledger.
 
 `selfhost ledger prune [--days <n>] [--config <path>] [--json]` deletes events older than the
 retention from the ledger (the one `selfhost import` writes, or `--database` / `--data-dir`):
@@ -391,7 +394,9 @@ one by its id, or any unique start of it:
   event in the decision log: the team server in team mode, the local ledger in solo mode. The
   inbox writes no event of its own, so nothing is recorded twice. An item someone else already
   answered is reported (`... was already answered by bob@example.com: deny. Nothing changed.`)
-  and exits 1.
+  and exits 1. Approve and deny (here, under `selfhost review` and `selfhost decide`) are a
+  person's: they refuse inside a coding agent's session (`CLAUDECODE`, `CODEX_SANDBOX` and the
+  like are set) and when stdin is not a terminal, and the hooks block an agent that runs them.
 - `selfhost inbox snooze <id> [--for 2h | --until <time>]` hides an item from your list until
   then (default 1h; `--for` takes m, h, d or w).
 - `selfhost inbox open <id> [--no-open]` prints the item with its risk reasons and brief, and
@@ -657,7 +662,7 @@ again.
 ```text
 selfhost blocked this call under rule guard.force_push: Force pushes rewrite shared history and can drop commits other people pushed.
 Instead: Push your commits to a new branch and open a pull request. If this branch really has to be rewritten, ask the user first; git push --force-with-lease is the safer form.
-Do not retry this call, or a variant of it, to get around the rule: it will be blocked again. Take the alternative above, or, if this exact call is needed, ask the user to approve a one-time exception by running: selfhost inbox approve 019a5b01-.... Once they approve, make the identical call again and it is allowed once.
+Do not retry this call, or a variant of it, to get around the rule: it will be blocked again. Take the alternative above, or, if this exact call is needed, ask the user to approve one-time exception 019a5b01-.... Only a person can approve it, in their own terminal or the console; do not run the approval yourself. Once they approve, make the identical call again and it is allowed once.
 Rule: https://github.com/getselfhostai/selfhost/blob/main/packages/policy/README.md#guardrails
 ```
 
@@ -671,8 +676,11 @@ A person can allow one blocked call, once. Nothing here opens the ledger in the 
 2. `selfhost import` (or `--watch`) maps the line to the `policy.evaluated` block event with
    `data.exception` and `links.item_id`; the review list (local, or the team server after sync)
    opens an `exception` item under that id, routed like any other item, titled `Allow once:
-   <call>` with secrets masked. It is blocking and times out after `[review]
-   approval_timeout_minutes`. A retry of the same call replaces it with the new id. In solo mode
+   <call>` with secrets masked. The call was already denied and the agent went on, so the item
+   is not blocking and has no timeout (an agent that makes its case over MCP and waits makes it
+   blocking). On a team server it goes to the team's owners and admins, and the person whose
+   agent was blocked cannot approve it unless `[review] self_approve_exceptions = true`. A retry
+   of the same call replaces it with the new id. In solo mode
    `selfhost inbox` and `selfhost review list` read blocked calls from the spool first, so the
    item is there right after the block.
 3. A person approves or denies it: `selfhost inbox approve <id>`, `selfhost review approve <id>`,
@@ -684,7 +692,7 @@ A person can allow one blocked call, once. Nothing here opens the ledger in the 
    grants. A grant is signed and expires `[review] exception_expiry_minutes` (default 30) after
    the approval.
 5. The next identical call (same agent, tool, command with white space evened out, file and
-   access, URL, MCP server and repository root), stopped only by rules the exception covers,
+   access, URL, MCP server, repository root and agent session), stopped only by rules the exception covers,
    uses the grant: the hook moves it to `used/`, which only one hook can do, so two calls at once
    cannot both get through. It answers allow (Claude Code and Codex also show the person a
    `systemMessage`) and records the use: a `policy.evaluated` allow under the rule, with
@@ -752,6 +760,11 @@ selfhost team leave
   and a batch that fails is kept and sent again on the next poll.
 - `selfhost status` shows solo or team, the server, the person, the last sync and the team
   policy hash, from local files only. Sync progress is in `~/.selfhost/sync.json`.
+- `selfhost team policy push [file]` checks a `selfhost.toml` (default: this repository's) and
+  makes it the team's policy (owners and admins; the server checks the role, and it refuses
+  inside an agent session); `selfhost team policy show` prints it and `selfhost team policy pull
+  [file] [--force]` writes it to a file. `selfhost status` points at push when no team policy
+  was pulled yet.
 - `selfhost team leave` revokes this machine's person token on the server, then removes the
   membership and the pulled team policy and goes back to solo mode. When the server cannot be
   reached, the membership is still removed and the output says the token keeps working there
@@ -838,6 +851,11 @@ the AI gateway (Bifrost) next to it; see [AI gateway](#ai-gateway-selfhost-gatew
   binaries carry no AWS SDK and profiles and SSO work). SSH uses the system `ssh` with
   `BatchMode`, so a key that needs a password prompt fails fast.
 - No secret goes in user-data: `install.sh` generates the tokens and passwords on the server.
+- Image: `--image <image>:<tag>`, else `ghcr.io/getselfhostai/selfhost` at `SELFHOST_VERSION`
+  of `deploy/docker/.env.example`, the one place the release tag is set. Before anything is
+  created, the registry is asked anonymously (a manifest HEAD) whether the tag exists; a tag
+  that is not there, or a registry that cannot be asked, stops it with nothing made.
+  `--skip-image-check` deploys a private image the check cannot see.
   When the server answers `/v1/health`, `selfhost up` connects over SSH, writes the OAuth client
   secret to `.env` (mode 0600) when sign-in is asked for, and reads back the admin and agent
   tokens. It then creates team `--team` (default `default`; `--no-team` skips it), prints the

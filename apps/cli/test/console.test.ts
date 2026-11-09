@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { ConsoleReport } from "../src/console.js";
+import { saveMembership } from "../src/team/config.js";
 import { run, tempDir } from "./run.js";
 
 describe("selfhost console", () => {
@@ -45,6 +46,31 @@ describe("selfhost console", () => {
     expect(code).toBe(0);
     expect(report).toMatchObject({ schema: "selfhost.console/v1", token_file: data.path("token") });
     expect(opened).toEqual([report?.url]);
+  });
+
+  it("in a team, opens the team server's console signed in with the person token", async () => {
+    const home = tempDir("console-team");
+    const configPath = home.path("config.json");
+    saveMembership(configPath, {
+      server: "https://selfhost.acme.dev",
+      token: "selfhost_person_abc",
+      person: "dev@acme.dev",
+      team: "web",
+    });
+    const opened: string[] = [];
+    const { code, out } = await run(["console"], {
+      configPath,
+      openBrowser: (url) => opened.push(url),
+    });
+    expect(code).toBe(0);
+    const link = "https://selfhost.acme.dev/#token=selfhost_person_abc";
+    expect(out).toContain(
+      "Team web console at https://selfhost.acme.dev/, signed in as dev@acme.dev.",
+    );
+    expect(out).toContain(`Signed-in link: ${link}`);
+    expect(opened).toEqual([link]);
+    const json = await run(["console", "--json", "--no-open"], { configPath });
+    expect(JSON.parse(json.out)).toMatchObject({ mode: "team", url: link });
   });
 
   it("refuses a port that is not one", async () => {

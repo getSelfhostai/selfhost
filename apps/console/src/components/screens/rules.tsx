@@ -186,6 +186,7 @@ export function RulesScreen() {
     return { policy, coverage, observed };
   });
   const [busy, setBusy] = useState<string>();
+  const [confirming, setConfirming] = useState<string>();
   const [message, setMessage] = useState<{ text: string; failed?: boolean }>();
 
   if (!team) {
@@ -204,6 +205,7 @@ export function RulesScreen() {
   const ownText = policy?.layers?.length === 1 && policy.layers[0]?.kind === "team";
 
   const promote = async (row: Row) => {
+    setConfirming(undefined);
     setBusy(row.id);
     setMessage(undefined);
     try {
@@ -226,10 +228,11 @@ export function RulesScreen() {
           }).catch(() => undefined);
         }
       }
+      const does = row.action === "ask" ? "asks a person first" : "blocks";
       setMessage({
         text: result.changed
-          ? `${row.name} now blocks. The team's selfhost.toml changed on line ${result.line}.`
-          : `${row.name} already blocks.`,
+          ? `${row.name} now ${does}. The team's selfhost.toml changed on line ${result.line}.`
+          : `${row.name} already ${does}.`,
       });
       loaded.reload();
     } catch (error) {
@@ -241,6 +244,29 @@ export function RulesScreen() {
 
   const startButton = (row: Row) => {
     if (!canWrite || row.mode !== "observe") return undefined;
+    const asks = row.action === "ask";
+    const start = asks ? "Start asking" : "Start blocking";
+    if (confirming === row.id) {
+      return (
+        <fieldset className="flex flex-col items-end gap-2 text-right" aria-label={start}>
+          <p className="max-w-xs text-muted-foreground text-xs">
+            {asks
+              ? `Every agent in team ${team} then waits for a person before a call ${row.name} matches.`
+              : `Every agent in team ${team} is then stopped on the calls ${row.name} matches.`}{" "}
+            This changes the team's selfhost.toml.
+          </p>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => setConfirming(undefined)}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={() => promote(row)}>
+              <ShieldCheck />
+              {asks ? "Yes, start asking" : "Yes, start blocking"}
+            </Button>
+          </div>
+        </fieldset>
+      );
+    }
     return (
       <Button
         size="sm"
@@ -250,10 +276,10 @@ export function RulesScreen() {
             ? undefined
             : "This team's rules sit on an org floor. Promote it in the team's selfhost.toml with selfhost policy promote."
         }
-        onClick={() => promote(row)}
+        onClick={() => setConfirming(row.id)}
       >
         <ShieldCheck />
-        {busy === row.id ? "Saving..." : "Start blocking"}
+        {busy === row.id ? "Saving..." : start}
       </Button>
     );
   };

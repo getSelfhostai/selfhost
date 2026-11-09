@@ -82,7 +82,11 @@ describe("the team screen", () => {
     const invite = await screen.findByTestId("invite");
     expect(within(invite).getByText("bob@example.com")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Create invite" }));
-    expect(await screen.findByText("selfhost_inv_secret")).toBeTruthy();
+    // The whole join line, with this server's address, not a command that does not exist.
+    expect(
+      await screen.findByText(`selfhost join ${window.location.origin} selfhost_inv_secret`),
+    ).toBeTruthy();
+    expect(screen.queryByText(/selfhost team join/)).toBeNull();
     expect(
       server.calls.find((c) => c.path === "/v1/teams/web/invites" && c.method === "POST")?.body,
     ).toEqual({

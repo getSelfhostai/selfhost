@@ -31,6 +31,7 @@ import {
   type TeamPolicyFile,
 } from "../find-config.js";
 import { plural, table } from "../format.js";
+import { toolAccess } from "../hooks/vendors.js";
 import { describeTarget, parseSince } from "../import.js";
 import { repoDir } from "../scan/index.js";
 import { checkCall, decide, describeDecision } from "./decide.js";
@@ -245,11 +246,14 @@ export async function policyTest(
   checkTeam(config, options.team);
   const agent = parseAgent(options.agent);
   const mcpServer = mcpServerOf(options.tool);
+  // As the hook sees it: a file tool reads or writes its file, which guard.secret_read needs.
+  const access = options.path !== undefined ? toolAccess(options.tool) : undefined;
   const call: ToolCall = {
     ...(agent ? { agent } : {}),
     tool: options.tool,
     ...(options.command !== undefined ? { command: options.command } : {}),
     ...(options.path !== undefined ? { path: normalizePath(options.path) } : {}),
+    ...(access !== undefined ? { access } : {}),
     ...(options.url !== undefined ? { url: options.url } : {}),
     ...(mcpServer !== undefined ? { mcpServer } : {}),
     ...(options.model !== undefined ? { model: options.model } : {}),

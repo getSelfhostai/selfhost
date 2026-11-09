@@ -65,7 +65,8 @@ be bookmarked and shared; the token never goes in it.
 - `selfhost console` opens it with `#token=<token>`: the console keeps the token in this
   browser's localStorage and takes it out of the address bar. A fragment never reaches a
   server.
-- Otherwise it asks for a token: a person token from `selfhost team join` (in
-  `~/.selfhost/config.json`) or the server's admin token. Sign out forgets it.
+- On a laptop that joined a team (`selfhost join <server> <invite>`), `selfhost console` opens
+  the team server's console with the person token the same way.
+- Otherwise it asks for a token, such as the server's admin token. Sign out forgets it.
 - Behind a sign-in proxy ([`deploy/docker`](../../deploy/docker/README.md)) it needs no token:
   the server reads as the signed-in person.

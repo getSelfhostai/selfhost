@@ -49,12 +49,45 @@ describe("rules and guardrails", () => {
     renderConsole(OWNER, "?screen=rules");
     const push = await ruleCard("no-force-push");
     fireEvent.click(push.getByRole("button", { name: "Start blocking" }));
+    // Nothing changes until the person confirms.
+    expect(server.calls.some((c) => c.method === "PUT")).toBe(false);
+    fireEvent.click(push.getByRole("button", { name: "Yes, start blocking" }));
     await screen.findByText(/no-force-push now blocks/, undefined, LOADS_PROMOTE);
     const put = server.calls.find((c) => c.method === "PUT");
     expect(put?.url.searchParams.get("team")).toBe("web");
     const text = (put?.body as { text?: string } | undefined)?.text;
     expect(text).toBe(POLICY_TEXT.replace('mode = "observe"', 'mode = "enforce"'));
     expect(text).toContain("# Agents push through pull requests.");
+  });
+
+  it("asks before starting an ask rule, and says it now asks a person", async () => {
+    const text = POLICY_TEXT.replace(
+      'id = "ask-migrations"\nmode = "enforce"',
+      'id = "ask-migrations"\nmode = "observe"',
+    );
+    const config = POLICY.config as unknown as { rules: { id: string; mode: string }[] };
+    const observing = {
+      ...POLICY,
+      text,
+      config: {
+        ...POLICY.config,
+        rules: config.rules.map((rule) =>
+          rule.id === "ask-migrations" ? { ...rule, mode: "observe" } : rule,
+        ),
+      },
+    };
+    const server = mockServer(routes({ "GET /v1/policy": observing, "PUT /v1/policy": observing }));
+    renderConsole(OWNER, "?screen=rules");
+    const card = await ruleCard("ask-migrations");
+    fireEvent.click(card.getByRole("button", { name: "Start asking" }));
+    expect(card.getByText(/waits for a person before a call ask-migrations matches/)).toBeTruthy();
+    fireEvent.click(card.getByRole("button", { name: "Cancel" }));
+    expect(card.queryByRole("button", { name: "Yes, start asking" })).toBeNull();
+    fireEvent.click(card.getByRole("button", { name: "Start asking" }));
+    fireEvent.click(card.getByRole("button", { name: "Yes, start asking" }));
+    await screen.findByText(/ask-migrations now asks a person first/, undefined, LOADS_PROMOTE);
+    expect(screen.queryByText(/ask-migrations now blocks/)).toBeNull();
+    expect(server.calls.filter((c) => c.method === "PUT")).toHaveLength(1);
   });
 
   it("records the promotion in the decision log with the admin token", async () => {
@@ -65,9 +98,9 @@ describe("rules and guardrails", () => {
       }),
     );
     renderConsole(ADMIN, "?screen=rules&team=web");
-    fireEvent.click(
-      (await ruleCard("no-force-push")).getByRole("button", { name: "Start blocking" }),
-    );
+    const card = await ruleCard("no-force-push");
+    fireEvent.click(card.getByRole("button", { name: "Start blocking" }));
+    fireEvent.click(card.getByRole("button", { name: "Yes, start blocking" }));
     await waitFor(
       () =>
         expect(server.calls.find((c) => c.path === "/v1/decisions")?.body).toMatchObject({
@@ -91,6 +124,7 @@ describe("rules and guardrails", () => {
     await screen.findByText("Guardrails");
     const buttons = await screen.findAllByRole("button", { name: "Start blocking" });
     fireEvent.click(buttons.at(-1) as HTMLElement);
+    fireEvent.click(await screen.findByRole("button", { name: "Yes, start blocking" }));
     await screen.findByText(/Guardrails now blocks/, undefined, LOADS_PROMOTE);
     const put = server.calls.find((c) => c.method === "PUT");
     const text = (put?.body as { text?: string } | undefined)?.text ?? "";

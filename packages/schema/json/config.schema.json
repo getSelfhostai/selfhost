@@ -249,6 +249,11 @@
           "description": "Minutes a one-time exception stays usable once a person approves it. The blocked call is allowed once in that time, then blocked again.",
           "type": "integer"
         },
+        "self_approve_exceptions": {
+          "default": false,
+          "description": "On a team server, whether a person may approve a one-time exception their own agent asked for. false (the default) sends exception items to the team's owners and admins, and the person whose agent was blocked cannot approve it. Solo mode, with no team, lets the one person approve their own.",
+          "type": "boolean"
+        },
         "github_logins": {
           "default": {},
           "description": "Person id (as in owners) to GitHub login. The GitHub App requests a review from the owner the review list picked under this login.",
@@ -317,8 +322,8 @@
       "type": "object",
       "properties": {
         "mode": {
-          "description": "observe logs installs that break the policy, enforce blocks them.",
-          "default": "observe",
+          "default": "off",
+          "description": "observe logs installs that break the policy, enforce blocks them, off (the default) checks nothing. observe and enforce look each package up in its public registry (npm, PyPI, crates.io, the Go proxy), so they make network requests.",
           "type": "string",
           "enum": [
             "observe",

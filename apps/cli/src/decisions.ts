@@ -18,6 +18,7 @@ import {
   type PersonVerdict,
 } from "@selfhost/schema";
 import type { Command } from "commander";
+import { requireHuman } from "./human.js";
 import { defaultPerson } from "./import.js";
 import { repoDir } from "./scan/index.js";
 import { readMembership } from "./team/config.js";
@@ -29,6 +30,8 @@ export interface DecisionsIo {
   now?: Date;
   /** Where the team membership is kept; a joined person decides under that id. */
   configPath?: string;
+  /** Whether stdin is a terminal; `selfhost decide` refuses without one. */
+  stdinIsTTY?: boolean;
 }
 
 interface LedgerOptions {
@@ -264,7 +267,12 @@ export function registerDecisions(
     .option("--data-dir <path>", "embedded ledger folder (default: ~/.selfhost/data)")
     .action(async (target: string, verdict: string, options: DecideOptions) => {
       try {
-        await runDecide(target, verdict, options, io());
+        const decideIo = io();
+        requireHuman("selfhost decide", {
+          env: decideIo.env,
+          stdinIsTTY: decideIo.stdinIsTTY === true,
+        });
+        await runDecide(target, verdict, options, decideIo);
       } catch (error) {
         fail(error, options.json);
       }

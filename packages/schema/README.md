@@ -292,10 +292,15 @@ snooze, open), `delivery` (`instant` or `digest`), `group` (`run:<id>` or `sessi
 `[review]` in `selfhost.toml` routes and times items: `owners` (path glob to people),
 `fallback` (people who get items nobody else owns), `approval_timeout_minutes` (default 30),
 `exception_expiry_minutes` (default 30: how long an approved one-time exception stays usable),
+`self_approve_exceptions` (default false: on a team server, exception items go to the team's
+owners and admins and the person whose agent was blocked cannot approve their own; solo mode
+lets its one person approve),
 `high_risk_paths` and `high_risk_threshold` (default 70, also the line for instant delivery).
 
 `kind` `exception` is a tool call a rule blocked, which a person can allow once: approving it
-lets that exact call through one time, within `exception_expiry_minutes`.
+lets that exact call through one time, within `exception_expiry_minutes`. `requested_by` names
+the person whose agent was blocked. The hook already denied the call, so the item is not
+`blocking`: no agent waits on it.
 
 ## Hook payloads
 

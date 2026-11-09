@@ -15,6 +15,7 @@ import {
 import type { Command } from "commander";
 import { decider, recordFromCli } from "../decisions.js";
 import { type ConfigLocation, findConfig } from "../find-config.js";
+import { requireHuman } from "../human.js";
 import { parseSince } from "../import.js";
 import { repoDir } from "../scan/index.js";
 import { promoteRule } from "./promote.js";
@@ -30,6 +31,8 @@ export interface PolicyIo {
   now?: Date;
   /** ~/.selfhost/config.json: the pulled team policy when the repo has none, and the person a joined teammate decides as. */
   configPath?: string;
+  /** Whether stdin is a terminal; `policy promote` refuses without one. */
+  stdinIsTTY?: boolean;
 }
 
 export interface PromoteCommandOptions {
@@ -305,7 +308,12 @@ export function registerPolicyEditing(
     .option("--data-dir <path>", "embedded ledger folder (default: ~/.selfhost/data)")
     .action(async (rule: string, options: PromoteCommandOptions) => {
       try {
-        await runPromote(rule, options, io());
+        const promoteIo = io();
+        requireHuman("selfhost policy promote", {
+          env: promoteIo.env,
+          stdinIsTTY: promoteIo.stdinIsTTY === true,
+        });
+        await runPromote(rule, options, promoteIo);
       } catch (error) {
         fail(error, options.json);
       }

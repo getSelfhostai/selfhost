@@ -165,6 +165,11 @@
         }
       }
     },
+    "requested_by": {
+      "minLength": 1,
+      "description": "For an exception: the person whose agent was blocked. On a team server they cannot approve it unless [review] self_approve_exceptions is true.",
+      "type": "string"
+    },
     "session_id": {
       "description": "Vendor session id.",
       "type": "string"

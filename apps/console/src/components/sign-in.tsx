@@ -40,9 +40,10 @@ export function SignIn({ error, onToken }: { error?: string; onToken: (token: st
               opens this page signed in.
             </li>
             <li>
-              On a team server, use your person token from{" "}
-              <code className="text-foreground">selfhost team join</code> (kept in
-              ~/.selfhost/config.json), or the server's admin token.
+              On a team server, run <code className="text-foreground">selfhost console</code> on a
+              laptop that joined the team (with{" "}
+              <code className="text-foreground">selfhost join &lt;server&gt; &lt;invite&gt;</code>
+              ): it opens this page signed in as you. Or paste the server's admin token.
             </li>
           </ul>
         </CardContent>

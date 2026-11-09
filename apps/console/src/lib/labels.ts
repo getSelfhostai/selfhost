@@ -14,7 +14,7 @@ export const REVIEW_KIND_NAMES: Record<ReviewItemKind, string> = {
   approval: "Approval",
   question: "Question",
   blocked_action: "Blocked action",
-  exception: "Exception request",
+  exception: "Exception requested",
   stuck_run: "Stuck run",
   budget: "Budget",
   spend_spike: "Spend spike",

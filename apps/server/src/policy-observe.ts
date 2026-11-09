@@ -1,6 +1,6 @@
 import type { Ledger } from "@selfhost/ledger";
 import { guardrailChecks, policyChecks } from "@selfhost/policy";
-import { observedRules } from "@selfhost/review";
+import { countedHits, observedRules } from "@selfhost/review";
 import {
   createValidator,
   type LedgerEvent,
@@ -23,17 +23,6 @@ export const MAX_OBSERVED_EVENTS = 20_000;
 const observedQuery = createValidator(PolicyObservedQuerySchema);
 
 const compareText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-
-const ruleOf = (event: LedgerEvent) => {
-  const id = event.decision?.rule_id;
-  return typeof id === "string" && id !== "" ? id : undefined;
-};
-
-/** One verdict per rule and tool call, like observedRules: a call evaluated twice counts once. */
-const callKey = (event: LedgerEvent, ruleId: string) => {
-  const tool = event.data?.tool_event_id;
-  return typeof tool === "string" ? `${ruleId}\u0000${tool}` : event.id;
-};
 
 /**
  * What each rule and guardrail of a team did in a window, from its policy.evaluated events:
@@ -75,37 +64,24 @@ export function policyObservedReport(
     return found;
   };
 
-  const byId = new Map(events.map((event) => [event.id, event]));
   for (const rule of observed) {
     const target = row(rule.rule_id);
-    const seen = sessions.get(rule.rule_id);
-    for (const id of rule.event_ids) {
-      const event = byId.get(id);
-      if (!event) continue;
-      if (event.decision?.verdict === "ask") target.would_ask += 1;
-      else target.would_block += 1;
-      if (event.session_id) seen?.add(event.session_id);
-    }
     target.likely_false_positives = rule.likely_false_positives;
     target.examples = rule.examples;
     target.more_examples = rule.more_examples;
   }
-
-  const counted = new Set<string>();
-  for (const event of events) {
-    const ruleId = ruleOf(event);
-    const verdict = event.decision?.verdict;
-    if (event.kind !== "policy.evaluated" || event.decision?.mode !== "enforce" || !ruleId) {
-      continue;
+  // Every hit each event lists, observe and enforce alike: an observe rule that fired next to
+  // an enforced guardrail counts too.
+  for (const mode of ["observe", "enforce"] as const) {
+    for (const { rule_id, verdict, event } of countedHits(events, mode)) {
+      const target = row(rule_id);
+      if (mode === "observe") {
+        if (verdict === "ask") target.would_ask += 1;
+        else target.would_block += 1;
+      } else if (verdict === "ask") target.asked += 1;
+      else target.blocked += 1;
+      if (event.session_id) sessions.get(rule_id)?.add(event.session_id);
     }
-    if (verdict !== "block" && verdict !== "ask") continue;
-    const key = callKey(event, ruleId);
-    if (counted.has(key)) continue;
-    counted.add(key);
-    const target = row(ruleId);
-    if (verdict === "ask") target.asked += 1;
-    else target.blocked += 1;
-    if (event.session_id) sessions.get(ruleId)?.add(event.session_id);
   }
 
   const hits = (rule: PolicyObservedRule) =>

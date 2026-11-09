@@ -17,7 +17,7 @@
 
 - A hook running `selfhost hook <agent>` in ~/.claude/settings.json and ~/.codex/config.toml (or ~/.codex/hooks.json), each file backed up first as `<file>.selfhost-backup-<UTC time>`.
 - ~/.selfhost/: the ledger (data/), hook events waiting for import (spool/), the files init changed (init.json), the team membership (config.json, team mode only).
-- selfhost.toml at the git repository root when there is none: 4 rules, all in observe mode. With `--preset`, that preset's rules; some are enforced. An existing selfhost.toml is never replaced.
+- selfhost.toml at the git repository root when there is none: 4 rules, all in observe mode, the guardrails in enforce and the package guard in observe. With `--preset`, that preset's rules; some are enforced. An existing selfhost.toml is never replaced.
 - The hooks apply the built-in guardrails before each tool call: force pushes, git reset --hard, rm -rf outside the workspace and reads of .env and key files are blocked unless `[guardrails] mode` in selfhost.toml says observe or off.
 - No shell profile, API key or sign-in.
 
@@ -27,7 +27,8 @@
 
 ## Privacy
 
-- Solo mode: nothing leaves the laptop and no network request is made, except by `selfhost integrations check`, which calls the tools named in `[integrations]` to test them. The ledger keeps no prompt text; raw hook payloads wait in ~/.selfhost/spool (mode 0600) until the next import.
+- Solo mode: nothing leaves the laptop and no network request is made, except by `selfhost integrations check`, which calls the tools named in `[integrations]` to test them, and by the package guard while `[packages] mode` is observe or enforce (the starter file and the presets turn it on in observe; it is off without a `[packages]` table), which looks each install up in its public registry.
+- Agents do not approve: `selfhost inbox approve|deny`, `review approve|deny`, `decide`, `policy promote` and `team policy push` are blocked in the hooks and refused inside an agent session. Ask the person. The ledger keeps no prompt text; raw hook payloads wait in ~/.selfhost/spool (mode 0600) until the next import.
 - Team mode: each `selfhost import` sends the ledger to the team's server.
 
 ## Team server

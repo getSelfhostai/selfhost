@@ -71,6 +71,13 @@ export const GUARDRAIL_IDS = [
 
 export type GuardrailId = (typeof GUARDRAIL_IDS)[number];
 
+/**
+ * Rule id of the built-in check that stops an agent from running selfhost's own decision
+ * commands (approving review items, granting exceptions, changing or removing the policy). It
+ * always enforces: [guardrails] mode and disable do not apply to it.
+ */
+export const SELFHOST_DECISION_RULE_ID = "guard.selfhost_decision";
+
 /** [runtime] run_mode: whether run commands of several workspaces may run at the same time. */
 export const RUN_MODES = ["concurrent", "exclusive"] as const;
 export type RunMode = (typeof RUN_MODES)[number];
@@ -733,6 +740,13 @@ export const SelfhostConfigSchema = Type.Object(
                 "Minutes a one-time exception stays usable once a person approves it. The blocked call is allowed once in that time, then blocked again.",
             }),
           ),
+          self_approve_exceptions: Type.Optional(
+            Type.Boolean({
+              default: false,
+              description:
+                "On a team server, whether a person may approve a one-time exception their own agent asked for. false (the default) sends exception items to the team's owners and admins, and the person whose agent was blocked cannot approve it. Solo mode, with no team, lets the one person approve their own.",
+            }),
+          ),
           github_logins: Type.Optional(
             Type.Record(
               Type.String(),
@@ -814,10 +828,11 @@ export const SelfhostConfigSchema = Type.Object(
       Type.Object(
         {
           mode: Type.Optional(
-            RuleModeSchema(
-              "observe logs installs that break the policy, enforce blocks them.",
-              true,
-            ),
+            StringEnum(RULE_MODES, {
+              default: "off",
+              description:
+                "observe logs installs that break the policy, enforce blocks them, off (the default) checks nothing. observe and enforce look each package up in its public registry (npm, PyPI, crates.io, the Go proxy), so they make network requests.",
+            }),
           ),
           allow: Type.Optional(
             Type.Array(NonEmpty(), {
@@ -1120,7 +1135,10 @@ function semanticErrors(
         segments: ["rules", index, "id"],
         message: `Rule id "${rule.id}" is reserved: ids that start with "${PACKAGE_RULE_PREFIX}" belong to [packages]`,
       });
-    } else if ((GUARDRAIL_IDS as readonly string[]).includes(rule.id)) {
+    } else if (
+      (GUARDRAIL_IDS as readonly string[]).includes(rule.id) ||
+      rule.id === SELFHOST_DECISION_RULE_ID
+    ) {
       errors.push({
         segments: ["rules", index, "id"],
         message: `Rule id "${rule.id}" is reserved for the built-in guardrail; set it in [guardrails]`,

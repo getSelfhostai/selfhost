@@ -4,16 +4,21 @@ The open backend for your coding agent fleet: one ledger, one review list, one t
 
 ## Status
 
-Early. Not ready for use. The repository has the toolchain, the v1 contracts, the ledger store,
-an API server that ingests and searches events, importers for local Claude Code and Codex
-session logs, commit and pull request attribution to agents and models, and `selfhost agents`,
-which finds installed agents and their logins and writes selfhost's settings into each agent's
-own config, and solo and team modes: `selfhost team init` and `selfhost join` connect laptops to
-a shared server that holds their usage and one team policy, and the human decision log:
-`selfhost decide`, `selfhost decisions` and `POST /v1/decisions` record every person's answer on
-agent work with its reason and find past ones by file or topic, and the review list engine:
-items built from ledger signals, routed by `selfhost.toml`, ranked, with approval timeouts,
-served by `GET /v1/review-items` and `selfhost review list`. The team config comes next.
+Usable, before a first release. The npm package is not published yet, so it runs from a clone
+(see [`apps/cli/AGENTS.md`](./apps/cli/AGENTS.md)). What works today:
+
+- `selfhost init` on a laptop: a hook in Claude Code and Codex (`selfhost guard install` also
+  covers Cursor, OpenCode and Goose) that applies `selfhost.toml` and the built-in guardrails
+  before every tool call, a starter `selfhost.toml`, and the last 30 days of session logs in a
+  local ledger (embedded Postgres, no Docker).
+- The guardrails block force pushes, `git reset --hard`, `rm -rf` outside the workspace and reads
+  of `.env` and key files from the first run; rules start in observe and move to enforce with
+  `selfhost policy promote`. A blocked call can be allowed once by a person (`selfhost inbox`).
+- The review list (`selfhost inbox`, `selfhost review list`), the decision log (`selfhost
+  decide`, `selfhost decisions`), spend and budgets (`selfhost spend`), the MCP server for agents
+  (`selfhost mcp`) and the web console (`selfhost console`).
+- Team mode: `selfhost up` sets up a server, `selfhost team init` and `selfhost join` connect
+  laptops to it, and `selfhost team policy push` sets the team's policy.
 
 ## What it is
 
@@ -45,11 +50,11 @@ from the same code.
 | `packages/brief`         | The review brief comment on agent pull requests, as data and as Markdown                    |
 | `packages/github`        | Labels, review check run, review requests and brief comment on agent PRs, via a GitHub App  |
 | `packages/integrations`  | The router, tracer, runtime and reviewer a team picks: one adapter per tool and its check   |
-| `packages/sdk`           | API client (placeholder) and the event schema versions it sends                             |
+| `packages/sdk`           | The event schema versions clients send (the API client is not written yet)                  |
 | `packages/vendor-compat` | Scheduled checks of new vendor CLI releases, and the page in `docs/compatibility`           |
 | `apps/server`            | HTTP API server (Hono)                                                                      |
 | `apps/cli`               | `selfhost` command line                                                                     |
-| `apps/console`           | Web console (placeholder)                                                                   |
+| `apps/console`           | Web console: usage, spend, review list, rules, runs, code and team settings                 |
 | `adapters/`              | Per-agent and per-system integrations (none yet)                                            |
 | `deploy/docker`          | Docker Compose install: Postgres, the OpenTelemetry collector and the server, with backups  |
 | `ee/risk`                | PR risk score and its label and check result (commercial license, see `ee/`)                |

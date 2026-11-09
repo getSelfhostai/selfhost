@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { runFromEvents } from "../src/components/screens/run";
+import { blockedToolEvents, eventLine, runFromEvents } from "../src/components/screens/run";
 import { MODULES, OBSERVED, PROVENANCE, REVIEW_PAGE, USAGE } from "./fixtures";
 import { ADMIN, MEMBER, mockServer, OWNER, renderConsole } from "./harness";
 
@@ -100,6 +100,25 @@ describe("spend", () => {
     expect(screen.getByText("Codex")).toBeTruthy();
   });
 
+  it("says how far over a spent budget is, not $0.00 left", async () => {
+    mockServer({
+      "GET /v1/usage": USAGE,
+      "GET /v1/budget": {
+        period: "month",
+        from: "2026-11-01T00:00:00.000Z",
+        to: "2026-12-01T00:00:00.000Z",
+        spent_usd: 1.09,
+        limit_usd: 1,
+        remaining_usd: 0,
+        forecast_usd: null,
+      },
+      "GET /v1/teams/web/roi": { status: 404, message: "No route" },
+    });
+    renderConsole(OWNER, "?screen=spend");
+    await screen.findByText("$0.09 over.", { exact: false });
+    expect(screen.queryByText("$0.00 left.", { exact: false })).toBeNull();
+  });
+
   it("says so when the server has no cost per merged PR yet", async () => {
     mockServer({ "GET /v1/usage": USAGE, "GET /v1/budget": { status: 404, message: "No team" } });
     renderConsole(OWNER, "?screen=spend");
@@ -178,12 +197,46 @@ describe("the run view", () => {
     expect(
       (screen.getByRole("button", { name: "Open in your tracer" }) as HTMLButtonElement).disabled,
     ).toBe(true);
+    // A disabled button hides its title, so the hint is on the page.
+    expect(screen.getByText(/No tracer link: set \[integrations.tracer\] run_url/)).toBeTruthy();
     const query = server.calls.find((c) => c.path === "/v1/events")?.url.searchParams;
     expect(query?.get("session")).toBe("sess-1");
     const titles = screen.getAllByRole("listitem").map((li) => li.textContent);
     expect(titles.findIndex((t) => t?.includes("Session started"))).toBeLessThan(
       titles.findIndex((t) => t?.includes("Model request")),
     );
+  });
+
+  it("labels a tool call a hook blocked as blocked, not as one that ran", () => {
+    const call = {
+      id: "01930c4e-2f1a-7b2c-9d3e-0000000000a1",
+      schema: "selfhost.event/v1",
+      ts: "2026-11-08T10:02:00.000Z",
+      source: "hook",
+      kind: "tool.called",
+      actor: { kind: "agent", id: "claude_code:session:sess-1" },
+      tool: { name: "Read", input_summary: ".env" },
+    } as never;
+    const verdict = {
+      id: "01930c4e-2f1a-7b2c-9d3e-0000000000a2",
+      schema: "selfhost.event/v1",
+      ts: "2026-11-08T10:02:00.000Z",
+      source: "hook",
+      kind: "policy.evaluated",
+      actor: { kind: "system", id: "selfhost-policy" },
+      decision: {
+        verdict: "block",
+        by: "selfhost-policy",
+        rule_id: "guard.secret_read",
+        mode: "enforce",
+      },
+      data: { answer: "deny", tool_event_id: "01930c4e-2f1a-7b2c-9d3e-0000000000a1" },
+    } as never;
+    const blocked = blockedToolEvents([verdict, call]);
+    expect(eventLine(call, blocked.has("01930c4e-2f1a-7b2c-9d3e-0000000000a1")).title).toBe(
+      "Tool call blocked, did not run: Read",
+    );
+    expect(eventLine(call).title).toBe("Tool call: Read");
   });
 
   it("uses the run route and links the tracer when the server has one", async () => {

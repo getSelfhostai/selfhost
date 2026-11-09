@@ -158,8 +158,9 @@ Caddy routes by path ([`Caddyfile`](./Caddyfile)): `/v1/*` to the API, behind it
 tokens, so the CLI, hooks and the GitHub webhook work as before; `/otlp/*` to the collector's
 OTLP HTTP port, behind the agent token (point agents at `https://<domain>/otlp`); everything
 else is the web console, which the selfhost server itself serves (it is built into the image).
-Without sign-in the console asks each person for their token: their person token from
-`selfhost team join` (in `~/.selfhost/config.json`) or the admin token. Its pages hold no data;
+Without sign-in each person opens the console with `selfhost console` on a laptop that joined
+with `selfhost join <server> <invite>`, which signs them in with their person token; the sign-in
+page also takes the admin token. Its pages hold no data;
 what it shows comes from `/v1` with that token, and the server's roles decide what that is (a
 member sees their teams, the admin token every team).
 

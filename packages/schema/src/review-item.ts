@@ -123,6 +123,12 @@ export const ReviewItemSchema = Type.Object(
       description: "People who should answer, from [review.owners] or the session owner.",
     }),
     agent: Type.Optional(AgentRefSchema),
+    requested_by: Type.Optional(
+      NonEmpty({
+        description:
+          "For an exception: the person whose agent was blocked. On a team server they cannot approve it unless [review] self_approve_exceptions is true.",
+      }),
+    ),
     session_id: Type.Optional(Type.String({ description: "Vendor session id." })),
     run_id: Type.Optional(Type.String({ description: "Run id." })),
     run_url: Type.Optional(

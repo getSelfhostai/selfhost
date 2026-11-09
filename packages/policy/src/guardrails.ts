@@ -4,6 +4,7 @@ import {
   type GuardrailId,
   type ResolvedSelfhostConfig,
   type RuleAction,
+  SELFHOST_DECISION_RULE_ID,
 } from "@selfhost/schema";
 import picomatch from "picomatch/posix.js";
 import type { PolicyCheck, PolicyHit } from "./evaluate.js";
@@ -229,7 +230,9 @@ function recursiveRm(args: string[]): boolean {
 
 /**
  * Recursive rm of a path outside the workspace and the temp folders, or of the workspace or home
- * folder itself, blocks; of a path that cannot be resolved before it runs, asks.
+ * folder itself, blocks; of a path that cannot be resolved before it runs, asks. A temp folder
+ * the workspace is in does not count as one, so a repository under /tmp cannot delete its
+ * neighbours there.
  */
 function rmOutsideWorkspace(
   commands: ShellCommand[],
@@ -241,7 +244,13 @@ function rmOutsideWorkspace(
     if (basename(command.argv[0] ?? "") !== "rm") continue;
     const args = command.argv.slice(1);
     if (!recursiveRm(args)) continue;
-    const allowed = [...roots, ...tempDirs(command, context)];
+    // A temp folder that holds the workspace is no exception: its other folders sit next to the
+    // workspace, like any other folder outside it.
+    const temps = tempDirs(command, context).filter((dir) => {
+      const realDir = canonical(dir, context);
+      return !roots.some((root) => within(dir, root) || within(realDir, canonical(root, context)));
+    });
+    const allowed = [...roots, ...temps];
     const allowedReal = allowed.map((dir) => canonical(dir, context));
     // The workspace, the home folder and the folders that hold them are never fine, even
     // inside a temp folder.
@@ -652,6 +661,78 @@ function prodCredentials(
   return undefined;
 }
 
+/** Programs that run a package's command line or a script, which selfhost can hide behind. */
+const RUNNERS = new Set([
+  "node",
+  "nodejs",
+  "bun",
+  "bunx",
+  "deno",
+  "tsx",
+  "ts-node",
+  "npx",
+  "pnpx",
+  "pnpm",
+  "yarn",
+  "npm",
+]);
+
+/**
+ * selfhost commands that answer for a person or loosen what is enforced, as the words that name
+ * them, and the flag that makes the command one when it needs one.
+ */
+const DECISION_COMMANDS: readonly { words: readonly string[]; flag?: string }[] = [
+  { words: ["inbox", "approve"] },
+  { words: ["inbox", "deny"] },
+  { words: ["review", "approve"] },
+  { words: ["review", "deny"] },
+  { words: ["decide"] },
+  { words: ["policy", "promote"] },
+  { words: ["team", "policy", "push"] },
+  { words: ["team", "role"] },
+  { words: ["team", "revoke"] },
+  { words: ["team", "leave"] },
+  { words: ["guard", "uninstall"] },
+  { words: ["agents", "configure"], flag: "--remove" },
+  { words: ["init"], flag: "--undo" },
+];
+
+/** The words of a selfhost decision command a shell command runs, if it runs one. */
+export function selfhostDecisionCommand(argv: readonly string[]): string | undefined {
+  const program = basename(argv[0] ?? "");
+  if (!RUNNERS.has(program) && !argv.some((word) => /selfhost/i.test(word))) return undefined;
+  const words = argv.slice(1).filter((word) => !word.startsWith("-"));
+  for (const command of DECISION_COMMANDS) {
+    if (command.flag !== undefined && !argv.includes(command.flag)) continue;
+    const at = words.findIndex((_, i) =>
+      command.words.every((word, j) => words[i + j]?.toLowerCase() === word),
+    );
+    if (at !== -1) return [...command.words, ...(command.flag ? [command.flag] : [])].join(" ");
+  }
+  return undefined;
+}
+
+/**
+ * The hit for a call that runs one of selfhost's own decision commands. A person decides those,
+ * in their own terminal or the console, so it always enforces, whatever [guardrails] says.
+ */
+function selfhostDecision(commands: ShellCommand[]): PolicyHit | undefined {
+  for (const command of commands) {
+    const found = selfhostDecisionCommand(command.argv);
+    if (found === undefined) continue;
+    return {
+      rule_id: SELFHOST_DECISION_RULE_ID,
+      mode: "enforce",
+      verdict: "block",
+      message: `selfhost ${found} is a person's decision, so agents do not run it.`,
+      alternative:
+        "Tell the user what you need and why, and let them decide in their own terminal or in the console.",
+      irreversible: false,
+    };
+  }
+  return undefined;
+}
+
 /** The workspace folders a call may change: its root, else the folder it runs in. */
 function rootsOf(call: ToolCall): string[] {
   const roots = call.root ?? call.cwd;
@@ -660,8 +741,8 @@ function rootsOf(call: ToolCall): string[] {
 
 /**
  * The guardrails that fire on one tool call, in GUARDRAIL_IDS order, in the mode [guardrails]
- * sets. Guardrails in `disable` and every guardrail when the mode is off never fire. Pure apart
- * from `context.realpath`.
+ * sets. Guardrails in `disable` and every guardrail when the mode is off never fire. Then the
+ * selfhost decision check, which always enforces. Pure apart from `context.realpath`.
  */
 export function guardrailHits(
   config: ResolvedSelfhostConfig,
@@ -669,7 +750,6 @@ export function guardrailHits(
   context: GuardContext = {},
 ): PolicyHit[] {
   const checks = guardrailChecks(config).filter((check) => check.mode !== "off");
-  if (checks.length === 0) return [];
   const commands =
     call.command === undefined
       ? []
@@ -697,5 +777,7 @@ export function guardrailHits(
       irreversible: check.irreversible,
     });
   }
+  const decision = selfhostDecision(commands);
+  if (decision) hits.push(decision);
   return hits;
 }

@@ -142,6 +142,18 @@ const CURSOR_WRITE = new Set(["Write", "Delete", "Edit"]);
 const OPENCODE_READ = new Set(["read", "edit", "grep"]);
 const OPENCODE_WRITE = new Set(["write", "patch"]);
 
+/**
+ * What a file tool does with its file, by the tool's name in any agent: Claude Code's first,
+ * then Cursor's and OpenCode's. Undefined for a tool that works on no file.
+ */
+export function toolAccess(tool: string): "read" | "write" | undefined {
+  if (CLAUDE_READ.has(tool)) return "read";
+  if (CLAUDE_WRITE.has(tool)) return "write";
+  if (CURSOR_READ.has(tool) || OPENCODE_READ.has(tool)) return "read";
+  if (CURSOR_WRITE.has(tool) || OPENCODE_WRITE.has(tool)) return "write";
+  return undefined;
+}
+
 function mcpServerOf(tool: string): string | undefined {
   if (!tool.startsWith("mcp__")) return undefined;
   const rest = tool.slice("mcp__".length);

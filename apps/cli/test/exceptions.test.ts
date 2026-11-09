@@ -14,7 +14,7 @@ import { type InboxIo, runInboxDecide } from "../src/inbox/commands.js";
 import { localReviewList } from "../src/review-list.js";
 import { TeamClient } from "../src/team/client.js";
 import { pullGrants } from "../src/team/sync.js";
-import { tempDir } from "./run.js";
+import { run, tempDir } from "./run.js";
 
 /**
  * Errors that teach (F38): every block names the rule, says why and what to do instead, links
@@ -102,7 +102,7 @@ const claudeOut = (stdout: string) =>
     systemMessage?: string;
   };
 
-const ID = /selfhost inbox approve ([0-9a-f-]{36})/;
+const ID = /(?:one-time exception|selfhost inbox approve) ([0-9a-f-]{36})/;
 
 function inboxIo(m: Machine, now: Date): InboxIo {
   const env = { HOME: m.home.root, SELFHOST_PERSON: PERSON };
@@ -216,7 +216,7 @@ describe("the reason", () => {
     expect(agent.split("\n")).toEqual([
       "selfhost blocked this call under rule guard.force_push: Force pushes rewrite shared history.",
       "Instead: Push to a new branch.",
-      "Do not retry this call, or a variant of it, to get around the rule: it will be blocked again. Take the alternative above, or, if this exact call is needed, ask the user to approve a one-time exception by running: selfhost inbox approve 019a5b01-0000-7000-8000-000000000001. Once they approve, make the identical call again and it is allowed once.",
+      "Do not retry this call, or a variant of it, to get around the rule: it will be blocked again. Take the alternative above, or, if this exact call is needed, ask the user to approve one-time exception 019a5b01-0000-7000-8000-000000000001. Only a person can approve it, in their own terminal or the console; do not run the approval yourself. Once they approve, make the identical call again and it is allowed once.",
       `Rule: ${GUARDRAILS_DOCS}`,
     ]);
     expect(user.split("\n")).toEqual([
@@ -334,9 +334,11 @@ describe("a one-time exception, end to end", () => {
       inboxIo(m, minutes(1)),
       ledger,
     );
+    expect(approved.item?.deadline).toBeUndefined();
     expect(approved).toMatchObject({
       outcome: "applied",
-      item: { id, kind: "exception", state: "answered" },
+      // The agent was denied and went on: no agent waits on it, and no timeout denies it.
+      item: { id, kind: "exception", state: "answered", blocking: false },
       grant: {
         id,
         rules: ["guard.force_push"],
@@ -610,5 +612,65 @@ describe("grants in team mode", () => {
     expect(
       findGrant(m.exceptions, key as Buffer, request?.fingerprint ?? "", [], minutes(1)),
     ).toBeUndefined();
+  });
+});
+
+describe("only a person approves", () => {
+  it("blocks an agent's own selfhost inbox approve, offers no exception for it", async () => {
+    const m = machine();
+    m.workspace.write("selfhost.toml", `${POLICY}\n[guardrails]\nmode = "off"\n`);
+    for (const command of [
+      "selfhost inbox approve 019a5b01-0000-7000-8000-000000000001",
+      "CLAUDECODE=1 npx selfhostai review approve 019a5b01 < /dev/null",
+    ]) {
+      const out = claudeOut(await hook(m, "claude", bash(m.workspace.root, command), T0));
+      expect(out.hookSpecificOutput?.permissionDecision).toBe("deny");
+      expect(out.hookSpecificOutput?.permissionDecisionReason).toContain("guard.selfhost_decision");
+      expect(out.hookSpecificOutput?.permissionDecisionReason).not.toMatch(ID);
+    }
+    expect(readRequests(m.exceptions)).toEqual([]);
+  });
+
+  it("refuses the decision commands inside an agent session or without a terminal", async () => {
+    const id = "019a5b01-0000-7000-8000-000000000001";
+    for (const env of [{ CLAUDECODE: "1" }, { CODEX_SANDBOX: "seatbelt" }]) {
+      for (const args of [
+        ["inbox", "approve", id],
+        ["review", "deny", id],
+        ["decide", id, "approve"],
+        ["policy", "promote", "no-curl", "--to", "off"],
+      ]) {
+        const result = await run(args, { env });
+        expect(result.code).toBe(1);
+        expect(result.err).toMatch(
+          /inside a coding agent session \((CLAUDECODE|CODEX_SANDBOX) is set\)/,
+        );
+      }
+    }
+    const piped = await run(["inbox", "approve", id], { stdinIsTTY: false });
+    expect(piped.code).toBe(1);
+    expect(piped.err).toContain("needs a person at a terminal");
+  });
+});
+
+describe("an exception is for the session that asked", () => {
+  it("does not let another session use the grant", async () => {
+    const m = machine();
+    const ledger = await memoryLedger();
+    const out = claudeOut(
+      await hook(m, "claude", bash(m.workspace.root, "git reset --hard HEAD"), T0),
+    );
+    const id = ID.exec(out.hookSpecificOutput?.permissionDecisionReason ?? "")?.[1] ?? "";
+    await runInboxDecide("approve", id, {}, inboxIo(m, minutes(1)), ledger);
+
+    const other = { ...bash(m.workspace.root, "git reset --hard HEAD"), session_id: "sess-2" };
+    const elsewhere = claudeOut(await hook(m, "claude", other, minutes(2)));
+    expect(elsewhere.hookSpecificOutput?.permissionDecision).toBe("deny");
+    expect(existsSync(join(m.exceptions, "grants", `${id}.json`))).toBe(true);
+
+    const own = claudeOut(
+      await hook(m, "claude", bash(m.workspace.root, "git reset --hard HEAD"), minutes(3)),
+    );
+    expect(own.systemMessage).toContain(`approved exception ${id}`);
   });
 });

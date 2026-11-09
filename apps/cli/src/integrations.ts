@@ -241,6 +241,28 @@ const invalidLines = (errors: { field: string; message: string; line?: number }[
   );
 
 /**
+ * The settings the tool needs and the command did not give, from the policy errors, so the
+ * message says which --setting to pass instead of naming a schema rule.
+ */
+function missingSettings(
+  kind: IntegrationKind,
+  tool: string,
+  errors: readonly { field: string; message: string }[],
+): Error | undefined {
+  const prefix = `integrations.${kind}.`;
+  const keys = errors.flatMap(({ field, message }) =>
+    field.startsWith(prefix) && /^Expected required property/.test(message)
+      ? [field.slice(prefix.length)]
+      : [],
+  );
+  if (keys.length === 0) return undefined;
+  const flags = keys.map((key) => `--setting ${key}=<value>`).join(" ");
+  return new Error(
+    `${tool} as the ${kind} needs ${keys.join(" and ")}, so nothing was written. Pass ${flags}, like: selfhost integrations set ${kind} ${tool} ${flags}`,
+  );
+}
+
+/**
  * `selfhost integrations set <kind> <tool>`: writes [integrations.<kind>] into the team policy on
  * the server in team mode (owners and admins), else into selfhost.toml here, keeping the rest of
  * the file as it was. `none` removes it.
@@ -270,6 +292,8 @@ export async function runIntegrationsSet(
     } catch (error) {
       const errors = (error as TeamApiError).body as InvalidPolicyError | undefined;
       if (error instanceof TeamApiError && Array.isArray(errors?.errors)) {
+        const missing = tool === null ? undefined : missingSettings(kind, tool, errors.errors);
+        if (missing) throw missing;
         throw new Error(
           [`The team server refused [integrations.${kind}]:`, ...invalidLines(errors.errors)].join(
             "\n",
@@ -294,6 +318,8 @@ export async function runIntegrationsSet(
     }
     const parsed = parseConfig(next);
     if (!parsed.ok) {
+      const missing = tool === null ? undefined : missingSettings(kind, tool, parsed.errors);
+      if (missing) throw missing;
       throw new Error(
         [
           `[integrations.${kind}] would make ${mode.path} invalid, so nothing was written:`,

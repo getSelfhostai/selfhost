@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import type { Command } from "commander";
+import { readMembership } from "./team/config.js";
 
 export interface ConsoleOptions {
   port?: string;
@@ -8,11 +9,15 @@ export interface ConsoleOptions {
   dataDir?: string;
   open?: boolean;
   json?: boolean;
+  /** In a team, serve this machine's own ledger instead of opening the team's console. */
+  local?: boolean;
 }
 
 /** `selfhost console --json`: one line once the server listens. */
 export interface ConsoleReport {
   schema: "selfhost.console/v1";
+  /** solo: a server on this machine's ledger; team: the team server's console. */
+  mode: "solo" | "team";
   /** The console, signed in: the token is in the fragment, which never leaves the browser. */
   url: string;
   token: string;
@@ -30,6 +35,8 @@ export interface ConsoleIo {
   openBrowser?: (url: string, platform: NodeJS.Platform) => void;
   /** Resolves when the server should stop. Default: Ctrl-C or SIGTERM. */
   untilStopped?: () => Promise<void>;
+  /** ~/.selfhost/config.json: in a team, the console is the team server's. */
+  configPath?: string;
 }
 
 export const DEFAULT_CONSOLE_PORT = 4400;
@@ -65,10 +72,37 @@ function untilSignal(): Promise<void> {
 }
 
 /**
- * Serves the console and the API on this machine's ledger (solo mode) until stopped, and opens
- * the console signed in. Only this machine can reach it unless --host says otherwise.
+ * In a team, opens the team server's console signed in as this person. Otherwise (or with
+ * --local) serves the console and the API on this machine's ledger until stopped, and opens it
+ * signed in. Only this machine can reach the local one unless --host says otherwise.
  */
 export async function runConsole(options: ConsoleOptions, io: ConsoleIo): Promise<void> {
+  const membership = io.configPath && !options.local ? readMembership(io.configPath) : undefined;
+  if (membership) {
+    // The team server serves the console at /, and signs in from the same #token= fragment as
+    // the local one: the person token from selfhost join, which never leaves the browser.
+    const base = membership.server.endsWith("/") ? membership.server : `${membership.server}/`;
+    const signedIn = `${base}#token=${encodeURIComponent(membership.token)}`;
+    if (options.json) {
+      const report: ConsoleReport = {
+        schema: "selfhost.console/v1",
+        mode: "team",
+        url: signedIn,
+        token: membership.token,
+        token_file: io.configPath ?? null,
+        console_built: true,
+      };
+      io.write(JSON.stringify(report));
+    } else {
+      io.write(`Team ${membership.team} console at ${base}, signed in as ${membership.person}.`);
+      io.write(`Signed-in link: ${signedIn}`);
+      io.write(
+        "The link holds your person token: open it only in your own browser. selfhost console --local serves this machine's ledger instead.",
+      );
+    }
+    if (options.open !== false) (io.openBrowser ?? systemOpen)(signedIn, io.platform);
+    return;
+  }
   const port = parsePort(options.port ?? String(DEFAULT_CONSOLE_PORT));
   const host = options.host?.trim() || "127.0.0.1";
   // The server and its dependencies load only for this command.
@@ -93,6 +127,7 @@ export async function runConsole(options: ConsoleOptions, io: ConsoleIo): Promis
     if (options.json) {
       const report: ConsoleReport = {
         schema: "selfhost.console/v1",
+        mode: "solo",
         url: signedIn,
         token: server.token,
         token_file: server.tokenPath ?? null,
@@ -132,8 +167,9 @@ export function registerConsole(
   program
     .command("console")
     .description(
-      "open the web console on this machine's ledger: usage, cost, sessions and PRs by team, developer, agent and model",
+      "open the web console signed in: the team server's in a team, else one on this machine's ledger; usage, cost, sessions and PRs by team, developer, agent and model",
     )
+    .option("--local", "in a team, serve this machine's own ledger instead")
     .option("--port <port>", "port to listen on, 0 for any free one", String(DEFAULT_CONSOLE_PORT))
     .option("--host <address>", "address to listen on (default: 127.0.0.1, this machine only)")
     .option("--database <url>", "Postgres url (default: DATABASE_URL, else the embedded ledger)")

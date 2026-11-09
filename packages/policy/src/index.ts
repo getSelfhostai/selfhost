@@ -21,6 +21,7 @@ export {
   guardrailChecks,
   guardrailHits,
   isSecretPath,
+  selfhostDecisionCommand,
 } from "./guardrails.js";
 export { anyGlobMatches, globMatches } from "./match.js";
 export {

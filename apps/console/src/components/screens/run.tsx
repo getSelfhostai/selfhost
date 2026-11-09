@@ -80,8 +80,25 @@ const runPath = (id: string, cursor?: string) =>
 const eventsPath = (id: string, team: string | undefined, cursor?: string) =>
   `/v1/events${query({ session: id, team, limit: 1000, cursor })}`;
 
-/** One line for a ledger event in the timeline. */
-export function eventLine(event: LedgerEvent): { title: string; detail?: string } {
+/**
+ * The tool events a pre-tool hook stopped: the hook's own verdict names the tool event it was
+ * about, so the call is shown as blocked rather than as one that ran.
+ */
+export function blockedToolEvents(events: readonly LedgerEvent[]): Set<string> {
+  const blocked = new Set<string>();
+  for (const event of events) {
+    const toolEvent = event.data?.tool_event_id;
+    if (event.kind !== "policy.evaluated" || typeof toolEvent !== "string") continue;
+    const denied =
+      event.data?.answer === "deny" ||
+      (event.decision?.verdict === "block" && event.decision.mode !== "observe");
+    if (denied) blocked.add(toolEvent);
+  }
+  return blocked;
+}
+
+/** One line for a ledger event in the timeline. `blocked`: a hook stopped this tool call. */
+export function eventLine(event: LedgerEvent, blocked = false): { title: string; detail?: string } {
   const input = event.tool?.input_summary ?? event.target?.value;
   switch (event.kind) {
     case "session.started":
@@ -91,7 +108,10 @@ export function eventLine(event: LedgerEvent): { title: string; detail?: string 
     case "prompt.submitted":
       return { title: "Prompt" };
     case "tool.called":
-      return { title: `Tool call: ${event.tool?.name ?? "unknown tool"}`, detail: input };
+      return {
+        title: `${blocked ? "Tool call blocked, did not run" : "Tool call"}: ${event.tool?.name ?? "unknown tool"}`,
+        detail: input,
+      };
     case "tool.result":
       return { title: `Tool result: ${event.tool?.name ?? "unknown tool"}` };
     case "approval.requested":
@@ -168,6 +188,7 @@ export function RunScreen() {
     events: extra ? byTime([...report.events, ...extra.events]) : report.events,
   };
   const run = data?.run;
+  const blocked = blockedToolEvents(data?.events ?? []);
 
   const loadMore = async () => {
     if (!cursor || !loaded.data) return;
@@ -203,14 +224,20 @@ export function RunScreen() {
               </a>
             </Button>
           ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled
-              title="Set [integrations.tracer] run_url to link runs"
-            >
-              Open in your tracer
-            </Button>
+            <div className="flex flex-col items-end gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled
+                aria-describedby="tracer-hint"
+                className="cursor-not-allowed border-dashed text-muted-foreground"
+              >
+                Open in your tracer
+              </Button>
+              <span id="tracer-hint" className="text-muted-foreground text-xs">
+                No tracer link: set [integrations.tracer] run_url to link runs.
+              </span>
+            </div>
           )
         }
       />
@@ -262,7 +289,7 @@ export function RunScreen() {
           >
             <ol className="relative space-y-3 border-l pl-4">
               {data.events.map((event) => {
-                const line = eventLine(event);
+                const line = eventLine(event, blocked.has(event.id));
                 return (
                   <li key={event.id} className="text-sm">
                     <span className="absolute -left-1 mt-1.5 size-2 rounded-full bg-foreground/40" />

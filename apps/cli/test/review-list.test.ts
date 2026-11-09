@@ -80,8 +80,12 @@ describe("selfhost review list", () => {
     expect(open.out.split("\n").slice(0, 3)).toEqual([
       "2 open items, blocking first, then by risk.",
       "",
-      expect.stringMatching(/^# +KIND +RISK +AGENT +TITLE +OWNERS +ID$/),
+      expect.stringMatching(/^# +KIND +RISK +AGENT +WAITING +TITLE +OWNERS +ID$/),
     ]);
+    // The AGENT column names the agent; whether one waits has its own column.
+    const approval = open.out.split("\n").find((line) => line.includes("permission to use Bash"));
+    expect(approval).toMatch(/^1 +approval +\d+ +Claude Code +yes +Claude needs/);
+    expect(open.out).not.toContain("blocks");
     expect(open.out).toContain("Claude needs your permission to use Bash");
 
     const later = new Date(NOW.getTime() + 30 * 60_000);

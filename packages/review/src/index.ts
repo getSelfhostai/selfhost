@@ -14,6 +14,10 @@ export {
 } from "./list.js";
 export {
   buildPolicyReport,
+  type CountedHit,
+  countedHits,
+  type EvaluatedHit,
+  evaluatedHits,
   falsePositiveReason,
   inertCharacters,
   matchesOnlyInertText,

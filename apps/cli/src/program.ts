@@ -42,6 +42,7 @@ import type { Fetch } from "./team/client.js";
 import { registerTeam } from "./team/commands.js";
 import { registerTraces } from "./traces.js";
 import { registerUp } from "./up/commands.js";
+import type { ImageCheck } from "./up/registry.js";
 import { type Exec, systemExec } from "./up/resources.js";
 
 export const VERSION = pkg.version;
@@ -60,6 +61,11 @@ export interface CliDeps {
   collectAttribution?: CollectAttribution;
   /** Asks a yes or no question; undefined when stdin is not a terminal. */
   ask?: Ask;
+  /**
+   * Whether stdin is a terminal a person types into. Decisions only a person makes (approve,
+   * deny, decide, policy promote and push) refuse without one. Default: process.stdin.isTTY.
+   */
+  stdinIsTTY?: boolean;
   /** Where `selfhost scan` looks for personal context files. Default: the home directory. */
   home?: string;
   /** Where one-time answers and the team membership are kept. Default: ~/.selfhost/config.json. */
@@ -79,6 +85,8 @@ export interface CliDeps {
   exec?: Exec;
   /** Waits between polls in `selfhost up`. */
   sleep?: (ms: number) => Promise<void>;
+  /** Whether `selfhost up`'s image tag is in its registry. Default: ask the registry. */
+  imageExists?: ImageCheck;
   /** Opens the console in a browser for `selfhost console`. Default: the system's opener. */
   openBrowser?: (url: string, platform: NodeJS.Platform) => void;
   /** Resolves when `selfhost console` should stop. Default: Ctrl-C or SIGTERM. */
@@ -104,6 +112,7 @@ function defaultDeps(): CliDeps {
     },
     collectAttribution: gitAttribution(),
     ask: process.stdin.isTTY ? askOnTerminal : undefined,
+    stdinIsTTY: process.stdin.isTTY === true,
   };
 }
 
@@ -153,6 +162,7 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
     .action((options: { config?: string; json?: boolean }) => {
       deps.setExitCode(
         doctor({
+          ...(deps.probes.which ? { which: deps.probes.which } : {}),
           cwd: deps.cwd,
           config: options.config,
           env: deps.env,
@@ -364,6 +374,7 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       write: deps.write,
       now: deps.now,
       configPath: deps.configPath ?? defaultConfigPath(),
+      stdinIsTTY: deps.stdinIsTTY === true,
     }),
     fail,
   );
@@ -374,6 +385,7 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       env: deps.env,
       cwd: deps.cwd,
       platform: deps.platform,
+      ...(deps.probes.which ? { which: deps.probes.which } : {}),
       write: deps.write,
       setExitCode: deps.setExitCode,
       now: deps.now,
@@ -397,6 +409,7 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       write: deps.write,
       now: deps.now,
       configPath: deps.configPath ?? defaultConfigPath(),
+      stdinIsTTY: deps.stdinIsTTY === true,
     }),
     fail,
   );
@@ -477,6 +490,8 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
     program,
     () => ({
       env: deps.env,
+      cwd: deps.cwd,
+      stdinIsTTY: deps.stdinIsTTY === true,
       write: deps.write,
       configPath: deps.configPath ?? defaultConfigPath(),
       fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
@@ -508,6 +523,7 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
       exec: deps.exec ?? systemExec,
       sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
+      ...(deps.imageExists ? { imageExists: deps.imageExists } : {}),
     }),
     fail,
   );
@@ -531,6 +547,7 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       platform: deps.platform,
       write: deps.write,
       version: VERSION,
+      configPath: deps.configPath ?? defaultConfigPath(),
       ...(deps.openBrowser ? { openBrowser: deps.openBrowser } : {}),
       ...(deps.untilStopped ? { untilStopped: deps.untilStopped } : {}),
     }),
@@ -560,6 +577,7 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       configPath: deps.configPath ?? defaultConfigPath(),
       fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
       localReviewList: openLocalList,
+      stdinIsTTY: deps.stdinIsTTY === true,
     }),
     fail,
   );

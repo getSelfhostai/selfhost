@@ -14,6 +14,7 @@ import {
   type DecisionRequest,
   DecisionRequestSchema,
   type Person,
+  type PersonRole,
   REVIEW_ITEM_STATES,
   type ResolvedSelfhostConfig,
   type ReviewItem,
@@ -25,6 +26,7 @@ import {
 } from "@selfhost/schema";
 import type { Context, Env, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { raiseBudgetAlerts } from "./budget-alerts.js";
 import { teamConfig, withRunLinks } from "./runs.js";
 
 /** A decision or snooze is a few fields; anything this big is not one. */
@@ -32,6 +34,8 @@ const MAX_ACTION_BYTES = 64 * 1024;
 const QUERY_KEYS = new Set(["state", "owner", "team", "limit", "cursor"]);
 
 export const REVIEW_REFRESH_INTERVAL_MS = 15_000;
+/** How often the refresh job checks spend against each team's [budget]. */
+const BUDGET_CHECK_MS = 60_000;
 
 export interface ReviewRouteOptions {
   /** selfhost.toml for events with no team policy. */
@@ -44,6 +48,8 @@ export interface ReviewRouteOptions {
    * items of each. Default: their own team only.
    */
   teams?: (c: Context) => Promise<string[]>;
+  /** The person token's role in a team, for who may approve another person's exception. */
+  role?: (c: Context, team: string) => Promise<PersonRole | undefined>;
   /**
    * SELFHOST_PUBLIC_URL, the console's address for the run links on items. Default: the
    * request's own origin.
@@ -109,19 +115,26 @@ export function reviewRoutes<E extends Env>(
     const person = options.person?.(c);
     return { person, list: listFor(person?.team) };
   };
-  /** The lists a request can reach: every team of the person, or every item. */
-  const listsOf = async (c: Context): Promise<ReviewList[]> => {
+  /**
+   * The list that holds an item and its team, so a person in several teams acts on any of
+   * theirs. The admin token's list holds every item, with no team.
+   */
+  const holder = async (
+    c: Context,
+    id: string,
+  ): Promise<{ list: ReviewList; team: string | undefined }> => {
     const person = options.person?.(c);
-    if (!person) return [listFor(undefined)];
-    const teams = (await options.teams?.(c)) ?? [person.team];
-    return teams.map((team) => listFor(team));
+    const teams: (string | undefined)[] = person
+      ? ((await options.teams?.(c)) ?? [person.team])
+      : [undefined];
+    for (const team of teams) {
+      const list = listFor(team);
+      if (await list.get(id)) return { list, team };
+    }
+    return { list: listFor(teams[0]), team: teams[0] };
   };
-  /** The list that holds an item, so a person in several teams acts on any of theirs. */
-  const listWith = async (c: Context, id: string): Promise<ReviewList> => {
-    const lists = await listsOf(c);
-    for (const list of lists) if (await list.get(id)) return list;
-    return lists[0] ?? scope(c).list;
-  };
+  const listWith = async (c: Context, id: string): Promise<ReviewList> =>
+    (await holder(c, id)).list;
   const configOf = teamConfig(ledger, options.config);
   /** Items with links to their run in the console and in the team's tracer. */
   const linked = async (c: Context, items: ReviewItem[], team: string | undefined) =>
@@ -201,14 +214,60 @@ export function reviewRoutes<E extends Env>(
     return c.json(withLinks ?? item);
   });
 
+  /**
+   * The 403 for approving an exception the caller may not: their own agent's, unless the team's
+   * [review] self_approve_exceptions allows it, or another person's without the owner or admin
+   * role. Denying is always allowed.
+   */
+  const exceptionRefusal = async (
+    c: Context,
+    item: ReviewItem,
+    team: string | undefined,
+    by: string,
+    verdict: DecisionRequest["verdict"],
+  ): Promise<Response | undefined> => {
+    if (item.kind !== "exception" || (verdict !== "approve" && verdict !== "override")) {
+      return undefined;
+    }
+    const requester = item.requested_by;
+    if (requester !== undefined && requester.toLowerCase() === by.toLowerCase()) {
+      if ((await configOf(team ?? null)).review.self_approve_exceptions) return undefined;
+      return c.json(
+        apiError(
+          "forbidden",
+          "You cannot approve an exception your own agent asked for. An owner or admin of the team approves it, or the team's selfhost.toml sets [review] self_approve_exceptions = true.",
+        ),
+        403,
+      );
+    }
+    const person = options.person?.(c);
+    if (!person) return undefined;
+    const where = team ?? person.team;
+    const role = (await options.role?.(c, where)) ?? person.role;
+    if (role === "owner" || role === "admin") return undefined;
+    return c.json(
+      apiError(
+        "forbidden",
+        `Approving another person's exception needs the owner or admin role in team ${where}; you are a ${role} there.`,
+      ),
+      403,
+    );
+  };
+
   app.post("/v1/review-items/:id/decision", limit, async (c) => {
     const body = await readBody<DecisionRequest>(c, decisionBody, "invalid_decision");
     if (body instanceof Response) return body;
     const by = actor(c, body.by);
     if (by instanceof Response) return by;
     const id = c.req.param("id");
+    const { list, team } = await holder(c, id);
+    const item = await list.get(id);
+    if (item) {
+      const refused = await exceptionRefusal(c, item, team, by, body.verdict);
+      if (refused) return refused;
+    }
     try {
-      const response = await (await listWith(c, id)).decide(id, {
+      const response = await list.decide(id, {
         verdict: body.verdict,
         by,
         ...(body.reason !== undefined ? { reason: body.reason } : {}),
@@ -264,8 +323,8 @@ export interface ReviewRefreshJob {
 }
 
 /**
- * Builds review items from new ledger signals and applies approval timeouts now and then every
- * intervalMs, like the retention job: one refresh at a time, a timer that never keeps the
+ * Raises budget alerts from each team's spend (once a minute), then builds review items from
+ * new ledger signals and applies approval timeouts, now and then every intervalMs, like the retention job: one refresh at a time, a timer that never keeps the
  * process alive, and a log line with counts only.
  */
 export function startReviewRefreshJob(
@@ -278,8 +337,22 @@ export function startReviewRefreshJob(
     ...(options.now ? { now: options.now } : {}),
   });
   let running: Promise<RefreshResult | undefined> | undefined;
+  let budgetsAt = 0;
+  /** Budget alerts from ledger spend, at most once a minute, so the refresh files them. */
+  const budgets = async () => {
+    const at = options.now?.() ?? new Date();
+    if (at.getTime() - budgetsAt < BUDGET_CHECK_MS) return;
+    budgetsAt = at.getTime();
+    try {
+      const raised = await raiseBudgetAlerts(ledger, at);
+      if (raised > 0) log(`budget alerts: ${raised} raised from spend`);
+    } catch (error) {
+      log(`budget alerts: failed: ${error instanceof Error ? error.message : error}`);
+    }
+  };
   const run = () => {
-    running ??= refreshReviewList(ledger, list)
+    running ??= budgets()
+      .then(() => refreshReviewList(ledger, list))
       .then(
         (result) => {
           if (result.created > 0 || result.updated > 0) {

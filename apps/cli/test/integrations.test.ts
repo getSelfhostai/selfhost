@@ -108,6 +108,15 @@ describe("selfhost integrations, solo mode", () => {
     expect(setting.code).toBe(1);
     expect(JSON.parse(setting.out).error).toContain("would make");
     expect(readFileSync(repo.path("selfhost.toml"), "utf8")).toBe(POLICY);
+    // A setting the tool needs and was not given: which --setting to pass.
+    const missing = await run(["integrations", "set", "tracer", "langfuse"], { cwd: repo.root });
+    expect(missing.code).toBe(1);
+    expect(missing.err).toContain("langfuse as the tracer needs endpoint");
+    expect(missing.err).toContain(
+      "selfhost integrations set tracer langfuse --setting endpoint=<value>",
+    );
+    expect(missing.err).not.toContain("Expected required property");
+    expect(readFileSync(repo.path("selfhost.toml"), "utf8")).toBe(POLICY);
     const none = await run(["integrations", "set", "router", "litellm"], {
       cwd: tempDir("no-config").root,
     });

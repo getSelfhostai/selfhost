@@ -4,17 +4,33 @@ import { PRESET_NAMES, PRESETS, type PresetName } from "./presets.generated.js";
 
 /**
  * The selfhost.toml `selfhost init` writes at the repository root when there is none. Every
- * rule is in observe mode, so nothing is blocked until someone promotes it. The first line
- * points editors at the JSON Schema, for completion and inline errors.
+ * rule is in observe mode, so no rule blocks until someone promotes it; the built-in guardrails
+ * block from the start, and the file says so. The package guard is on in observe, with a note
+ * that it asks public registries. The first line points editors at the JSON Schema, for
+ * completion and inline errors.
  */
 export const STARTER_CONFIG = `${CONFIG_SCHEMA_DIRECTIVE}
 # selfhost.toml: rules for every coding agent working in this repository.
 #
-# Every rule starts in observe mode: selfhost records what the rule would have done and blocks
-# nothing. See the hits with \`selfhost policy report\`. When a rule catches only what it should,
-# turn it on with \`selfhost policy promote <rule id>\` and review that change like any other.
-# Check this file with \`selfhost policy check\`.
+# The built-in guardrails block from the start, in every agent's pre-tool hook: force pushes,
+# git reset --hard, rm -rf outside the workspace and reads of .env and key files. Set
+# [guardrails] mode = "observe" to only record them, or turn single ones off with disable.
+#
+# The [[rules]] below start in observe mode: selfhost records what each rule would have done and
+# blocks nothing. See the hits with \`selfhost policy report\`. When a rule catches only what it
+# should, turn it on with \`selfhost policy promote <rule id>\` and review that change like any
+# other. Check this file with \`selfhost policy check\`.
 version = 1
+
+[guardrails]
+mode = "enforce"
+
+# The package guard checks every package an agent installs with npm, pnpm, yarn, pip, uv, cargo
+# or go. It looks each one up in its public registry (npm, PyPI, crates.io, the Go proxy), so it
+# makes network requests from this laptop; mode = "off" keeps it offline. observe records
+# unknown, brand new and install-script packages and stops nothing.
+[packages]
+mode = "observe"
 
 # .env files usually hold secrets. Matches .env, .env.local, .env.production and the like, but
 # not templates such as .env.example.

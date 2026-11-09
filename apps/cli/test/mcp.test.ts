@@ -297,15 +297,26 @@ describe("selfhost mcp in team mode", () => {
       reason: "Needed for the status check.",
     });
     expect(requested.result).toMatchObject({ kind: "exception", state: "open" });
-    const approved = await app.request(`/v1/review-items/${id}/decision`, {
+    // The person whose agent was blocked cannot approve it; someone else does.
+    const own = await app.request(`/v1/review-items/${id}/decision`, {
       method: "POST",
       headers: { authorization: `Bearer ${joined.token}`, "content-type": "application/json" },
       body: JSON.stringify({ verdict: "approve" }),
+    });
+    expect(own.status).toBe(403);
+    const approved = await admin(`/v1/review-items/${id}/decision`, {
+      verdict: "approve",
+      by: "lead@example.com",
     });
     expect(approved.status).toBe(200);
     const { result } = await call<McpItemStatus>(client, "get_answer", { item_id: id });
     expect(result.grant?.expires_at).toBeDefined();
     expect(result.next).toMatch(/identical call again now/);
+
+    // An unknown tool is an unknown tool, as in solo mode, not an unreachable server.
+    await expect(client.callTool({ name: "no_such_tool", arguments: {} })).rejects.toThrow(
+      /Unknown tool: no_such_tool/,
+    );
 
     // The token stayed in config.json; the agent sees no secret.
     expect(JSON.stringify(result)).not.toContain(joined.token);

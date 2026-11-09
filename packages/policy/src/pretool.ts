@@ -18,5 +18,6 @@ export {
   guardrailChecks,
   guardrailHits,
   isSecretPath,
+  selfhostDecisionCommand,
 } from "./guardrails.js";
 export { mcpServerOf, normalizePath, type ToolCall } from "./tool-call.js";

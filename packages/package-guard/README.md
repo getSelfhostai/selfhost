@@ -33,7 +33,8 @@ One hit per rule id per tool call; its message names every package that broke th
 `alternative` (`PACKAGE_ALTERNATIVES`) what the agent can do instead: another package, the exact
 name from the registry, an older version, an install without scripts. Hits
 take the mode of `[packages]` (`observe` records, `enforce` applies, `off` checks nothing and
-makes no network call).
+makes no network call). `off` is the default, so a policy without `[packages]` sends nothing to a
+registry; the starter `selfhost.toml` that `selfhost init` writes and the presets set `observe`.
 
 | Rule id                     | When                                                                                                                                                   | Verdict                                                   |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- |

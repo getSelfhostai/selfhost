@@ -269,6 +269,12 @@ high_risk_paths = [
   "**/billing/**",
   "**/payments/**",
 ]
+
+[packages]
+# The package guard looks each install up in its public registry (npm, PyPI, crates.io, the Go
+# proxy), so it makes network requests from every laptop; mode = "off" keeps it offline.
+# observe records installs of unknown, brand new or install-script packages and stops nothing.
+mode = "observe"
 `,
   oss: `#:schema https://selfhost.ai/schema/selfhost.toml.v1.json
 # selfhost.toml preset: open-source maintainer.
@@ -431,6 +437,8 @@ message = "Install from the registry with a pinned version, or ask a person."
 match.command = '(^|[^\\w.-])(npm|pnpm|yarn|bun)\\s+(i|install|add)\\b[^|;&]*\\s(git\\+|git:|github:|https?://)|(^|[^\\w.-])(pip3?|pipx|uv\\s+pip)\\s+install\\b[^|;&]*\\s(git\\+|https?://|--index-url|--extra-index-url|-i\\s)|(^|[^\\w.-])cargo\\s+install\\b[^|;&]*\\s--git\\b|(^|[^\\w.-])go\\s+install\\b[^|;&]*@(latest|main|master)\\b'
 
 [packages]
+# The package guard looks each install up in its public registry (npm, PyPI, crates.io, the Go
+# proxy), so it makes network requests from every laptop; mode = "off" keeps it offline.
 # A dependency you add ships to everyone who installs your package: flag brand new versions.
 mode = "observe"
 min_age_days = 7
@@ -680,6 +688,8 @@ high_risk_paths = [
 ]
 
 [packages]
+# The package guard looks each install up in its public registry (npm, PyPI, crates.io, the Go
+# proxy), so it makes network requests from every laptop; mode = "off" keeps it offline.
 # Flags package versions published in the last 3 days, the window most supply chain attacks use.
 mode = "observe"
 min_age_days = 3
@@ -979,6 +989,8 @@ mode = "enforce"
 allow = []
 
 [packages]
+# The package guard looks each install up in its public registry (npm, PyPI, crates.io, the Go
+# proxy), so it makes network requests from every laptop; mode = "off" keeps it offline.
 mode = "enforce"
 min_age_days = 7
 

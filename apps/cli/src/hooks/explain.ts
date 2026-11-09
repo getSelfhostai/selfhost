@@ -5,6 +5,7 @@ import {
   MODELS_ALLOW_RULE_ID,
   PACKAGE_RULE_PREFIX,
   type ResolvedSelfhostConfig,
+  SELFHOST_DECISION_RULE_ID,
   TomlLineIndex,
 } from "@selfhost/schema";
 
@@ -50,7 +51,12 @@ export function ruleLink(
   config: ResolvedSelfhostConfig,
   source: { path: string; text: string } | undefined,
 ): string | undefined {
-  if ((GUARDRAIL_IDS as readonly string[]).includes(ruleId)) return GUARDRAILS_DOCS;
+  if (
+    (GUARDRAIL_IDS as readonly string[]).includes(ruleId) ||
+    ruleId === SELFHOST_DECISION_RULE_ID
+  ) {
+    return GUARDRAILS_DOCS;
+  }
   if (ruleId.startsWith(PACKAGE_RULE_PREFIX)) return PACKAGES_DOCS;
   if (!source) return undefined;
   const index = config.rules.findIndex((rule) => rule.id === ruleId);
@@ -89,7 +95,7 @@ function headline(e: Explanation, forAgent: boolean): string {
 function deny(e: Explanation): Explained {
   const path = e.hit.alternative ? "the alternative above" : "another approach the rule allows";
   const next = e.exceptionId
-    ? `Do not retry this call, or a variant of it, to get around the rule: it will be blocked again. Take ${path}, or, if this exact call is needed, ask the user to approve a one-time exception by running: ${approveCommand(e.exceptionId)}. Once they approve, make the identical call again and it is allowed once.`
+    ? `Do not retry this call, or a variant of it, to get around the rule: it will be blocked again. Take ${path}, or, if this exact call is needed, ask the user to approve one-time exception ${e.exceptionId}. Only a person can approve it, in their own terminal or the console; do not run the approval yourself. Once they approve, make the identical call again and it is allowed once.`
     : `Do not retry this call, or a variant of it, to get around the rule: it will be blocked again. Take ${path}, or ask the user how to go on.`;
   const agent = [headline(e, true), ...instead(e), next, ...tail(e)];
   const user = [

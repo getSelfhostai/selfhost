@@ -79,12 +79,23 @@ function parseLimit(value: string | undefined): number | undefined {
 const clip = (text: string, width: number) =>
   text.length > width ? `${text.slice(0, width - 3)}...` : text;
 
+const AGENT_NAMES: Partial<Record<string, string>> = {
+  claude_code: "Claude Code",
+  codex: "Codex",
+  cursor: "Cursor",
+  opencode: "OpenCode",
+  goose: "Goose",
+  copilot: "Copilot",
+};
+
 function row(item: ReviewItem, rank: number): string[] {
+  const vendor = item.agent?.vendor;
   return [
     String(rank),
     item.kind,
     String(item.risk.score),
-    item.blocking ? "blocks" : "",
+    vendor ? (AGENT_NAMES[vendor] ?? vendor) : "-",
+    item.blocking ? "yes" : "",
     clip(item.title, TITLE_WIDTH),
     item.owners.join(", ") || "-",
     item.id,
@@ -100,7 +111,7 @@ function print(page: ReviewItemsPage, state: ReviewItemState, io: ReviewListIo):
   io.write("");
   table(
     [
-      ["#", "KIND", "RISK", "AGENT", "TITLE", "OWNERS", "ID"],
+      ["#", "KIND", "RISK", "AGENT", "WAITING", "TITLE", "OWNERS", "ID"],
       ...page.items.map((item, index) => row(item, index + 1)),
     ],
     io.write,

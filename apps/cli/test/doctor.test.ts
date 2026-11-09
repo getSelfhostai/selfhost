@@ -45,7 +45,34 @@ describe("selfhost doctor", () => {
     const { code, output } = run(join(dir, "src", "app"));
     expect(code).toBe(0);
     expect(output).toContain(join(dir, "selfhost.toml"));
-    expect(output).toContain("valid, 1 rules (0 enforced)");
+    expect(output).toContain("valid, 1 rules (0 enforced, 1 observe or off)");
+    // The rules block nothing yet, but the guardrails do.
+    expect(output).toContain(
+      "6 guardrails block in every hook: guard.force_push, guard.reset_hard, guard.rm_outside_workspace, guard.secret_read, guard.prod_sql, guard.prod_credentials",
+    );
+  });
+
+  it("says which guardrails block or only record, and warns when selfhost is not on PATH", () => {
+    const dir = repo({
+      "selfhost.toml": 'version = 1\n[guardrails]\nmode = "observe"\n',
+    });
+    const lines: string[] = [];
+    const code = doctor({
+      cwd: dir,
+      env: {},
+      version: "0.0.0",
+      write: (line) => lines.push(line),
+      which: () => undefined,
+    });
+    expect(code).toBe(0);
+    const output = lines.join("\n");
+    expect(output).toContain(
+      '6 guardrails only record ([guardrails] mode = "observe"); none block',
+    );
+    expect(output).toMatch(/^path {5}selfhost is not on PATH/m);
+    const none = run(repo({}));
+    expect(none.output).toContain("6 guardrails block in every hook");
+    expect(none.output).not.toContain("not on PATH");
   });
 
   it("does not search above the repository root", () => {
@@ -81,7 +108,16 @@ describe("selfhost doctor", () => {
     const { code, output } = run(dir, undefined, {}, true);
     expect(code).toBe(1);
     const report = JSON.parse(output);
-    expect(Object.keys(report)).toEqual(["schema", "version", "runtime", "config"]);
+    expect(Object.keys(report)).toEqual([
+      "schema",
+      "version",
+      "runtime",
+      "config",
+      "guardrails",
+      "on_path",
+    ]);
+    expect(report.guardrails).toMatchObject({ mode: "enforce", observed: [] });
+    expect(report.on_path).toBeNull();
     expect(report.runtime).toEqual({
       node: process.version,
       bun: process.versions.bun ?? null,

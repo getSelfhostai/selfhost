@@ -11,7 +11,8 @@ import {
 } from "@selfhost/agents";
 import { discoverLogFiles } from "@selfhost/importers";
 import { openLedger } from "@selfhost/ledger";
-import { CONFIG_FILE_NAME } from "@selfhost/schema";
+import { guardrailChecks } from "@selfhost/policy";
+import { CONFIG_FILE_NAME, parseConfig } from "@selfhost/schema";
 import type { Command } from "commander";
 import {
   AGENT_ALIASES,
@@ -73,6 +74,8 @@ export const HOSTED_URL = "https://app.selfhost.ai";
 
 /** Agents whose hook payloads the ledger can map. */
 const HOOKED: readonly AgentId[] = ["claude_code", "codex"];
+/** Every agent --agent takes, as people type them. */
+const AGENT_NAMES_TEXT = "claude, codex, cursor, opencode or goose";
 
 export interface InitIo extends AgentsIo {
   setExitCode: (code: number) => void;
@@ -199,12 +202,25 @@ export function parseInvite(
   return { server: serverUrl(server), invite };
 }
 
+/** Which built-in guardrails block, under the preset or starter file init writes. */
+export function guardrailLine(preset: PresetName | undefined): string {
+  const result = parseConfig(configText(preset));
+  if (!result.ok) throw new Error("the selfhost.toml init writes does not validate");
+  const checks = guardrailChecks(result.config);
+  const blocking = checks.filter((check) => check.mode === "enforce").map((check) => check.id);
+  if (blocking.length === 0) return "none block; the hooks only record what they catch.";
+  return `${blocking.join(", ")} block in every hook from the start, whatever the rules' modes. [guardrails] in selfhost.toml changes that.`;
+}
+
 const shellQuote = (text: string) =>
   /^[\w@%+=:,./-]+$/.test(text) ? text : `'${text.replaceAll("'", `'\\''`)}'`;
 
 /**
- * `selfhost hook {agent}` when selfhost is on PATH; otherwise the absolute command that is
- * running now, so the hooks work right away.
+ * `selfhost hook {agent}` when selfhost is on PATH, as compiled managed settings call it.
+ * Otherwise a command that finds selfhost each time the hook runs: `selfhost` on PATH by then,
+ * else the node and script running now while both still exist, else `npx selfhostai`. So a node
+ * version switch, which takes the node binary or the global install off PATH, does not break
+ * the hooks.
  */
 export function hookCommand(which: Which | undefined): { command: string; warning?: string } {
   if (which?.("selfhost")) return { command: "selfhost hook {agent}" };
@@ -213,13 +229,16 @@ export function hookCommand(which: Which | undefined): { command: string; warnin
     script && /\.[cm]?js$/.test(script) && existsSync(script)
       ? [process.execPath, script]
       : [process.execPath];
-  const command = [...self.map(shellQuote), "hook", "{agent}"].join(" ");
-  const where = script?.includes("_npx") ? "the npx cache" : self.join(" ");
+  const exists = self.map((path, i) => `[ ${i === 0 ? "-x" : "-f"} ${shellQuote(path)} ]`);
+  const command = [
+    "if command -v selfhost >/dev/null 2>&1; then exec selfhost hook {agent};",
+    `elif ${exists.join(" && ")}; then exec ${self.map(shellQuote).join(" ")} hook {agent};`,
+    "else exec npx -y selfhostai hook {agent}; fi",
+  ].join(" ");
   return {
     command,
     warning:
-      `selfhost is not on PATH, so the hooks run ${where}. For a path that lasts, install it ` +
-      "(npm install -g selfhostai) and run selfhost init again.",
+      "selfhost is not on PATH, so each hook looks for it when it runs: on PATH, then where it runs now, then npx selfhostai. Install it (npm install -g selfhostai) and run selfhost init again for the plain selfhost hook command.",
   };
 }
 
@@ -231,7 +250,7 @@ function hookAgents(names: string[] | undefined, detected: AgentStatus[]): Agent
   }
   return names.map((name) => {
     const id = AGENT_ALIASES[name.trim().toLowerCase()];
-    if (!id) throw new Error(`--agent: expected claude or codex, got "${name}"`);
+    if (!id) throw new Error(`--agent: expected ${AGENT_NAMES_TEXT}, got "${name}"`);
     return id;
   });
 }
@@ -239,7 +258,7 @@ function hookAgents(names: string[] | undefined, detected: AgentStatus[]): Agent
 /** Reasons to leave an agent's files alone, found before anything is written. */
 function screen(plan: AgentConfigPlan): string | undefined {
   if (!HOOKED.includes(plan.agent)) {
-    return "selfhost has no hook mapping for this agent yet";
+    return "init hooks Claude Code and Codex; selfhost guard install adds the guardrail hook to this agent";
   }
   if (plan.items.some((item) => item.status === "remove")) {
     return "selfhost agents configure set other settings here; left as is so they stay (add hooks with selfhost agents configure)";
@@ -363,8 +382,13 @@ function printHeader(
     );
   } else if (config.action === "created") {
     const verb = report.dry_run ? "would write" : "wrote";
-    write(`Policy: ${verb} ${file}, ${STARTER_RULES} rules, all in observe mode.`);
+    write(
+      `Policy: ${verb} ${file}, ${STARTER_RULES} rules, all in observe mode: they record and block nothing yet.`,
+    );
   } else write("Policy: not in a git repository, so no selfhost.toml was written.");
+  if (config.action !== "kept") {
+    write(`Guardrails: ${guardrailLine(config.preset ?? undefined)}`);
+  }
   write("");
 }
 
@@ -806,7 +830,10 @@ export function registerInit(
       "--hosted",
       "join on the hosted server (SELFHOST_HOSTED_URL, else https://app.selfhost.ai)",
     )
-    .option("--agent <name...>", "claude or codex (default: the ones found)")
+    .option(
+      "--agent <name...>",
+      `${AGENT_NAMES_TEXT} (default: Claude Code and Codex where found; init hooks those two, selfhost guard install the rest)`,
+    )
     .option(
       "--preset <name>",
       `write selfhost.toml from a preset: ${PRESET_NAMES.join(", ")} (default: starter rules, all in observe)`,

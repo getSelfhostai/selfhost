@@ -35,6 +35,9 @@ const ROLES: { value: PersonRole; label: string }[] = [
 const roleLabel = (role: PersonRole) => ROLES.find((r) => r.value === role)?.label ?? role;
 
 const DAY = 86_400;
+
+/** The line a person runs to join: this server's address and the invite. */
+const joinLine = (invite: string) => `selfhost join ${window.location.origin} ${invite}`;
 const LIFETIMES = [
   { value: String(DAY), label: "1 day" },
   { value: String(7 * DAY), label: "7 days" },
@@ -191,19 +194,19 @@ function Invites({ team }: { team: string }) {
             </p>
             <div className="flex items-center gap-2">
               <code className="min-w-0 flex-1 truncate rounded bg-muted px-2 py-1 text-xs">
-                {created.invite}
+                {joinLine(created.invite)}
               </code>
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => void navigator.clipboard?.writeText(created.invite)}
+                onClick={() => void navigator.clipboard?.writeText(joinLine(created.invite))}
               >
                 <Copy />
                 Copy
               </Button>
             </div>
             <p className="text-muted-foreground text-xs">
-              They join with <code>selfhost team join</code>.
+              They run this line on their laptop, or <code>selfhost init --team</code> with it.
             </p>
           </CardContent>
         </Card>
