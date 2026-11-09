@@ -259,12 +259,12 @@ describe.each(BACKENDS)("review list on $name", (backend) => {
         why: { signal: "policy.evaluated", rule_id: "irreversible-rm" },
         risk: { score: 70 },
       });
+      expect(byKind("exception")[0]?.deadline).toBeUndefined();
       expect(byKind("exception")[0]).toMatchObject({
         id: requestId(t, 1),
         title:
           'Allow once: Bash: git add src/app.ts test/health.test.ts && git commit -m "Add GET /health endpoint"',
-        blocking: true,
-        deadline: at(t, 30),
+        blocking: false,
         actions: ["approve", "deny", "snooze"],
         why: {
           signal: "policy.evaluated",

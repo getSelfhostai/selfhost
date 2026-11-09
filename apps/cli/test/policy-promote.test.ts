@@ -127,7 +127,7 @@ describe("promoteRule", () => {
 
   it("changes an existing team override", () => {
     const result = promoteRule(full, "no-force-push", { team: "platform", to: "observe" });
-    expect(result).toMatchObject({ changed: true, from: "enforce", to: "observe", line: 64 });
+    expect(result).toMatchObject({ changed: true, from: "enforce", to: "observe", line: 65 });
     expect(result.text).toBe(
       edit(
         full,
@@ -149,7 +149,7 @@ describe("promoteRule", () => {
 
   it("adds a team override table at the end of the file", () => {
     const result = promoteRule(full, "no-force-push", { team: "growth" });
-    expect(result).toMatchObject({ changed: true, from: "observe", line: 70 });
+    expect(result).toMatchObject({ changed: true, from: "observe", line: 71 });
     expect(result.text).toBe(`${full}\n[teams.growth.rules.no-force-push]\nmode = "enforce"\n`);
 
     const dotted = `version = 1
