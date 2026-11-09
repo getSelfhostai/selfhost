@@ -43,6 +43,8 @@ describe("config.schema.json", () => {
       "reserved-guardrail-id.toml",
       "runtime-two-defaults.toml",
       "runtime-reserved-env.toml",
+      "egress-team-widens.toml",
+      "secret-store-missing.toml",
       "not-toml.toml",
     ];
     const dir = join(FIXTURES, "config", "invalid");

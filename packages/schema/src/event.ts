@@ -48,6 +48,9 @@ export const EVENT_KINDS = [
   "alert.raised",
   "config.reported",
   "review.submitted",
+  "credential.issued",
+  "credential.revoked",
+  "egress.blocked",
 ] as const;
 
 export const ACTOR_KINDS = ["person", "agent", "system"] as const;
@@ -158,7 +161,7 @@ export const DecisionSchema = Type.Object(
     rule_id: Type.Optional(
       Type.String({
         description:
-          'Rule id from selfhost.toml when a rule decided, or "mcp.allow" and "models.allow" for the [mcp] and [models] allow lists.',
+          'Rule id from selfhost.toml when a rule decided, or "mcp.allow", "models.allow" and "egress.allow" for the [mcp], [models] and [egress] allow lists.',
       }),
     ),
     mode: Type.Optional(

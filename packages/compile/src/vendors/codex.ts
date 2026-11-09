@@ -100,6 +100,12 @@ function mapping(check: Check): Mapping<Entry> {
   if (check.list?.kind === "models") {
     return notExpressible("requirements.toml has no model allow list.", true);
   }
+  if (check.list?.kind === "egress") {
+    return notExpressible(
+      "Codex's sandbox turns network access on or off and has no host allow list.",
+      true,
+    );
+  }
   const target = targetOf("codex", check.match ?? {});
   switch (target.kind) {
     case "never":

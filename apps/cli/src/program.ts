@@ -38,6 +38,7 @@ import { localReviewList, registerReviewList } from "./review-list.js";
 import { registerReviewRoutes } from "./review-routes.js";
 import { registerReviewSetup } from "./review-setup.js";
 import { registerRoi } from "./roi.js";
+import { runtimeCheck } from "./runtime-check.js";
 import type { CollectAttribution } from "./scan/attribution.js";
 import { gitAttribution } from "./scan/git-attribution.js";
 import { runScan, type ScanCommandOptions } from "./scan/index.js";
@@ -191,6 +192,35 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
           version: VERSION,
           write: deps.write,
           json: options.json,
+          configPath: deps.configPath ?? defaultConfigPath(),
+        }),
+      );
+    });
+
+  program
+    .command("runtime")
+    .description("where background agents run")
+    .command("check")
+    .description(
+      "show how [egress] and [secrets] are written into each runtime's and local sandbox's own controls, and every rule one cannot hold",
+    )
+    .argument(
+      "[targets...]",
+      "laptop, sandbox-runtime, docker-sandboxes, devcontainer, e2b, daytona, modal, coder or opensandbox (default: [integrations.runtime] and the local sandboxes)",
+    )
+    .option("-c, --config <path>", "path to selfhost.toml")
+    .option("--team <name>", "use this team's egress list")
+    .option("--json", "print JSON")
+    .action((targets: string[], options: { config?: string; team?: string; json?: boolean }) => {
+      deps.setExitCode(
+        runtimeCheck({
+          cwd: deps.cwd,
+          env: deps.env,
+          write: deps.write,
+          targets,
+          ...(options.config ? { config: options.config } : {}),
+          ...(options.team ? { team: options.team } : {}),
+          ...(options.json ? { json: true } : {}),
           configPath: deps.configPath ?? defaultConfigPath(),
         }),
       );

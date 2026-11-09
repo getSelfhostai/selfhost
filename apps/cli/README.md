@@ -252,6 +252,19 @@ team rule (a lower mode, fewer agents, another match) is ignored and the team's 
 `doctor`, `policy check`, the hooks and `policy test` all use the result. A file given with
 `--config` or `SELFHOST_CONFIG` is used as it is.
 
+With `[egress]` or `[secrets]` in the policy, `doctor` also lists, for the runtime in
+`[integrations.runtime]` and each local sandbox (Docker Sandboxes, Claude Code's sandbox
+runtime, a devcontainer), every rule that place cannot hold as written: unenforced (nothing
+there holds it; only the hooks check tool calls), weaker (held, but looser) or stricter (held
+tighter, so a run that needs it fails). `selfhost runtime check [targets...] [--team <name>]`
+prints the same per target, with `--json` the allow list in each target's own form (srt
+settings, `sbx policy` commands, a devcontainer's env, E2B, Daytona, Modal, Coder or OpenSandbox
+create options), and exits 1 when a checked target leaves a rule unenforced or weaker. Targets:
+`laptop`, `docker-sandboxes`, `sandbox-runtime`, `devcontainer`, `e2b`, `daytona`, `modal`,
+`coder`, `opensandbox`. The hooks record where each call ran (`laptop`, `local:<sandbox>` or
+`runtime:<kind>`, from `SELFHOST_LOCATION`) on its `policy.evaluated` event, and a call stopped
+under `egress.allow` also writes one `egress.blocked` event per host.
+
 `selfhost policy` works on the rules in `selfhost.toml` (found like `doctor` does, or
 `--config`). See [`packages/policy`](../../packages/policy/README.md) for how rules match.
 
@@ -979,6 +992,7 @@ The CLI calls only the configured server, and only its `/v1` API. Agents keep ca
 vendors directly; no model traffic goes through selfhost.
 
 Every command takes `--json` and prints one object with a `schema` tag: `selfhost.doctor/v1`,
+`selfhost.runtime_check/v1`,
 `selfhost.init/v1`, `selfhost.init_undo/v1`, `selfhost.import/v1` (plus one `selfhost.import_batch/v1` line per batch with `--watch`),
 `selfhost.ledger_prune/v1`, `selfhost.ledger_status/v1`, `selfhost.ledger_migrate/v1`, `selfhost.ledger_backup/v1`,
 `selfhost.ledger_restore/v1`, `selfhost.agents/v1`, `selfhost.agents_configure/v1`, `selfhost.scan/v1`,

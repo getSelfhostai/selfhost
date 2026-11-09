@@ -995,7 +995,7 @@
                       },
                       "rules": {
                         "default": {},
-                        "description": "Per-rule overrides for this team, keyed by rule id. \"mcp.allow\" and \"models.allow\" override the [mcp] and [models] checks.",
+                        "description": "Per-rule overrides for this team, keyed by rule id. \"mcp.allow\", \"models.allow\" and \"egress.allow\" override the [mcp], [models] and [egress] checks.",
                         "type": "object",
                         "patternProperties": {
                           "^(.*)$": {
@@ -1050,6 +1050,27 @@
                                 "description": "Alternative for this team.",
                                 "type": "string"
                               }
+                            }
+                          }
+                        }
+                      },
+                      "egress": {
+                        "additionalProperties": false,
+                        "description": "This team's egress allow list. Unset: the team uses [egress] allow. The mode comes from [egress], or from [teams.<name>.rules.\"egress.allow\"].",
+                        "type": "object",
+                        "required": [
+                          "allow"
+                        ],
+                        "properties": {
+                          "allow": {
+                            "default": [],
+                            "uniqueItems": true,
+                            "description": "Hosts this team's agents may reach, in place of [egress] allow. Each must be covered by [egress] allow when that is set.",
+                            "type": "array",
+                            "items": {
+                              "pattern": "^(?:(?:\\*\\.)?[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*|\\d{1,3}(?:\\.\\d{1,3}){3}(?:/\\d{1,2})?)$",
+                              "description": "A host name (api.github.com), every subdomain of one (*.npmjs.org, not npmjs.org itself), an IPv4 address or an IPv4 CIDR range.",
+                              "type": "string"
                             }
                           }
                         }
@@ -1120,6 +1141,161 @@
                     "patternProperties": {
                       "^[A-Za-z_][A-Za-z0-9_]*$": {
                         "type": "string"
+                      }
+                    }
+                  }
+                }
+              },
+              "egress": {
+                "additionalProperties": false,
+                "description": "Where agents may connect. One list, written into each runtime's and each local sandbox's own network controls; a call to another host is recorded under rule id \"egress.allow\". Absent: no egress limit.",
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "description": "enforce writes the allow list into each sandbox's own network controls and blocks tool calls that reach other hosts; observe records those calls and restricts nothing; off turns it off. Set it per team with [teams.<name>.rules.\"egress.allow\"].",
+                    "default": "observe",
+                    "type": "string",
+                    "enum": [
+                      "observe",
+                      "enforce",
+                      "off"
+                    ]
+                  },
+                  "allow": {
+                    "default": [],
+                    "uniqueItems": true,
+                    "description": "Hosts agents may reach from a sandbox, a local sandbox or a tool call. Empty allows none. The run's repository host and the AI gateway are added for each run.",
+                    "type": "array",
+                    "items": {
+                      "pattern": "^(?:(?:\\*\\.)?[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*|\\d{1,3}(?:\\.\\d{1,3}){3}(?:/\\d{1,2})?)$",
+                      "description": "A host name (api.github.com), every subdomain of one (*.npmjs.org, not npmjs.org itself), an IPv4 address or an IPv4 CIDR range.",
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "secrets": {
+                "additionalProperties": false,
+                "description": "Secrets a run's sandbox gets, by reference. selfhost reads each from its store at run start and never writes a value here, in the ledger or in logs.",
+                "type": "object",
+                "properties": {
+                  "env": {
+                    "default": {},
+                    "description": "Environment variable inside the run's sandbox to where its value comes from. Values are read at run start, go only into that run's sandbox and are masked in the ledger and logs.",
+                    "type": "object",
+                    "patternProperties": {
+                      "^[A-Za-z_][A-Za-z0-9_]*$": {
+                        "description": "A secret the run's sandbox gets: the source as a string, or a table with from and an egress injection host.",
+                        "anyOf": [
+                          {
+                            "pattern": "^(?:env:[A-Za-z_][A-Za-z0-9_]*|vault:[^#\\s]+#[^#\\s]+|infisical:(?:[^#\\s]+#)?[^#\\s/]+|github-app:repo)$",
+                            "description": "Where the value comes from: env:NAME (the server's environment), vault:<path>#<key> (HashiCorp Vault KV v2, path under [secrets.vault] mount), infisical:<path>#<key> or infisical:<key> (Infisical, in [secrets.infisical] project and environment), or github-app:repo (the run's repository token).",
+                            "type": "string"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "from"
+                            ],
+                            "properties": {
+                              "from": {
+                                "pattern": "^(?:env:[A-Za-z_][A-Za-z0-9_]*|vault:[^#\\s]+#[^#\\s]+|infisical:(?:[^#\\s]+#)?[^#\\s/]+|github-app:repo)$",
+                                "description": "Where the value comes from: env:NAME (the server's environment), vault:<path>#<key> (HashiCorp Vault KV v2, path under [secrets.vault] mount), infisical:<path>#<key> or infisical:<key> (Infisical, in [secrets.infisical] project and environment), or github-app:repo (the run's repository token).",
+                                "type": "string"
+                              },
+                              "host": {
+                                "pattern": "^(?:\\*\\.)?[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+$",
+                                "description": "Inject the value at the sandbox's egress, into requests to this host, instead of putting it in the sandbox, where the runtime can. The variable inside the sandbox then holds a placeholder.",
+                                "type": "string"
+                              },
+                              "header": {
+                                "minLength": 1,
+                                "description": "Request header the value goes in, with host. Default: Authorization.",
+                                "type": "string"
+                              },
+                              "format": {
+                                "minLength": 1,
+                                "description": "Header value, with {value} where the secret goes. Default: \"Bearer {value}\".",
+                                "type": "string"
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "vault": {
+                    "additionalProperties": false,
+                    "description": "HashiCorp Vault, read over its HTTP API.",
+                    "type": "object",
+                    "required": [
+                      "url"
+                    ],
+                    "properties": {
+                      "url": {
+                        "pattern": "^https?://",
+                        "description": "Vault's address, such as https://vault.acme.internal:8200.",
+                        "type": "string"
+                      },
+                      "token_env": {
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                        "description": "Environment variable on the server that holds a Vault token that can read the paths. Default: VAULT_TOKEN.",
+                        "type": "string"
+                      },
+                      "mount": {
+                        "minLength": 1,
+                        "description": "The KV version 2 secrets engine mount. Default: secret.",
+                        "type": "string"
+                      },
+                      "namespace": {
+                        "minLength": 1,
+                        "description": "Vault Enterprise namespace, sent as X-Vault-Namespace.",
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "infisical": {
+                    "additionalProperties": false,
+                    "description": "Infisical, read over its HTTP API.",
+                    "type": "object",
+                    "required": [
+                      "project_id",
+                      "environment"
+                    ],
+                    "properties": {
+                      "url": {
+                        "pattern": "^https?://",
+                        "description": "Infisical's address. Default: https://app.infisical.com.",
+                        "type": "string"
+                      },
+                      "token_env": {
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                        "description": "Environment variable on the server that holds a machine identity access token. Default: INFISICAL_TOKEN.",
+                        "type": "string"
+                      },
+                      "project_id": {
+                        "minLength": 1,
+                        "description": "The Infisical project (workspace) id.",
+                        "type": "string"
+                      },
+                      "environment": {
+                        "minLength": 1,
+                        "description": "The environment slug, such as prod.",
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "github_permissions": {
+                    "description": "Permissions of the run's GitHub App token, which only reaches the run's repository. Default: contents write, pull_requests write, metadata read.",
+                    "type": "object",
+                    "patternProperties": {
+                      "^[a-z_]+$": {
+                        "type": "string",
+                        "enum": [
+                          "read",
+                          "write"
+                        ]
                       }
                     }
                   }
@@ -2245,7 +2421,10 @@
               "policy.evaluated",
               "alert.raised",
               "config.reported",
-              "review.submitted"
+              "review.submitted",
+              "credential.issued",
+              "credential.revoked",
+              "egress.blocked"
             ]
           },
           "team": {
@@ -2436,7 +2615,10 @@
                     "policy.evaluated",
                     "alert.raised",
                     "config.reported",
-                    "review.submitted"
+                    "review.submitted",
+                    "credential.issued",
+                    "credential.revoked",
+                    "egress.blocked"
                   ]
                 },
                 "actor": {
@@ -2601,7 +2783,7 @@
                       "type": "string"
                     },
                     "rule_id": {
-                      "description": "Rule id from selfhost.toml when a rule decided, or \"mcp.allow\" and \"models.allow\" for the [mcp] and [models] allow lists.",
+                      "description": "Rule id from selfhost.toml when a rule decided, or \"mcp.allow\", \"models.allow\" and \"egress.allow\" for the [mcp], [models] and [egress] allow lists.",
                       "type": "string"
                     },
                     "mode": {
@@ -2976,7 +3158,10 @@
                     "policy.evaluated",
                     "alert.raised",
                     "config.reported",
-                    "review.submitted"
+                    "review.submitted",
+                    "credential.issued",
+                    "credential.revoked",
+                    "egress.blocked"
                   ]
                 },
                 "actor": {
@@ -3141,7 +3326,7 @@
                       "type": "string"
                     },
                     "rule_id": {
-                      "description": "Rule id from selfhost.toml when a rule decided, or \"mcp.allow\" and \"models.allow\" for the [mcp] and [models] allow lists.",
+                      "description": "Rule id from selfhost.toml when a rule decided, or \"mcp.allow\", \"models.allow\" and \"egress.allow\" for the [mcp], [models] and [egress] allow lists.",
                       "type": "string"
                     },
                     "mode": {
@@ -4671,7 +4856,10 @@
                   "policy.evaluated",
                   "alert.raised",
                   "config.reported",
-                  "review.submitted"
+                  "review.submitted",
+                  "credential.issued",
+                  "credential.revoked",
+                  "egress.blocked"
                 ]
               },
               "actor": {
@@ -4836,7 +5024,7 @@
                     "type": "string"
                   },
                   "rule_id": {
-                    "description": "Rule id from selfhost.toml when a rule decided, or \"mcp.allow\" and \"models.allow\" for the [mcp] and [models] allow lists.",
+                    "description": "Rule id from selfhost.toml when a rule decided, or \"mcp.allow\", \"models.allow\" and \"egress.allow\" for the [mcp], [models] and [egress] allow lists.",
                     "type": "string"
                   },
                   "mode": {

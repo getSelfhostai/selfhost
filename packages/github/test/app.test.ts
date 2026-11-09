@@ -2,9 +2,15 @@ import { generateKeyPairSync } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Octokit } from "@octokit/rest";
 import { Webhooks } from "@octokit/webhooks";
 import { afterAll, describe, expect, it } from "vitest";
-import { createGitHubApp, GITHUB_APP_ENV, githubAppEnv } from "../src/index.js";
+import {
+  createGitHubApp,
+  GITHUB_APP_ENV,
+  githubAppEnv,
+  RUN_TOKEN_PERMISSIONS,
+} from "../src/index.js";
 import { FakeGitHub } from "../src/testing.js";
 
 // A key made for this run only, PKCS#1 as GitHub hands out App keys.
@@ -115,5 +121,68 @@ describe("createGitHubApp", () => {
         .rest.issues.listLabelsOnIssue({ owner: "a", repo: "b", issue_number: 1 }),
     ).rejects.toMatchObject({ status: 401 });
     expect(lines.join("\n")).not.toContain("PRIVATE KEY");
+  });
+});
+
+describe("run tokens", () => {
+  const credentials = { appId: "123", privateKey: pem, webhookSecret: SECRET };
+  const fake = () =>
+    new FakeGitHub({
+      appId: "123",
+      publicKey: publicKey.export({ type: "spki", format: "pem" }).toString(),
+      installationOf: (repo) => (repo.startsWith("acme/") ? 42 : undefined),
+      repositoriesOf: () => ["acme-api", "acme-web"],
+    });
+  const asToken = (github: FakeGitHub, token: string) =>
+    new Octokit({ auth: token, request: { fetch: github.fetch } });
+
+  it("asks GitHub for the run's one repository and the least permissions", async () => {
+    const github = fake();
+    const app = createGitHubApp(credentials, { fetch: github.fetch });
+    const run = await app.runToken("acme", "acme-api");
+    expect(run).toMatchObject({
+      installationId: 42,
+      repository: "acme/acme-api",
+      permissions: RUN_TOKEN_PERMISSIONS,
+    });
+    const minted = github.requests.find((r) => r.path === "/app/installations/42/access_tokens");
+    expect(minted?.body).toEqual({
+      repositories: ["acme-api"],
+      permissions: { contents: "write", pull_requests: "write", metadata: "read" },
+    });
+  });
+
+  it("works on the run's repository and fails on every other one of the installation", async () => {
+    const github = fake();
+    const app = createGitHubApp(credentials, { fetch: github.fetch });
+    const { token } = await app.runToken("acme", "acme-api");
+    const octokit = asToken(github, token);
+    await expect(
+      octokit.rest.repos.get({ owner: "acme", repo: "acme-api" }),
+    ).resolves.toMatchObject({ status: 200 });
+    await expect(octokit.rest.repos.get({ owner: "acme", repo: "acme-web" })).rejects.toMatchObject(
+      { status: 404 },
+    );
+  });
+
+  it("is refused once revoked, and a second revoke says so", async () => {
+    const github = fake();
+    const app = createGitHubApp(credentials, { fetch: github.fetch });
+    const { token } = await app.runToken("acme", "acme-api");
+    expect(await app.revokeToken(token)).toBe("revoked");
+    expect(github.requests.at(-1)).toMatchObject({ method: "DELETE", path: "/installation/token" });
+    await expect(
+      asToken(github, token).rest.repos.get({ owner: "acme", repo: "acme-api" }),
+    ).rejects.toMatchObject({ status: 401 });
+    expect(await app.revokeToken(token)).toBe("already");
+  });
+
+  it("fails without minting when the App is not on the repository", async () => {
+    const github = fake();
+    const app = createGitHubApp(credentials, { fetch: github.fetch });
+    await expect(app.runToken("other", "repo")).rejects.toThrow(
+      "The GitHub App is not installed on other/repo",
+    );
+    expect(github.scopedTokens.size).toBe(0);
   });
 });

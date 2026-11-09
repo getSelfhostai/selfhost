@@ -2,6 +2,7 @@ import { type Static, Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { parse as parseToml, TomlError } from "smol-toml";
 import { NonEmpty, StringEnum, Url } from "./common.js";
+import { EGRESS_HOST_PATTERN, egressEntryCovered, SECRET_SOURCE_PATTERN } from "./egress.js";
 import { AGENT_VENDORS } from "./event.js";
 import { REVIEWER_TOOLS, ROUTER_TOOLS, RUNTIME_TOOLS, TRACER_TOOLS } from "./integration-tools.js";
 import { NOTIFY_CADENCES } from "./notify.js";
@@ -11,6 +12,7 @@ import {
   type FieldError,
   formatField,
   lazyCheck,
+  type Segment,
   type SegmentError,
   schemaErrors,
 } from "./validate.js";
@@ -37,7 +39,13 @@ export type RuleAction = (typeof RULE_ACTIONS)[number];
 export const MCP_ALLOW_RULE_ID = "mcp.allow";
 /** Rule id recorded when a tool call runs on a model that is not in [models] allow. */
 export const MODELS_ALLOW_RULE_ID = "models.allow";
-export const BUILT_IN_RULE_IDS = [MCP_ALLOW_RULE_ID, MODELS_ALLOW_RULE_ID] as const;
+/** Rule id recorded when a tool call reaches a host that is not in [egress] allow. */
+export const EGRESS_ALLOW_RULE_ID = "egress.allow";
+export const BUILT_IN_RULE_IDS = [
+  MCP_ALLOW_RULE_ID,
+  MODELS_ALLOW_RULE_ID,
+  EGRESS_ALLOW_RULE_ID,
+] as const;
 
 /** Every rule id the package guard records starts with this. */
 export const PACKAGE_RULE_PREFIX = "packages.";
@@ -362,6 +370,16 @@ export const RuleOverrideSchema = Type.Object(
   },
 );
 
+const EgressHosts = (description: string) =>
+  Type.Array(
+    Type.String({
+      pattern: EGRESS_HOST_PATTERN,
+      description:
+        "A host name (api.github.com), every subdomain of one (*.npmjs.org, not npmjs.org itself), an IPv4 address or an IPv4 CIDR range.",
+    }),
+    { default: [], uniqueItems: true, description },
+  );
+
 export const TeamSchema = Type.Object(
   {
     members: Type.Optional(
@@ -373,8 +391,22 @@ export const TeamSchema = Type.Object(
     rules: Type.Optional(
       Type.Record(Type.String(), RuleOverrideSchema, {
         default: {},
-        description: `Per-rule overrides for this team, keyed by rule id. "${MCP_ALLOW_RULE_ID}" and "${MODELS_ALLOW_RULE_ID}" override the [mcp] and [models] checks.`,
+        description: `Per-rule overrides for this team, keyed by rule id. "${MCP_ALLOW_RULE_ID}", "${MODELS_ALLOW_RULE_ID}" and "${EGRESS_ALLOW_RULE_ID}" override the [mcp], [models] and [egress] checks.`,
       }),
+    ),
+    egress: Type.Optional(
+      Type.Object(
+        {
+          allow: EgressHosts(
+            "Hosts this team's agents may reach, in place of [egress] allow. Each must be covered by [egress] allow when that is set.",
+          ),
+        },
+        {
+          additionalProperties: false,
+          description:
+            'This team\'s egress allow list. Unset: the team uses [egress] allow. The mode comes from [egress], or from [teams.<name>.rules."egress.allow"].',
+        },
+      ),
     ),
   },
   // The default lets Value.Default fill members and rules inside the teams record.
@@ -838,6 +870,124 @@ export const IntegrationsSchema = Type.Object(
   },
 );
 
+export const EgressSchema = Type.Object(
+  {
+    mode: Type.Optional(
+      RuleModeSchema(
+        `enforce writes the allow list into each sandbox's own network controls and blocks tool calls that reach other hosts; observe records those calls and restricts nothing; off turns it off. Set it per team with [teams.<name>.rules."${EGRESS_ALLOW_RULE_ID}"].`,
+        true,
+      ),
+    ),
+    allow: Type.Optional(
+      EgressHosts(
+        "Hosts agents may reach from a sandbox, a local sandbox or a tool call. Empty allows none. The run's repository host and the AI gateway are added for each run.",
+      ),
+    ),
+  },
+  {
+    additionalProperties: false,
+    description: `Where agents may connect. One list, written into each runtime's and each local sandbox's own network controls; a call to another host is recorded under rule id "${EGRESS_ALLOW_RULE_ID}". Absent: no egress limit.`,
+  },
+);
+
+export const SECRET_FORMAT_PLACEHOLDER = "{value}";
+
+const SecretSource = Type.String({
+  pattern: SECRET_SOURCE_PATTERN,
+  description:
+    "Where the value comes from: env:NAME (the server's environment), vault:<path>#<key> (HashiCorp Vault KV v2, path under [secrets.vault] mount), infisical:<path>#<key> or infisical:<key> (Infisical, in [secrets.infisical] project and environment), or github-app:repo (the run's repository token).",
+});
+
+export const SecretDeclarationSchema = Type.Union(
+  [
+    SecretSource,
+    Type.Object(
+      {
+        from: SecretSource,
+        host: Type.Optional(
+          Type.String({
+            pattern: "^(?:\\*\\.)?[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+$",
+            description:
+              "Inject the value at the sandbox's egress, into requests to this host, instead of putting it in the sandbox, where the runtime can. The variable inside the sandbox then holds a placeholder.",
+          }),
+        ),
+        header: Type.Optional(
+          NonEmpty({
+            description: "Request header the value goes in, with host. Default: Authorization.",
+          }),
+        ),
+        format: Type.Optional(
+          NonEmpty({
+            description: `Header value, with ${"{value}"} where the secret goes. Default: "Bearer {value}".`,
+          }),
+        ),
+      },
+      { additionalProperties: false },
+    ),
+  ],
+  {
+    description:
+      "A secret the run's sandbox gets: the source as a string, or a table with from and an egress injection host.",
+  },
+);
+
+export const SecretsSchema = Type.Object(
+  {
+    env: Type.Optional(
+      Type.Record(Type.String({ pattern: ENV_NAME_PATTERN }), SecretDeclarationSchema, {
+        default: {},
+        description:
+          "Environment variable inside the run's sandbox to where its value comes from. Values are read at run start, go only into that run's sandbox and are masked in the ledger and logs.",
+      }),
+    ),
+    vault: Type.Optional(
+      Type.Object(
+        {
+          url: HttpUrl("Vault's address, such as https://vault.acme.internal:8200."),
+          token_env: Type.Optional(
+            EnvName(
+              "Environment variable on the server that holds a Vault token that can read the paths. Default: VAULT_TOKEN.",
+            ),
+          ),
+          mount: Type.Optional(
+            NonEmpty({ description: "The KV version 2 secrets engine mount. Default: secret." }),
+          ),
+          namespace: Type.Optional(
+            NonEmpty({ description: "Vault Enterprise namespace, sent as X-Vault-Namespace." }),
+          ),
+        },
+        { additionalProperties: false, description: "HashiCorp Vault, read over its HTTP API." },
+      ),
+    ),
+    infisical: Type.Optional(
+      Type.Object(
+        {
+          url: Type.Optional(HttpUrl("Infisical's address. Default: https://app.infisical.com.")),
+          token_env: Type.Optional(
+            EnvName(
+              "Environment variable on the server that holds a machine identity access token. Default: INFISICAL_TOKEN.",
+            ),
+          ),
+          project_id: NonEmpty({ description: "The Infisical project (workspace) id." }),
+          environment: NonEmpty({ description: "The environment slug, such as prod." }),
+        },
+        { additionalProperties: false, description: "Infisical, read over its HTTP API." },
+      ),
+    ),
+    github_permissions: Type.Optional(
+      Type.Record(Type.String({ pattern: "^[a-z_]+$" }), StringEnum(["read", "write"] as const), {
+        description:
+          "Permissions of the run's GitHub App token, which only reaches the run's repository. Default: contents write, pull_requests write, metadata read.",
+      }),
+    ),
+  },
+  {
+    additionalProperties: false,
+    description:
+      "Secrets a run's sandbox gets, by reference. selfhost reads each from its store at run start and never writes a value here, in the ledger or in logs.",
+  },
+);
+
 export const SelfhostConfigSchema = Type.Object(
   {
     version: Type.Literal(1, { description: "selfhost.toml format version." }),
@@ -1244,6 +1394,8 @@ export const SelfhostConfigSchema = Type.Object(
       Type.Record(Type.String(), TeamSchema, { default: {}, description: "Teams by name." }),
     ),
     runtime: Type.Optional(RuntimeSchema),
+    egress: Type.Optional(EgressSchema),
+    secrets: Type.Optional(SecretsSchema),
     receipt: Type.Optional(ReceiptConfigSchema),
     integrations: Type.Optional(IntegrationsSchema),
     roi: Type.Optional(RoiConfigSchema),
@@ -1272,11 +1424,14 @@ export type RoiConfig = Static<typeof RoiConfigSchema>;
 export type Integrations = Static<typeof IntegrationsSchema>;
 export type ReviewRouteRule = Static<typeof ReviewRouteRuleSchema>;
 export type AutoApprove = Static<typeof AutoApproveSchema>;
+export type Egress = Static<typeof EgressSchema>;
+export type Secrets = Static<typeof SecretsSchema>;
+export type SecretDeclaration = Static<typeof SecretDeclarationSchema>;
 
 type Present<T> = Exclude<T, undefined>;
 
 export type ResolvedRule = Rule & Required<Pick<Rule, "mode" | "agents" | "irreversible">>;
-export type ResolvedTeam = Required<Team>;
+export type ResolvedTeam = Required<Omit<Team, "egress">> & Pick<Team, "egress">;
 
 /** A config after defaults are applied: every section is present. */
 export type ResolvedSelfhostConfig = Omit<
@@ -1353,6 +1508,7 @@ function semanticErrors(
   const builtIn = new Map([
     [MCP_ALLOW_RULE_ID, config.mcp.allow.length > 0 ? "[mcp] allow" : undefined],
     [MODELS_ALLOW_RULE_ID, config.models.allow.length > 0 ? "[models] allow" : undefined],
+    [EGRESS_ALLOW_RULE_ID, config.egress ? "[egress] allow" : undefined],
   ]);
   config.rules.forEach((rule, index) => {
     const earlier = ruleIds.get(rule.id);
@@ -1403,6 +1559,8 @@ function semanticErrors(
     }
   }
   if (config.runtime) errors.push(...runtimeErrors(config.runtime));
+  errors.push(...egressErrors(config));
+  if (config.secrets) errors.push(...secretsErrors(config.secrets));
   if (config.roi) errors.push(...roiErrors(config.roi));
   errors.push(...routeErrors(config.review.routes));
   return errors;
@@ -1497,6 +1655,62 @@ function runtimeErrors(runtime: Runtime): SegmentError[] {
       errors.push({
         segments: ["runtime", "env", name],
         message: `Names that start with ${RUNTIME_VARIABLE_PREFIX} are set by selfhost for each workspace`,
+      });
+    }
+  }
+  return errors;
+}
+
+function egressErrors(config: ResolvedSelfhostConfig): SegmentError[] {
+  const errors: SegmentError[] = [];
+  const floor = config.egress?.allow;
+  for (const [team, { egress }] of Object.entries(config.teams)) {
+    if (!egress) continue;
+    if (!config.egress) {
+      errors.push({
+        segments: ["teams", team, "egress"],
+        message:
+          "A team egress list needs an [egress] section: add one with the hosts every team may reach",
+      });
+      continue;
+    }
+    egress.allow.forEach((entry, index) => {
+      if (floor && egressEntryCovered(entry, floor)) return;
+      errors.push({
+        segments: ["teams", team, "egress", "allow", index],
+        message: `"${entry}" is not covered by [egress] allow; a team list can only narrow it`,
+      });
+    });
+  }
+  return errors;
+}
+
+function secretsErrors(secrets: Secrets): SegmentError[] {
+  const errors: SegmentError[] = [];
+  for (const [name, declared] of Object.entries(secrets.env ?? {})) {
+    const at = (field?: string): Segment[] =>
+      field ? ["secrets", "env", name, field] : ["secrets", "env", name];
+    if (name.startsWith(RUNTIME_VARIABLE_PREFIX)) {
+      errors.push({
+        segments: at(),
+        message: `Names that start with ${RUNTIME_VARIABLE_PREFIX} are set by selfhost for each run`,
+      });
+    }
+    const from = typeof declared === "string" ? declared : declared.from;
+    if (from.startsWith("vault:") && !secrets.vault) {
+      errors.push({ segments: at(), message: "A vault: secret needs [secrets.vault]" });
+    }
+    if (from.startsWith("infisical:") && !secrets.infisical) {
+      errors.push({ segments: at(), message: "An infisical: secret needs [secrets.infisical]" });
+    }
+    if (typeof declared === "string") continue;
+    if (declared.host === undefined && (declared.header ?? declared.format) !== undefined) {
+      errors.push({ segments: at("host"), message: "header and format need host" });
+    }
+    if (declared.format !== undefined && !declared.format.includes(SECRET_FORMAT_PLACEHOLDER)) {
+      errors.push({
+        segments: at("format"),
+        message: `Expected ${SECRET_FORMAT_PLACEHOLDER} where the secret goes`,
       });
     }
   }

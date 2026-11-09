@@ -61,6 +61,31 @@ export interface GitHubAppOptions {
   log?: (line: string) => void;
 }
 
+/** Permissions a run's token asks for, by GitHub's permission names. */
+export type TokenPermissions = Readonly<Record<string, "read" | "write">>;
+
+/**
+ * What a background run needs on its repository: push a branch, open a pull request, read the
+ * repository's metadata. Nothing on any other repository.
+ */
+export const RUN_TOKEN_PERMISSIONS: TokenPermissions = {
+  contents: "write",
+  pull_requests: "write",
+  metadata: "read",
+};
+
+/** An installation token limited to one repository. */
+export interface RunToken {
+  /** Goes into the run's sandbox only; never logged or stored. */
+  token: string;
+  expiresAt: string;
+  installationId: number;
+  /** owner/name. */
+  repository: string;
+  /** What GitHub granted, which can be less than what was asked. */
+  permissions: Record<string, string>;
+}
+
 export interface GitHubApp {
   /** true when `signature` (X-Hub-Signature-256) signs `body` with the App's webhook secret. */
   verify(body: string, signature: string | undefined): Promise<boolean>;
@@ -71,6 +96,17 @@ export interface GitHubApp {
   installation(id: number): Octokit;
   /** The App's installation on owner/repo, or undefined when it is not installed there. */
   repoInstallation(owner: string, repo: string): Promise<number | undefined>;
+  /**
+   * A new installation token for owner/repo alone, with `permissions` (default
+   * RUN_TOKEN_PERMISSIONS): GitHub refuses it on every other repository of the installation.
+   * Throws when the App is not installed on the repository.
+   */
+  runToken(owner: string, repo: string, permissions?: TokenPermissions): Promise<RunToken>;
+  /**
+   * Revokes an installation token (DELETE /installation/token). "already" when GitHub no longer
+   * accepts it: revoked before, or expired.
+   */
+  revokeToken(token: string): Promise<"revoked" | "already">;
 }
 
 /** The GitHub App: webhook signatures through @octokit/webhooks, API calls through Octokit. */
@@ -89,6 +125,14 @@ export function createGitHubApp(
   const installations = new Map<number, Octokit>();
   const request = options.fetch ? { request: { fetch: options.fetch } } : {};
   let asApp: Octokit | undefined;
+
+  const app = () =>
+    (asApp ??= new Octokit({
+      authStrategy: createAppAuth,
+      auth: { appId: credentials.appId, privateKey: credentials.privateKey },
+      log,
+      ...request,
+    }));
 
   return {
     async verify(body, signature) {
@@ -117,17 +161,39 @@ export function createGitHubApp(
       return octokit;
     },
     async repoInstallation(owner, repo) {
-      asApp ??= new Octokit({
-        authStrategy: createAppAuth,
-        auth: { appId: credentials.appId, privateKey: credentials.privateKey },
-        log,
-        ...request,
-      });
       try {
-        const { data } = await asApp.rest.apps.getRepoInstallation({ owner, repo });
+        const { data } = await app().rest.apps.getRepoInstallation({ owner, repo });
         return data.id;
       } catch (error) {
         if ((error as { status?: number }).status === 404) return undefined;
+        throw error;
+      }
+    },
+    async runToken(owner, repo, permissions = RUN_TOKEN_PERMISSIONS) {
+      const installationId = await this.repoInstallation(owner, repo);
+      if (installationId === undefined) {
+        throw new Error(`The GitHub App is not installed on ${owner}/${repo}`);
+      }
+      const { data } = await app().rest.apps.createInstallationAccessToken({
+        installation_id: installationId,
+        repositories: [repo],
+        permissions: { ...permissions },
+      });
+      return {
+        token: data.token,
+        expiresAt: data.expires_at,
+        installationId,
+        repository: `${owner}/${repo}`,
+        permissions: { ...(data.permissions as Record<string, string> | undefined) },
+      };
+    },
+    async revokeToken(token) {
+      const asToken = new Octokit({ auth: token, log, ...request });
+      try {
+        await asToken.rest.apps.revokeInstallationAccessToken();
+        return "revoked";
+      } catch (error) {
+        if ((error as { status?: number }).status === 401) return "already";
         throw error;
       }
     },

@@ -1,0 +1,26 @@
+{
+  "id": "01930c4e-2f1a-7b2c-8d3e-4f5a6b7c8e03",
+  "schema": "selfhost.event/v1",
+  "ts": "2026-11-09T10:12:00.000Z",
+  "source": "server",
+  "kind": "egress.blocked",
+  "actor": { "kind": "system", "id": "selfhost-credentials" },
+  "team": "platform",
+  "run_id": "run-7",
+  "target": { "type": "url", "value": "paste.example.com:443" },
+  "decision": {
+    "verdict": "block",
+    "by": "selfhost-credentials",
+    "rule_id": "egress.allow",
+    "mode": "enforce",
+    "reason": "Host \"paste.example.com\" is not in [egress] allow."
+  },
+  "data": {
+    "v": 1,
+    "host": "paste.example.com",
+    "port": 443,
+    "by": "runtime",
+    "mode": "enforce",
+    "location": "runtime:e2b"
+  }
+}

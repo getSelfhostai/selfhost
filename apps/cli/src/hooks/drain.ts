@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { egressBlockedEvent } from "@selfhost/credentials";
 import type { LedgerWriter } from "@selfhost/importers";
 import {
   LedgerValidationError,
@@ -14,7 +15,9 @@ import {
 import { POLICY_ACTOR_ID } from "@selfhost/policy";
 import {
   type Decision,
+  EGRESS_ALLOW_RULE_ID,
   EVENT_SCHEMA,
+  type ExecutionLocation,
   type LedgerEvent,
   MAX_EVENT_BATCH,
   validateEvent,
@@ -142,6 +145,7 @@ export function guardEvent(
     ...(guard.policy ? { policy_path: guard.policy.path } : {}),
     ...(guard.failures?.length ? { failures: guard.failures } : {}),
     ...(guard.fail_open ? { fail_open: true } : {}),
+    ...(guard.location ? { location: guard.location } : {}),
     check_ms: guard.ms,
   };
   return {
@@ -161,6 +165,27 @@ export function guardEvent(
     data: Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined)),
     ...(toolEvent?.redacted ? { redacted: toolEvent.redacted } : {}),
   };
+}
+
+/**
+ * One egress.blocked event per host a call was stopped from reaching: the hook refused it under
+ * egress.allow (enforce), with no approved exception letting it through.
+ */
+function blockedEgress(guard: GuardRecord, decision: LedgerEvent): LedgerEvent[] {
+  const hit = guard.hit;
+  if (hit?.rule_id !== EGRESS_ALLOW_RULE_ID || hit.mode !== "enforce") return [];
+  if (guard.answer === "allow") return [];
+  return (hit.hosts ?? []).map((host) =>
+    egressBlockedEvent(
+      { host, by: "hook" },
+      {
+        location: (guard.location ?? "laptop") as ExecutionLocation,
+        ts: decision.ts,
+        ...(decision.session_id ? { session_id: decision.session_id } : {}),
+        ...(decision.agent ? { agent: decision.agent } : {}),
+      },
+    ),
+  );
 }
 
 /**
@@ -184,7 +209,8 @@ function mapLine(
     const events = MAPPERS[agent](line.payload, { ...ctx, ts });
     if (line.guard) {
       const toolEvent = events.find((event) => event.kind === "tool.called");
-      events.push(guardEvent(agent, line.payload, line.guard, toolEvent, ts));
+      const decision = guardEvent(agent, line.payload, line.guard, toolEvent, ts);
+      events.push(decision, ...blockedEgress(line.guard, decision));
     }
     return events.every((event) => validateEvent(event).ok) ? events : undefined;
   } catch {

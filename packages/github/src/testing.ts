@@ -97,10 +97,24 @@ export interface FakeGitHubOptions {
   collaborators?: string[];
   /** The App's installation id on a repository (owner/name), or undefined. Default: 1 on all. */
   installationOf?: (repo: string) => number | undefined;
+  /**
+   * Repository names an installation reaches, for tokens asked for some repositories: asking
+   * for one outside answers 422. Default: any name.
+   */
+  repositoriesOf?: (installationId: number) => string[];
 }
 
 /** The token the fake hands out for installations; not shaped like a real one. */
 export const FAKE_INSTALLATION_TOKEN = "fake-installation-token";
+
+/** A token the fake handed out for some repositories of an installation. */
+export interface FakeScopedToken {
+  installationId: number;
+  /** Repository names (without the owner) it reaches. */
+  repositories: string[];
+  permissions: Record<string, string>;
+  revoked: boolean;
+}
 
 const json = (status: number, body: unknown) =>
   new Response(status === 204 ? null : JSON.stringify(body), {
@@ -121,6 +135,8 @@ export class FakeGitHub {
   readonly contents = new Map<string, string>();
   /** Commit statuses by commit SHA. */
   readonly statuses = new Map<string, FakeStatus[]>();
+  /** Tokens limited to some repositories, by value, as POST .../access_tokens with repositories made them. */
+  readonly scopedTokens = new Map<string, FakeScopedToken>();
   private readonly pulls = new Map<string, FakePull>();
   private readonly failures: { method: string; path: RegExp; status: number }[] = [];
   private readonly publicKey?: KeyObject;
@@ -207,7 +223,8 @@ export class FakeGitHub {
   private route(request: FakeRequest, headers: Headers): Response | undefined {
     const { method, path } = request;
     let match = /^\/app\/installations\/(\d+)\/access_tokens$/.exec(path);
-    if (match && method === "POST") return this.accessToken(headers);
+    if (match && method === "POST")
+      return this.accessToken(headers, Number(match[1]), request.body);
     match = /^\/repos\/([^/]+)\/([^/]+)\/installation$/.exec(path);
     if (match && method === "GET") {
       const refused = this.checkAppJwt(headers);
@@ -216,8 +233,24 @@ export class FakeGitHub {
       return id === undefined ? notFound() : json(200, { id, app_id: Number(this.options.appId) });
     }
 
-    if (headers.get("authorization") !== `token ${FAKE_INSTALLATION_TOKEN}`) {
+    const presented = /^token (.+)$/i.exec(headers.get("authorization") ?? "")?.[1];
+    const scoped = presented === undefined ? undefined : this.scopedTokens.get(presented);
+    if (path === "/installation/token" && method === "DELETE") {
+      if (!scoped || scoped.revoked) return json(401, { message: "Bad credentials" });
+      scoped.revoked = true;
+      return json(204, null);
+    }
+    if (scoped) {
+      if (scoped.revoked) return json(401, { message: "Bad credentials" });
+      const refused = this.outsideScope(scoped, method, path);
+      if (refused) return refused;
+    } else if (presented !== FAKE_INSTALLATION_TOKEN) {
       return json(401, { message: "Bad credentials" });
+    }
+
+    match = /^\/repos\/([^/]+)\/([^/]+)$/.exec(path);
+    if (match && method === "GET") {
+      return json(200, { full_name: `${match[1]}/${match[2]}`, name: match[2], private: true });
     }
 
     match = /^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)$/.exec(path);
@@ -295,9 +328,59 @@ export class FakeGitHub {
     return undefined;
   }
 
-  private accessToken(headers: Headers): Response {
+  /**
+   * GitHub's answer to a repository-scoped token used outside its scope: 404 for a repository it
+   * does not reach (GitHub hides those), 403 for a write it has no write permission for.
+   */
+  private outsideScope(token: FakeScopedToken, method: string, path: string): Response | undefined {
+    const repo = /^\/repos\/([^/]+)\/([^/]+)/.exec(path);
+    if (repo) {
+      const installation = (this.options.installationOf ?? (() => 1))(`${repo[1]}/${repo[2]}`);
+      if (
+        installation !== token.installationId ||
+        !token.repositories.includes(repo[2] as string)
+      ) {
+        return notFound();
+      }
+    }
+    const writes = Object.values(token.permissions).includes("write");
+    if (method !== "GET" && !writes) {
+      return json(403, { message: "Resource not accessible by integration" });
+    }
+    return undefined;
+  }
+
+  private accessToken(headers: Headers, installationId: number, body: unknown): Response {
     const refused = this.checkAppJwt(headers);
     if (refused) return refused;
+    const asked = (body ?? {}) as { repositories?: string[]; permissions?: Record<string, string> };
+    if (asked.repositories !== undefined) {
+      const reachable = this.options.repositoriesOf?.(installationId);
+      const outside = reachable
+        ? asked.repositories.filter((name) => !reachable.includes(name))
+        : [];
+      if (outside.length > 0) {
+        return json(422, {
+          message:
+            "There is at least one repository that does not exist or is not accessible to the parent installation.",
+        });
+      }
+      const token = `fake-run-token-${this.nextId++}-${installationId}`;
+      const permissions = asked.permissions ?? { contents: "read", metadata: "read" };
+      this.scopedTokens.set(token, {
+        installationId,
+        repositories: [...asked.repositories],
+        permissions,
+        revoked: false,
+      });
+      return json(201, {
+        token,
+        expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+        permissions,
+        repository_selection: "selected",
+        repositories: asked.repositories.map((name) => ({ name })),
+      });
+    }
     return json(201, {
       token: FAKE_INSTALLATION_TOKEN,
       expires_at: new Date(Date.now() + 3_600_000).toISOString(),

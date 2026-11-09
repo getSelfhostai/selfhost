@@ -62,8 +62,8 @@ export interface Check {
   irreversible: boolean;
   /** What a rule matches. Absent for the allow-list checks. */
   match?: RuleMatch;
-  /** The [mcp] or [models] allow list behind mcp.allow or models.allow. */
-  list?: { kind: "mcp" | "models"; allow: string[] };
+  /** The [mcp], [models] or [egress] allow list behind mcp.allow, models.allow or egress.allow. */
+  list?: { kind: "mcp" | "models" | "egress"; allow: string[] };
 }
 
 /** How a vendor's native controls express one check. */

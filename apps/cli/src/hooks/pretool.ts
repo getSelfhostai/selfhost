@@ -8,6 +8,7 @@ import {
   type ToolCallChecker,
 } from "@selfhost/policy/pretool";
 import {
+  executionLocation,
   formatConfigError,
   parseConfig,
   type ResolvedSelfhostConfig,
@@ -174,6 +175,7 @@ const record = (hit: PolicyHit): GuardHit => ({
   message: hit.message,
   ...(hit.alternative ? { alternative: hit.alternative } : {}),
   irreversible: hit.irreversible,
+  ...(hit.hosts ? { hosts: hit.hosts } : {}),
 });
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -247,6 +249,7 @@ export async function checkPreToolCall(
         failures: ["the payload names no tool call"],
         fail_open: true,
         ms: 0,
+        location: executionLocation(io.env),
       },
     };
   }
@@ -312,6 +315,7 @@ export async function checkPreToolCall(
     ...(policy.source ? { policy: policy.source } : {}),
     ...(failures.length > 0 ? { failures } : {}),
     ms: Math.round(performance.now() - started),
+    location: executionLocation(io.env),
   });
 
   if ("grant" in exception && hit) {

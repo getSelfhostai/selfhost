@@ -1,6 +1,6 @@
 # The policy every guardrails fixture case runs against. Built-in guardrails are on (enforce) by
-# default; the rules and the [mcp] list check that rules, allow lists and guardrails share one
-# decision.
+# default; the rules, the [mcp] list and the [egress] list check that rules, allow lists and
+# guardrails share one decision, on a laptop and in a sandbox alike.
 version = 1
 
 [[rules]]
@@ -24,3 +24,7 @@ allow = ["github"]
 [guardrails]
 prod_connections = ["*.prod.acme.internal", "PROD_DATABASE_URL"]
 prod_credentials = ["PROD_*", "prod", "~/.config/acme/prod-*.json"]
+
+[egress]
+mode = "enforce"
+allow = ["*.example.com", "github.com", "registry.npmjs.org"]

@@ -1,5 +1,9 @@
 import {
   type AgentVendor,
+  EGRESS_ALLOW_RULE_ID,
+  hostAllowed,
+  hostOfUrl,
+  hostsInCommand,
   MCP_ALLOW_RULE_ID,
   MODELS_ALLOW_RULE_ID,
   type ResolvedRule,
@@ -25,6 +29,8 @@ export interface PolicyHit {
   /** Page that explains the rule, from its `docs`. */
   docs?: string;
   irreversible: boolean;
+  /** For egress.allow: the hosts the call reaches that the list does not allow. */
+  hosts?: string[];
 }
 
 /** A rule or allow-list check after team overrides, without what it matches. */
@@ -113,6 +119,47 @@ function allowLists(config: ResolvedSelfhostConfig): AllowList[] {
   return lists.filter((list) => list.allow.length > 0);
 }
 
+/**
+ * The [egress] check: its mode, and the allow list of `team` ([teams.<team>.egress]) or else the
+ * org's. Undefined when there is no [egress] section. An empty list allows no host.
+ */
+function egressCheck(
+  config: ResolvedSelfhostConfig,
+  team: string | undefined,
+  hosts?: string[],
+): { check: PolicyCheck; allow: string[] } | undefined {
+  const section = config.egress;
+  if (!section) return undefined;
+  const allow =
+    (team === undefined ? undefined : config.teams[team]?.egress?.allow) ?? section.allow ?? [];
+  const named = hosts?.map((host) => `"${host}"`).join(", ");
+  return {
+    allow,
+    check: {
+      id: EGRESS_ALLOW_RULE_ID,
+      mode: section.mode ?? "observe",
+      agents: ["all"],
+      action: "block",
+      message:
+        named === undefined
+          ? "Host is not in [egress] allow."
+          : `${hosts?.length === 1 ? "Host" : "Hosts"} ${named} ${hosts?.length === 1 ? "is" : "are"} not in [egress] allow.`,
+      alternative:
+        "Use a host in [egress] allow, or ask the user to add this one to the team's list.",
+      irreversible: false,
+    },
+  };
+}
+
+/** The hosts a call reaches: its URL's, and the URLs and git remotes in its command. */
+export function callHosts(call: ToolCall): string[] {
+  const hosts = new Set<string>();
+  const fromUrl = call.url === undefined ? undefined : hostOfUrl(call.url);
+  if (fromUrl) hosts.add(fromUrl);
+  if (call.command !== undefined) for (const host of hostsInCommand(call.command)) hosts.add(host);
+  return [...hosts];
+}
+
 function allowListCheck(list: AllowList, value?: string): PolicyCheck {
   return {
     id: list.id,
@@ -127,7 +174,7 @@ function allowListCheck(list: AllowList, value?: string): PolicyCheck {
 
 /**
  * Every rule and allow-list check in the policy with the team's overrides applied, in the order
- * evaluate reports hits: rules in file order, then mcp.allow, then models.allow. Checks in mode
+ * evaluate reports hits: rules in file order, then mcp.allow, models.allow and egress.allow. Checks in mode
  * off are kept; an empty allow list is not a check and is left out.
  */
 export function policyChecks(
@@ -135,9 +182,11 @@ export function policyChecks(
   opts: { team?: string } = {},
 ): PolicyCheck[] {
   const overrides = overridesFor(config, { team: opts.team });
+  const egress = egressCheck(config, opts.team);
   return [
     ...config.rules.map(({ match: _match, description: _description, ...rule }) => rule),
     ...allowLists(config).map((list) => allowListCheck(list)),
+    ...(egress ? [egress.check] : []),
   ].map((check) => withOverrides(check, overrides));
 }
 
@@ -177,10 +226,11 @@ function hit(check: PolicyCheck): PolicyHit {
 /**
  * The rules and allow-list checks that fire on one tool call, with `team`'s overrides applied.
  * Pure: no I/O, and the same config and call always give the same hits in the same order
- * (rules in file order, then mcp.allow, then models.allow). Every field a rule's `match` gives
+ * (rules in file order, then mcp.allow, models.allow and egress.allow). Every field a rule's `match` gives
  * must match, so a rule that tests a field the call does not have does not fire. A call to an
- * MCP server or on a model outside a non-empty allow list fires that list's check. Checks in
- * mode off never fire.
+ * MCP server or on a model outside a non-empty allow list fires that list's check, and a call
+ * that reaches a host outside [egress] allow (by URL, or a URL or git remote in its command)
+ * fires egress.allow. Checks in mode off never fire.
  */
 export function evaluate(
   config: ResolvedSelfhostConfig,
@@ -199,5 +249,13 @@ export function evaluate(
     const merged = withOverrides(allowListCheck(list, value), overrides);
     if (applies(merged, call)) fired.push(merged);
   }
-  return fired.map(hit);
+  const hits = fired.map(hit);
+  const egress = egressCheck(config, opts.team);
+  if (egress) {
+    const outside = callHosts(call).filter((host) => !hostAllowed(host, egress.allow));
+    const blocked = outside.length > 0 ? egressCheck(config, opts.team, outside) : undefined;
+    const merged = blocked && withOverrides(blocked.check, overrides);
+    if (merged && applies(merged, call)) hits.push({ ...hit(merged), hosts: outside });
+  }
+  return hits;
 }

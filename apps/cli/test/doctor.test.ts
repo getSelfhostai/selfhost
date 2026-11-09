@@ -115,7 +115,9 @@ describe("selfhost doctor", () => {
       "config",
       "guardrails",
       "on_path",
+      "enforcement",
     ]);
+    expect(report.enforcement).toEqual([]);
     expect(report.guardrails).toMatchObject({ mode: "enforce", observed: [] });
     expect(report.on_path).toBeNull();
     expect(report.runtime).toEqual({

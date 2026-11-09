@@ -39,7 +39,8 @@ const MODELS_MATCH = "2.1.283";
 type Entry =
   | { kind: "permission"; list: "deny" | "ask"; rule: string }
   | { kind: "mcp"; name: string }
-  | { kind: "model"; id: string };
+  | { kind: "model"; id: string }
+  | { kind: "domain"; domain: string };
 
 const listOf = (action: RuleAction) => (action === "block" ? "deny" : "ask");
 
@@ -202,7 +203,39 @@ function modelsMapping(allow: string[], version: string): Mapping<Entry> {
   );
 }
 
+/**
+ * [egress] allow as the sandbox's network allow list: sandbox.network.allowedDomains, locked to
+ * managed settings by allowManagedDomainsOnly. The sandbox covers Bash commands and what they
+ * start; WebFetch, web search and MCP servers run outside it, so the hook checks those.
+ */
+function egressMapping(allow: string[]): Mapping<Entry> {
+  const ranges = allow.filter((entry) => entry.includes("/"));
+  const domains = allow.filter((entry) => !entry.includes("/"));
+  const gaps = [
+    "the sandbox limits Bash commands and the programs they start; WebFetch, web search and MCP servers reach the network outside it",
+  ];
+  if (ranges.length > 0) {
+    gaps.push(
+      `allowedDomains takes names and addresses, not ranges such as ${ranges.map(code).join(", ")}`,
+    );
+  }
+  return combine(
+    [
+      {
+        entries: domains.map((domain): Entry => ({ kind: "domain", domain })),
+        native:
+          domains.length > 0
+            ? domains.map((domain) => `sandbox.network.allowedDomains: ${domain}`)
+            : ["sandbox.network.allowedDomains: (none)"],
+        gap: gaps.join("; "),
+      },
+    ],
+    true,
+  );
+}
+
 function mapping(check: Check, version: string): Mapping<Entry> {
+  if (check.list?.kind === "egress") return egressMapping(check.list.allow);
   if (check.list?.kind === "mcp") return mcpMapping(check.list.allow);
   if (check.list?.kind === "models") return modelsMapping(check.list.allow, version);
   const target = targetOf("claude_code", check.match ?? {});
@@ -235,13 +268,16 @@ export const claudeCode: VendorCompiler = ({ version, checks, hookCommand }) => 
   const ask: string[] = [];
   const servers: string[] = [];
   const models: string[] = [];
+  let domains: string[] | undefined;
   for (const check of checks) {
     const result = mapping(check, version);
     mappings.set(check.id, result);
     if (check.mode !== "enforce") continue;
+    if (check.list?.kind === "egress") domains = [];
     for (const entry of result.entries) {
       if (entry.kind === "permission") (entry.list === "deny" ? deny : ask).push(entry.rule);
       else if (entry.kind === "mcp") servers.push(entry.name);
+      else if (entry.kind === "domain") domains?.push(entry.domain);
       else models.push(entry.id);
     }
   }
@@ -262,6 +298,12 @@ export const claudeCode: VendorCompiler = ({ version, checks, hookCommand }) => 
     settings.availableModels = models;
     if (atLeast(version, MODELS_MATCH)) settings.availableModelsMatch = "exact";
   }
+  if (domains) {
+    settings.sandbox = {
+      enabled: true,
+      network: { allowedDomains: [...new Set(domains)], allowManagedDomainsOnly: true },
+    };
+  }
   settings.hooks = Object.fromEntries(
     CLAUDE_CODE_HOOK_EVENTS.map((event) => [
       event,
@@ -276,6 +318,11 @@ export const claudeCode: VendorCompiler = ({ version, checks, hookCommand }) => 
   if (servers.length > 0) {
     notes.push(
       "allowManagedMcpServersOnly makes this the only MCP allowlist: allowlists in user and project settings are ignored.",
+    );
+  }
+  if (domains) {
+    notes.push(
+      "sandbox.enabled runs Bash commands in Claude Code's sandbox, and allowManagedDomainsOnly makes [egress] allow its only network allow list: other hosts are blocked without a prompt.",
     );
   }
   return {
