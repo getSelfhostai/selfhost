@@ -14,19 +14,27 @@ import {
 import {
   CONTEXT_AGENTS,
   type ContextAgent,
+  type ContextConflict,
   type ContextCoverage,
   type ContextItemCoverage,
+  type ContextLayerKind,
 } from "@selfhost/schema";
 import type { Command } from "commander";
 import { findConfig } from "../find-config.js";
 import { plural, table } from "../format.js";
 import { repoDir } from "../scan/index.js";
+import type { Fetch } from "../team/client.js";
+import { localLayers, rememberRepo } from "./layers.js";
+import { registerContextTeam } from "./team-commands.js";
 
 export interface ContextIo {
   env: NodeJS.ProcessEnv;
   cwd: string;
   write: (line: string) => void;
   setExitCode: (code: number) => void;
+  /** ~/.selfhost/config.json: the org, team and personal layers sit next to it. */
+  configPath: string;
+  fetch: Fetch;
 }
 
 export interface ContextCompileOptions {
@@ -36,6 +44,8 @@ export interface ContextCompileOptions {
   force?: boolean;
   json?: boolean;
   config?: string;
+  /** false (--no-layers): the repository's .selfhost/context only, as CI checks it. */
+  layers?: boolean;
 }
 
 /** `selfhost context compile --json` and `selfhost context check --json`. */
@@ -51,6 +61,13 @@ export interface ContextCompileReport {
   agents: ContextAgent[];
   /** Problems in the source, by file and line. */
   errors: ContextError[];
+  /**
+   * The layers merged, in order: the org's and team's as pulled on the last sync, the
+   * repository's own and the person's.
+   */
+  layers: { kind: ContextLayerKind; name: string }[];
+  /** Items a later layer defined again; the earlier layer's item is used. */
+  layer_conflicts: ContextConflict[];
   coverage: ContextCoverage | null;
   files: { path: string; action: FileAction; sources: string[] }[];
   /** Files that differ from what the source compiles to. */
@@ -161,7 +178,11 @@ export async function contextCompile(
     : undefined;
   const out = options.out === undefined ? undefined : resolve(io.cwd, options.out);
   const check = options.check === true;
-  const built = await buildContext(root, { agents, out, force: options.force });
+  const local = options.layers === false ? { layers: [], errors: [] } : localLayers(io.configPath);
+  const built =
+    local.errors.length > 0
+      ? ({ ok: false, errors: local.errors } as const)
+      : await buildContext(root, { agents, out, force: options.force, layers: local.layers });
   const report: ContextCompileReport = {
     schema: "selfhost.context_compile/v1",
     root,
@@ -170,6 +191,8 @@ export async function contextCompile(
     ok: false,
     agents: built.ok ? built.result.agents : [],
     errors: built.ok ? [] : built.errors,
+    layers: built.ok ? built.layers : [],
+    layer_conflicts: built.ok ? built.conflicts : [],
     coverage: built.ok ? built.result.coverage : null,
     files: built.ok
       ? built.plan.files.map(({ path, action, sources }) => ({ path, action, sources }))
@@ -181,7 +204,12 @@ export async function contextCompile(
   };
   if (built.ok) {
     report.ok = check ? report.drift.length === 0 : report.conflicts.length === 0;
-    if (!check && report.ok) applyContextPlan(report.target, built.plan);
+    if (!check && report.ok) {
+      applyContextPlan(report.target, built.plan);
+      if (out === undefined && local.layers.some((layer) => layer.kind !== "personal")) {
+        rememberRepo(io.configPath, root);
+      }
+    }
   }
   if (!report.ok) io.setExitCode(1);
   if (options.json) {
@@ -201,7 +229,10 @@ function print(report: ContextCompileReport, versions: Map<string, string>, io: 
     return rel === "" ? "." : rel.startsWith("..") ? path : rel;
   };
   if (report.errors.length > 0) {
-    io.write(`${CONTEXT_DIR} has ${plural(report.errors.length, "problem")}:`);
+    const layered = report.errors.some((error) => !error.file.startsWith(CONTEXT_DIR));
+    io.write(
+      `${layered ? "The context layers on this machine have" : `${CONTEXT_DIR} has`} ${plural(report.errors.length, "problem")}:`,
+    );
     for (const error of report.errors) io.write(`  ${formatContextError(error)}`);
     io.write("");
     io.write(
@@ -225,6 +256,17 @@ function print(report: ContextCompileReport, versions: Map<string, string>, io: 
     return;
   }
   io.write(`Compiled ${CONTEXT_DIR} for ${names} into ${shown(report.target)}.`);
+  if (report.layers.length > 1) {
+    const named = report.layers.map(({ kind, name }) =>
+      kind === "repo" ? "this repository" : kind === "personal" ? "yours" : `${kind} ${name}`,
+    );
+    io.write(`Layers, earliest first (an earlier layer's item wins): ${named.join(", ")}.`);
+  }
+  if (report.layer_conflicts.length > 0) {
+    io.write("");
+    io.write(`${plural(report.layer_conflicts.length, "item")} lost to an earlier layer:`);
+    for (const conflict of report.layer_conflicts) io.write(`  ${conflict.message}`);
+  }
   io.write("");
   if (report.coverage) printCoverage(report.coverage, versions, io.write);
   if (report.warnings.length > 0) {
@@ -259,7 +301,7 @@ export function registerContext(
   const context = program
     .command("context")
     .description(
-      "compile the rules, skills, commands, subagents and MCP servers in .selfhost/context into each agent's own files",
+      "compile the rules, skills, commands, subagents and MCP servers in .selfhost/context, merged with the org, team and personal layers, into each agent's own files",
     );
 
   context
@@ -274,6 +316,10 @@ export function registerContext(
     .option("--out <dir>", "write into this folder instead of the repository")
     .option("--check", "write nothing; exit 1 when a generated file differs from the source")
     .option("--force", "replace files selfhost did not write")
+    .option(
+      "--no-layers",
+      "the repository's .selfhost/context only, without the org, team and personal layers",
+    )
     .option("-c, --config <path>", "path to selfhost.toml; .selfhost/context sits next to it")
     .option("--json", "print JSON")
     .action(async (options: ContextCompileOptions) => {
@@ -289,13 +335,19 @@ export function registerContext(
     .description(
       "exit 1 when a generated file differs from what .selfhost/context compiles to (for CI)",
     )
+    .option(
+      "--no-layers",
+      "the repository's .selfhost/context only, without the org, team and personal layers",
+    )
     .option("-c, --config <path>", "path to selfhost.toml; .selfhost/context sits next to it")
     .option("--json", "print JSON")
-    .action(async (options: Pick<ContextCompileOptions, "config" | "json">) => {
+    .action(async (options: Pick<ContextCompileOptions, "config" | "json" | "layers">) => {
       try {
         await contextCompile({ ...options, check: true }, io());
       } catch (error) {
         fail(error, options.json);
       }
     });
+
+  registerContextTeam(context, io, fail);
 }

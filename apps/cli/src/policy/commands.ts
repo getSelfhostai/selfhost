@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { type Ledger, openLedger } from "@selfhost/ledger";
 import {
@@ -28,6 +28,7 @@ import {
   type ConfigLocation,
   describeConfigSource,
   findConfig,
+  policyText,
   type TeamPolicyFile,
 } from "../find-config.js";
 import { plural, table } from "../format.js";
@@ -149,7 +150,7 @@ function readPolicy(
     );
   }
   if (!existsSync(location.path)) throw new Error(`${location.path} does not exist`);
-  return { location, result: parseConfig(readFileSync(location.path, "utf8")) };
+  return { location, result: parseConfig(policyText(location).text) };
 }
 
 /** The resolved policy, or an error listing every problem as file:line: field: message. */

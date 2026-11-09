@@ -9,6 +9,7 @@ import { Hono } from "hono";
 import { roleIn } from "./access.js";
 import { requireBearerToken } from "./auth.js";
 import { consoleRoutes } from "./console.js";
+import { refuseContextDecision } from "./context.js";
 import { decisionRoutes } from "./decisions.js";
 import { eventRoutes } from "./events.js";
 import { type Gateway, gatewayAdminRoutes } from "./gateway.js";
@@ -109,6 +110,8 @@ export function createApp({
           return [own.team, ...memberships.map((m) => m.team).filter((t) => t !== own.team)];
         },
         role: (c, team) => roleIn((c.env as PersonEnv["Bindings"]).caller, team),
+        beforeDecision: (c, id) =>
+          refuseContextDecision(c, ledger, (c.env as PersonEnv["Bindings"]).caller, id),
       });
       mcpRoutes(person, ledger, { version, ...review });
     },

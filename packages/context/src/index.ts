@@ -1,8 +1,14 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import type { ContextAgent } from "@selfhost/schema";
+import { basename, join } from "node:path";
+import {
+  CONTEXT_LAYER_KINDS,
+  type ContextAgent,
+  type ContextConflict,
+  type ContextLayerKind,
+} from "@selfhost/schema";
 import { type ContextPlan, planContext } from "./apply.js";
 import { type CompileResult, compileContext } from "./compile/index.js";
+import { type ContextLayer, mergeLayers } from "./layers.js";
 import { buildLock, type ContextLock, lockFile, parseLock, versionWarnings } from "./lock.js";
 import { LOCK_PATH } from "./schema.js";
 import { readContextSource } from "./source.js";
@@ -37,6 +43,20 @@ export {
 } from "./compile/output.js";
 export { RULES_FILES, type RulesFile } from "./compile/ruler.js";
 export {
+  type ContextLayer,
+  type ItemRef,
+  itemFiles,
+  layerHash,
+  layerPathProblem,
+  type MergedContext,
+  mergeLayers,
+  parseItemId,
+  readLayerDir,
+  readLayerFiles,
+  withItem,
+  writeLayerDir,
+} from "./layers.js";
+export {
   buildLock,
   type ContextLock,
   ContextLockSchema,
@@ -45,7 +65,13 @@ export {
   versionWarnings,
 } from "./lock.js";
 export * from "./schema.js";
-export { formatContextError, type ReadResult, readContextSource, resolveAgents } from "./source.js";
+export {
+  formatContextError,
+  type ReadResult,
+  readContextDir,
+  readContextSource,
+  resolveAgents,
+} from "./source.js";
 export type * from "./types.js";
 export {
   type ContextItemInput,
@@ -62,6 +88,11 @@ export interface BuildOptions {
   out?: string;
   /** Replace files selfhost did not write. */
   force?: boolean;
+  /**
+   * The org, team and personal layers to merge with the repository's own (see mergeLayers).
+   * With layers, a repository without .selfhost/context adds nothing instead of failing.
+   */
+  layers?: readonly ContextLayer[];
 }
 
 export type BuildResult =
@@ -77,6 +108,10 @@ export type BuildResult =
       target: string;
       plan: ContextPlan;
       warnings: string[];
+      /** The layers merged, in order, the repository's included. */
+      layers: { kind: ContextLayerKind; name: string }[];
+      /** Items a later layer defined again; the earlier layer's item is used. */
+      conflicts: ContextConflict[];
     };
 
 /**
@@ -85,8 +120,14 @@ export type BuildResult =
  * with drift.
  */
 export async function buildContext(root: string, options: BuildOptions = {}): Promise<BuildResult> {
-  const read = readContextSource(root);
+  const extra = options.layers ?? [];
+  const read = readContextSource(root, { allowMissing: extra.length > 0 });
   if (!read.ok) return read;
+  const layers: ContextLayer[] = [
+    ...extra,
+    { kind: "repo", name: basename(root), source: read.source },
+  ];
+  const { source, conflicts } = mergeLayers(layers);
   const target = options.out ?? root;
   const warnings: string[] = [];
   const lockPath = join(target, LOCK_PATH);
@@ -95,14 +136,27 @@ export async function buildContext(root: string, options: BuildOptions = {}): Pr
     previous = parseLock(readFileSync(lockPath, "utf8"));
     if (!previous) warnings.push(`${LOCK_PATH} is not a lock this selfhost reads; it is replaced.`);
   }
-  const result = await compileContext(read.source, {
+  const result = await compileContext(source, {
     agents: options.agents ?? previous?.agents,
     ruler: read.ruler,
   });
-  const lock = buildLock(read.source, result);
+  const lock = buildLock(source, result);
   warnings.push(...versionWarnings(previous, lock));
   const plan = planContext(target, [...result.files, lockFile(lock)], previous, {
     force: options.force,
   });
-  return { ok: true, source: read.source, result, lock, previous, target, plan, warnings };
+  return {
+    ok: true,
+    source,
+    result,
+    lock,
+    previous,
+    target,
+    plan,
+    warnings,
+    layers: CONTEXT_LAYER_KINDS.flatMap((kind) =>
+      layers.filter((layer) => layer.kind === kind).map(({ name }) => ({ kind, name })),
+    ),
+    conflicts,
+  };
 }

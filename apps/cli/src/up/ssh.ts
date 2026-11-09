@@ -52,8 +52,11 @@ export function sshDomain(plan: Pick<UpPlan, "domain">, target: SshTarget): stri
   );
 }
 
-/** ssh with no prompts: it fails fast instead of waiting for a password or a host key answer. */
-export function sshArgs(target: SshTarget): string[] {
+/**
+ * ssh (or scp) options with no prompts: it fails fast instead of waiting for a password or a host
+ * key answer. scp takes the port with -P where ssh takes -p.
+ */
+export function sshOptions(target: SshTarget, portFlag: "-p" | "-P" = "-p"): string[] {
   return [
     "-o",
     "BatchMode=yes",
@@ -65,10 +68,14 @@ export function sshArgs(target: SshTarget): string[] {
     "ServerAliveInterval=15",
     ...(target.knownHosts ? ["-o", `UserKnownHostsFile=${target.knownHosts}`] : []),
     ...(target.hostKeyAlias ? ["-o", `HostKeyAlias=${target.hostKeyAlias}`] : []),
-    ...(target.port ? ["-p", String(target.port)] : []),
+    ...(target.port ? [portFlag, String(target.port)] : []),
     ...(target.identity ? ["-i", target.identity] : []),
-    `${target.user}@${target.host}`,
   ];
+}
+
+/** ssh with no prompts, to the target. */
+export function sshArgs(target: SshTarget): string[] {
+  return [...sshOptions(target), `${target.user}@${target.host}`];
 }
 
 export const sshLogin = (target: SshTarget) =>

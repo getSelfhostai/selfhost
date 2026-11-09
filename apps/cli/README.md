@@ -50,6 +50,29 @@ retention from the ledger (the one `selfhost import` writes, or `--database` / `
 `selfhost import` keeps prompt text only with `--prompts`, and masks secrets and emails either
 way; the ledger drops prompt text from any import without it.
 
+`selfhost ledger status [--json]` prints the ledger's schema version against the migrations this
+release knows (pending ones, and any from a newer release, which this one refuses to run on) and
+the rows of every table. `selfhost ledger migrate [--to <version>] [--json]` applies pending
+migrations, or moves the schema to a version (`0008`, or `0` for none), down with the rollback
+of each newer migration, all in one transaction. Roll back with the newer release before you go
+back to an older one: only it has the newer migrations' rollbacks. Both take `--database` /
+`--data-dir`.
+
+`selfhost ledger backup [file]` and `selfhost ledger restore <file> [--force]` back up and restore:
+
+- The embedded ledger (`--data-dir`, default `~/.selfhost/data`): a gzipped tar of its folder,
+  `selfhost-<UTC time>.tar.gz` here by default. A restore unpacks it next to the ledger and checks
+  it first, so a bad file or one from a newer release changes nothing; then the ledger it replaces
+  is moved to `<data dir>.before-restore-<time>`, not deleted. A ledger that already holds events
+  is replaced only with `--force`. Stop `selfhost import --watch` and `selfhost console` first.
+- A Docker Compose install or a `selfhost up` server, with `--host user@host` (`--port`, `-i`,
+  `--dir`, default `/opt/selfhost/deploy/docker`): over SSH it runs the stack's `backup.sh`
+  (`pg_dump --format=custom`) and copies the dump here with `scp`, or copies a dump there and runs
+  `restore.sh`. Users other than root need `sudo` without a password.
+
+Both print the rows of every table, so a restore can be checked against its backup. A ledger in
+your own Postgres (`DATABASE_URL`) is refused: use `pg_dump --format=custom` and `pg_restore`.
+
 `selfhost traces export [--since <date>] [--dry-run] [--json]` sends the ledger's finished runs
 to the tracer in `[integrations.tracer]` of `selfhost.toml` (Langfuse, Phoenix, Datadog or any
 OTLP endpoint), each agent session as one OpenTelemetry trace with GenAI attributes, the same
@@ -194,8 +217,11 @@ answer was yes and `SELFHOST_TELEMETRY_URL` is set.
 `SELFHOST_CONFIG`, then the nearest file from the current directory up to the repository root,
 then, on a machine in a team, the team policy pulled into `~/.selfhost/team-policy.toml`) and
 validates it. It exits 1 when the file is invalid. When both a repository file and a pulled
-team policy exist, the repository file is used and `doctor` and `policy check` name the team
-policy that is not.
+team policy exist, the repository file adds to the team policy, as a repo's rules add to its
+team's on the server: it can add rules and tighten the team's, and a field that would relax a
+team rule (a lower mode, fewer agents, another match) is ignored and the team's value is used.
+`doctor`, `policy check`, the hooks and `policy test` all use the result. A file given with
+`--config` or `SELFHOST_CONFIG` is used as it is.
 
 `selfhost policy` works on the rules in `selfhost.toml` (found like `doctor` does, or
 `--config`). See [`packages/policy`](../../packages/policy/README.md) for how rules match.
@@ -292,6 +318,35 @@ generated file differs from what `.selfhost/context` compiles to, saying which f
 was edited by hand (move the change into the source), is out of date or missing (run `selfhost
 context compile`), or is no longer compiled. Run it in CI. An invalid source fails both commands,
 with each problem's file and line.
+
+#### Layers: org, team, repository, personal
+
+Both commands merge four layers, in this order: the org's and the team's (pulled from the team
+server by `selfhost join` and every sync into `~/.selfhost/context/org/<org>/` and
+`~/.selfhost/context/team/<team>/`), the repository's `.selfhost/context/`, and your own items in
+`~/.selfhost/context/personal/` (same layout: `rules/`, `skills/`, `commands/`, `agents/`,
+`mcp.json`). Later layers add items. When two layers have the same item (or a skill and a command
+share a name) the earlier layer's is used, so the org's items are a floor nothing replaces, and
+the output names every item that lost (`layer_conflicts` with `--json`). A repository with no
+`.selfhost/context` compiles the other layers alone. `--no-layers` compiles the repository's
+layer only, as CI has it. The merged files are per person when team or personal layers are in
+use; a repository that commits its generated files should commit what `--no-layers` writes.
+
+A team's memory store (claude-mem or any other) is an MCP server like the rest: put it in the
+team layer's `mcp.json` and every member's agents get it.
+
+- `selfhost context push <dir> [--org <org>]` sets the team's layer from a folder in the
+  `.selfhost/context` layout (an owner or admin of the team, or the admin token), or with
+  `--org` the org's (admin token only). It takes `--server`, `--team` and `--token` like
+  `team invite`. Members get it on their next sync.
+- `selfhost context propose <kind:name> [--team <id>]` sends one of your personal items (such as
+  `rule:no-secrets` or `mcp:notes`) to the team. It stays personal until an owner or admin
+  approves the review item it opens, with `selfhost inbox approve <id>` or in the console; a
+  member's answer, a deny or a newer proposal of the same item leaves the team layer as it was.
+  An item the org or team layer already has cannot be proposed.
+- Every sync pulls the layers; when they changed, it compiles again each repository whose
+  context was compiled with them on this machine, and says so. A repository with a problem, or
+  a file selfhost did not write in the way, is left as it is with the reason.
 
 ### Policy test files
 
@@ -498,12 +553,22 @@ and `--dry-run` never ask (the files are then only listed). [`AGENTS.md`](AGENTS
 3. It writes a starter `selfhost.toml` at the git repository root when none is found: four
    rules (`.env` files, force pushes, `rm -rf` on `/` or home, `curl | sh`), all in observe
    mode. `--preset startup|strict|oss|irreversible` writes that preset instead (see
-   [Presets](#presets)). An existing file is kept, also with `--preset`.
+   [Presets](#presets)). An existing file is kept, also with `--preset`. In team mode no
+   starter is written, since the team's policy applies; a preset is still written when asked
+   for, and adds to the team's policy.
 4. It lists the context files the scan finds and offers to copy the repository's into the one
    context source, `.selfhost/context/` (`rules/`, `skills/`, `commands/`, `agents/`,
-   `mcp.json`). Each rule keeps the agents that read it today in its `agents` front matter, a
-   nested `CLAUDE.md` or `AGENTS.md` becomes a rule with a `globs` for its folder, and exact
-   copies become one rule. The originals are never edited or deleted, a file already in
+   `mcp.json`). The repository's own instruction files (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`,
+   `.goosehints`, `.github/copilot-instructions.md`) become rules for every agent; a file in one
+   agent's rules folder (`.cursor/rules`, `.claude/rules`, `.github/instructions`) keeps the
+   agents that read it in its `agents` front matter, and an `agents` list in the file's own front
+   matter wins. A nested `CLAUDE.md` or `AGENTS.md` becomes a rule with a `globs` for its folder,
+   and exact copies become one rule. Each file the import moved into the source that `selfhost
+   context compile` writes (such as `CLAUDE.md`, `AGENTS.md`, `.mcp.json` or a skill in
+   `.claude/skills`) is recorded in `.selfhost/context.lock.json` with its hash, so the next
+   compile replaces it with the compiled copy without `--force`. A file whose content was not
+   all imported (another file was in the way, an MCP server set up differently elsewhere, a
+   secret swapped for a reference) is not handed over. The originals are never edited or deleted, a file already in
    `.selfhost/context/` is never replaced, and home files and `CLAUDE.local.md` stay where they
    are. Secret-looking MCP env and header values are written as `${NAME}` references, and a
    server with a secret in its command, args or url is left out.
@@ -746,7 +811,8 @@ selfhost team leave
   person token and adds `server`, `token`, `person` and `team` to `~/.selfhost/config.json`
   (mode 0600), and nothing else: no vendor login or API key is asked for or stored. `--person`
   defaults to the git email, the same person `selfhost import` uses. A refused invite changes
-  no files.
+  no files. It then pulls the org and team context layers; `selfhost context compile` in a
+  repository gives the agents the merged result.
 - `selfhost import` keeps writing the local ledger, then syncs: the first sync after joining
   sends the whole local ledger, so solo history shows up on the server with no migration; later
   syncs resend the `--since` window. Event ids are idempotency keys, so a resend stores nothing
@@ -755,7 +821,8 @@ selfhost team leave
   rate limiting or failing; a refused batch is not retried. Person events go up as the joined
   person, the only one the server accepts for the token; the local ledger keeps them as they
   were imported. The sync also pulls the team's `selfhost.toml` into
-  `~/.selfhost/team-policy.toml`. A failed sync keeps the local import, reports the error and
+  `~/.selfhost/team-policy.toml` and the org and team context layers (see
+  [Layers](#layers-org-team-repository-personal)). A failed sync keeps the local import, reports the error and
   exits 1; the next sync sends the events. `--watch` sends each batch after the local write,
   and a batch that fails is kept and sent again on the next poll.
 - `selfhost status` shows solo or team, the server, the person, the last sync and the team
@@ -766,7 +833,8 @@ selfhost team leave
   [file] [--force]` writes it to a file. `selfhost status` points at push when no team policy
   was pulled yet.
 - `selfhost team leave` revokes this machine's person token on the server, then removes the
-  membership and the pulled team policy and goes back to solo mode. When the server cannot be
+  membership, the pulled team policy and the pulled context layers (your personal layer stays)
+  and goes back to solo mode. When the server cannot be
   reached, the membership is still removed and the output says the token keeps working there
   until an admin runs `selfhost team revoke <person>` (`token_revoked: false` with `--json`).
   The local ledger is not touched.
@@ -776,7 +844,8 @@ vendors directly; no model traffic goes through selfhost.
 
 Every command takes `--json` and prints one object with a `schema` tag: `selfhost.doctor/v1`,
 `selfhost.init/v1`, `selfhost.init_undo/v1`, `selfhost.import/v1` (plus one `selfhost.import_batch/v1` line per batch with `--watch`),
-`selfhost.ledger_prune/v1`, `selfhost.agents/v1`, `selfhost.agents_configure/v1`, `selfhost.scan/v1`,
+`selfhost.ledger_prune/v1`, `selfhost.ledger_status/v1`, `selfhost.ledger_migrate/v1`, `selfhost.ledger_backup/v1`,
+`selfhost.ledger_restore/v1`, `selfhost.agents/v1`, `selfhost.agents_configure/v1`, `selfhost.scan/v1`,
 `selfhost.policy_check/v1`, `selfhost.policy_test/v1`, `selfhost.policy_tests/v1`,
 `selfhost.policy_replay/v1`, `selfhost.policy_observe/v1`,
 `selfhost.policy_promote/v1`, `selfhost.review_item/v1` (from `policy report`),
@@ -787,7 +856,8 @@ Every command takes `--json` and prints one object with a `schema` tag: `selfhos
 `selfhost.limit_forecast/v1`, `selfhost.plan_tiers/v1`, `selfhost.spend_alarms/v1`,
 `selfhost.team_init/v1`, `selfhost.team_invite/v1`, `selfhost.team_revoke/v1`,
 `selfhost.team_role/v1`, `selfhost.team_add/v1`, `selfhost.team_people/v1`, `selfhost.team_repos/v1`,
-`selfhost.join/v1`, `selfhost.status/v1`, `selfhost.team_leave/v1`, `selfhost.integrations/v1` and `selfhost.up/v1`. Errors print `selfhost.error/v1` and exit 1. In solo mode no command
+`selfhost.join/v1`, `selfhost.status/v1`, `selfhost.context_compile/v1`, `selfhost.context_push/v1`,
+`selfhost.context_propose/v1`, `selfhost.team_leave/v1`, `selfhost.integrations/v1` and `selfhost.up/v1`. Errors print `selfhost.error/v1` and exit 1. In solo mode no command
 needs a network connection, except `selfhost integrations check`, which calls the tools named in
 `[integrations]` to test them.
 

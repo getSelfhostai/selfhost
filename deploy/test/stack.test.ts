@@ -35,7 +35,13 @@ describe("stack.generated.ts", () => {
 
   it("keeps the scripts executable", () => {
     const modes = Object.fromEntries(STACK_FILES.map((file) => [file.path, file.mode]));
-    for (const script of ["install.sh", "backup.sh", "restore.sh", "gateway-config.sh"]) {
+    for (const script of [
+      "install.sh",
+      "backup.sh",
+      "restore.sh",
+      "upgrade.sh",
+      "gateway-config.sh",
+    ]) {
       expect(modes[script], script).toBe(0o755);
     }
     expect(modes["compose.yml"]).toBe(0o644);

@@ -51,6 +51,24 @@ Importers write the source with `writeContextItem(root, item)` (one rule, skill,
 subagent or MCP server; MCP servers merge into `mcp.json`) or the pure `formatContextItem`. Both
 validate the item first and refuse to replace an existing one unless asked.
 
+## Layers
+
+`mergeLayers` merges context layers in the order org, team, repo, personal, whatever order they
+are given in. Later layers add items; when two layers define the same item (`rule:<name>`, ...,
+or a skill and a command with one name) the earlier layer's is kept, so the org's items are a
+floor, and each lost item comes back in `conflicts` with the item that was used and a message.
+`buildContext(root, { layers })` merges the given layers with the repository's own and compiles
+the result; with layers, a repository without `.selfhost/context` adds nothing instead of
+failing. Item paths name their layer (`org:acme/rules/x.md`, `team:web/mcp.json`,
+`personal/rules/x.md`), and generated files and the lock name them as sources.
+
+A layer travels as files in the `.selfhost/context` layout (`{path, text, executable}`, UTF-8
+only): `readLayerDir` and `writeLayerDir` read and write a folder, `readLayerFiles` validates
+files like `readContextSource` does, `layerHash` hashes them, and `itemFiles` and `withItem`
+take one item out of a layer and add it to another (an MCP server merges into `mcp.json`). The
+team server keeps the org and team layers; `apps/cli` keeps the pulled ones and the person's
+own in `~/.selfhost/context/`.
+
 ## Where items go
 
 | Item            | Claude Code                    | Codex                                        | Cursor                                 | Copilot                                                                            | Gemini CLI                              | OpenCode                      | Goose                         |

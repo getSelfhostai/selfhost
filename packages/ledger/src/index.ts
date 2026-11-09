@@ -1,9 +1,26 @@
 export {
+  type ContextStore,
+  proposalInfo,
+  type Settlement,
+  type StoredContext,
+  type StoredProposal,
+} from "./context.js";
+export {
+  connect,
   type Database,
+  dumpDataDir,
   isPostgresUrl,
+  loadDataDir,
   MEMORY_DATA_DIR,
+  migrate,
   type Queryable,
   resolveDataDir,
+  resolveVersion,
+  rollback,
+  rowCounts,
+  type SchemaStatus,
+  SchemaTooNewError,
+  schemaStatus,
 } from "./db.js";
 export { type ChatButtonPress, chatDecision } from "./decisions/chat.js";
 export {
@@ -40,6 +57,7 @@ export {
   type OpenLedgerOptions,
   openLedger,
 } from "./ledger.js";
+export { MIGRATIONS, type Migration } from "./migrations.generated.js";
 export type {
   EffectivePolicy,
   OrgPolicy,

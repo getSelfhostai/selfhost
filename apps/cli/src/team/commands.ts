@@ -8,6 +8,7 @@ import {
   type TeamRepo,
 } from "@selfhost/schema";
 import type { Command } from "commander";
+import { pullContext } from "../context/layers.js";
 import { plural } from "../format.js";
 import { defaultPerson } from "../import.js";
 import { deploymentToken } from "../up/record.js";
@@ -111,6 +112,10 @@ export interface JoinReport {
   person: string;
   role: PersonRole;
   config: string;
+  /** The org and team context layers pulled on joining, or null when they could not be. */
+  context: { hash: string; layers: { kind: "org" | "team"; name: string; files: number }[] } | null;
+  /** Why the context layers were not pulled; the next sync pulls them. */
+  context_error?: string;
 }
 
 /** `selfhost status --json`. */
@@ -137,11 +142,11 @@ export interface LeaveReport {
   error?: string;
 }
 
-interface JsonOption {
+export interface JsonOption {
   json?: boolean;
 }
 
-interface AdminOptions extends JsonOption {
+export interface AdminOptions extends JsonOption {
   server?: string;
   team?: string;
   token?: string;
@@ -192,7 +197,7 @@ function adminToken(options: AdminOptions, io: TeamIo, server: string): string |
  * membership. The token is the admin token when there is one, else this machine's person token,
  * whose role in the team the server checks.
  */
-function teamTarget(options: AdminOptions, io: TeamIo, command: string) {
+export function teamTarget(options: AdminOptions, io: TeamIo, command: string) {
   const membership = readMembership(io.configPath);
   const url = options.server ?? membership?.server;
   if (!url) {
@@ -211,7 +216,7 @@ function teamTarget(options: AdminOptions, io: TeamIo, command: string) {
   return { server, client, team };
 }
 
-function needTeam(team: string | undefined, command: string): string {
+export function needTeam(team: string | undefined, command: string): string {
   if (!team) throw new Error(`${command} needs the team: pass --team <id>`);
   return team;
 }
@@ -466,12 +471,26 @@ export async function joinTeam(
     person,
     options.name,
   );
-  saveMembership(io.configPath, {
+  const membership = {
     server,
     token: joined.token,
     person: joined.person.id,
     team: joined.team.id,
-  });
+  };
+  saveMembership(io.configPath, membership);
+  let context: JoinReport["context"] = null;
+  let contextError: string | undefined;
+  try {
+    const client = new TeamClient(server, joined.token, io.fetch);
+    const pulled = await pullContext(
+      client,
+      io.configPath,
+      readSyncState(io.configPath, membership),
+    );
+    context = { hash: pulled.hash, layers: pulled.layers };
+  } catch (failure) {
+    contextError = failure instanceof Error ? failure.message : String(failure);
+  }
   const report: JoinReport = {
     schema: "selfhost.join/v1",
     server,
@@ -479,11 +498,19 @@ export async function joinTeam(
     person: joined.person.id,
     role: joined.person.role,
     config: io.configPath,
+    context,
+    ...(contextError === undefined ? {} : { context_error: contextError }),
   };
+  const layers = context?.layers ?? [];
   print(io, options.json, report, [
     `Joined team ${joined.team.name} (${joined.team.id}) on ${server} as ${joined.person.id} (${joined.person.role}).`,
     "Your local ledger and selfhost.toml keep working as they are. The next selfhost import shares",
     "your local history and usage with the team and pulls the team policy.",
+    contextError !== undefined
+      ? `The team's context layers were not pulled (${contextError}); the next selfhost import pulls them.`
+      : layers.length === 0
+        ? "The team has no context layers yet."
+        : `Pulled the ${layers.map((l) => `${l.kind} ${l.name}`).join(" and ")} context layers. Run selfhost context compile in a repository to give your agents the merged result; later syncs keep it up to date.`,
   ]);
   return report;
 }

@@ -20,6 +20,7 @@ export const STACK_PATHS = [
   "gateway-config.sh",
   "backup.sh",
   "restore.sh",
+  "upgrade.sh",
   ".env.example",
 ] as const;
 

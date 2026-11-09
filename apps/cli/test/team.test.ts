@@ -157,6 +157,8 @@ describe("team init and join", () => {
       person: PERSON,
       role: "owner",
       config: configPath,
+      // The team has no context layers yet.
+      context: { hash: expect.any(String), layers: [] },
     });
 
     // Only the membership is stored: no vendor login, API key or anything else.
@@ -868,9 +870,20 @@ message = "No rm -rf in this repository."
     expect(readFileSync(teamFile, "utf8")).toBe(TEAM_POLICY);
   });
 
-  it("gives way to the repository's selfhost.toml, and doctor and policy check say so", async () => {
+  it("is the floor the repository's selfhost.toml adds to, and doctor and policy check say so", async () => {
     const { home, repo, deps } = joinedMachine();
-    repo.write("selfhost.toml", REPO_POLICY);
+    // A starter-like file restating the team's rule in observe mode cannot switch it off.
+    repo.write(
+      "selfhost.toml",
+      `${REPO_POLICY}
+[[rules]]
+id = "team-no-force-push"
+match = { tool = "Bash", command = "git\\\\s+push\\\\s+.*--force" }
+action = "block"
+mode = "observe"
+message = "Only watching force pushes here."
+`,
+    );
     const repoFile = repo.path("selfhost.toml");
     const teamFile = home.path(".selfhost", "team-policy.toml");
 
@@ -878,21 +891,29 @@ message = "No rm -rf in this repository."
     expect(parse(doctor.out).config).toMatchObject({
       path: repoFile,
       from: "search",
+      rules: 2,
       team_policy: { path: teamFile },
     });
     expect((await run(["doctor"], deps)).out).toMatch(
-      /team\s+\S+team-policy\.toml from http:\/\/team\.test is not used while this file exists/,
+      /team\s+adds to \S+team-policy\.toml from http:\/\/team\.test; the team's rules are the floor/,
     );
 
     const check = await run(["policy", "check"], deps);
     expect(check.out).toMatch(
-      /^Using selfhost\.toml; the policy of team platform pulled from http:\/\/team\.test \(\S+team-policy\.toml\) is not used while it exists\./,
+      /^Using selfhost\.toml on top of the policy of team platform pulled from http:\/\/team\.test \(\S+team-policy\.toml\): the team's rules are the floor, and selfhost\.toml adds to them\./,
     );
-    // The repository's file has no force push rule, so only the built-in guardrail fires.
+    // The team's rule still blocks, in enforce mode, and the repository's own rule is there too.
     expect(parse((await run(forcePush, deps)).out)).toMatchObject({
       config: repoFile,
-      hits: [{ rule_id: "guard.force_push" }],
+      hits: [
+        { rule_id: "team-no-force-push", mode: "enforce", verdict: "block" },
+        { rule_id: "guard.force_push" },
+      ],
     });
+    const rm = ["policy", "test", "--tool", "Bash", "--command", "rm -rf build", "--json"];
+    expect(parse((await run(rm, deps)).out).hits).toEqual(
+      expect.arrayContaining([expect.objectContaining({ rule_id: "repo-no-rm" })]),
+    );
     const promote = await run(["policy", "promote", "repo-no-rm", "--json"], deps);
     expect(parse(promote.out)).toMatchObject({ config: repoFile, changed: true, to: "enforce" });
     expect(readFileSync(teamFile, "utf8")).toBe(TEAM_POLICY);

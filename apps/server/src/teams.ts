@@ -27,6 +27,7 @@ import {
   type Router,
 } from "./access.js";
 import { requireBearerToken } from "./auth.js";
+import { contextRoutes } from "./context.js";
 import { eventRoutes, MAX_BODY_BYTES } from "./events.js";
 import { type Gateway, gatewayRoutes } from "./gateway.js";
 import { limit, readBody, rethrow, SMALL_BODY_BYTES } from "./http.js";
@@ -283,6 +284,7 @@ function sharedRoutes(
   gateway: Gateway | undefined,
 ): void {
   policyRoutes(router, ledger);
+  contextRoutes(router, ledger, { ...(now ? { now } : {}), ...runs });
   integrationRoutes(router, ledger, integrations);
   policyObservedRoutes(router, ledger, now ? { now } : {});
   peopleRoutes(router, ledger);

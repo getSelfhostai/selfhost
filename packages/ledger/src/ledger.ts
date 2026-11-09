@@ -10,6 +10,7 @@ import {
   PAGE_LIMIT_DEFAULT,
   type RedactionSettings,
 } from "@selfhost/schema";
+import { type ContextStore, createContextStore } from "./context.js";
 import { decodeCursor, encodeCursor, TS_KEY } from "./cursor.js";
 import { type ConnectOptions, connect, type Database, migrate } from "./db.js";
 import { createDecisionStore, type DecisionStore } from "./decisions/store.js";
@@ -83,6 +84,8 @@ export interface Ledger {
   teams: TeamStore;
   /** Orgs, the repos each team owns, and the policies and spend of each team. */
   orgs: OrgStore;
+  /** The org and team context layers, and proposals to add a person's items to a team's. */
+  context: ContextStore;
   /** Decision events by id, and search by path, topic, rule and person. */
   decisions: DecisionStore;
   /** GitHub webhook delivery ids already handled, so a redelivery changes nothing. */
@@ -221,6 +224,8 @@ export function createLedger(db: Database, options: LedgerOptions = {}): Ledger 
     teams,
 
     orgs,
+
+    context: createContextStore(db),
 
     decisions: createDecisionStore(db),
 

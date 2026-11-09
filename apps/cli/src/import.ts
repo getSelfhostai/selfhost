@@ -245,7 +245,12 @@ function describeSync(sync: SyncReport): string[] {
   const what = sync.history ? "Shared the local history with" : "Synced";
   const policy = sync.policy_hash ? `, team policy ${sync.policy_hash.slice(0, 12)}` : "";
   const counts = `${sync.sent} events (${sync.accepted} new, ${sync.duplicates} already there)`;
-  return [`${what} ${where}: ${counts}${policy}.`];
+  const repos = (sync.context_repos ?? []).map((repo) =>
+    repo.error
+      ? `The team's context changed, but ${repo.root} was not compiled again: ${repo.error}`
+      : `The team's context changed: compiled ${repo.root} again (${repo.changed} files changed).`,
+  );
+  return [`${what} ${where}: ${counts}${policy}.`, ...repos];
 }
 
 /** Imports once, then keeps tailing the logs until interrupted. */
