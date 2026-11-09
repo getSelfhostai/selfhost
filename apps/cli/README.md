@@ -465,6 +465,14 @@ and `--cursor` page through. Answer an item with `selfhost review approve|deny <
 <text>]` (the same as `selfhost inbox approve|deny`) or `selfhost decide <item-id>
 approve|deny|answer`; the next `review list` shows it answered. See [`packages/review`](../../packages/review/README.md).
 
+`selfhost review routes` explains which `[[review.routes]]` entry an item takes and why:
+every route in the order they are checked, with what it matched or the first thing that did
+not, who it names (and why a matching route names nobody here, such as `role:` targets on a
+laptop), who gets the item and where it escalates when nobody answers. `--item <id>` reads an
+item from the local review list; otherwise `--kind` (default `pr`), `--repo`, `--path` (repeat
+it), `--risk`, `--rule`, `--tool`, `--team` and `--person` describe one. CODEOWNERS comes from
+the repository it runs in. It writes nothing; `--json` prints `selfhost.review_routes/v1`.
+
 ## Inbox
 
 `selfhost inbox [--all] [--json]` lists the review items waiting on you, ranked like the review

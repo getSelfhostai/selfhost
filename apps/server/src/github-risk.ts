@@ -110,6 +110,12 @@ export function eeRisk(
     };
     const result = risk.scoreRisk(inputs, ctx.config);
     const check = risk.riskCheck(result, ctx.config);
-    return { level: result.level, title: check.title, summary: check.summary, text: check.text };
+    return {
+      level: result.level,
+      score: result.score,
+      title: check.title,
+      summary: check.summary,
+      text: check.text,
+    };
   };
 }

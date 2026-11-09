@@ -29,11 +29,17 @@ import { type FieldError, formatField, type Segment } from "./validate.js";
  *   cover, a lower min_age_days or a softer install_scripts (allow < ask < block);
  *   `[guardrails]` with a lower mode or a guardrail the org keeps on in disable;
  * - a `[[redaction]]` pattern with the name of an org pattern but another pattern;
- * - `log_prompts = true` when the org file sets `[ledger] log_prompts = false`.
+ * - `log_prompts = true` when the org file sets `[ledger] log_prompts = false`;
+ * - a `[[review.routes]]` entry with the id of an org route but other fields;
+ * - in `[review.auto_approve]`, against each key the org file sets: `enabled = true` where the
+ *   org has false, `dry_run = false` where the org has true, a higher `max_risk`, an
+ *   `allowed_paths` entry the org's list does not cover, or a `require_*` turned off.
  *
  * Lists that only add protection (deny, blocked_registries, prod_connections,
- * prod_credentials, redaction patterns, team members) are joined. Other sections (review,
- * alerts, plans, ledger retention) merge key by key with the later layer winning. `[budget]`
+ * prod_credentials, redaction patterns, team members) are joined. `[[review.routes]]` are
+ * joined by id with the org's first, so an org route takes an item before any route a team or a
+ * repo adds. Other sections (review, alerts, plans, ledger retention) merge key by key with the
+ * later layer winning. `[budget]`
  * is not inherited: the org's is the org's total, a team's is its own. `[integrations]` is a
  * choice, not a floor: a later layer's `[integrations.<kind>]` replaces the org's table for that
  * kind whole, so a team that picks another tool does not inherit the org tool's settings.
@@ -116,6 +122,23 @@ function parseRaw(text: string): Table {
 }
 
 const clone = <T>(value: T): T => structuredClone(value);
+
+/** Deep equality of parsed TOML values, ignoring key order. */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return (
+      Array.isArray(a) &&
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((item, index) => sameValue(item, b[index]))
+    );
+  }
+  if (isTable(a) && isTable(b)) {
+    const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+    return [...keys].every((key) => sameValue(a[key], b[key]));
+  }
+  return a === b;
+}
 
 /** Rule ids an org file defines, which a later layer's overrides may name. */
 function ruleIdsOf(config: ResolvedSelfhostConfig): Set<string> {
@@ -313,6 +336,58 @@ function floorErrors(floor: Floor, layer: Layer): (FloorError & { segments: Segm
     );
   });
 
+  const orgReview = isTable(floor.raw.review) ? floor.raw.review : {};
+  const layerReview = isTable(layer.raw.review) ? layer.raw.review : {};
+  const orgRoutes = new Map(floor.config.review.routes.map((route) => [route.id, route]));
+  if (Array.isArray(layerReview.routes)) {
+    layer.config.review.routes.forEach((route, index) => {
+      const org = orgRoutes.get(route.id);
+      if (!org || sameValue(org, route)) return;
+      add(
+        ["review", "routes", index],
+        `[[review.routes]] ${route.id}`,
+        `Changes org route "${route.id}": restate an org route only as it is, or add a route with a new id`,
+      );
+    });
+  }
+  const orgAuto = orgReview.auto_approve;
+  const layerAuto = layerReview.auto_approve;
+  if (isTable(orgAuto) && isTable(layerAuto)) {
+    const org = floor.config.review.auto_approve;
+    const mine = layer.config.review.auto_approve;
+    const label = (key: string) => `[review.auto_approve] ${key}`;
+    const relax = (key: string, message: string) =>
+      add(
+        ["review", "auto_approve", key],
+        label(key),
+        `Relaxes the org's [review.auto_approve]: ${message}`,
+      );
+    if (orgAuto.enabled === false && layerAuto.enabled === true) {
+      relax("enabled", "the org keeps auto-approve off");
+    }
+    if (orgAuto.dry_run === true && layerAuto.dry_run === false) {
+      relax("dry_run", "the org keeps auto-approve in dry run");
+    }
+    if (orgAuto.max_risk !== undefined && layerAuto.max_risk !== undefined) {
+      if (mine.max_risk > org.max_risk) {
+        relax("max_risk", `max_risk ${mine.max_risk} is above the org's ${org.max_risk}`);
+      }
+    }
+    if (orgAuto.allowed_paths !== undefined && layerAuto.allowed_paths !== undefined) {
+      mine.allowed_paths.forEach((entry, index) => {
+        if (withinList(entry, org.allowed_paths)) return;
+        add(
+          ["review", "auto_approve", "allowed_paths", index],
+          label("allowed_paths"),
+          `Widens the org's [review.auto_approve] allowed_paths: "${entry}" is not in it`,
+        );
+      });
+    }
+    for (const key of ["require_green_checks", "require_second_opinion"] as const) {
+      if (orgAuto[key] === true && layerAuto[key] === false) relax(key, `the org sets ${key}`);
+    }
+  }
+
   const orgLedger = floor.raw.ledger;
   const layerLedger = layer.raw.ledger;
   if (isTable(orgLedger) && orgLedger.log_prompts === false && isTable(layerLedger)) {
@@ -491,6 +566,29 @@ function mergeLayer(
           section[kind] = clone(table);
         }
         out.integrations = section;
+        break;
+      }
+      case "review": {
+        const section: Table = isTable(out.review) ? clone(out.review) : {};
+        for (const [field, fieldValue] of Object.entries(isTable(value) ? value : {})) {
+          if (field === "routes") {
+            const routes = Array.isArray(section.routes) ? (section.routes as Table[]) : [];
+            (Array.isArray(fieldValue) ? fieldValue : []).forEach((route, index) => {
+              if (!isTable(route) || isBlocked("review", "routes", index)) return;
+              const at = routes.findIndex((r) => r.id === route.id);
+              if (at === -1) routes.push(clone(route));
+              else routes[at] = clone(route);
+            });
+            section.routes = routes;
+          } else if (field === "auto_approve" && isTable(fieldValue)) {
+            const auto: Table = isTable(section.auto_approve) ? clone(section.auto_approve) : {};
+            for (const [key, setting] of Object.entries(fieldValue)) {
+              if (!isBlocked("review", "auto_approve", key)) auto[key] = clone(setting);
+            }
+            section.auto_approve = auto;
+          } else section[field] = deepMerge(section[field], fieldValue);
+        }
+        out.review = section;
         break;
       }
       case "ledger":

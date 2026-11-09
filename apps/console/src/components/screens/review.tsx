@@ -59,6 +59,28 @@ export function exceptionParts(item: ReviewItem) {
   };
 }
 
+/** How the item reached its owners, and why, in one line: the route, what it matched, escalation. */
+export function routeText(item: ReviewItem, now: Date): string | undefined {
+  const route = item.route;
+  if (!route) return undefined;
+  const parts = [`Routed by ${route.from}${route.why ? `: ${route.why}` : ""}`];
+  if (route.escalated_from && route.escalated_from.length > 0) {
+    parts.push(`escalated from ${route.escalated_from.join(", then ")}`);
+  }
+  if (route.github) {
+    const named = [...route.github.users.map((u) => `@${u}`), ...route.github.teams];
+    if (named.length > 0) parts.push(`on GitHub ${named.join(", ")}`);
+  }
+  if (route.escalates_at && item.state === "open") {
+    parts.push(
+      Date.parse(route.escalates_at) > now.getTime()
+        ? `moves on at ${formatTime(route.escalates_at)} if nobody answers`
+        : "moving on to the next route",
+    );
+  }
+  return parts.join(" · ");
+}
+
 /** The review list query for the team on screen: every item with the admin token and no team. */
 export function reviewQuery(state: string, team: string | undefined, limit = 100) {
   return `/v1/review-items${query({ state, team, limit })}`;
@@ -181,6 +203,11 @@ function ItemCard({
               .filter(Boolean)
               .join(" · ")}
           </p>
+          {routeText(item, now) ? (
+            <p className="mt-0.5 text-muted-foreground text-xs" data-testid="item-route">
+              {routeText(item, now)}
+            </p>
+          ) : null}
         </div>
 
         {exception ? (

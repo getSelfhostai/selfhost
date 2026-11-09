@@ -1,4 +1,5 @@
 import {
+  databaseOf,
   type Ledger,
   mapClaudeCodeHook,
   mapCodexHook,
@@ -781,6 +782,129 @@ high_risk_paths = ["db/**"]
         ["quality", 60, "digest"],
         ["blocked_action", 40, "digest"],
       ]);
+    });
+
+    it("escalates an item nobody answered on its route, on the clock, once per step", async () => {
+      const toml = `[review]
+fallback = ["lead@example.com"]
+[[review.routes]]
+id = "db"
+kinds = ["pr"]
+paths = ["db/**"]
+to = ["dba@example.com"]
+escalate_after_minutes = 30
+[[review.routes]]
+id = "db-backup"
+paths = ["db/**"]
+to = ["backup-dba@example.com"]
+escalate_after_minutes = 60
+`;
+      const { list, refresh, append, setNow } = await setup(toml);
+      await append([pullRequest(NOW, 40)]);
+      await refresh();
+      const [first] = await all(list);
+      expect(first).toMatchObject({
+        owners: ["dba@example.com"],
+        route: {
+          step: "route",
+          id: "db",
+          why: "kind pr, path db/migrations/0042_orders.sql",
+          escalates_at: at(NOW, 30),
+        },
+      });
+
+      setNow(at(NOW, 29));
+      expect(await refresh()).toEqual({ created: 0, updated: 0 });
+      // A later signal for the same pull request keeps the clock running.
+      await append([pullRequest(at(NOW, 20), 45)]);
+      setNow(at(NOW, 29.5));
+      await refresh();
+      expect((await all(list))[0]?.route?.escalates_at).toBe(at(NOW, 30));
+
+      setNow(at(NOW, 31));
+      expect(await refresh()).toEqual({ created: 0, updated: 1 });
+      const [second] = await all(list);
+      expect(second?.owners).toEqual(["backup-dba@example.com", "dba@example.com"]);
+      expect(second?.route).toMatchObject({
+        id: "db-backup",
+        escalated_from: ["db"],
+        escalates_at: at(NOW, 91),
+      });
+      expect(await refresh()).toEqual({ created: 0, updated: 0 });
+
+      // A new signal does not undo an escalation.
+      await append([pullRequest(at(NOW, 40), 50)]);
+      setNow(at(NOW, 41));
+      await refresh();
+      expect((await all(list))[0]?.route?.id).toBe("db-backup");
+
+      setNow(at(NOW, 92));
+      expect(await refresh()).toEqual({ created: 0, updated: 1 });
+      const [third] = await all(list);
+      expect(third?.owners).toEqual([
+        "lead@example.com",
+        "backup-dba@example.com",
+        "dba@example.com",
+      ]);
+      expect(third?.route).toEqual({
+        step: "fallback",
+        from: "[review] fallback",
+        why: 'nobody answered on [[review.routes]] "db-backup"',
+        escalated_from: ["db", "db-backup"],
+      });
+      setNow(at(NOW, 500));
+      expect(await refresh()).toEqual({ created: 0, updated: 0 });
+      expect(validateReviewItem(third).ok).toBe(true);
+    });
+
+    it("routes by role on a team server, and an exception only to people who may approve it", async () => {
+      const { ledger, refresh } = await setup();
+      await ledger.teams.createTeam({ id: "red", name: "Red" });
+      await ledger.teams.setPolicy(
+        "red",
+        `version = 1
+[[review.routes]]
+id = "guards"
+rule_ids = ["guard.*"]
+to = ["role:member", "role:admin", "dev@example.com"]
+`,
+      );
+      const db = databaseOf(ledger);
+      for (const [id, role] of [
+        ["olga@example.com", "owner"],
+        ["adam@example.com", "admin"],
+        ["dev@example.com", "member"],
+        ["mia@example.com", "member"],
+      ]) {
+        await db.query("INSERT INTO people (team_id, id, role) VALUES ('red', $1, $2)", [id, role]);
+      }
+      const t = at(NOW, -5);
+      const id = requestId(t, 1);
+      await ledger.append(
+        [
+          exceptionBlock(
+            t,
+            { id, fingerprint: "f1" },
+            { team: "red", actor: { kind: "person", id: PERSON } },
+          ),
+        ],
+        { team: "red" },
+      );
+      await ledger.append(
+        [verdict(t, { rule_id: "guard.secret_read", verdict: "block" }, { team: "red" })],
+        {
+          team: "red",
+        },
+      );
+      await refresh();
+      const red = openReviewList(ledger, { team: "red", now: () => new Date(NOW) });
+      const items = await all(red);
+      const exception = items.find((item) => item.kind === "exception");
+      const blocked = items.find((item) => item.kind === "blocked_action");
+      // Members may not approve another person's exception, and dev asked for it.
+      expect(exception?.owners).toEqual(["adam@example.com"]);
+      expect(exception?.route).toMatchObject({ step: "route", id: "guards" });
+      expect(blocked?.owners).toEqual(["dev@example.com", "mia@example.com", "adam@example.com"]);
     });
 
     it("keeps each team's items to its own list and uses the team's stored policy", async () => {

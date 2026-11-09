@@ -24,7 +24,8 @@
       { "file": "webhooks/pull_request.opened.json", "case": "alice opens pull request 101 from a claude/ branch: an agent pull request, at head 5786c5c9." },
       { "file": "webhooks/pull_request.synchronize.json", "case": "A push moves pull request 101 to head b2e4f6a8; it already carries selfhost:risk-low and selfhost:agent-claude-code." },
       { "file": "webhooks/pull_request.labeled.json", "case": "carol adds selfhost:risk-medium to pull request 101 by hand." },
-      { "file": "webhooks/pull_request.opened.person.json", "case": "bob opens plain pull request 106: no agent, so nothing is synced." }
+      { "file": "webhooks/pull_request.opened.person.json", "case": "bob opens plain pull request 106: no agent, so nothing is synced." },
+      { "file": "webhooks/check_suite.completed.json", "case": "Another app's check suite finishes green on head 5786c5c9 of pull request 101: auto-approve looks at it again." }
     ]
   }
 }

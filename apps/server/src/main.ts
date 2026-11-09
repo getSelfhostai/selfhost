@@ -9,7 +9,7 @@ import { githubAppFromEnv, githubConfig } from "./github.js";
 import { notifyFromEnv, startNotifyJob } from "./notify.js";
 import { clonesUnder } from "./provenance.js";
 import { serverConfig, startRetentionJob } from "./retention.js";
-import { startReviewRefreshJob } from "./review.js";
+import { clonesCodeowners, startReviewRefreshJob } from "./review.js";
 import { startTraceExportJob } from "./runs.js";
 import { signinFromEnv } from "./signin.js";
 import { loadApiToken } from "./token.js";
@@ -103,7 +103,10 @@ const retention =
 const reviews =
   process.env.SELFHOST_REVIEW_REFRESH === "off"
     ? undefined
-    : startReviewRefreshJob(ledger, { config });
+    : startReviewRefreshJob(ledger, {
+        config,
+        ...(clones ? { codeowners: clonesCodeowners(clones) } : {}),
+      });
 
 // SELFHOST_TRACE_EXPORT=off stops sending finished runs to each team's [integrations.tracer],
 // for installs where another server sends them from the same database.

@@ -8,15 +8,26 @@ import {
 } from "@selfhost/ledger";
 import {
   type LedgerEvent,
+  PERSON_ROLES,
   PERSON_VERDICTS,
+  type PersonRole,
   type ResolvedSelfhostConfig,
   type ReviewAnswer,
   type ReviewItem,
 } from "@selfhost/schema";
-import { actionsFor, type BuildContext, deliveryOf, mergeItem, newItem } from "./build.js";
+import {
+  actionsFor,
+  type BuildContext,
+  deliveryOf,
+  mergeItem,
+  newItem,
+  routeContext,
+  routeInput,
+} from "./build.js";
+import { type CodeOwners, parseCodeOwners } from "./codeowners.js";
 import { decisionSubject, internalsOf, type ReviewList } from "./list.js";
 import { buildPolicyReport } from "./policy-report.js";
-import { routeItem } from "./routing.js";
+import { escalateRoute, routeItem } from "./routing.js";
 import { closedPullRequest, type Draft, draftFor } from "./signals.js";
 import {
   claimItem,
@@ -36,6 +47,11 @@ export interface RefreshOptions {
   config?: ResolvedSelfhostConfig;
   /** Default: the list's clock. */
   now?: () => Date;
+  /**
+   * The CODEOWNERS text of a repository (owner/name), for the `codeowners` target of
+   * [[review.routes]]. Default: none, so that target names nobody.
+   */
+  codeowners?: (repo: string) => Promise<string | undefined>;
 }
 
 export interface RefreshResult {
@@ -64,11 +80,15 @@ const json = <T>(value: unknown) => (typeof value === "string" ? JSON.parse(valu
 const later = (a: string, b: string) => (Date.parse(a) >= Date.parse(b) ? a : b);
 const union = (a: readonly string[], b: readonly string[]) => [...new Set([...a, ...b])];
 
+type Roles = Record<PersonRole, string[]>;
+
 interface Run {
   now: Date;
   configFor: (team: string | null) => ResolvedSelfhostConfig;
   result: RefreshResult;
   persons: Map<string, string | undefined>;
+  roles: Map<string, Roles>;
+  codeowners: (repo: string | undefined) => Promise<CodeOwners | undefined>;
 }
 
 /** Signals the list reads: everything that opens, adds to, closes or answers an item. */
@@ -124,13 +144,49 @@ async function teamConfigs(
   return (team) => (team === null ? defaults : (configs.get(team) ?? defaults));
 }
 
-/** A team's owners and admins, who approve its exceptions. */
-async function approvers(tx: Queryable, team: string): Promise<string[]> {
-  const rows = await tx.query<{ id: string }>(
-    `SELECT id FROM people WHERE team_id = $1 AND role IN ('owner', 'admin') ORDER BY id`,
+/** A team's people by role: owners and admins approve its exceptions; routes name roles. */
+async function teamRoles(tx: Queryable, team: string, run: Run): Promise<Roles> {
+  const cached = run.roles.get(team);
+  if (cached) return cached;
+  const rows = await tx.query<{ id: string; role: string }>(
+    "SELECT id, role FROM people WHERE team_id = $1 ORDER BY id",
     [team],
   );
-  return rows.map((row) => row.id);
+  const roles = Object.fromEntries(PERSON_ROLES.map((role) => [role, [] as string[]])) as Roles;
+  for (const row of rows) roles[row.role as PersonRole]?.push(row.id);
+  run.roles.set(team, roles);
+  return roles;
+}
+
+/** What routing needs about a team scope: its people by role and approvers, on a team server. */
+async function teamRouting(
+  tx: Queryable,
+  team: string | null,
+  run: Run,
+): Promise<Pick<BuildContext, "roles" | "approvers">> {
+  if (team === null) return {};
+  const roles = await teamRoles(tx, team, run);
+  return { roles, approvers: [...roles.owner, ...roles.admin].sort() };
+}
+
+/** Parsed CODEOWNERS per repository, read once per refresh. */
+function codeownersReader(
+  read: RefreshOptions["codeowners"],
+): (repo: string | undefined) => Promise<CodeOwners | undefined> {
+  const parsed = new Map<string, Promise<CodeOwners | undefined>>();
+  return (repo) => {
+    if (!read || !repo) return Promise.resolve(undefined);
+    const key = repo.toLowerCase();
+    let found = parsed.get(key);
+    if (!found) {
+      found = read(repo).then(
+        (text) => (text === undefined ? undefined : parseCodeOwners(text)),
+        () => undefined,
+      );
+      parsed.set(key, found);
+    }
+    return found;
+  };
 }
 
 /** The person a session belongs to: the actor of its first event written as a person. */
@@ -249,7 +305,8 @@ async function attachTo(
     if (team !== null && stored.team !== team) return undefined;
     if (stored.item.state !== "open") return stored.item.id;
     const paths = union(stored.paths, draft.paths);
-    const item = mergeItem(stored.item, paths, draft, event, ctx);
+    const tool = stored.tool ?? draft.tool;
+    const item = mergeItem(stored.item, paths, { ...draft, ...(tool ? { tool } : {}) }, event, ctx);
     const written = await updateItem(tx, {
       ...stored,
       item,
@@ -273,16 +330,17 @@ async function applyDraft(
 ): Promise<string | undefined> {
   const draft = draftFor(event);
   if (!draft) return undefined;
+  const config = run.configFor(team);
+  const codeowners = config.review.routes.length > 0 ? await run.codeowners(event.repo) : undefined;
   const ctx: BuildContext = {
-    config: run.configFor(team),
+    config,
     now: run.now,
     team,
     ...(draft.person
       ? {}
       : { sessionPerson: await sessionPerson(tx, team, event.session_id, run) }),
-    ...(draft.kind === "exception" && team !== null
-      ? { approvers: await approvers(tx, team) }
-      : {}),
+    ...(await teamRouting(tx, team, run)),
+    ...(codeowners ? { codeowners } : {}),
   };
   if (draft.attach && draft.id !== undefined) {
     return attachTo(tx, { ...draft, id: draft.id }, event, team, ctx, run);
@@ -319,8 +377,8 @@ async function applyDraft(
       return item.id;
     }
     const paths = union(open.paths, draft.paths);
-    const item = mergeItem(open.item, paths, draft, event, ctx);
     const tool = open.tool ?? draft.tool;
+    const item = mergeItem(open.item, paths, { ...draft, ...(tool ? { tool } : {}) }, event, ctx);
     const written = await updateItem(tx, {
       ...open,
       item,
@@ -397,6 +455,45 @@ async function endWaits(tx: Queryable, run: Run): Promise<void> {
   }
 }
 
+/**
+ * Moves every open item whose route's escalates_at has passed to the next route that matches it
+ * (or [review] fallback), as escalateRoute decides. The earlier owners keep the item too.
+ */
+async function escalate(tx: Queryable, run: Run): Promise<void> {
+  const rows = await tx.query<{ id: string }>(
+    `SELECT id::text AS id FROM review_items
+     WHERE state = 'open' AND (body#>>'{route,escalates_at}')::timestamptz <= $1::timestamptz
+     ORDER BY body#>>'{route,escalates_at}', id`,
+    [run.now.toISOString()],
+  );
+  for (const { id } of rows) {
+    const stored = await getItem(tx, id, {});
+    const { item } = stored ?? {};
+    if (!stored || !item || item.state !== "open" || !item.route) continue;
+    const config = run.configFor(stored.team);
+    const codeowners = await run.codeowners(item.repo);
+    const ctx = {
+      config,
+      ...(await teamRouting(tx, stored.team, run)),
+      ...(codeowners ? { codeowners } : {}),
+    };
+    const input = routeInput(item, stored.paths, stored.tool ? { tool: stored.tool } : {});
+    const { routing } = escalateRoute(
+      config,
+      input,
+      { owners: item.owners, route: item.route },
+      routeContext(item, ctx, run.now),
+    );
+    const next: ReviewItem = {
+      ...item,
+      owners: routing.owners,
+      route: routing.route,
+      updated_at: run.now.toISOString(),
+    };
+    if (await updateItem(tx, { ...stored, item: next })) run.result.updated += 1;
+  }
+}
+
 /** Monday 00:00 UTC of the week `now` falls in. */
 export function weekStart(now: Date): Date {
   const day = Math.floor(now.getTime() / DAY_MS) * DAY_MS;
@@ -430,7 +527,11 @@ async function weeklyReports(tx: Queryable, run: Run): Promise<void> {
       { since, until, now: run.now, rules: config.rules },
     );
     if (report.source_event_ids.length === 0) continue;
-    const { owners, route } = routeItem(config, { paths: [] });
+    const { owners, route } = routeItem(
+      config,
+      { paths: [], kind: "policy_report", risk: report.risk.score },
+      { ...(team === null ? {} : { roles: await teamRoles(tx, team, run) }), now: until },
+    );
     const item: ReviewItem = {
       ...report,
       id: stableEventId(since.toISOString(), `review_item\n${scope}\n${key}`),
@@ -506,8 +607,9 @@ async function applyTimeouts(ledger: Ledger, db: Database, run: Run): Promise<vo
 /**
  * Brings the list up to date with the ledger: opens items for new signals (deduplicated by key,
  * grouped by run), adds repeats to the open item, closes items whose PR merged or closed or
- * whose session moved on, applies answers recorded on other paths, files last week's would-block
- * report and denies blocking approvals past their deadline. Safe to run often and from several
+ * whose session moved on, applies answers recorded on other paths, escalates items nobody
+ * answered on their route in time, files last week's would-block report and denies blocking
+ * approvals past their deadline. Safe to run often and from several
  * processes: every signal is read once, and refreshes take turns.
  */
 export async function refreshReviewList(
@@ -522,11 +624,14 @@ export async function refreshReviewList(
     configFor: await teamConfigs(ledger, db, options.config ?? internals.config),
     result: { created: 0, updated: 0 },
     persons: new Map(),
+    roles: new Map(),
+    codeowners: codeownersReader(options.codeowners),
   };
   await db.transaction(async (tx) => {
     await tx.query("SELECT pg_advisory_xact_lock($1)", [REVIEW_LOCK]);
     await readSignals(tx, run);
     await endWaits(tx, run);
+    await escalate(tx, run);
     await weeklyReports(tx, run);
   });
   await applyTimeouts(ledger, db, run);

@@ -216,6 +216,29 @@ export async function openWaitingItems(q: Queryable): Promise<StoredItem[]> {
   return rows.map(toStored);
 }
 
+/**
+ * Open items of these sessions or runs that an agent waits on, or that are exceptions, in the
+ * scope. Auto-approve reads them: a pull request whose run has one waits for a person.
+ */
+export async function openWaitsOf(
+  q: Queryable,
+  scope: Scope,
+  runs: { sessions: readonly string[]; runIds: readonly string[] },
+): Promise<ReviewItem[]> {
+  if (runs.sessions.length === 0 && runs.runIds.length === 0) return [];
+  const params: unknown[] = [JSON.stringify(runs.sessions), JSON.stringify(runs.runIds)];
+  const team = scoped(scope, params);
+  const rows = await q.query<{ body: unknown }>(
+    `SELECT body FROM review_items
+     WHERE state = 'open' AND (blocking OR kind = 'exception')
+       AND (session_id IN (SELECT jsonb_array_elements_text($1::text::jsonb))
+         OR body->>'run_id' IN (SELECT jsonb_array_elements_text($2::text::jsonb)))${team}
+     ORDER BY created_at, id`,
+    params,
+  );
+  return rows.map((row) => json<ReviewItem>(row.body));
+}
+
 /** true when any item, in any state, has this key in a team scope. */
 export async function hasItemWithKey(q: Queryable, team: string | null, key: string) {
   const rows = await q.query(

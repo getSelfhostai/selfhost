@@ -7,32 +7,98 @@ import {
   summarizeBrief,
 } from "@selfhost/brief";
 import type { Ledger } from "@selfhost/ledger";
-import { openReviewList, routeItem } from "@selfhost/review";
+import {
+  CODEOWNERS_PATHS,
+  type CodeOwners,
+  openReviewList,
+  parseCodeOwners,
+  type Routing,
+  routeItem,
+} from "@selfhost/review";
+import { CODEOWNERS_TARGET } from "@selfhost/schema";
 import { loadReceipt } from "./ee.js";
-import type { GitHubProviders } from "./github-pull.js";
+import type { GitHubProviders, PullContext, RiskAssessment } from "./github-pull.js";
+
+/** The CODEOWNERS of the pull request's repository at its base commit, read through the App. */
+async function codeownersAt(ctx: PullContext): Promise<CodeOwners | undefined> {
+  for (const path of CODEOWNERS_PATHS) {
+    const text = await ctx.reads.contents(path, ctx.pull.baseSha);
+    if (text !== undefined) return parseCodeOwners(text);
+  }
+  return undefined;
+}
+
+const usesCodeowners = (ctx: PullContext) =>
+  ctx.config.review.routes.some((route) => route.to.includes(CODEOWNERS_TARGET));
 
 /**
- * The owner the review list routes an agent pull request to. Its `pr` review item (by PR URL,
- * in the team's items when `team` is set) decides when there is one: the first of its owners.
- * Before the review list has one, `routeItem` routes the pull request the way the item will be:
+ * How the review list routes an agent pull request, read once per delivery. Its `pr` review
+ * item (by PR URL, in the team's items when `team` is set) decides when there is one. Before
+ * the review list has one, `routeItem` routes the pull request the way the item will be:
+ * `[[review.routes]]` (with CODEOWNERS read through the App when a route names it), else
  * `[review.owners]` globs on its changed files (old paths of renames too), else the person
  * whose session made its commits, else the team's members, else `[review] fallback`.
  */
-export function reviewOwner(ledger: Ledger, team: string | undefined): GitHubProviders["owner"] {
+export function reviewRouting(
+  ledger: Ledger,
+  team: string | undefined,
+): (ctx: PullContext & { risk?: RiskAssessment }) => Promise<Routing> {
   const list = openReviewList(ledger, team === undefined ? {} : { team });
-  return async (ctx) => {
+  const seen = new WeakMap<object, Promise<Routing>>();
+  const route = async (ctx: PullContext & { risk?: RiskAssessment }): Promise<Routing> => {
     const item = await list.pullRequest(ctx.pull.url);
-    if (item?.owners[0]) return item.owners[0];
+    if (item?.route && (item.owners.length > 0 || item.route.github)) {
+      return { owners: item.owners, route: item.route };
+    }
     const change = await ctx.reads.change();
     const person = change.run?.events.find((event) => event.actor.kind === "person")?.actor.id;
-    const { owners } = routeItem(ctx.config, {
-      paths: change.files.flatMap((file) =>
-        file.previousPath ? [file.path, file.previousPath] : [file.path],
-      ),
-      ...(person ? { person } : {}),
-      ...(team ? { team } : {}),
-    });
-    return owners[0];
+    const codeowners = usesCodeowners(ctx) ? await codeownersAt(ctx) : undefined;
+    return routeItem(
+      ctx.config,
+      {
+        kind: "pr",
+        repo: `${ctx.pull.owner}/${ctx.pull.repo}`,
+        paths: change.files.flatMap((file) =>
+          file.previousPath ? [file.path, file.previousPath] : [file.path],
+        ),
+        ...(ctx.risk?.score !== undefined ? { risk: ctx.risk.score } : {}),
+        ...(person ? { person } : {}),
+        ...(team ? { team } : {}),
+      },
+      codeowners ? { codeowners } : {},
+    );
+  };
+  return (ctx) => {
+    let found = seen.get(ctx.reads);
+    if (!found) {
+      found = route(ctx);
+      seen.set(ctx.reads, found);
+    }
+    return found;
+  };
+}
+
+/** The owner the review list routes an agent pull request to: the first owner of its routing. */
+export function reviewOwner(
+  ledger: Ledger,
+  team: string | undefined,
+  routing = reviewRouting(ledger, team),
+): GitHubProviders["owner"] {
+  return async (ctx) => (await routing(ctx)).owners[0];
+}
+
+/**
+ * The GitHub accounts the pull request's route names (`@` targets and CODEOWNERS), asked to
+ * review it besides the owner. Without `[[review.routes]]` nothing is read and there are none.
+ */
+export function reviewRoute(
+  ledger: Ledger,
+  team: string | undefined,
+  routing = reviewRouting(ledger, team),
+): GitHubProviders["route"] {
+  return async (ctx) => {
+    if (ctx.config.review.routes.length === 0) return undefined;
+    return (await routing(ctx)).route;
   };
 }
 

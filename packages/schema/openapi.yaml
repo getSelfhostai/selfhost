@@ -2955,6 +2955,7 @@ components:
             - mcp
             - api
             - timeout
+            - auto_approve
         key:
           minLength: 1
           maxLength: 256

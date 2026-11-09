@@ -107,19 +107,59 @@ Approvals, questions and alerts older than seven days open nothing.
 
 ## Routing
 
-`routeItem(config, { paths, person?, team? })` picks the owners from `selfhost.toml`, in three
-steps; the first that names anyone wins, and the item records which in `route`:
+`routeItem(config, input, ctx?)` picks the owners from `selfhost.toml`. `input` is what the item
+is about: `paths`, `kind`, `repo`, `risk` (after `high_risk_paths`), `ruleId`, `tool`, `person`
+and `team`. The item records the result in `route`.
+
+First, `[[review.routes]]`, in file order: the first route whose match fields all match the item
+(`kinds`, `repos` globs, `paths` globs, `min_risk`, `rule_ids` globs, `tools` globs; a route with
+none matches everything) and whose `to` names anyone takes it, with `route.step` `route`,
+`route.id` and `route.why` (what it matched on). A route that matches but names nobody here is
+skipped. `to` targets:
+
+| Target | Resolves to |
+| --- | --- |
+| a person id | that person |
+| `role:owner`, `role:admin`, `role:member` | the team's people with that role, on a team server; nobody on a laptop |
+| `team:<name>` | `[teams.<name>] members` |
+| `@<login>` | the GitHub user, asked to review a pull request, and the person `[review] github_logins` maps the login to |
+| `@<org>/<team>` | the GitHub team, asked to review a pull request |
+| `codeowners` | the CODEOWNERS owners of the item's files (`.github/CODEOWNERS`, `CODEOWNERS`, then `docs/CODEOWNERS`; last matching line wins): `@login` and `@org/team` as above, emails as person ids |
+
+GitHub accounts only count as "names anyone" for `pr` items, and are kept in `route.github`.
+CODEOWNERS comes from `RefreshOptions.codeowners` (the server reads it from its clones under
+`SELFHOST_GIT_CLONES`, the GitHub App through the installation at the base commit, and
+`selfhost review routes` from the working tree); where it cannot be read, `codeowners` names
+nobody. An exception item on a team server keeps only the people who may approve it (owners and
+admins, without the requester unless `self_approve_exceptions`), as the API enforces.
+
+When no route takes it, the default steps run; the first that names anyone wins:
 
 1. Owner: the people of every `[review.owners]` glob that matches one of the item's files, in file
    order; else the person whose session raised it (the signal's person actor or `data.owner`, else
    the first person actor in that session).
-2. Team: the members of the item's team (`team` on the event) in `[teams.<name>]`.
+2. Team: the members of the item's team (`team` on the event) in `[teams.<name>]`, or for an
+   exception on a team server, the team's owners and admins.
 3. Fallback: `[review] fallback`.
 
 When none names anyone, `owners` is empty and `route.step` is `none`. Items built from a team's
 events use the policy in use for that team on a team server (its stored `selfhost.toml` on top
-of its org's floor), else the list's config. Since events go to the team that owns their run's
-repo, a run in another team's repo is reviewed in that team's list, under its routing.
+of its org's floor, whose routes come first and cannot be changed by the team or repo file),
+else the list's config. Since events go to the team that owns their run's repo, a run in
+another team's repo is reviewed in that team's list, under its routing.
+
+### Escalation
+
+A route with `escalate_after_minutes` sets `route.escalates_at` (from the item's first signal,
+or from when a later signal moved it to that route). A refresh after that time, with the item
+still open, moves it with `escalateRoute` to the next route after it that matches and names
+anyone, else `[review] fallback`: the new people come first, the earlier owners stay, and
+`route.escalated_from` lists the routes it left. With nowhere left to go it keeps its owners
+and stops escalating. Later signals for an escalated item do not route it back. Escalation
+never answers an item; a blocking approval still times out at its `deadline`.
+
+`explainRoutes` returns every route checked, the winner and the escalation chain, for
+`selfhost review routes`.
 
 ## Delivery and timeout
 
