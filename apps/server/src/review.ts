@@ -1,7 +1,11 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { Ledger } from "@selfhost/ledger";
 import {
   AlreadyAnsweredError,
+  CODEOWNERS_PATHS,
   openReviewList,
+  type RefreshOptions,
   type RefreshResult,
   ReviewInputError,
   ReviewItemNotFoundError,
@@ -27,6 +31,7 @@ import {
 import type { Context, Env, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { raiseBudgetAlerts } from "./budget-alerts.js";
+import type { GitClones } from "./provenance.js";
 import { teamConfig, withRunLinks } from "./runs.js";
 
 /** A decision or snooze is a few fields; anything this big is not one. */
@@ -314,8 +319,29 @@ export function reviewRoutes<E extends Env>(
   });
 }
 
+/**
+ * CODEOWNERS from the server's clones (SELFHOST_GIT_CLONES), for the `codeowners` target of
+ * [[review.routes]] on items the review list builds. A repository with no clone has none.
+ */
+export function clonesCodeowners(clones: GitClones): NonNullable<RefreshOptions["codeowners"]> {
+  return async (repo) => {
+    const dir = clones.dir(repo);
+    if (!dir) return undefined;
+    for (const path of CODEOWNERS_PATHS) {
+      try {
+        return await readFile(join(dir, path), "utf8");
+      } catch {
+        // GitHub reads the first of these that exists.
+      }
+    }
+    return undefined;
+  };
+}
+
 export interface ReviewRefreshJobOptions {
   config?: ResolvedSelfhostConfig;
+  /** CODEOWNERS of a repository, for [[review.routes]] `codeowners`. Default: none. */
+  codeowners?: RefreshOptions["codeowners"];
   /** Default: every 15 seconds. */
   intervalMs?: number;
   /** Where the job reports. Default: console.log. */
@@ -359,7 +385,13 @@ export function startReviewRefreshJob(
   };
   const run = () => {
     running ??= budgets()
-      .then(() => refreshReviewList(ledger, list))
+      .then(() =>
+        refreshReviewList(
+          ledger,
+          list,
+          options.codeowners ? { codeowners: options.codeowners } : {},
+        ),
+      )
       .then(
         (result) => {
           if (result.created > 0 || result.updated > 0) {

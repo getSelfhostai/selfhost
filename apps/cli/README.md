@@ -33,6 +33,35 @@ share, then every request type that crossed `--threshold` percent of a day's spe
 it crossed and the days before. `--by` takes `request_type`, `agent`, `model` and `person`; flags
 are always by request type. See [`packages/spend`](../../packages/spend/README.md).
 
+Each row and the total also show the prompt cache hit rate: cache reads over cache reads plus
+uncached input plus cache writes (`cache_hit_rate` in `--json`). A session that reported no cache
+read or write at all is left out and its group reads `unknown`, not 0%: some agents' logs carry
+no cache fields. Sessions that cost at least `[alerts] cache_tip_usd` (default $5) at a hit rate
+under `cache_hit_floor` (default 0.5) get one `Cost tip:` line each (`cache_tips` in `--json`).
+While `selfhost import --watch` runs, a session past `cache_min_requests` (default 20) whose hit
+rate over its last 10 requests falls under the floor raises one `alert.raised` event
+(`data.alert: "cache_hit_low"`) naming the usual causes: a value that changes early in the
+prompt, tool lists that reorder, model switches. The team server raises the same alert for the
+sessions it receives (`SELFHOST_CACHE_ALERTS=off` stops it).
+
+`selfhost tail [--agent <agent>] [--repo <owner/name>] [--person <id>] [--kind <kinds>]
+[--session <id>] [--since 15m] [--json]` streams agent activity as it lands, one line each: time,
+who, agent, what happened (session start and end, prompt, tool call with its redacted input, rule
+`BLOCKED` or `ASKED` with the rule id, or `would block` in observe, cost with the session's cache
+hit rate so far, alerts, review items that opened) and the link to its run in the console.
+`--kind` takes event kinds or their first part (`tool`, `policy`, `cost`, `alert`, `session`) and
+`review`; `--json` prints one `selfhost.tail_line/v1` object per line. Prompt text never shows, and
+tool input only as the run view shows it.
+
+- On a laptop it never holds the embedded ledger open while `selfhost import --watch` runs: the
+  watcher appends each event it writes to `~/.selfhost/feed/` (redacted, two days kept, this user
+  only) and the tail follows that. Without a watcher it reads the hook spool itself (no model
+  costs, which come from the session logs only the watcher imports) and switches to the feed
+  once one starts. `--since` without a watcher opens the ledger once, briefly, to read the past.
+- With `DATABASE_URL` it polls Postgres directly.
+- In a team it follows the team server (`GET /v1/events/tail`, a long poll), which shows the
+  person only the teams they are in; `--local` follows this machine instead.
+
 `selfhost console [--port 4400] [--host 127.0.0.1] [--no-open] [--json]` serves the web console
 ([`apps/console`](../console/README.md)) and the API on this machine's ledger (the one `selfhost
 import` writes, or `--database` / `--data-dir`) and opens it in the browser, signed in: it prints
@@ -465,6 +494,14 @@ and `--cursor` page through. Answer an item with `selfhost review approve|deny <
 <text>]` (the same as `selfhost inbox approve|deny`) or `selfhost decide <item-id>
 approve|deny|answer`; the next `review list` shows it answered. See [`packages/review`](../../packages/review/README.md).
 
+`selfhost review routes` explains which `[[review.routes]]` entry an item takes and why:
+every route in the order they are checked, with what it matched or the first thing that did
+not, who it names (and why a matching route names nobody here, such as `role:` targets on a
+laptop), who gets the item and where it escalates when nobody answers. `--item <id>` reads an
+item from the local review list; otherwise `--kind` (default `pr`), `--repo`, `--path` (repeat
+it), `--risk`, `--rule`, `--tool`, `--team` and `--person` describe one. CODEOWNERS comes from
+the repository it runs in. It writes nothing; `--json` prints `selfhost.review_routes/v1`.
+
 ## Inbox
 
 `selfhost inbox [--all] [--json]` lists the review items waiting on you, ranked like the review
@@ -551,11 +588,11 @@ runs exist. Nothing is posted to GitHub. The scoring is commercial code in
 `selfhost review setup [pr-agent|claude-code-action|coderabbit]` wires an existing AI reviewer
 into the repository; selfhost writes no reviewer of its own. It writes one file, pinned:
 
-| Tool                 | File                                          | Runs on                                                                    |
-| -------------------- | --------------------------------------------- | -------------------------------------------------------------------------- |
-| `pr-agent`           | `.github/workflows/selfhost-pr-agent.yml`     | The PR-Agent image by digest, on the secret `OPENAI_KEY` (`ANTHROPIC_KEY` with an `anthropic/` model) |
-| `claude-code-action` | `.github/workflows/selfhost-claude-review.yml` | `anthropics/claude-code-action` by commit, on the secret `ANTHROPIC_API_KEY` |
-| `coderabbit`         | `.coderabbit.yaml`                            | The CodeRabbit GitHub App, on CodeRabbit's own plan                        |
+| Tool                 | File                                           | Runs on                                                                                               |
+| -------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `pr-agent`           | `.github/workflows/selfhost-pr-agent.yml`      | The PR-Agent image by digest, on the secret `OPENAI_KEY` (`ANTHROPIC_KEY` with an `anthropic/` model) |
+| `claude-code-action` | `.github/workflows/selfhost-claude-review.yml` | `anthropics/claude-code-action` by commit, on the secret `ANTHROPIC_API_KEY`                          |
+| `coderabbit`         | `.coderabbit.yaml`                             | The CodeRabbit GitHub App, on CodeRabbit's own plan                                                   |
 
 The tool and its settings come from `[integrations.reviewer]` (`api_key_env` names the secret,
 `model`, `pull_requests`, `style`) when it picks the same tool; `--model`, `--all-prs` and

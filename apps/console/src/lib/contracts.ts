@@ -46,6 +46,10 @@ export interface RunReport {
     cost_usd: number;
     /** Every token count added up. */
     tokens: number;
+    /** Share of input read from the prompt cache; null when unknown. Absent on older servers. */
+    cache_hit_rate?: number | null;
+    /** One line when the run cost a lot at a low hit rate. */
+    cache_tip?: string | null;
   };
   events: LedgerEvent[];
   /** second_opinions: the newest verdict of each AI reviewer on the pull request. */

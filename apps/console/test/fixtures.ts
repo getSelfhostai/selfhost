@@ -68,6 +68,7 @@ const totals = {
   output_tokens: 200_000,
   cache_read_tokens: 500_000,
   cache_write_tokens: 100_000,
+  cache_hit_rate: 0.5,
   requests: 310,
   sessions: 12,
   prs_opened: 6,

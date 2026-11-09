@@ -53,7 +53,10 @@ export interface ReviewListReport extends ReviewItemsPage {
 const TITLE_WIDTH = 60;
 
 /** selfhost.toml as the other commands find it, or the defaults when there is none. */
-function loadConfig(options: ReviewListCommandOptions, io: ReviewListIo): ResolvedSelfhostConfig {
+export function reviewConfig(
+  options: Pick<ReviewListCommandOptions, "config">,
+  io: ReviewListIo,
+): ResolvedSelfhostConfig {
   const location = findConfig(io.cwd, options.config, io.env, io.configPath);
   if (location && !existsSync(location.path)) throw new Error(`${location.path} does not exist`);
   const parsed = parseConfig(location ? policyText(location).text : "version = 1\n");
@@ -133,7 +136,7 @@ export async function runReviewList(
 ): Promise<ReviewListReport> {
   const state = parseState(options.state) ?? "open";
   const limit = parseLimit(options.limit);
-  const config = loadConfig(options, io);
+  const config = reviewConfig(options, io);
   const target =
     ledger ??
     (await openLedger({ url: options.database ?? io.env.DATABASE_URL, dataDir: options.dataDir }));
@@ -173,7 +176,7 @@ const REFRESH_EVERY_MS = 1000;
  */
 export function localReviewList(io: ReviewListIo) {
   return async (ledger: Ledger): Promise<ReviewList> => {
-    const config = loadConfig({}, io);
+    const config = reviewConfig({}, io);
     const list = openReviewList(ledger, { config, now: () => io.now ?? new Date() });
     let last = Number.NEGATIVE_INFINITY;
     const fresh = async () => {

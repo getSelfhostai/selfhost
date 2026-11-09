@@ -1632,6 +1632,114 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /v1/events/tail:
+    get:
+      operationId: tailEvents
+      summary: The events that reached the ledger since the last call, for selfhost tail.
+      description: "The admin token, or a person token of anyone in the team. A long poll in ingest order: pass the cursor of the previous answer as after, and wait to hold the request until something lands. The admin token reads every team and events with no team; a person token reads the teams of its org it is in. Events are redacted under each team's current [ledger] and [[redaction]] settings, as GET /v1/runs/{run_id} shows them, so prompt text appears only while log_prompts is on."
+      parameters:
+        - name: after
+          in: query
+          required: false
+          description: "cursor of the previous answer: only events that reached the ledger after those. Without it the answer has no events and the cursor of now, unless since is given."
+          schema:
+            minLength: 1
+            maxLength: 200
+            type: string
+        - name: since
+          in: query
+          required: false
+          description: "Events that happened at or after this time. Without after, the first answer starts with them. Default: 24 hours before now."
+          schema:
+            format: date-time
+            type: string
+        - name: kind
+          in: query
+          required: false
+          description: Comma-separated event kinds, or their first part (tool for tool.called and tool.result).
+          schema:
+            pattern: ^(?:session\.started|session\.ended|prompt\.submitted|tool\.called|tool\.result|approval\.requested|decision\.recorded|cost\.recorded|commit\.created|pr\.opened|pr\.merged|pr\.closed|policy\.evaluated|alert\.raised|config\.reported|session|prompt|tool|approval|decision|cost|commit|pr|policy|alert|config)(?:,(?:session\.started|session\.ended|prompt\.submitted|tool\.called|tool\.result|approval\.requested|decision\.recorded|cost\.recorded|commit\.created|pr\.opened|pr\.merged|pr\.closed|policy\.evaluated|alert\.raised|config\.reported|session|prompt|tool|approval|decision|cost|commit|pr|policy|alert|config))*$
+            type: string
+        - name: person
+          in: query
+          required: false
+          description: actor.id of a person.
+          schema:
+            minLength: 1
+            type: string
+        - name: agent
+          in: query
+          required: false
+          description: agent.vendor.
+          schema:
+            type: string
+            enum:
+              - claude_code
+              - codex
+              - opencode
+              - goose
+              - cursor
+              - copilot
+              - other
+        - name: repo
+          in: query
+          required: false
+          description: "owner/name: the event's repo, else its run's repo."
+          schema:
+            pattern: ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$
+            type: string
+        - name: session
+          in: query
+          required: false
+          description: session_id.
+          schema:
+            minLength: 1
+            type: string
+        - name: team
+          in: query
+          required: false
+          description: Only this team's events. A person token reads the teams of its org it is in, all of them by default.
+          schema:
+            minLength: 1
+            type: string
+        - name: wait
+          in: query
+          required: false
+          description: Seconds to hold the request open while there is nothing new.
+          schema:
+            minimum: 0
+            maximum: 30
+            default: 0
+            type: integer
+        - name: limit
+          in: query
+          required: false
+          schema:
+            minimum: 1
+            maximum: 1000
+            default: 200
+            type: integer
+      responses:
+        "200":
+          description: What landed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TailResponse"
+        "400":
+          description: Invalid query or cursor.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /v1/budget:
     get:
       operationId: getBudget
@@ -2165,7 +2273,7 @@ paths:
     get:
       operationId: getUsageCsv
       summary: The same rows as GET /v1/usage, as CSV.
-      description: "One line per row of GET /v1/usage for the same query, after a header line: the grouped dimensions, then usd, tokens, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, requests, sessions, prs_opened and prs_merged. Text that a spreadsheet would read as a formula starts with an apostrophe."
+      description: "One line per row of GET /v1/usage for the same query, after a header line: the grouped dimensions, then usd, tokens, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cache_hit_rate (empty when unknown), requests, sessions, prs_opened and prs_merged. Text that a spreadsheet would read as a formula starts with an apostrophe."
       parameters:
         - name: group_by
           in: query
@@ -2956,6 +3064,7 @@ components:
             - mcp
             - api
             - timeout
+            - auto_approve
         key:
           minLength: 1
           maxLength: 256
@@ -6365,6 +6474,7 @@ components:
         - output_tokens
         - cache_read_tokens
         - cache_write_tokens
+        - cache_hit_rate
         - requests
         - sessions
         - prs_opened
@@ -6394,6 +6504,13 @@ components:
           minimum: 0
           description: Input tokens written to the prompt cache.
           type: integer
+        cache_hit_rate:
+          description: "Share of input tokens read from the prompt cache, 0 to 1: cache reads over cache reads plus uncached input plus cache writes, counting only sessions that reported a cache read or write. null when no session in the group reported a cache read or write, as for agents whose logs carry no cache fields."
+          anyOf:
+            - minimum: 0
+              maximum: 1
+              type: number
+            - type: "null"
         requests:
           minimum: 0
           description: cost.recorded events, one per model request.
@@ -6422,6 +6539,7 @@ components:
         - output_tokens
         - cache_read_tokens
         - cache_write_tokens
+        - cache_hit_rate
         - requests
         - sessions
         - prs_opened
@@ -6473,6 +6591,13 @@ components:
           minimum: 0
           description: Input tokens written to the prompt cache.
           type: integer
+        cache_hit_rate:
+          description: "Share of input tokens read from the prompt cache, 0 to 1: cache reads over cache reads plus uncached input plus cache writes, counting only sessions that reported a cache read or write. null when no session in the group reported a cache read or write, as for agents whose logs carry no cache fields."
+          anyOf:
+            - minimum: 0
+              maximum: 1
+              type: number
+            - type: "null"
         requests:
           minimum: 0
           description: cost.recorded events, one per model request.
@@ -6559,6 +6684,7 @@ components:
               - output_tokens
               - cache_read_tokens
               - cache_write_tokens
+              - cache_hit_rate
               - requests
               - sessions
               - prs_opened
@@ -6610,6 +6736,13 @@ components:
                 minimum: 0
                 description: Input tokens written to the prompt cache.
                 type: integer
+              cache_hit_rate:
+                description: "Share of input tokens read from the prompt cache, 0 to 1: cache reads over cache reads plus uncached input plus cache writes, counting only sessions that reported a cache read or write. null when no session in the group reported a cache read or write, as for agents whose logs carry no cache fields."
+                anyOf:
+                  - minimum: 0
+                    maximum: 1
+                    type: number
+                  - type: "null"
               requests:
                 minimum: 0
                 description: cost.recorded events, one per model request.
@@ -6637,6 +6770,7 @@ components:
             - output_tokens
             - cache_read_tokens
             - cache_write_tokens
+            - cache_hit_rate
             - requests
             - sessions
             - prs_opened
@@ -6666,6 +6800,13 @@ components:
               minimum: 0
               description: Input tokens written to the prompt cache.
               type: integer
+            cache_hit_rate:
+              description: "Share of input tokens read from the prompt cache, 0 to 1: cache reads over cache reads plus uncached input plus cache writes, counting only sessions that reported a cache read or write. null when no session in the group reported a cache read or write, as for agents whose logs carry no cache fields."
+              anyOf:
+                - minimum: 0
+                  maximum: 1
+                  type: number
+                - type: "null"
             requests:
               minimum: 0
               description: cost.recorded events, one per model request.
@@ -8189,6 +8330,8 @@ components:
         - ended_at
         - cost_usd
         - tokens
+        - cache_hit_rate
+        - cache_tip
       properties:
         id:
           description: "Run id: the agent's session id."
@@ -8258,6 +8401,18 @@ components:
           minimum: 0
           description: Input, output, cache read and cache write tokens of those requests.
           type: integer
+        cache_hit_rate:
+          description: "Share of the run's input tokens read from the prompt cache, 0 to 1: cache reads over cache reads plus uncached input plus cache writes, counting only sessions that reported a cache read or write. null when the run reported no cache read or write."
+          anyOf:
+            - minimum: 0
+              maximum: 1
+              type: number
+            - type: "null"
+        cache_tip:
+          description: One line when the run cost at least [alerts] cache_tip_usd at a hit rate under cache_hit_floor, naming the usual causes; else null.
+          anyOf:
+            - type: string
+            - type: "null"
     RunPullRequest:
       additionalProperties: false
       title: RunPullRequest
@@ -8368,6 +8523,8 @@ components:
             - ended_at
             - cost_usd
             - tokens
+            - cache_hit_rate
+            - cache_tip
           properties:
             id:
               description: "Run id: the agent's session id."
@@ -8437,6 +8594,18 @@ components:
               minimum: 0
               description: Input, output, cache read and cache write tokens of those requests.
               type: integer
+            cache_hit_rate:
+              description: "Share of the run's input tokens read from the prompt cache, 0 to 1: cache reads over cache reads plus uncached input plus cache writes, counting only sessions that reported a cache read or write. null when the run reported no cache read or write."
+              anyOf:
+                - minimum: 0
+                  maximum: 1
+                  type: number
+                - type: "null"
+            cache_tip:
+              description: One line when the run cost at least [alerts] cache_tip_usd at a hit rate under cache_hit_floor, naming the usual causes; else null.
+              anyOf:
+                - type: string
+                - type: "null"
         events:
           description: The run's ledger events, oldest first, at most limit of them. Redacted under the team's current [ledger] and [[redaction]] settings, so prompt text appears only when log_prompts is on.
           type: array
@@ -8535,6 +8704,26 @@ components:
           anyOf:
             - type: string
             - type: "null"
+    TailResponse:
+      additionalProperties: false
+      title: TailResponse
+      type: object
+      required:
+        - schema
+        - events
+        - cursor
+      properties:
+        schema:
+          const: selfhost.tail/v1
+          type: string
+        events:
+          description: Oldest to reach the ledger first, at most limit. Redacted under each team's current [ledger] and [[redaction]] settings, as the run view shows them.
+          type: array
+          items:
+            $ref: "#/components/schemas/LedgerEvent"
+        cursor:
+          description: Pass as after to get what lands next.
+          type: string
     NotifyTarget:
       additionalProperties: false
       title: NotifyTarget

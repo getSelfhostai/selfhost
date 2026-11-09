@@ -101,6 +101,8 @@ import {
   SetPolicyRequestSchema,
   SetRoleRequestSchema,
   SnoozeRequestSchema,
+  TailQuerySchema,
+  TailResponseSchema,
   TeamInfoSchema,
   TeamInvitesResponseSchema,
   TeamLaptopsResponseSchema,
@@ -268,6 +270,7 @@ const COMPONENT_SCHEMAS: ReadonlyArray<readonly [name: string, schema: TSchema]>
   ["RunSummary", RunSummarySchema],
   ["RunPullRequest", RunPullRequestSchema],
   ["RunResponse", RunResponseSchema],
+  ["TailResponse", TailResponseSchema],
   ["NotifyTarget", NotifyTargetSchema],
   ["NotifySettings", NotifySettingsSchema],
   ["AddNotifyTargetRequest", AddNotifyTargetRequestSchema],
@@ -931,6 +934,20 @@ function openApiDocument(): Json {
           },
         },
       },
+      "/v1/events/tail": {
+        get: {
+          operationId: "tailEvents",
+          summary: "The events that reached the ledger since the last call, for selfhost tail.",
+          description: `${ROLE_NOTE.read} A long poll in ingest order: pass the cursor of the previous answer as after, and wait to hold the request until something lands. The admin token reads every team and events with no team; a person token reads the teams of its org it is in. Events are redacted under each team's current [ledger] and [[redaction]] settings, as GET /v1/runs/{run_id} shows them, so prompt text appears only while log_prompts is on.`,
+          parameters: queryParameters(TailQuerySchema),
+          responses: {
+            "200": { description: "What landed.", content: jsonContent("TailResponse") },
+            "400": errorResponse("Invalid query or cursor."),
+            ...authErrors,
+            "403": forbiddenResponse,
+          },
+        },
+      },
       "/v1/budget": {
         get: {
           operationId: "getBudget",
@@ -1121,7 +1138,7 @@ function openApiDocument(): Json {
           operationId: "getUsageCsv",
           summary: "The same rows as GET /v1/usage, as CSV.",
           description:
-            "One line per row of GET /v1/usage for the same query, after a header line: the grouped dimensions, then usd, tokens, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, requests, sessions, prs_opened and prs_merged. Text that a spreadsheet would read as a formula starts with an apostrophe.",
+            "One line per row of GET /v1/usage for the same query, after a header line: the grouped dimensions, then usd, tokens, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cache_hit_rate (empty when unknown), requests, sessions, prs_opened and prs_merged. Text that a spreadsheet would read as a formula starts with an apostrophe.",
           parameters: queryParameters(UsageQuerySchema),
           responses: {
             "200": {

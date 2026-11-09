@@ -8,6 +8,7 @@ import {
   MAX_CHECK_OUTPUT,
   type PullRequestRef,
   REVIEW_CHECK_NAME,
+  readHeadChecks,
   riskLabel,
   syncComment,
   syncPullRequest,
@@ -264,5 +265,89 @@ describe("syncComment", () => {
     await syncComment(octokit, pr, { body: `${RECEIPT}\nPassed.`, marker: RECEIPT });
     await syncPullRequest(octokit, pr, { labels: {}, brief: desired().brief });
     expect(github.pull(REPO, 101).comments).toHaveLength(2);
+  });
+});
+
+describe("approve", () => {
+  const APPROVE = "<!-- selfhost:auto-approve v1 -->";
+  const approve = { body: `${APPROVE}\nApproved: docs only.`, marker: APPROVE };
+
+  it("approves the head commit once, and again only after a push", async () => {
+    const first = await syncPullRequest(octokit, pr, { labels: {}, approve });
+    expect(first.writes).toEqual([{ action: "approve", commitId: HEAD }]);
+    const posted = github.writes.find((request) => request.path.endsWith("/reviews"));
+    expect(posted).toMatchObject({
+      method: "POST",
+      path: `/repos/${REPO}/pulls/101/reviews`,
+      body: { event: "APPROVE", commit_id: HEAD, body: approve.body },
+    });
+    expect(github.pull(REPO, 101).reviews).toEqual([
+      {
+        login: "selfhost[bot]",
+        type: "Bot",
+        state: "APPROVED",
+        body: approve.body,
+        commit_id: HEAD,
+      },
+    ]);
+    expect((await syncPullRequest(octokit, pr, { labels: {}, approve })).writes).toEqual([]);
+    const pushed = await syncPullRequest(
+      octokit,
+      { ...pr, headSha: NEXT_HEAD },
+      {
+        labels: {},
+        approve,
+      },
+    );
+    expect(pushed.writes).toEqual([{ action: "approve", commitId: NEXT_HEAD }]);
+  });
+
+  it("does not count a person's approval or another bot's as its own", async () => {
+    github
+      .pull(REPO, 101)
+      .reviews.push(
+        { login: "bob", state: "APPROVED", commit_id: HEAD, body: APPROVE },
+        { login: "other[bot]", type: "Bot", state: "APPROVED", commit_id: HEAD, body: "LGTM" },
+      );
+    expect((await syncPullRequest(octokit, pr, { labels: {}, approve })).writes).toEqual([
+      { action: "approve", commitId: HEAD },
+    ]);
+  });
+
+  it("never approves when desired leaves it out", async () => {
+    await syncPullRequest(octokit, pr, desired());
+    expect(github.writes.some((request) => request.path.endsWith("/reviews"))).toBe(false);
+  });
+});
+
+describe("readHeadChecks", () => {
+  it("reads check runs and commit statuses, leaving out selfhost's own", async () => {
+    const run = (id: number, name: string, status: string, conclusion: string | null) => ({
+      id,
+      name,
+      head_sha: HEAD,
+      external_id: null,
+      status,
+      conclusion,
+      output: { title: null, summary: null, text: null },
+    });
+    github.checkRuns.push(
+      run(1, "ci / test", "completed", "success"),
+      run(2, "ci / lint", "completed", "neutral"),
+      run(3, "ci / e2e", "in_progress", null),
+      run(4, "ci / deploy-preview", "completed", "failure"),
+      run(5, REVIEW_CHECK_NAME, "completed", "neutral"),
+    );
+    github.statuses.set(HEAD, [
+      { context: "netlify", state: "success" },
+      { context: "selfhost/receipt", state: "pending" },
+    ]);
+    expect(await readHeadChecks(octokit, pr)).toEqual([
+      { name: "ci / test", state: "passed" },
+      { name: "ci / lint", state: "passed" },
+      { name: "ci / e2e", state: "pending" },
+      { name: "ci / deploy-preview", state: "failed" },
+      { name: "netlify", state: "passed" },
+    ]);
   });
 });

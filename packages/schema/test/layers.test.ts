@@ -426,3 +426,113 @@ high_risk_paths = ["migrations/**"]`),
     expect(config.teams.platform?.rules).toEqual({});
   });
 });
+
+describe("review routes and auto-approve on the org floor", () => {
+  const ORG_REVIEW = `version = 1
+[[review.routes]]
+id = "prod-db"
+paths = ["db/**"]
+to = ["role:admin", "dba@example.com"]
+escalate_after_minutes = 30
+
+[review.auto_approve]
+enabled = true
+max_risk = 10
+allowed_paths = ["docs/**"]
+`;
+  const orgLayer: PolicyLayer = { kind: "org", name: "acme", text: ORG_REVIEW };
+
+  it("refuses a team route that changes an org route, and a looser auto-approve", () => {
+    const result = checkLayer(
+      ORG_REVIEW,
+      team(`[[review.routes]]
+id = "prod-db"
+paths = ["db/**"]
+to = ["dev@example.com"]
+
+[review.auto_approve]
+dry_run = false
+max_risk = 40
+allowed_paths = ["docs/**", "src/**"]`),
+    );
+    expect(floorErrors(result)).toEqual([
+      { field: "review.routes[0]", org_rule: "[[review.routes]] prod-db" },
+      { field: "review.auto_approve.max_risk", org_rule: "[review.auto_approve] max_risk" },
+      {
+        field: "review.auto_approve.allowed_paths[1]",
+        org_rule: "[review.auto_approve] allowed_paths",
+      },
+    ]);
+  });
+
+  it("lets a team restate an org route, add its own and tighten auto-approve", () => {
+    const result = checkLayer(
+      ORG_REVIEW,
+      team(`[[review.routes]]
+id = "prod-db"
+paths = ["db/**"]
+to = ["role:admin", "dba@example.com"]
+escalate_after_minutes = 30
+
+[[review.routes]]
+id = "docs"
+kinds = ["pr"]
+paths = ["docs/**"]
+to = ["writer@example.com"]
+
+[review.auto_approve]
+max_risk = 5`),
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it("refuses turning auto-approve on or live when the org keeps it off or in dry run", () => {
+    const off = "version = 1\n[review.auto_approve]\nenabled = false\ndry_run = true\n";
+    expect(
+      floorErrors(checkLayer(off, team("[review.auto_approve]\nenabled = true\ndry_run = false"))),
+    ).toEqual([
+      { field: "review.auto_approve.enabled", org_rule: "[review.auto_approve] enabled" },
+      { field: "review.auto_approve.dry_run", org_rule: "[review.auto_approve] dry_run" },
+    ]);
+  });
+
+  it("puts org routes first, joins the rest by id and keeps the org's values on conflict", () => {
+    const teamLayer: PolicyLayer = {
+      kind: "team",
+      name: "platform",
+      text: team(`[[review.routes]]
+id = "everything"
+to = ["lead@example.com"]
+
+[[review.routes]]
+id = "prod-db"
+to = ["intern@example.com"]
+
+[review.auto_approve]
+max_risk = 50
+dry_run = false`),
+    };
+    const repo: PolicyLayer = {
+      kind: "repo",
+      name: "acme/api",
+      text: team(`[[review.routes]]
+id = "everything"
+to = ["api-lead@example.com"]`),
+    };
+    const { config, conflicts } = composePolicy([orgLayer, teamLayer, repo]);
+    expect(conflicts.map((c) => [c.layer.name, c.field])).toEqual([
+      ["platform", "review.routes[1]"],
+      ["platform", "review.auto_approve.max_risk"],
+    ]);
+    expect(config.review.routes.map((route) => [route.id, route.to])).toEqual([
+      ["prod-db", ["role:admin", "dba@example.com"]],
+      ["everything", ["api-lead@example.com"]],
+    ]);
+    expect(config.review.auto_approve).toMatchObject({
+      enabled: true,
+      dry_run: false,
+      max_risk: 10,
+      allowed_paths: ["docs/**"],
+    });
+  });
+});

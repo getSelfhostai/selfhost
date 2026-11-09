@@ -21,19 +21,31 @@ order. `gatherRiskInputs` reads the inputs locally and never writes to GitHub: t
 attribution and its run through the Apache package [`@selfhost/pr`](../../packages/pr/README.md),
 which the review brief shares, and the revert history from git.
 
+## Auto-approve
+
+`autoApproveVerdict(inputs, config)` decides whether `[review.auto_approve]` approves an agent
+pull request; the server's GitHub App posts the approval and records it
+([`apps/server`](../../apps/server/README.md#auto-approve)). It is pure and makes no model call.
+Every check must pass and a missing input fails its check: ready (not a draft), no open item an
+agent waits on and no exception, a low risk score at most `max_risk`, only `allowed_paths` and
+none under `high_risk_paths`, green checks on the head commit, a recorded run with no guardrail
+or rule hit, and a passing second opinion when the reviewer integration is set or
+`require_second_opinion` is on. `autoApproveSummary`, `autoApproveText` and
+`autoApproveReviewBody` give the check line, the check details and the review body.
+
 ## Inputs
 
-| Input              | Where it comes from                                                                                                                                                                                                                                                                                   |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Irreversible rules | Rules with `irreversible = true`: `path` rules against the changed files (old and new path of a rename); every rule against the commands, URLs and tools of the run's tool calls and its recorded `policy.evaluated` hits. Paths count through the diff only, so reading a file is never irreversible |
-| Outside effects    | The run's tool calls, classified by the patterns in [`src/effects.ts`](./src/effects.ts)                                                                                                                                                                                                              |
-| Protected paths    | `[review] high_risk_paths` globs against the changed files                                                                                                                                                                                                                                            |
-| Size               | Added plus deleted lines, lockfiles left out                                                                                                                                                                                                                                                          |
-| New dependencies   | Names a manifest gained: `package.json` (all four dependency sections), `requirements*.txt`, `go.mod` (direct only), `Cargo.toml` (every dependencies table)                                                                                                                                          |
-| Tests              | `passed`, `failed` or `not_run` from the sandbox. Sandbox runs come later, so this is usually missing; `selfhost review risk --tests` passes a CI result                                                                                                                                              |
-| Guardrail blocks   | `policy.evaluated` events with a block verdict on the run's sessions, once per tool call and rule, observe or enforce                                                                                                                                                                                 |
-| Revert rate        | The agent and model's commits on the repository in the last 90 days, and how many a later `This reverts commit <sha>` line names                                                                                                                                                                      |
-| Module revert rate | The modules the change touches ([`@selfhost/provenance`](../../packages/provenance/README.md): `[review] modules` globs, else top folders), with the share of their agent-written lines merged in the last 90 days that was reverted or reworked within `[review] revert_window_days`                 |
+| Input              | Where it comes from                                                                                                                                                                                                                                                                                                                                          |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Irreversible rules | Rules with `irreversible = true`: `path` rules against the changed files (old and new path of a rename); every rule against the commands, URLs and tools of the run's tool calls and its recorded `policy.evaluated` hits. Paths count through the diff only, so reading a file is never irreversible                                                        |
+| Outside effects    | The run's tool calls, classified by the patterns in [`src/effects.ts`](./src/effects.ts)                                                                                                                                                                                                                                                                     |
+| Protected paths    | `[review] high_risk_paths` globs against the changed files                                                                                                                                                                                                                                                                                                   |
+| Size               | Added plus deleted lines, lockfiles left out                                                                                                                                                                                                                                                                                                                 |
+| New dependencies   | Names a manifest gained: `package.json` (all four dependency sections), `requirements*.txt`, `go.mod` (direct only), `Cargo.toml` (every dependencies table)                                                                                                                                                                                                 |
+| Tests              | `passed`, `failed` or `not_run` from the sandbox. Sandbox runs come later, so this is usually missing; `selfhost review risk --tests` passes a CI result                                                                                                                                                                                                     |
+| Guardrail blocks   | `policy.evaluated` events with a block verdict on the run's sessions, once per tool call and rule, observe or enforce                                                                                                                                                                                                                                        |
+| Revert rate        | The agent and model's commits on the repository in the last 90 days, and how many a later `This reverts commit <sha>` line names                                                                                                                                                                                                                             |
+| Module revert rate | The modules the change touches ([`@selfhost/provenance`](../../packages/provenance/README.md): `[review] modules` globs, else top folders), with the share of their agent-written lines merged in the last 90 days that was reverted or reworked within `[review] revert_window_days`                                                                        |
 | Second opinion     | The newest verdict of each AI reviewer on the pull request (`review.submitted` events the GitHub App records from PR-Agent, the Claude Code action or CodeRabbit). Left out, not missing, when the team has no `[integrations.reviewer]` and none has reviewed; missing until the configured reviewer has; a failed reviewer run is missing with that reason |
 
 The run is the set of ledger sessions behind the change: sessions with a `commit.created` event
@@ -50,17 +62,17 @@ rates from (the GitHub App on a server with no clone of the repo; see `SELFHOST_
 
 ## Weights
 
-| Input              | Points                                                               |
-| ------------------ | -------------------------------------------------------------------- |
-| Irreversible rules | 60, and the level is high                                            |
-| Outside effects    | 60, and the level is high                                            |
-| Protected paths    | 40, and the level is high                                            |
-| Size               | 0 up to 50 lines, 5 to 200, 10 to 500, 15 to 1000, 20 above          |
-| New dependencies   | 10 for the first, 5 for each more, at most 20                        |
-| Tests              | failed 30, not run 15, passed 0                                      |
-| Guardrail blocks   | 10 each, at most 20                                                  |
-| Revert rate        | 10 from 10%, 20 from 25%                                             |
-| Module revert rate | 10 for the first module above the threshold, 5 each more, at most 20 |
+| Input              | Points                                                                                                                                 |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Irreversible rules | 60, and the level is high                                                                                                              |
+| Outside effects    | 60, and the level is high                                                                                                              |
+| Protected paths    | 40, and the level is high                                                                                                              |
+| Size               | 0 up to 50 lines, 5 to 200, 10 to 500, 15 to 1000, 20 above                                                                            |
+| New dependencies   | 10 for the first, 5 for each more, at most 20                                                                                          |
+| Tests              | failed 30, not run 15, passed 0                                                                                                        |
+| Guardrail blocks   | 10 each, at most 20                                                                                                                    |
+| Revert rate        | 10 from 10%, 20 from 25%                                                                                                               |
+| Module revert rate | 10 for the first module above the threshold, 5 each more, at most 20                                                                   |
 | Second opinion     | changes requested 15, findings left as a comment 5, plus 10 when the highest is critical or high; at most 25; an approval adds nothing |
 
 A module is above the threshold when more than `[review] revert_rate_threshold` (default 25%) of

@@ -3,13 +3,14 @@ import { openLedger, resolveDataDir } from "@selfhost/ledger";
 import { redactionSettings } from "@selfhost/schema";
 import pkg from "../package.json" with { type: "json" };
 import { createApp } from "./app.js";
+import { startCacheAlertJob } from "./cache-alerts.js";
 import { findConsoleDir } from "./console.js";
 import { gatewayFromEnv, startGatewayJob } from "./gateway.js";
 import { githubAppFromEnv, githubConfig } from "./github.js";
 import { notifyFromEnv, startNotifyJob } from "./notify.js";
 import { clonesUnder } from "./provenance.js";
 import { serverConfig, startRetentionJob } from "./retention.js";
-import { startReviewRefreshJob } from "./review.js";
+import { clonesCodeowners, startReviewRefreshJob } from "./review.js";
 import { startTraceExportJob } from "./runs.js";
 import { signinFromEnv } from "./signin.js";
 import { loadApiToken } from "./token.js";
@@ -103,7 +104,10 @@ const retention =
 const reviews =
   process.env.SELFHOST_REVIEW_REFRESH === "off"
     ? undefined
-    : startReviewRefreshJob(ledger, { config });
+    : startReviewRefreshJob(ledger, {
+        config,
+        ...(clones ? { codeowners: clonesCodeowners(clones) } : {}),
+      });
 
 // SELFHOST_TRACE_EXPORT=off stops sending finished runs to each team's [integrations.tracer],
 // for installs where another server sends them from the same database.
@@ -124,9 +128,15 @@ const notifications =
     ? startNotifyJob(ledger, { deliver, config, ...(publicUrl ? { publicUrl } : {}) })
     : undefined;
 
+// SELFHOST_CACHE_ALERTS=off stops raising prompt cache alerts for sessions whose hit rate
+// collapsed, for installs where another server raises them from the same database.
+const cacheAlerts =
+  process.env.SELFHOST_CACHE_ALERTS === "off" ? undefined : startCacheAlertJob(ledger, { config });
+
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
     retention?.stop();
+    cacheAlerts?.stop();
     notifications?.stop();
     gatewayJob?.stop();
     reviews?.stop();

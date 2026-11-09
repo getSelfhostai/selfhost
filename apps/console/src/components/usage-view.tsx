@@ -7,7 +7,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ApiRequestError, downloadUsageCsv, getUsage } from "@/lib/api";
-import { DIMENSION_NAMES, formatCompact, formatCount, formatUsd } from "@/lib/format";
+import {
+  DIMENSION_NAMES,
+  formatCacheHits,
+  formatCompact,
+  formatCount,
+  formatUsd,
+} from "@/lib/format";
 import {
   BREAKDOWNS,
   type Breakdown,
@@ -141,7 +147,7 @@ export function UsageView({ me, view, onChange, now }: UsageViewProps) {
             <Stat
               title="Tokens"
               value={formatCompact(total.tokens)}
-              detail={`${formatCompact(total.cache_read_tokens)} from cache`}
+              detail={`${formatCompact(total.cache_read_tokens)} from cache, ${formatCacheHits(total.cache_hit_rate)} cache hits`}
             />
             <Stat title="Sessions" value={formatCount(total.sessions)} />
             <Stat title="PRs opened" value={formatCount(total.prs_opened)} />

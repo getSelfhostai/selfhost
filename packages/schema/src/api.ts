@@ -456,8 +456,9 @@ export const DecisionsPageSchema = Type.Object(
 
 /**
  * Where a decision was made. Every surface records it through POST /v1/decisions or the
- * recordDecision call behind it. timeout is the review list denying an approval nobody answered
- * in time, the one decision no person makes.
+ * recordDecision call behind it. Two decisions no person makes: timeout is the review list
+ * denying an approval nobody answered in time, and auto_approve is the GitHub App approving a
+ * low-risk agent pull request under [review.auto_approve].
  */
 export const DECISION_SURFACES = [
   "cli",
@@ -470,6 +471,7 @@ export const DECISION_SURFACES = [
   "mcp",
   "api",
   "timeout",
+  "auto_approve",
 ] as const;
 
 export type DecisionSurface = (typeof DECISION_SURFACES)[number];

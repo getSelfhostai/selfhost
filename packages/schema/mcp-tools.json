@@ -416,6 +416,155 @@
                     "default": 1,
                     "description": "How many leading folders name the module of a file no modules glob matches: 1 gives apps, 2 gives apps/server. Files at the top of the repository are in the module (root).",
                     "type": "integer"
+                  },
+                  "routes": {
+                    "default": [],
+                    "description": "Routing rules, checked in file order before [review.owners]. An item no route takes goes to its owner, team or fallback as before. The org's routes come first and a team or repo file cannot change them.",
+                    "type": "array",
+                    "items": {
+                      "additionalProperties": false,
+                      "description": "One routing rule. Every match field given must match; the first route in file order that matches and names anyone gets the item.",
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "to"
+                      ],
+                      "properties": {
+                        "id": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+                          "description": "Stable route id, shown on every item the route sends and in its escalations.",
+                          "type": "string"
+                        },
+                        "description": {
+                          "description": "What the route is for.",
+                          "type": "string"
+                        },
+                        "kinds": {
+                          "minItems": 1,
+                          "description": "Item kinds the route takes, such as pr, approval or exception. Absent: all.",
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "pr",
+                              "approval",
+                              "question",
+                              "blocked_action",
+                              "exception",
+                              "stuck_run",
+                              "budget",
+                              "spend_spike",
+                              "quality",
+                              "policy_report",
+                              "context_promotion"
+                            ]
+                          }
+                        },
+                        "repos": {
+                          "minItems": 1,
+                          "description": "Globs on the item's repository as owner/name, case ignored. Absent: all.",
+                          "type": "array",
+                          "items": {
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "paths": {
+                          "minItems": 1,
+                          "description": "Globs on files relative to the repository root. The route matches when one of the item's files matches one. Absent: any files, or none.",
+                          "type": "array",
+                          "items": {
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "min_risk": {
+                          "minimum": 0,
+                          "maximum": 100,
+                          "description": "Matches items whose risk score is at or above this.",
+                          "type": "integer"
+                        },
+                        "rule_ids": {
+                          "minItems": 1,
+                          "description": "Globs on the id of the rule that raised the item, such as \"guard.*\". Items no rule raised do not match.",
+                          "type": "array",
+                          "items": {
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "tools": {
+                          "minItems": 1,
+                          "description": "Tool names an approval or exception waits on, such as Bash or an MCP tool. Items about no tool do not match.",
+                          "type": "array",
+                          "items": {
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "to": {
+                          "minItems": 1,
+                          "description": "Who gets the item: person ids, \"role:owner\", \"role:admin\" or \"role:member\" (the team's people with that role, on a team server), \"team:<name>\" (members in [teams]), \"@<login>\" or \"@<org>/<team>\" (GitHub accounts, asked to review pull requests), or \"codeowners\" (the CODEOWNERS owners of the item's files).",
+                          "type": "array",
+                          "items": {
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "escalate_after_minutes": {
+                          "minimum": 1,
+                          "description": "Minutes the item waits on this route. Then the next route that matches it gets it too, else [review] fallback.",
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  },
+                  "auto_approve": {
+                    "additionalProperties": false,
+                    "default": {},
+                    "description": "Approve agent pull requests nobody needs to read: low risk, green checks, only allowed paths, no guardrail hits. Never exceptions or anything an agent waits on.",
+                    "type": "object",
+                    "properties": {
+                      "enabled": {
+                        "default": false,
+                        "description": "Approve low-risk agent pull requests through the GitHub App. Off by default; when on, dry_run decides whether it approves or only records.",
+                        "type": "boolean"
+                      },
+                      "dry_run": {
+                        "default": true,
+                        "description": "Only record what would have been approved, on the pull request's check and in the ledger. Set false to approve.",
+                        "type": "boolean"
+                      },
+                      "max_risk": {
+                        "minimum": 0,
+                        "maximum": 100,
+                        "default": 20,
+                        "description": "Highest risk score that may be approved. The risk level must also be low, and a pull request with no score waits for a person.",
+                        "type": "integer"
+                      },
+                      "allowed_paths": {
+                        "default": [
+                          "docs/**",
+                          "**/*.md"
+                        ],
+                        "description": "Globs every changed file must match. A file outside them, or under [review] high_risk_paths, needs a person.",
+                        "type": "array",
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "require_green_checks": {
+                        "default": true,
+                        "description": "Every other check run and commit status on the head commit must have passed, and there must be at least one.",
+                        "type": "boolean"
+                      },
+                      "require_second_opinion": {
+                        "default": false,
+                        "description": "Require a passing second opinion from the reviewer integration. It is required anyway once [integrations.reviewer] is set.",
+                        "type": "boolean"
+                      }
+                    }
                   }
                 }
               },
@@ -536,7 +685,7 @@
               "alerts": {
                 "additionalProperties": false,
                 "default": {},
-                "description": "When the spend spike alarm and the plan limit forecast speak up.",
+                "description": "When the spend spike alarm, the plan limit forecast and the prompt cache alert speak up.",
                 "type": "object",
                 "properties": {
                   "spike_factor": {
@@ -568,6 +717,25 @@
                     "format": "uri",
                     "description": "Key rotation runbook linked from spend spike alarms.",
                     "type": "string"
+                  },
+                  "cache_hit_floor": {
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.5,
+                    "description": "Prompt cache hit rate, 0 to 1, below which a long session raises a cache alert and an expensive one gets a cost tip.",
+                    "type": "number"
+                  },
+                  "cache_min_requests": {
+                    "minimum": 2,
+                    "default": 20,
+                    "description": "Model requests a session needs before its cache hit rate can raise an alert.",
+                    "type": "integer"
+                  },
+                  "cache_tip_usd": {
+                    "minimum": 0,
+                    "default": 5,
+                    "description": "Sessions that cost at least this many USD below cache_hit_floor get a cost tip in selfhost spend and the run view.",
+                    "type": "number"
                   }
                 }
               },
@@ -1825,9 +1993,10 @@
                   ],
                   "properties": {
                     "step": {
-                      "description": "owner ([review.owners] path globs, else the session's person), team (members of the item's team in [teams]), fallback ([review] fallback), or none when selfhost.toml names nobody.",
+                      "description": "route (a [[review.routes]] entry), owner ([review.owners] path globs, else the session's person), team (members of the item's team in [teams]), fallback ([review] fallback), or none when selfhost.toml names nobody.",
                       "type": "string",
                       "enum": [
+                        "route",
                         "owner",
                         "team",
                         "fallback",
@@ -1835,8 +2004,56 @@
                       ]
                     },
                     "from": {
-                      "description": "Where the owners came from, for example [review.owners] \"db/**\", the session's person, [teams.platform] or [review] fallback.",
+                      "description": "Where the owners came from, for example [[review.routes]] \"db\", [review.owners] \"db/**\", the session's person, [teams.platform] or [review] fallback.",
                       "type": "string"
+                    },
+                    "id": {
+                      "description": "The [[review.routes]] id, when a route took the item.",
+                      "type": "string"
+                    },
+                    "why": {
+                      "description": "What the route matched on, such as \"kind pr, path db/schema.sql, risk 82 at or above 70\".",
+                      "type": "string"
+                    },
+                    "github": {
+                      "additionalProperties": false,
+                      "description": "GitHub accounts the route names, from @ targets and CODEOWNERS, asked to review a pull request.",
+                      "type": "object",
+                      "required": [
+                        "users",
+                        "teams"
+                      ],
+                      "properties": {
+                        "users": {
+                          "description": "GitHub logins, without the @.",
+                          "type": "array",
+                          "items": {
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "teams": {
+                          "description": "GitHub team slugs.",
+                          "type": "array",
+                          "items": {
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "escalates_at": {
+                      "format": "date-time",
+                      "description": "When the item moves on to the next route that matches it (or [review] fallback), from the route's escalate_after_minutes, if nobody answered.",
+                      "type": "string"
+                    },
+                    "escalated_from": {
+                      "description": "Routes the item waited on before this one, oldest first. Their people stay owners.",
+                      "type": "array",
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      }
                     }
                   }
                 },
@@ -4119,9 +4336,10 @@
                 ],
                 "properties": {
                   "step": {
-                    "description": "owner ([review.owners] path globs, else the session's person), team (members of the item's team in [teams]), fallback ([review] fallback), or none when selfhost.toml names nobody.",
+                    "description": "route (a [[review.routes]] entry), owner ([review.owners] path globs, else the session's person), team (members of the item's team in [teams]), fallback ([review] fallback), or none when selfhost.toml names nobody.",
                     "type": "string",
                     "enum": [
+                      "route",
                       "owner",
                       "team",
                       "fallback",
@@ -4129,8 +4347,56 @@
                     ]
                   },
                   "from": {
-                    "description": "Where the owners came from, for example [review.owners] \"db/**\", the session's person, [teams.platform] or [review] fallback.",
+                    "description": "Where the owners came from, for example [[review.routes]] \"db\", [review.owners] \"db/**\", the session's person, [teams.platform] or [review] fallback.",
                     "type": "string"
+                  },
+                  "id": {
+                    "description": "The [[review.routes]] id, when a route took the item.",
+                    "type": "string"
+                  },
+                  "why": {
+                    "description": "What the route matched on, such as \"kind pr, path db/schema.sql, risk 82 at or above 70\".",
+                    "type": "string"
+                  },
+                  "github": {
+                    "additionalProperties": false,
+                    "description": "GitHub accounts the route names, from @ targets and CODEOWNERS, asked to review a pull request.",
+                    "type": "object",
+                    "required": [
+                      "users",
+                      "teams"
+                    ],
+                    "properties": {
+                      "users": {
+                        "description": "GitHub logins, without the @.",
+                        "type": "array",
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "teams": {
+                        "description": "GitHub team slugs.",
+                        "type": "array",
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "escalates_at": {
+                    "format": "date-time",
+                    "description": "When the item moves on to the next route that matches it (or [review] fallback), from the route's escalate_after_minutes, if nobody answered.",
+                    "type": "string"
+                  },
+                  "escalated_from": {
+                    "description": "Routes the item waited on before this one, oldest first. Their people stay owners.",
+                    "type": "array",
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
                   }
                 }
               },

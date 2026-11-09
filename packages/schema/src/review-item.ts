@@ -37,8 +37,11 @@ export const REVIEW_ACTIONS = ["approve", "deny", "answer", "snooze", "open"] as
 /** instant: push now, because an agent is blocked or risk is high. digest: the next digest. */
 export const REVIEW_DELIVERIES = ["instant", "digest"] as const;
 
-/** Which routing step found the owners: the owner, the team, the fallback, or none of them. */
-export const REVIEW_ROUTE_STEPS = ["owner", "team", "fallback", "none"] as const;
+/**
+ * Which routing step found the owners: a [[review.routes]] entry, the owner, the team, the
+ * fallback, or none of them.
+ */
+export const REVIEW_ROUTE_STEPS = ["route", "owner", "team", "fallback", "none"] as const;
 
 export type ReviewItemKind = (typeof REVIEW_ITEM_KINDS)[number];
 export type ReviewItemState = (typeof REVIEW_ITEM_STATES)[number];
@@ -95,12 +98,46 @@ export const ReviewRouteSchema = Type.Object(
   {
     step: StringEnum(REVIEW_ROUTE_STEPS, {
       description:
-        "owner ([review.owners] path globs, else the session's person), team (members of the item's team in [teams]), fallback ([review] fallback), or none when selfhost.toml names nobody.",
+        "route (a [[review.routes]] entry), owner ([review.owners] path globs, else the session's person), team (members of the item's team in [teams]), fallback ([review] fallback), or none when selfhost.toml names nobody.",
     }),
     from: Type.String({
       description:
-        'Where the owners came from, for example [review.owners] "db/**", the session\'s person, [teams.platform] or [review] fallback.',
+        'Where the owners came from, for example [[review.routes]] "db", [review.owners] "db/**", the session\'s person, [teams.platform] or [review] fallback.',
     }),
+    id: Type.Optional(
+      Type.String({ description: "The [[review.routes]] id, when a route took the item." }),
+    ),
+    why: Type.Optional(
+      Type.String({
+        description:
+          'What the route matched on, such as "kind pr, path db/schema.sql, risk 82 at or above 70".',
+      }),
+    ),
+    github: Type.Optional(
+      Type.Object(
+        {
+          users: Type.Array(NonEmpty(), { description: "GitHub logins, without the @." }),
+          teams: Type.Array(NonEmpty(), { description: "GitHub team slugs." }),
+        },
+        {
+          additionalProperties: false,
+          description:
+            "GitHub accounts the route names, from @ targets and CODEOWNERS, asked to review a pull request.",
+        },
+      ),
+    ),
+    escalates_at: Type.Optional(
+      DateTime({
+        description:
+          "When the item moves on to the next route that matches it (or [review] fallback), from the route's escalate_after_minutes, if nobody answered.",
+      }),
+    ),
+    escalated_from: Type.Optional(
+      Type.Array(NonEmpty(), {
+        description:
+          "Routes the item waited on before this one, oldest first. Their people stay owners.",
+      }),
+    ),
   },
   { additionalProperties: false, description: "How the owners were chosen." },
 );

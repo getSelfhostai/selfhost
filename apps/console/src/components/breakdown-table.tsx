@@ -8,7 +8,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { DIMENSION_NAMES, formatCompact, formatCount, formatUsd, label } from "@/lib/format";
+import {
+  DIMENSION_NAMES,
+  formatCacheHits,
+  formatCompact,
+  formatCount,
+  formatUsd,
+  label,
+} from "@/lib/format";
 import type { Breakdown } from "@/lib/view";
 
 export interface BreakdownTableProps {
@@ -32,6 +39,9 @@ export function BreakdownTable({ breakdown, rows, total, onPick }: BreakdownTabl
             <span className="sr-only">Share of cost</span>
           </TableHead>
           <TableHead className={numeric}>Tokens</TableHead>
+          <TableHead className={numeric} title="Input tokens read from the prompt cache">
+            Cache hits
+          </TableHead>
           <TableHead className={numeric}>Requests</TableHead>
           <TableHead className={numeric}>Sessions</TableHead>
           <TableHead className={numeric}>PRs opened</TableHead>
@@ -74,6 +84,7 @@ export function BreakdownTable({ breakdown, rows, total, onPick }: BreakdownTabl
               <TableCell className={numeric} title={formatCount(row.tokens)}>
                 {formatCompact(row.tokens)}
               </TableCell>
+              <TableCell className={numeric}>{formatCacheHits(row.cache_hit_rate)}</TableCell>
               <TableCell className={numeric}>{formatCount(row.requests)}</TableCell>
               <TableCell className={numeric}>{formatCount(row.sessions)}</TableCell>
               <TableCell className={numeric}>{formatCount(row.prs_opened)}</TableCell>
@@ -90,6 +101,7 @@ export function BreakdownTable({ breakdown, rows, total, onPick }: BreakdownTabl
           <TableCell className={numeric} title={formatCount(total.tokens)}>
             {formatCompact(total.tokens)}
           </TableCell>
+          <TableCell className={numeric}>{formatCacheHits(total.cache_hit_rate)}</TableCell>
           <TableCell className={numeric}>{formatCount(total.requests)}</TableCell>
           <TableCell className={numeric}>{formatCount(total.sessions)}</TableCell>
           <TableCell className={numeric}>{formatCount(total.prs_opened)}</TableCell>

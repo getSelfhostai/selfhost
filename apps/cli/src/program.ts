@@ -35,6 +35,7 @@ import { registerPolicyPackage } from "./policy/mdm.js";
 import { registerProvenance } from "./provenance.js";
 import { registerReview } from "./review.js";
 import { localReviewList, registerReviewList } from "./review-list.js";
+import { registerReviewRoutes } from "./review-routes.js";
 import { registerReviewSetup } from "./review-setup.js";
 import { registerRoi } from "./roi.js";
 import type { CollectAttribution } from "./scan/attribution.js";
@@ -42,6 +43,7 @@ import { gitAttribution } from "./scan/git-attribution.js";
 import { runScan, type ScanCommandOptions } from "./scan/index.js";
 import { type Ask, askOnTerminal, type SendPing } from "./scan/telemetry.js";
 import { registerSpend } from "./spend.js";
+import { registerTail } from "./tail/command.js";
 import type { Fetch } from "./team/client.js";
 import { registerTeam } from "./team/commands.js";
 import type { LaptopIo } from "./team/laptop.js";
@@ -344,6 +346,17 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
   );
 
   registerSpend(program);
+  registerTail(
+    program,
+    () => ({
+      env: deps.env,
+      write: deps.write,
+      note: deps.writeError,
+      configPath: deps.configPath ?? defaultConfigPath(),
+      ...(deps.fetch ? { fetch: deps.fetch } : {}),
+    }),
+    fail,
+  );
   registerAlerts(
     program,
     () => ({
@@ -529,6 +542,18 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
   );
 
   registerReviewList(
+    program,
+    () => ({
+      env: deps.env,
+      cwd: deps.cwd,
+      write: deps.write,
+      now: deps.now,
+      configPath: deps.configPath ?? defaultConfigPath(),
+    }),
+    fail,
+  );
+
+  registerReviewRoutes(
     program,
     () => ({
       env: deps.env,

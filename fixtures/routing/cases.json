@@ -1,0 +1,78 @@
+{
+  "description": "Review items with who must get them under selfhost.toml and CODEOWNERS in this folder, for routeItem in packages/review. roles are the team's people by role on a team server (absent on a laptop); codeowners says whether CODEOWNERS can be read. Each case gives the route step, the route id when a [[review.routes]] entry takes it, the owners in order and the GitHub accounts the route names.",
+  "roles": {
+    "owner": ["olga@example.com"],
+    "admin": ["adam@example.com", "olga@example.com"],
+    "member": ["dev@example.com"]
+  },
+  "cases": [
+    {
+      "id": "db-pr-goes-to-dbas",
+      "input": { "kind": "pr", "repo": "acme/api", "paths": ["db/schema.sql"], "risk": 40 },
+      "step": "route", "route": "prod-db", "owners": ["dba@example.com"], "why": "kind pr, path db/schema.sql"
+    },
+    {
+      "id": "db-blocked-action-skips-kind-filter",
+      "input": { "kind": "blocked_action", "paths": ["migrations/0042.sql"], "rule_id": "no-drop" },
+      "roles": true,
+      "step": "route", "route": "db-admins", "owners": ["adam@example.com", "olga@example.com"]
+    },
+    {
+      "id": "db-blocked-action-on-a-laptop",
+      "input": { "kind": "blocked_action", "paths": ["migrations/0042.sql"], "person": "dev@example.com" },
+      "step": "owner", "owners": ["dev@example.com"]
+    },
+    {
+      "id": "force-push-to-team-owners",
+      "input": { "kind": "exception", "paths": [], "rule_id": "guard.force_push", "tool": "Bash" },
+      "roles": true,
+      "step": "route", "route": "guardrails", "owners": ["olga@example.com"], "why": "rule guard.force_push"
+    },
+    {
+      "id": "payments-high-risk-to-codeowners",
+      "input": { "kind": "pr", "repo": "Acme/Payments", "paths": ["src/ledger/post.ts", "src/api.ts", "db.sql"], "risk": 82 },
+      "codeowners": true,
+      "step": "route", "route": "payments-high",
+      "owners": ["bob@example.com", "alice@example.com", "carol@example.com"],
+      "github": { "users": ["bob", "alice"], "teams": ["payments-core"] },
+      "why": "repo Acme/Payments, risk 82 at or above 70"
+    },
+    {
+      "id": "payments-high-risk-without-codeowners-falls-through",
+      "input": { "kind": "pr", "repo": "acme/payments", "paths": ["src/api.ts"], "risk": 82, "person": "dev@example.com" },
+      "step": "owner", "owners": ["dev@example.com"]
+    },
+    {
+      "id": "payments-low-risk-not-routed",
+      "input": { "kind": "pr", "repo": "acme/payments", "paths": ["src/api.ts"], "risk": 30, "team": "platform" },
+      "codeowners": true,
+      "step": "team", "owners": ["pat@example.com", "sam@example.com"]
+    },
+    {
+      "id": "deploy-approval-to-platform",
+      "input": { "kind": "approval", "paths": [], "tool": "mcp__deploy__release" },
+      "step": "route", "route": "deploys", "owners": ["pat@example.com", "sam@example.com"]
+    },
+    {
+      "id": "other-tool-approval-uses-defaults",
+      "input": { "kind": "approval", "paths": [], "tool": "Bash" },
+      "step": "fallback", "owners": ["lead@example.com"]
+    },
+    {
+      "id": "docs-pr-to-github-team",
+      "input": { "kind": "pr", "repo": "acme/api", "paths": ["docs/guide.md"] },
+      "step": "route", "route": "docs", "owners": ["alice@example.com"],
+      "github": { "users": ["alice"], "teams": ["docs"] }
+    },
+    {
+      "id": "docs-question-not-a-pr",
+      "input": { "kind": "question", "paths": ["docs/guide.md"], "person": "dev@example.com" },
+      "step": "owner", "owners": ["dev@example.com"]
+    },
+    {
+      "id": "web-change-keeps-review-owners",
+      "input": { "kind": "pr", "repo": "acme/api", "paths": ["web/app.tsx"], "risk": 90 },
+      "step": "owner", "owners": ["frontend@example.com"]
+    }
+  ]
+}

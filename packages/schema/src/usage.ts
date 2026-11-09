@@ -18,6 +18,18 @@ export const USAGE_MAX_GROUP_BY = 2;
 /** The value a row and a filter use when the event has none (no team, not a person, ...). */
 export const USAGE_UNKNOWN = "unknown";
 
+/**
+ * How a cache hit rate is computed, wherever selfhost shows one. A session that reported no
+ * cache read or write at all is left out: its agent may not report cache tokens, so its rate is
+ * unknown rather than 0.
+ */
+export const CACHE_HIT_RATE_TEXT =
+  "cache reads over cache reads plus uncached input plus cache writes, counting only sessions that reported a cache read or write.";
+
+/** The usual reasons a session stops hitting the prompt cache, named in cache alerts and tips. */
+export const CACHE_MISS_CAUSES =
+  "a value that changes early in the prompt (such as a timestamp), tool lists that reorder, or a model switch";
+
 /** Default length of the date range, back from to. */
 export const USAGE_DEFAULT_DAYS = 30;
 
@@ -29,6 +41,7 @@ export const USAGE_METRICS = [
   "output_tokens",
   "cache_read_tokens",
   "cache_write_tokens",
+  "cache_hit_rate",
   "requests",
   "sessions",
   "prs_opened",
@@ -89,6 +102,9 @@ const METRIC_FIELDS = {
   output_tokens: Count("Output tokens, including reasoning tokens."),
   cache_read_tokens: Count("Input tokens read from the prompt cache."),
   cache_write_tokens: Count("Input tokens written to the prompt cache."),
+  cache_hit_rate: Type.Union([Type.Number({ minimum: 0, maximum: 1 }), Type.Null()], {
+    description: `Share of input tokens read from the prompt cache, 0 to 1: ${CACHE_HIT_RATE_TEXT} null when no session in the group reported a cache read or write, as for agents whose logs carry no cache fields.`,
+  }),
   requests: Count("cost.recorded events, one per model request."),
   sessions: Count(
     "Distinct agent sessions (agent and session_id) with a session, prompt or cost event in the range.",

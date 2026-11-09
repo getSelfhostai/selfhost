@@ -347,8 +347,12 @@ pull request showing its review-list state, through
 - a `selfhost/review` check run on the head commit whose summary is the review brief's summary,
   the risk and who was asked to review, with the brief and the risk inputs in its details;
 - a review request to the owner the review list picked, under their login in
-  `[review] github_logins`, else to the team in `[review] github_team`;
-- the review brief as one comment, edited in place on later deliveries.
+  `[review] github_logins`, plus the GitHub users and teams its `[[review.routes]]` entry names
+  (`@login`, `@org/team`, and `codeowners`, read from CODEOWNERS at the base commit), else to
+  the team in `[review] github_team`;
+- the review brief as one comment, edited in place on later deliveries;
+- under `[review.auto_approve]` (commercial, ee/risk), an approving review from the App (see
+  below).
 
 It answers 404 until `SELFHOST_GITHUB_APP_ID`, `SELFHOST_GITHUB_PRIVATE_KEY` (or
 `SELFHOST_GITHUB_PRIVATE_KEY_FILE`) and `SELFHOST_GITHUB_WEBHOOK_SECRET` are all set; a partial
@@ -368,6 +372,9 @@ setup is reported at start by variable name. It needs no bearer token: the reque
   sync that fails forgets the id and answers 500, so GitHub's redelivery runs it again.
 - `pull_request_review`, `issue_comment` and `check_run` deliveries that carry a verdict from
   the team's AI reviewer on an agent pull request are its **second opinion** (see below).
+- `check_suite` with action `completed` syncs the open agent pull requests the suite ran on
+  again, so auto-approve sees checks that finished. While `[review.auto_approve]` is off it
+  answers `handled: false` without a GitHub call.
 - Every other signed delivery (other events, actions, closed pull requests, pull requests by
   people, `ping`) answers 200 with `handled: false` and `skipped`, the reason, which shows in
   the App's delivery log on GitHub.
@@ -401,11 +408,13 @@ search for `selfhost/review` once it has run on a pull request).
 
 Where each part comes from is a provider in `src/github-pull.ts` (tests replace them):
 
-| Provider | Default                                                                                                                                                                                                                                                                              |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `risk`   | The ee/ risk score (`src/github-risk.ts`, loaded through `src/ee.ts` on first use) from the pull request's files and new dependencies; none when ee/ is left out                                                                                                                     |
-| `owner`  | `src/github-review.ts`: the first owner of the pull request's `pr` review item (by PR URL, in `SELFHOST_GITHUB_TEAM`'s items when set); before there is one, `routeItem` on its changed files, the person whose session made its commits, the team's members and `[review] fallback` |
-| `brief`  | `src/github-review.ts`: the [review brief](../../packages/brief/README.md) as one comment, its summary leading the check run, ending with the newest proof receipt (see below) when CI posted one                                                                                    |
+| Provider      | Default                                                                                                                                                                                                                                                                              |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `risk`        | The ee/ risk score (`src/github-risk.ts`, loaded through `src/ee.ts` on first use) from the pull request's files and new dependencies; none when ee/ is left out                                                                                                                     |
+| `owner`       | `src/github-review.ts`: the first owner of the pull request's `pr` review item (by PR URL, in `SELFHOST_GITHUB_TEAM`'s items when set); before there is one, `routeItem` on its changed files, the person whose session made its commits, the team's members and `[review] fallback` |
+| `route`       | `src/github-review.ts`: the GitHub accounts the pull request's route names; nothing is read without `[[review.routes]]`                                                                                                                                                              |
+| `autoApprove` | `src/github-approve.ts`: the `[review.auto_approve]` verdict from ee/risk; nothing is read while it is off                                                                                                                                                                           |
+| `brief`       | `src/github-review.ts`: the [review brief](../../packages/brief/README.md) as one comment, its summary leading the check run, ending with the newest proof receipt (see below) when CI posted one                                                                                    |
 
 The server has no clone and no `gh`, so the brief reads the pull request through the App with
 `readPullRequest` from [`@selfhost/pr`](../../packages/pr/README.md): the files with their
@@ -429,12 +438,12 @@ GitHub Action or CodeRabbit, wired with `selfhost review setup`, see
 [`@selfhost/integrations`](../../packages/integrations/README.md#reviewers-second-opinions)), and
 the App reads what it posts back:
 
-| Reviewer           | Delivery                                                   | Verdict                                                                                                                                 |
-| ------------------ | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| PR-Agent           | `issue_comment` created or edited, by a bot                | Its `/review` comment: merge recommendation, focus-area findings plus a security concern, risk level as the severity                   |
-| Claude Code action | `issue_comment` (or a review) by a bot                     | The `<!-- selfhost:second-opinion ... -->` line the workflow tells it to end its summary with                                           |
-| CodeRabbit         | `pull_request_review` submitted by `coderabbitai[bot]`     | The review state; actionable plus outside-diff comments as findings; severity from its labels, reading the review's inline comments once |
-| Any of the CI ones | `check_run` completed with a failure, job name from setup  | `failed`: the reviewer did not get to a review                                                                                          |
+| Reviewer           | Delivery                                                  | Verdict                                                                                                                                  |
+| ------------------ | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| PR-Agent           | `issue_comment` created or edited, by a bot               | Its `/review` comment: merge recommendation, focus-area findings plus a security concern, risk level as the severity                     |
+| Claude Code action | `issue_comment` (or a review) by a bot                    | The `<!-- selfhost:second-opinion ... -->` line the workflow tells it to end its summary with                                            |
+| CodeRabbit         | `pull_request_review` submitted by `coderabbitai[bot]`    | The review state; actionable plus outside-diff comments as findings; severity from its labels, reading the review's inline comments once |
+| Any of the CI ones | `check_run` completed with a failure, job name from setup | `failed`: the reviewer did not get to a review                                                                                           |
 
 Each verdict on a pull request an agent opened (read through the App when the payload has no
 branch) is written once as a `review.submitted` ledger event, `data.second_opinion` holding
@@ -447,6 +456,41 @@ pull request's item on its next refresh, and `GET /v1/runs/{id}` returns them on
 request (`second_opinions`). Comments and reviews by people, the placeholder PR-Agent posts
 before reviewing, and this App's own check runs are skipped. No migration: the events table
 takes the new kind as it is.
+
+### Auto-approve
+
+`[review.auto_approve]` lets the App approve agent pull requests nobody needs to read. It is off
+by default, and turning it on starts in dry run:
+
+```toml
+[review.auto_approve]
+enabled = true                       # default false
+dry_run = true                       # default: only record what it would approve
+max_risk = 20                        # highest risk score, and the level must be low
+allowed_paths = ["docs/**", "**/*.md"] # every changed file must match; high_risk_paths never do
+require_green_checks = true          # every other check run and status passed, at least one
+require_second_opinion = false       # required anyway once [integrations.reviewer] is set
+```
+
+Every check must pass, and a missing input fails its check: not a draft; no open item of the
+pull request or its run that an agent waits on, and no open exception; a risk score, low and at
+most `max_risk`; only `allowed_paths`, none under `[review] high_risk_paths`; green checks on the
+head commit (selfhost's own `selfhost/*` checks left out, a running one waits); an agent run
+recorded for its commits with no guardrail or rule hit in it, observed or enforced; and, when
+required, a passing second opinion. It makes no model call. The check run's summary says what
+it decided and its details list every check.
+
+When eligible and `dry_run = false`, the App posts an approving review on the head commit (body
+marked `<!-- selfhost:auto-approve v1 -->`, once per commit; a push needs a new approval) and the
+server records a `decision.recorded` event: verdict approve, by `selfhost auto-approve` (a system
+actor), surface `auto_approve`, with the reasons, the pull request, the commit and the files,
+and answers the pull request's open review item with it. In dry run nothing is approved: an
+`alert.raised` event with `data.alert = "auto_approve_dry_run"` records it, once per head commit,
+and opens no item. The App needs Pull requests write (as above) and the **Check suite** event.
+
+The second opinion is read from `second_opinion` on the pull request's review item, written by
+the reviewer integration's ingest, through `secondOpinionOf` in `src/github-approve.ts`
+(`verdict` pass, clean or approve passes; anything else fails).
 
 ### Proof receipts
 
@@ -486,8 +530,8 @@ capped by the action); bodies over 2 MB are refused. On GitHub Enterprise Server
 2. Repository permissions: Checks read and write, Pull requests read and write, Issues read and
    write (labels and comments on pull requests), Contents read-only (changed manifests for the
    risk score and the brief), Metadata read-only. Proof receipts need nothing more.
-3. Subscribe to the **Pull request** event, and for second opinions from an AI reviewer to
-   **Pull request review**, **Issue comment** and **Check run**.
+3. Subscribe to the **Pull request** event, to **Check suite** for auto-approve, and for second
+   opinions from an AI reviewer to **Pull request review**, **Issue comment** and **Check run**.
 4. Generate a private key, and set `SELFHOST_GITHUB_APP_ID`, `SELFHOST_GITHUB_PRIVATE_KEY_FILE`
    (or `SELFHOST_GITHUB_PRIVATE_KEY`) and `SELFHOST_GITHUB_WEBHOOK_SECRET` on the server, plus
    `SELFHOST_GITHUB_TEAM` on a team server.
@@ -508,12 +552,24 @@ prompt text only with `[ledger] log_prompts` on. `SELFHOST_TRACE_EXPORT=off` tur
 for a second server on the same database.
 
 - `GET /v1/runs/{run_id}?limit&cursor` (anyone in the run's team): `selfhost.run/v1`, the run's
-  summary (agent, model, person, team, repo, start and end, cost and tokens), its ledger events
+  summary (agent, model, person, team, repo, start and end, cost and tokens, `cache_hit_rate`,
+  null when the run reported no cache tokens, and a one-line `cache_tip` when it cost at least
+  `[alerts] cache_tip_usd` under `cache_hit_floor`), its ledger events
   oldest first, the pull requests they link to and `trace_url`, the run in the tracer from
   `run_url` (`{run_id}` and `{trace_id}` filled in) once it has been sent. Anyone else gets 403,
   whether or not the run exists. The console's `/runs/<id>` page reads it.
 - Review items that name a session carry `run_url` (the console's run view) and, once the run is
   in the tracer, `trace_url`.
+- `GET /v1/events/tail?after&since&kind&person&agent&repo&session&team&wait&limit` (both kinds of
+  token): `selfhost.tail/v1`, the events that reached the ledger after the cursor `after`, oldest
+  first, redacted again like the run view, and the next `cursor`. With `wait` (up to 30 seconds)
+  the request is held until something lands. A person token reads the teams of its org it is in;
+  `team` narrows it, and a team they are not in answers 403. `selfhost tail` in a team follows it.
+
+Every minute the server also looks at the requests of the last hour for sessions past `[alerts]
+cache_min_requests` whose prompt cache hit rate over their last 10 requests fell under
+`cache_hit_floor`, and records one `alert.raised` (`data.alert: "cache_hit_low"`) per session in
+its team, naming the usual causes. `SELFHOST_CACHE_ALERTS=off` turns it off.
 
 ## Privacy and retention
 
@@ -561,6 +617,7 @@ Environment:
 | `SELFHOST_RETENTION_SWEEP`         | `daily`            | `off` keeps every event instead of deleting expired ones daily.                                                     |
 | `SELFHOST_REVIEW_REFRESH`          | `15s`              | `off` stops building review items and timing out approvals on this server.                                          |
 | `SELFHOST_TRACE_EXPORT`            | `1m`               | `off` stops sending finished runs to each team's `[integrations.tracer]` from this server.                          |
+| `SELFHOST_CACHE_ALERTS`            | `1m`               | `off` stops raising prompt cache alerts for sessions whose hit rate collapsed, from this server.                    |
 | `SELFHOST_APPRISE_URL`             | unset              | Apprise API server notifications go through (`compose.notify.yml`: `http://apprise:8000`). Unset sends none.        |
 | `SELFHOST_NOTIFY`                  | `1m`               | `off` stops sending notifications from this server, when another one sends them from the same database.             |
 | `SELFHOST_GITHUB_APP_ID`           | unset              | GitHub App id. With the key and secret, turns on `POST /v1/github/webhooks`.                                        |

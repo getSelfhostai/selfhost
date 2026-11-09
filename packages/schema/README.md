@@ -227,6 +227,9 @@ spike_factor = 10           # band is at least this multiple of the usual spend 
 spike_floor_usd = 5         # spend under this in 15 minutes never alarms
 spike_baseline_days = 14
 forecast_warn_hours = 24
+cache_hit_floor = 0.5       # prompt cache hit rate (0 to 1) under which a long session alerts
+cache_min_requests = 20     # requests a session needs before its hit rate can alert
+cache_tip_usd = 5           # sessions under the floor that cost this much get a cost tip
 # runbook_url = "https://wiki.example.com/key-rotation"
 
 [plans]                     # API-equivalent USD per window, overriding the built-in table per tier
@@ -315,7 +318,7 @@ required once `state` is `answered`. Optional fields the review list engine
 ([`packages/review`](../review/README.md)) fills in: `why` (the signal and rule behind the item),
 `deadline` (when a blocking approval times out to a deny), `actions` (approve, deny, answer,
 snooze, open), `delivery` (`instant` or `digest`), `group` (`run:<id>` or `session:<id>`),
-`route` (which routing step chose the owners) and `snoozed_until` with `snoozed_by`.
+`route` (which routing step or `[[review.routes]]` entry chose the owners, and why) and `snoozed_until` with `snoozed_by`.
 
 `[review]` in `selfhost.toml` routes and times items: `owners` (path glob to people),
 `fallback` (people who get items nobody else owns), `approval_timeout_minutes` (default 30),
@@ -324,6 +327,15 @@ snooze, open), `delivery` (`instant` or `digest`), `group` (`run:<id>` or `sessi
 owners and admins and the person whose agent was blocked cannot approve their own; solo mode
 lets its one person approve),
 `high_risk_paths` and `high_risk_threshold` (default 70, also the line for instant delivery).
+`[[review.routes]]` are routing rules checked before `owners`, in file order: `id`, match fields
+(`kinds`, `repos`, `paths`, `min_risk`, `rule_ids`, `tools`), `to` (person ids, `role:<role>`,
+`team:<name>`, `@<login>`, `@<org>/<team>` or `codeowners`) and `escalate_after_minutes`. In
+layers, the org's routes come first and a team or repo file that restates one with other fields
+fails the floor check. `[review.auto_approve]` (`enabled` false, `dry_run` true, `max_risk` 20,
+`allowed_paths` docs and Markdown, `require_green_checks` true, `require_second_opinion` false)
+lets the GitHub App approve low-risk agent pull requests; each key the org file sets is a floor.
+The item's `route` names the route (`id`), what it matched (`why`), GitHub accounts it asks
+(`github`), when it escalates (`escalates_at`) and the routes it escalated from.
 
 `kind` `exception` is a tool call a rule blocked, which a person can allow once: approving it
 lets that exact call through one time, within `exception_expiry_minutes`. `requested_by` names

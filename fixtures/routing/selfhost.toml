@@ -1,0 +1,56 @@
+#:schema https://selfhost.ai/schema/selfhost.toml.v1.json
+version = 1
+
+[review]
+fallback = ["lead@example.com"]
+
+[review.owners]
+"web/**" = ["frontend@example.com"]
+
+[review.github_logins]
+"alice@example.com" = "alice"
+"bob@example.com" = "bob"
+
+[teams.platform]
+members = ["pat@example.com", "sam@example.com"]
+
+# Risky database work: the DBAs first, the team's admins after 30 minutes.
+[[review.routes]]
+id = "prod-db"
+kinds = ["pr", "approval", "exception"]
+paths = ["db/**", "migrations/**"]
+to = ["dba@example.com"]
+escalate_after_minutes = 30
+
+[[review.routes]]
+id = "db-admins"
+paths = ["db/**", "migrations/**"]
+to = ["role:admin"]
+escalate_after_minutes = 60
+
+# Force pushes and other guardrail hits go to the owners of the team.
+[[review.routes]]
+id = "guardrails"
+rule_ids = ["guard.*"]
+to = ["role:owner"]
+
+# Anything high risk in the payments repo goes to its code owners.
+[[review.routes]]
+id = "payments-high"
+repos = ["acme/payments"]
+min_risk = 70
+to = ["codeowners"]
+
+# Approvals to run deploy tools go to the platform team.
+[[review.routes]]
+id = "deploys"
+kinds = ["approval"]
+tools = ["mcp__deploy__*"]
+to = ["team:platform"]
+
+# Docs pull requests: the docs team on GitHub.
+[[review.routes]]
+id = "docs"
+kinds = ["pr"]
+paths = ["docs/**"]
+to = ["@acme/docs", "@alice"]

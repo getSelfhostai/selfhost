@@ -14,7 +14,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { getJson, getOptional, query } from "@/lib/api";
 import { useConsole } from "@/lib/console-context";
 import type { RunReport } from "@/lib/contracts";
-import { agentName, formatCompact, formatTime, formatUsd } from "@/lib/format";
+import { agentName, formatCacheHits, formatCompact, formatTime, formatUsd } from "@/lib/format";
 import { useApi } from "@/lib/use-api";
 
 const PR_KINDS: Record<string, string> = {
@@ -67,12 +67,31 @@ export function runFromEvents(
       ended_at: sorted.findLast((e) => e.kind === "session.ended")?.ts ?? null,
       cost_usd: sorted.reduce((sum, e) => sum + (e.cost?.usd ?? 0), 0),
       tokens: sorted.reduce((sum, e) => sum + tokensOf(e), 0),
+      cache_hit_rate: cacheHitRate(sorted),
+      cache_tip: null,
     },
     events: sorted,
     prs: [...prs].map(([url, state]) => ({ url, state })),
     trace_url: null,
     next_cursor: nextCursor,
   };
+}
+
+/**
+ * Cache reads over all input of the run's requests, as the server computes it; null when no
+ * request reported a cache read or write, as for agents whose logs have no cache fields.
+ */
+export function cacheHitRate(events: readonly LedgerEvent[]): number | null {
+  let read = 0;
+  let fresh = 0;
+  let known = false;
+  for (const event of events) {
+    if (event.kind !== "cost.recorded" || !event.cost) continue;
+    read += event.cost.cache_read_tokens;
+    fresh += event.cost.input_tokens + event.cost.cache_write_tokens;
+    known ||= event.cost.cache_read_tokens > 0 || event.cost.cache_write_tokens > 0;
+  }
+  return known && read + fresh > 0 ? read / (read + fresh) : null;
 }
 
 const byTime = (events: LedgerEvent[]) =>
@@ -272,9 +291,13 @@ export function RunScreen() {
                 <Fact name="Repo" value={run.repo ?? "None"} />
                 <Fact name="Cost" value={formatUsd(run.cost_usd)} />
                 <Fact name="Tokens" value={formatCompact(run.tokens)} />
+                <Fact name="Cache hits" value={formatCacheHits(run.cache_hit_rate)} />
                 <Fact name="Started" value={run.started_at ? formatTime(run.started_at) : "-"} />
                 <Fact name="Ended" value={run.ended_at ? formatTime(run.ended_at) : "Not ended"} />
               </dl>
+              {run.cache_tip ? (
+                <p className="mt-3 text-muted-foreground text-sm">Cost tip: {run.cache_tip}</p>
+              ) : null}
             </CardContent>
           </Card>
           {data.prs.length > 0 ? (

@@ -181,3 +181,31 @@ describe("the review list", () => {
     await screen.findByText("Nothing is waiting on a person.");
   });
 });
+
+describe("routes on review items", () => {
+  it("shows the route that took each item, what it matched and when it moves on", async () => {
+    const routed = {
+      ...RISKY_PR,
+      owners: ["backup-dba@example.com", "dba@example.com"],
+      route: {
+        step: "route" as const,
+        from: '[[review.routes]] "db-backup"',
+        id: "db-backup",
+        why: "kind pr, path db/schema.sql",
+        github: { users: ["bob"], teams: ["dba"] },
+        escalated_from: ["db"],
+        escalates_at: "2099-01-01T00:00:00.000Z",
+      },
+    };
+    mockServer({
+      "GET /v1/review-items": { items: [EXCEPTION, routed, QUESTION], next_cursor: null },
+    });
+    renderConsole(OWNER, "?screen=review");
+    const cards = await items();
+    const line = within(cards[1] as HTMLElement).getByTestId("item-route").textContent ?? "";
+    expect(line).toMatch(
+      /^Routed by \[\[review\.routes\]\] "db-backup": kind pr, path db\/schema\.sql · escalated from db · on GitHub @bob, dba · moves on at .+ if nobody answers$/,
+    );
+    expect(within(cards[0] as HTMLElement).queryByTestId("item-route")).toBeNull();
+  });
+});

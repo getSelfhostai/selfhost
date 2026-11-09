@@ -119,6 +119,22 @@ describe("spend", () => {
     expect(screen.queryByText("$0.00 left.", { exact: false })).toBeNull();
   });
 
+  it("shows the cache hit rate per row, and unknown where an agent reports no cache tokens", async () => {
+    const row = (agent: string, rate: number | null) => ({
+      ...USAGE.total,
+      group: { agent },
+      cache_hit_rate: rate,
+    });
+    mockServer({
+      "GET /v1/usage": { ...USAGE, rows: [row("claude_code", 0.874), row("cursor", null)] },
+      "GET /v1/budget": { status: 404, message: "No team" },
+    });
+    renderConsole(OWNER, "?screen=spend&breakdown=agent");
+    expect(await screen.findByText("87%")).toBeTruthy();
+    expect(screen.getByText("unknown")).toBeTruthy();
+    expect(screen.getByText("500K from cache, 50% cache hits")).toBeTruthy();
+  });
+
   it("says so when the server has no cost per merged PR yet", async () => {
     mockServer({ "GET /v1/usage": USAGE, "GET /v1/budget": { status: 404, message: "No team" } });
     renderConsole(OWNER, "?screen=spend");
@@ -276,6 +292,21 @@ describe("the run view", () => {
     expect(screen.getByText("Claude Code Action approved: 0 findings")).toBeTruthy();
   });
 
+  it("shows the run's cache hit rate and its cost tip", async () => {
+    const report = runFromEvents("run-8", events as never);
+    const tip =
+      "Session run-8 (claude_code, ada@example.com) cost $9.00 at 12% cache hits: usually a value that changes early in the prompt (such as a timestamp), tool lists that reorder, or a model switch.";
+    mockServer({
+      "GET /v1/runs/run-8": {
+        ...report,
+        run: { ...report.run, cache_hit_rate: 0.12, cache_tip: tip },
+      },
+    });
+    renderConsole(OWNER, "?screen=run&run=run-8");
+    expect(await screen.findByText("12%")).toBeTruthy();
+    expect(screen.getByText(`Cost tip: ${tip}`)).toBeTruthy();
+  });
+
   it("pages through a long run's events with the run route's cursor", async () => {
     const [first, second, third] = events;
     const server = mockServer({
@@ -305,6 +336,8 @@ describe("the run view", () => {
       repo: "acme/api",
       cost_usd: 0.25,
       tokens: 1500,
+      // The request reported no cache tokens: unknown, not 0.
+      cache_hit_rate: null,
       started_at: "2026-11-08T10:00:00.000Z",
       ended_at: null,
     });

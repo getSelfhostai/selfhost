@@ -1,3 +1,18 @@
+export {
+  AUTO_APPROVE_CHECKS,
+  AUTO_APPROVE_DECIDER,
+  AUTO_APPROVE_MARKER,
+  type AutoApproveCheck,
+  type AutoApproveInputs,
+  type AutoApproveStep,
+  type AutoApproveVerdict,
+  autoApproveReviewBody,
+  autoApproveSummary,
+  autoApproveText,
+  autoApproveVerdict,
+  type HeadCheckState,
+  type SecondOpinion,
+} from "./auto-approve.js";
 export { RISK_CHECK_NAME, RISK_LABELS, type RiskCheck, riskCheck, riskLabel } from "./check.js";
 export {
   isLocalHost,

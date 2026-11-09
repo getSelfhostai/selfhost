@@ -1,7 +1,7 @@
 import type { LedgerWriter } from "@selfhost/importers";
-import type { Ledger } from "@selfhost/ledger";
+import { type Ledger, stableEventId } from "@selfhost/ledger";
 import type { LedgerEvent } from "@selfhost/schema";
-import { oneSourcePerSession } from "@selfhost/spend";
+import { cacheAlert, cacheDrops, oneSourcePerSession, sessionCaches } from "@selfhost/spend";
 import { cacheFrom, writeCache } from "./cache.js";
 import { check, historyStart } from "./check.js";
 import {
@@ -37,6 +37,7 @@ function compact(event: LedgerEvent): LedgerEvent {
     kind: event.kind,
     actor: { kind: event.actor.kind, id: event.actor.id },
     ...(event.agent ? { agent: { vendor: event.agent.vendor } } : {}),
+    ...(event.model ? { model: event.model } : {}),
     ...(event.session_id ? { session_id: event.session_id } : {}),
     ...(event.cost ? { cost: event.cost } : {}),
     ...(data && Object.keys(data).length > 0 ? { data } : {}),
@@ -66,10 +67,28 @@ export interface Monitor {
   close(): Promise<void>;
 }
 
+/** Only sessions with a request this recent raise a cache alert: the ones still running. */
+const CACHE_ACTIVE_MS = 60 * 60_000;
+
+/** cache_hit_low alerts for this person's running sessions whose hit rate collapsed. */
+function cacheAlerts(
+  events: readonly LedgerEvent[],
+  person: string,
+  alerts: Parameters<typeof cacheDrops>[1] & { now: Date },
+): LedgerEvent[] {
+  const mine = events.filter(
+    (event) => event.kind === "cost.recorded" && event.actor.id === person && event.session_id,
+  );
+  return cacheDrops(sessionCaches(mine), alerts).map((session) =>
+    cacheAlert(session, alerts.floor, alerts.now, stableEventId, "cli"),
+  );
+}
+
 /**
  * Keeps `selfhost import --watch` checking as it imports: after each batch it forecasts the
- * person's plan limits and looks for spend spikes, records new limit_forecast and spend_spike
- * alerts, prints them, and rewrites the statusline cache. History is read from the ledger once,
+ * person's plan limits and looks for spend spikes and prompt cache collapses, records new
+ * limit_forecast, spend_spike and cache_hit_low alerts, prints them, and rewrites the
+ * statusline cache. History is read from the ledger once,
  * then kept in memory from the batches the watcher writes.
  */
 export async function startMonitor(ledger: Ledger, opts: MonitorOptions): Promise<Monitor> {
@@ -102,7 +121,8 @@ export async function startMonitor(ledger: Ledger, opts: MonitorOptions): Promis
     try {
       const start = historyStart(settings, now).getTime();
       events = events.filter((event) => Date.parse(event.ts) >= start);
-      const result = check(oneSourcePerSession(events), {
+      const chosen = oneSourcePerSession(events);
+      const result = check(chosen, {
         person: opts.person,
         now,
         since: new Date(now.getTime() - 60 * 60_000),
@@ -128,6 +148,12 @@ export async function startMonitor(ledger: Ledger, opts: MonitorOptions): Promis
             ),
           ],
         })),
+        ...cacheAlerts(chosen, opts.person, {
+          floor: settings.alerts.cache_hit_floor ?? 0.5,
+          minRequests: settings.alerts.cache_min_requests ?? 20,
+          since: new Date(now.getTime() - CACHE_ACTIVE_MS),
+          now,
+        }).map((event) => ({ event, lines: [`Cache alert: ${String(event.data?.message)}`] })),
       ].filter(({ event }) => !raised.has(event.id));
       if (fresh.length > 0) {
         await sink.append(fresh.map(({ event }) => event));

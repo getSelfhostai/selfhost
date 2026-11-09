@@ -70,6 +70,13 @@ export type { ReceiptStore, StoredReceipt } from "./receipts.js";
 export { type RetentionResult, retentionSweep } from "./retention.js";
 export * from "./sources/index.js";
 export {
+  type TailFilter,
+  type TailOptions,
+  type TailPage,
+  type TailRow,
+  tailEvents,
+} from "./tail.js";
+export {
   type AddPersonRefusal,
   hashToken,
   type InviteOptions,

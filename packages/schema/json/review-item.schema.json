@@ -311,9 +311,10 @@
       ],
       "properties": {
         "step": {
-          "description": "owner ([review.owners] path globs, else the session's person), team (members of the item's team in [teams]), fallback ([review] fallback), or none when selfhost.toml names nobody.",
+          "description": "route (a [[review.routes]] entry), owner ([review.owners] path globs, else the session's person), team (members of the item's team in [teams]), fallback ([review] fallback), or none when selfhost.toml names nobody.",
           "type": "string",
           "enum": [
+            "route",
             "owner",
             "team",
             "fallback",
@@ -321,8 +322,56 @@
           ]
         },
         "from": {
-          "description": "Where the owners came from, for example [review.owners] \"db/**\", the session's person, [teams.platform] or [review] fallback.",
+          "description": "Where the owners came from, for example [[review.routes]] \"db\", [review.owners] \"db/**\", the session's person, [teams.platform] or [review] fallback.",
           "type": "string"
+        },
+        "id": {
+          "description": "The [[review.routes]] id, when a route took the item.",
+          "type": "string"
+        },
+        "why": {
+          "description": "What the route matched on, such as \"kind pr, path db/schema.sql, risk 82 at or above 70\".",
+          "type": "string"
+        },
+        "github": {
+          "additionalProperties": false,
+          "description": "GitHub accounts the route names, from @ targets and CODEOWNERS, asked to review a pull request.",
+          "type": "object",
+          "required": [
+            "users",
+            "teams"
+          ],
+          "properties": {
+            "users": {
+              "description": "GitHub logins, without the @.",
+              "type": "array",
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "teams": {
+              "description": "GitHub team slugs.",
+              "type": "array",
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              }
+            }
+          }
+        },
+        "escalates_at": {
+          "format": "date-time",
+          "description": "When the item moves on to the next route that matches it (or [review] fallback), from the route's escalate_after_minutes, if nobody answered.",
+          "type": "string"
+        },
+        "escalated_from": {
+          "description": "Routes the item waited on before this one, oldest first. Their people stay owners.",
+          "type": "array",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          }
         }
       }
     },

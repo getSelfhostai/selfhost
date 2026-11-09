@@ -2,6 +2,7 @@ import { type Static, Type } from "@sinclair/typebox";
 import { DateTime, StringEnum } from "./common.js";
 import { AgentRefSchema, LedgerEventSchema } from "./event.js";
 import { SecondOpinionSchema } from "./second-opinion.js";
+import { CACHE_HIT_RATE_TEXT } from "./usage.js";
 
 /**
  * One agent run for the console's run view: GET /v1/runs/{run_id}. A run is one agent session,
@@ -43,6 +44,12 @@ export const RunSummarySchema = Type.Object(
       minimum: 0,
       description: "Input, output, cache read and cache write tokens of those requests.",
     }),
+    cache_hit_rate: Type.Union([Type.Number({ minimum: 0, maximum: 1 }), Type.Null()], {
+      description: `Share of the run's input tokens read from the prompt cache, 0 to 1: ${CACHE_HIT_RATE_TEXT} null when the run reported no cache read or write.`,
+    }),
+    cache_tip: NullableText(
+      "One line when the run cost at least [alerts] cache_tip_usd at a hit rate under cache_hit_floor, naming the usual causes; else null.",
+    ),
   },
   { additionalProperties: false, title: "RunSummary" },
 );

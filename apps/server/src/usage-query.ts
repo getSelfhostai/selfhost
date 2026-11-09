@@ -18,6 +18,9 @@ import { COST_SOURCE_PREFERENCE } from "@selfhost/spend";
  *   and the team overview count it (oneSourcePerSession in @selfhost/spend).
  * - Sessions: distinct sessions with a session, prompt or cost event in the range.
  * - Pull requests: distinct pull request URLs of pr.opened and pr.merged events in the range.
+ * - Cache hit rate: cache reads over cache reads, uncached input and cache writes of the cost
+ *   events of sessions that reported any cache read or write in the range; a session that
+ *   reported none is unknown and left out, as cacheStats in @selfhost/spend does.
  *
  * An event's team is the team that owns its repo in the org, or its run's repo, else the team of
  * the person token that wrote it, read now, as the team overview reads it.
@@ -67,6 +70,8 @@ const METRIC_COLUMNS = `
   coalesce(c.output_tokens, 0)::float8 AS output_tokens,
   coalesce(c.cache_read_tokens, 0)::float8 AS cache_read_tokens,
   coalesce(c.cache_write_tokens, 0)::float8 AS cache_write_tokens,
+  c.cache_hit_read::float8 AS cache_hit_read,
+  c.cache_hit_fresh::float8 AS cache_hit_fresh,
   coalesce(c.requests, 0)::int AS requests,
   coalesce(s.sessions, 0)::int AS sessions,
   coalesce(p.prs_opened, 0)::int AS prs_opened,
@@ -142,7 +147,13 @@ scoped AS (
   WHERE ${scope}${teamFilter}
 ),
 costs AS (
-  SELECT * FROM (
+  SELECT *, bool_or(
+      coalesce((body#>>'{cost,cache_read_tokens}')::numeric, 0) > 0
+      OR coalesce((body#>>'{cost,cache_write_tokens}')::numeric, 0) > 0
+    ) OVER (
+      PARTITION BY CASE WHEN coalesce(session_id, '') = '' THEN id::text ELSE session_key END
+    ) AS cache_known
+  FROM (
     SELECT *, first_value(source) OVER (
       PARTITION BY session_key ORDER BY ${SOURCE_RANK}, source
     ) AS chosen_source
@@ -157,6 +168,9 @@ cost_agg AS (
     sum((body#>>'{cost,output_tokens}')::numeric) AS output_tokens,
     sum((body#>>'{cost,cache_read_tokens}')::numeric) AS cache_read_tokens,
     sum((body#>>'{cost,cache_write_tokens}')::numeric) AS cache_write_tokens,
+    sum((body#>>'{cost,cache_read_tokens}')::numeric) FILTER (WHERE cache_known) AS cache_hit_read,
+    sum((body#>>'{cost,input_tokens}')::numeric + (body#>>'{cost,cache_write_tokens}')::numeric)
+      FILTER (WHERE cache_known) AS cache_hit_fresh,
     count(*) AS requests
   FROM costs WHERE ${where("")} ${groupBy}
 ),
@@ -190,6 +204,8 @@ interface MetricRow {
   output_tokens: number | string;
   cache_read_tokens: number | string;
   cache_write_tokens: number | string;
+  cache_hit_read: number | string | null;
+  cache_hit_fresh: number | string | null;
   requests: number | string;
   sessions: number | string;
   prs_opened: number | string;
@@ -203,6 +219,8 @@ function totalsOf(row: MetricRow | undefined): UsageTotals {
   const output = n(row?.output_tokens);
   const read = n(row?.cache_read_tokens);
   const write = n(row?.cache_write_tokens);
+  const hitRead = n(row?.cache_hit_read ?? 0);
+  const hitAll = hitRead + n(row?.cache_hit_fresh ?? 0);
   return {
     usd: n(row?.usd),
     tokens: input + output + read + write,
@@ -210,6 +228,7 @@ function totalsOf(row: MetricRow | undefined): UsageTotals {
     output_tokens: output,
     cache_read_tokens: read,
     cache_write_tokens: write,
+    cache_hit_rate: hitAll > 0 ? Math.round((hitRead / hitAll) * 1e6) / 1e6 : null,
     requests: n(row?.requests),
     sessions: n(row?.sessions),
     prs_opened: n(row?.prs_opened),
@@ -217,7 +236,8 @@ function totalsOf(row: MetricRow | undefined): UsageTotals {
   };
 }
 
-const isEmpty = (totals: UsageTotals) => Object.values(totals).every((value) => value === 0);
+const isEmpty = (totals: UsageTotals) =>
+  Object.values(totals).every((value) => value === 0 || value === null);
 
 /** Day oldest first when grouped by day, then usd highest first, then by group values. */
 function compareRows(groupBy: UsageDimension[]) {

@@ -111,6 +111,24 @@ local logs. `oneSourcePerSession(events)` keeps the cost events of one source pe
 session, in the order `otel`, `local_log`, `hook`, `gateway`, `vendor_api`, so nothing is counted
 twice. OpenTelemetry comes first because it is the only source that sees every request.
 
+## Prompt cache hit rate
+
+`cacheByGroup(events, by)`, `cacheStats(events)` and `sessionCaches(events)` turn the token
+counts `cost.recorded` events already carry into a hit rate: cache reads over cache reads plus
+uncached input plus cache writes. A session (agent and session id) that reported no cache read
+and no cache write at all is unknown, `hit_rate: null`, and left out of every group's rate: some
+agents' logs have no cache fields, and their importers write 0 for both, which would read as
+"every request missed". A session that wrote the cache and never read it is a known 0.
+
+`sessionCaches` adds each session's spend, model switches and the hit rate of its last 10
+requests (`recent_hit_rate`), so a collapse shows while the session runs. `cacheDrops` picks
+sessions past `minRequests` whose recent rate is under the floor (`[alerts] cache_min_requests`
+and `cache_hit_floor`), and `cacheAlert` turns one into an `alert.raised` event with
+`data.alert: "cache_hit_low"`, one per session (its id comes from the session alone). `cacheTips`
+picks sessions that cost at least `[alerts] cache_tip_usd` at an overall rate under the floor,
+and `cacheTipText` says it in one line with the usual causes: a value that changes early in the
+prompt (such as a timestamp), tool lists that reorder, or a model switch.
+
 ## Limit forecast
 
 `forecastLimits(events, person, { now, tiers, limits, warnHours, overflow })` says, for each of a

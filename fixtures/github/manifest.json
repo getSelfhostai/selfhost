@@ -33,7 +33,8 @@
       { "file": "webhooks/reviewers/issue_comment.created.pr-agent-preparing.json", "case": "PR-Agent's placeholder comment before a review: no verdict." },
       { "file": "webhooks/reviewers/issue_comment.created.claude-code-action.json", "case": "The Claude Code action's summary comment from the workflow selfhost review setup writes: two findings with a failing test and a repro, ending in the selfhost:second-opinion marker line." },
       { "file": "webhooks/reviewers/check_run.completed.claude-code-action-failure.json", "case": "The Claude Code review job (GitHub Actions) fails on pull request 101." },
-      { "file": "webhooks/reviewers/check_run.completed.selfhost-review.json", "case": "The selfhost App's own selfhost/review check run completes: not a reviewer." }
+      { "file": "webhooks/reviewers/check_run.completed.selfhost-review.json", "case": "The selfhost App's own selfhost/review check run completes: not a reviewer." },
+      { "file": "webhooks/check_suite.completed.json", "case": "Another app's check suite finishes green on head 5786c5c9 of pull request 101: auto-approve looks at it again." }
     ]
   }
 }

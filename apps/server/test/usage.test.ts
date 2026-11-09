@@ -249,7 +249,9 @@ function conditions(filters: Filters, teams: string[] | null): string {
   return parts.join(" AND ");
 }
 
-type Totals = Record<(typeof USAGE_METRICS)[number], number>;
+type Totals = Record<Exclude<(typeof USAGE_METRICS)[number], "cache_hit_rate">, number> & {
+  cache_hit_rate: number | null;
+};
 
 /** The same view, from SQL on the events table: spend, sessions and pull requests per group. */
 async function direct(
@@ -310,6 +312,7 @@ async function direct(
     let totals = out.get(k);
     if (!totals) {
       totals = Object.fromEntries(USAGE_METRICS.map((m) => [m, 0])) as Totals;
+      totals.cache_hit_rate = null;
       out.set(k, totals);
     }
     return totals;
@@ -331,6 +334,10 @@ async function direct(
       totals.output_tokens +
       totals.cache_read_tokens +
       totals.cache_write_tokens;
+    // Every cost event here reports cache tokens, so every session's rate is known.
+    const input = totals.cache_read_tokens + totals.input_tokens + totals.cache_write_tokens;
+    totals.cache_hit_rate =
+      input > 0 ? Math.round((totals.cache_read_tokens / input) * 1e6) / 1e6 : null;
   }
   for (const row of sessions) at(row.key).sessions = Number(row.sessions);
   for (const row of prs) {
@@ -574,7 +581,7 @@ describe.each(BACKENDS)("usage views on a seeded ledger on $name", (backend) => 
               const value = row.group[d] ?? "";
               return /^[=+\-@]/.test(value) ? `'${value}` : value;
             }),
-            ...USAGE_METRICS.map((m) => String(row[m])),
+            ...USAGE_METRICS.map((m) => (row[m] === null ? "" : String(row[m]))),
           ]),
         );
       }

@@ -4,6 +4,7 @@ import { parse as parseToml, TomlError } from "smol-toml";
 import { NonEmpty, StringEnum, Url } from "./common.js";
 import { AGENT_VENDORS } from "./event.js";
 import { NOTIFY_CADENCES } from "./notify.js";
+import { REVIEW_ITEM_KINDS } from "./review-item.js";
 import { TomlLineIndex } from "./toml-lines.js";
 import {
   type FieldError,
@@ -175,6 +176,132 @@ export const RuleSchema = Type.Object(
   {
     additionalProperties: false,
     description: "One rule: what it matches, what it does and whether it is enforced yet.",
+  },
+);
+
+/** Prefixes of a route target in `[[review.routes]] to`. Anything else is a person id. */
+export const ROUTE_TARGET_ROLES = ["owner", "admin", "member"] as const;
+/** The `to` target that sends an item to the CODEOWNERS owners of its files. */
+export const CODEOWNERS_TARGET = "codeowners";
+
+export const ReviewRouteRuleSchema = Type.Object(
+  {
+    id: Type.String({
+      pattern: RULE_ID_PATTERN,
+      description: "Stable route id, shown on every item the route sends and in its escalations.",
+    }),
+    description: Type.Optional(Type.String({ description: "What the route is for." })),
+    kinds: Type.Optional(
+      Type.Array(StringEnum(REVIEW_ITEM_KINDS), {
+        minItems: 1,
+        description: "Item kinds the route takes, such as pr, approval or exception. Absent: all.",
+      }),
+    ),
+    repos: Type.Optional(
+      Type.Array(NonEmpty(), {
+        minItems: 1,
+        description: "Globs on the item's repository as owner/name, case ignored. Absent: all.",
+      }),
+    ),
+    paths: Type.Optional(
+      Type.Array(NonEmpty(), {
+        minItems: 1,
+        description:
+          "Globs on files relative to the repository root. The route matches when one of the item's files matches one. Absent: any files, or none.",
+      }),
+    ),
+    min_risk: Type.Optional(
+      Type.Integer({
+        minimum: 0,
+        maximum: 100,
+        description: "Matches items whose risk score is at or above this.",
+      }),
+    ),
+    rule_ids: Type.Optional(
+      Type.Array(NonEmpty(), {
+        minItems: 1,
+        description:
+          'Globs on the id of the rule that raised the item, such as "guard.*". Items no rule raised do not match.',
+      }),
+    ),
+    tools: Type.Optional(
+      Type.Array(NonEmpty(), {
+        minItems: 1,
+        description:
+          "Tool names an approval or exception waits on, such as Bash or an MCP tool. Items about no tool do not match.",
+      }),
+    ),
+    to: Type.Array(NonEmpty(), {
+      minItems: 1,
+      description: `Who gets the item: person ids, "role:owner", "role:admin" or "role:member" (the team's people with that role, on a team server), "team:<name>" (members in [teams]), "@<login>" or "@<org>/<team>" (GitHub accounts, asked to review pull requests), or "${CODEOWNERS_TARGET}" (the CODEOWNERS owners of the item's files).`,
+    }),
+    escalate_after_minutes: Type.Optional(
+      Type.Integer({
+        minimum: 1,
+        description:
+          "Minutes the item waits on this route. Then the next route that matches it gets it too, else [review] fallback.",
+      }),
+    ),
+  },
+  {
+    additionalProperties: false,
+    description:
+      "One routing rule. Every match field given must match; the first route in file order that matches and names anyone gets the item.",
+  },
+);
+
+export const AutoApproveSchema = Type.Object(
+  {
+    enabled: Type.Optional(
+      Type.Boolean({
+        default: false,
+        description:
+          "Approve low-risk agent pull requests through the GitHub App. Off by default; when on, dry_run decides whether it approves or only records.",
+      }),
+    ),
+    dry_run: Type.Optional(
+      Type.Boolean({
+        default: true,
+        description:
+          "Only record what would have been approved, on the pull request's check and in the ledger. Set false to approve.",
+      }),
+    ),
+    max_risk: Type.Optional(
+      Type.Integer({
+        minimum: 0,
+        maximum: 100,
+        default: 20,
+        description:
+          "Highest risk score that may be approved. The risk level must also be low, and a pull request with no score waits for a person.",
+      }),
+    ),
+    allowed_paths: Type.Optional(
+      Type.Array(NonEmpty(), {
+        default: ["docs/**", "**/*.md"],
+        description:
+          "Globs every changed file must match. A file outside them, or under [review] high_risk_paths, needs a person.",
+      }),
+    ),
+    require_green_checks: Type.Optional(
+      Type.Boolean({
+        default: true,
+        description:
+          "Every other check run and commit status on the head commit must have passed, and there must be at least one.",
+      }),
+    ),
+    require_second_opinion: Type.Optional(
+      Type.Boolean({
+        default: false,
+        description:
+          "Require a passing second opinion from the reviewer integration. It is required anyway once [integrations.reviewer] is set.",
+      }),
+    ),
+  },
+  {
+    additionalProperties: false,
+    default: {},
+    description:
+      "Approve agent pull requests nobody needs to read: low risk, green checks, only allowed paths, no guardrail hits. Never exceptions or anything an agent waits on.",
   },
 );
 
@@ -880,6 +1007,14 @@ export const SelfhostConfigSchema = Type.Object(
                 "How many leading folders name the module of a file no modules glob matches: 1 gives apps, 2 gives apps/server. Files at the top of the repository are in the module (root).",
             }),
           ),
+          routes: Type.Optional(
+            Type.Array(ReviewRouteRuleSchema, {
+              default: [],
+              description:
+                "Routing rules, checked in file order before [review.owners]. An item no route takes goes to its owner, team or fallback as before. The org's routes come first and a team or repo file cannot change them.",
+            }),
+          ),
+          auto_approve: Type.Optional(AutoApproveSchema),
         },
         {
           additionalProperties: false,
@@ -991,11 +1126,37 @@ export const SelfhostConfigSchema = Type.Object(
           runbook_url: Type.Optional(
             Url({ description: "Key rotation runbook linked from spend spike alarms." }),
           ),
+          cache_hit_floor: Type.Optional(
+            Type.Number({
+              minimum: 0,
+              maximum: 1,
+              default: 0.5,
+              description:
+                "Prompt cache hit rate, 0 to 1, below which a long session raises a cache alert and an expensive one gets a cost tip.",
+            }),
+          ),
+          cache_min_requests: Type.Optional(
+            Type.Integer({
+              minimum: 2,
+              default: 20,
+              description:
+                "Model requests a session needs before its cache hit rate can raise an alert.",
+            }),
+          ),
+          cache_tip_usd: Type.Optional(
+            Type.Number({
+              minimum: 0,
+              default: 5,
+              description:
+                "Sessions that cost at least this many USD below cache_hit_floor get a cost tip in selfhost spend and the run view.",
+            }),
+          ),
         },
         {
           additionalProperties: false,
           default: {},
-          description: "When the spend spike alarm and the plan limit forecast speak up.",
+          description:
+            "When the spend spike alarm, the plan limit forecast and the prompt cache alert speak up.",
         },
       ),
     ),
@@ -1106,6 +1267,8 @@ export type Budget = Static<typeof BudgetSchema>;
 export type NotifyConfig = Static<typeof NotifyConfigSchema>;
 export type RoiConfig = Static<typeof RoiConfigSchema>;
 export type Integrations = Static<typeof IntegrationsSchema>;
+export type ReviewRouteRule = Static<typeof ReviewRouteRuleSchema>;
+export type AutoApprove = Static<typeof AutoApproveSchema>;
 
 type Present<T> = Exclude<T, undefined>;
 
@@ -1131,8 +1294,11 @@ export type ResolvedSelfhostConfig = Omit<
   ledger: Required<Present<SelfhostConfig["ledger"]>>;
   redaction: Present<SelfhostConfig["redaction"]>;
   rules: ResolvedRule[];
-  review: Present<SelfhostConfig["review"]> &
-    Required<Omit<Present<SelfhostConfig["review"]>, "github_team">>;
+  review: Omit<
+    Present<SelfhostConfig["review"]> &
+      Required<Omit<Present<SelfhostConfig["review"]>, "github_team">>,
+    "auto_approve"
+  > & { auto_approve: Required<AutoApprove> };
   packages: Present<SelfhostConfig["packages"]> &
     Required<
       Pick<
@@ -1235,6 +1401,50 @@ function semanticErrors(
   }
   if (config.runtime) errors.push(...runtimeErrors(config.runtime));
   if (config.roi) errors.push(...roiErrors(config.roi));
+  errors.push(...routeErrors(config.review.routes));
+  return errors;
+}
+
+const GITHUB_TEAM_TARGET = new RegExp(
+  `^@${GITHUB_LOGIN_PATTERN.slice(1, -1)}/${GITHUB_TEAM_PATTERN.slice(1, -1)}$`,
+);
+const GITHUB_USER_TARGET = new RegExp(`^@${GITHUB_LOGIN_PATTERN.slice(1)}`);
+
+/** Why a `[[review.routes]] to` entry is invalid, or undefined when it is fine. */
+export function routeTargetError(target: string): string | undefined {
+  if (target.startsWith("role:")) {
+    const role = target.slice("role:".length);
+    return (ROUTE_TARGET_ROLES as readonly string[]).includes(role)
+      ? undefined
+      : `Unknown role "${role}": expected ${ROUTE_TARGET_ROLES.map((r) => `role:${r}`).join(", ")}`;
+  }
+  if (target.startsWith("team:")) {
+    return target.length > "team:".length ? undefined : 'Expected a team name after "team:"';
+  }
+  if (target.startsWith("@")) {
+    return GITHUB_TEAM_TARGET.test(target) || GITHUB_USER_TARGET.test(target)
+      ? undefined
+      : "Expected @<login> or @<org>/<team>, as in CODEOWNERS";
+  }
+  return undefined;
+}
+
+function routeErrors(routes: readonly ReviewRouteRule[]): SegmentError[] {
+  const errors: SegmentError[] = [];
+  const ids = new Map<string, number>();
+  routes.forEach((route, index) => {
+    const earlier = ids.get(route.id);
+    if (earlier !== undefined) {
+      errors.push({
+        segments: ["review", "routes", index, "id"],
+        message: `Duplicate route id "${route.id}", also used by review.routes[${earlier}]`,
+      });
+    } else ids.set(route.id, index);
+    route.to.forEach((target, at) => {
+      const message = routeTargetError(target);
+      if (message) errors.push({ segments: ["review", "routes", index, "to", at], message });
+    });
+  });
   return errors;
 }
 
