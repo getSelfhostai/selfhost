@@ -8,7 +8,14 @@ import {
   type ReviewItem,
   type ReviewItemKind,
 } from "@selfhost/schema";
-import { type Routing, routeItem } from "./routing.js";
+import type { CodeOwners } from "./codeowners.js";
+import {
+  type RouteContext,
+  type RouteInput,
+  type Routing,
+  routeByDefaults,
+  routeByRules,
+} from "./routing.js";
 import type { Draft } from "./signals.js";
 
 const MINUTE_MS = 60_000;
@@ -25,6 +32,10 @@ export interface BuildContext {
    * through [review.owners]. Undefined on a laptop.
    */
   approvers?: readonly string[];
+  /** The team's people by role, on a team server, for `role:` targets in [[review.routes]]. */
+  roles?: RouteContext["roles"];
+  /** The CODEOWNERS of the item's repository, when the server or laptop can read it. */
+  codeowners?: CodeOwners;
 }
 
 const iso = (ts: string) => new Date(ts).toISOString();
@@ -73,6 +84,21 @@ export function deliveryOf(
     : "digest";
 }
 
+/** Whether a person may approve an exception: not the requester, unless self-approval is on. */
+function approverFilter(
+  approvers: readonly string[],
+  requester: string | undefined,
+  config: ResolvedSelfhostConfig,
+): (person: string) => boolean {
+  const allowed = new Set(approvers.map((person) => person.toLowerCase()));
+  const self = config.review.self_approve_exceptions;
+  return (person) => {
+    const id = person.toLowerCase();
+    if (id === requester?.toLowerCase()) return self;
+    return allowed.has(id);
+  };
+}
+
 /**
  * Who approves an exception on a team server: the team's owners and admins, without the person
  * whose agent was blocked unless [review] self_approve_exceptions lets them.
@@ -98,14 +124,76 @@ function exceptionRoute(
   };
 }
 
-function routed(item: ReviewItem, paths: readonly string[], ctx: BuildContext, draft: Draft) {
+/** What routing reads from an item and its signal. */
+export function routeInput(
+  item: Pick<ReviewItem, "kind" | "repo" | "why" | "risk">,
+  paths: readonly string[],
+  extra: { person?: string; team?: string; tool?: string },
+): RouteInput {
+  return {
+    paths,
+    kind: item.kind,
+    risk: item.risk.score,
+    ...(item.repo ? { repo: item.repo } : {}),
+    ...(item.why?.rule_id ? { ruleId: item.why.rule_id } : {}),
+    ...(extra.person ? { person: extra.person } : {}),
+    ...(extra.team ? { team: extra.team } : {}),
+    ...(extra.tool ? { tool: extra.tool } : {}),
+  };
+}
+
+/** The routing context for an item: exception items on a team server go to approvers only. */
+export function routeContext(
+  item: Pick<ReviewItem, "kind" | "requested_by">,
+  ctx: Pick<BuildContext, "config" | "approvers" | "roles" | "codeowners">,
+  now: Date,
+  person?: string,
+): RouteContext {
+  const approvers = item.kind === "exception" ? ctx.approvers : undefined;
+  return {
+    now,
+    ...(ctx.roles ? { roles: ctx.roles } : {}),
+    ...(ctx.codeowners ? { codeowners: ctx.codeowners } : {}),
+    ...(approvers
+      ? { eligible: approverFilter(approvers, item.requested_by ?? person, ctx.config) }
+      : {}),
+  };
+}
+
+/**
+ * Owners, route, risk and delivery of an item. A [[review.routes]] entry takes it first; else an
+ * exception on a team server goes to the team's owners and admins, and anything else to its
+ * owner, team or fallback. An item that escalated keeps its owners and route, and one that stays
+ * on the same route keeps its escalation time.
+ */
+function routed(
+  item: ReviewItem,
+  paths: readonly string[],
+  ctx: BuildContext,
+  draft: Draft,
+  now: Date,
+  previous?: ReviewItem["route"],
+) {
   const person = draft.person ?? ctx.sessionPerson;
-  const { owners, route } =
-    item.kind === "exception" && ctx.approvers !== undefined
-      ? exceptionRoute(ctx.approvers, item.requested_by ?? person, ctx.config)
-      : routeItem(ctx.config, { paths, person, team: draft.team });
   const risk = withPathRisk(item.risk, paths, ctx.config);
-  return { ...item, owners, route, risk, delivery: deliveryOf({ ...item, risk }, ctx.config) };
+  const delivery = deliveryOf({ ...item, risk }, ctx.config);
+  if (previous?.escalated_from) return { ...item, risk, delivery };
+  const input = routeInput({ ...item, risk }, paths, {
+    person,
+    team: draft.team,
+    tool: draft.tool,
+  });
+  const rules = routeByRules(ctx.config, input, routeContext(item, ctx, now, person));
+  const { owners, route } =
+    rules ??
+    (item.kind === "exception" && ctx.approvers !== undefined
+      ? exceptionRoute(ctx.approvers, item.requested_by ?? person, ctx.config)
+      : routeByDefaults(ctx.config, input));
+  const kept =
+    route.id !== undefined && route.id === previous?.id && previous.escalates_at
+      ? { ...route, escalates_at: previous.escalates_at }
+      : route;
+  return { ...item, owners, route: kept, risk, delivery };
 }
 
 /** A new open item from its first signal. */
@@ -144,7 +232,7 @@ export function newItem(draft: Draft, event: LedgerEvent, ctx: BuildContext): Re
     ...(group ? { group } : {}),
     ...(draft.brief ? { brief: draft.brief } : {}),
   };
-  return routed(item, draft.paths, ctx, draft);
+  return routed(item, draft.paths, ctx, draft, new Date(createdAt));
 }
 
 /**
@@ -175,5 +263,5 @@ export function mergeItem(
     ...(draft.brief ? { brief: draft.brief } : {}),
     ...(draft.attach && draft.blocking ? { blocking: true } : {}),
   };
-  return routed(merged, paths, ctx, draft);
+  return routed(merged, paths, ctx, draft, ctx.now, item.route);
 }

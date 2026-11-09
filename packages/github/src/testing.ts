@@ -38,6 +38,20 @@ export interface FakeCheckRun {
   output: { title: string | null; summary: string | null; text: string | null };
 }
 
+export interface FakeReview {
+  login: string;
+  state: string;
+  type?: "User" | "Bot";
+  body?: string;
+  commit_id?: string;
+}
+
+/** A commit status, as GET /repos/{owner}/{repo}/commits/{ref}/status lists it. */
+export interface FakeStatus {
+  context: string;
+  state: "success" | "pending" | "failure" | "error";
+}
+
 export interface FakeFile {
   filename: string;
   previous_filename?: string;
@@ -64,7 +78,8 @@ export interface FakePull {
   labels: string[];
   requestedUsers: string[];
   requestedTeams: string[];
-  reviews: { login: string; state: string }[];
+  /** Reviews, oldest first. The App's own carry type Bot. */
+  reviews: FakeReview[];
   comments: FakeComment[];
   files: FakeFile[];
   commits: FakeCommit[];
@@ -102,6 +117,8 @@ export class FakeGitHub {
   readonly unknown: FakeRequest[] = [];
   /** Raw file bodies by `owner/repo@ref:path`. */
   readonly contents = new Map<string, string>();
+  /** Commit statuses by commit SHA. */
+  readonly statuses = new Map<string, FakeStatus[]>();
   private readonly pulls = new Map<string, FakePull>();
   private readonly failures: { method: string; path: RegExp; status: number }[] = [];
   private readonly publicKey?: KeyObject;
@@ -227,6 +244,18 @@ export class FakeGitHub {
       );
       return json(200, { total_count: runs.length, check_runs: runs });
     }
+    match = /^\/repos\/[^/]+\/[^/]+\/commits\/([^/]+)\/status$/.exec(path);
+    if (match && method === "GET") {
+      const statuses = this.statuses.get(match[1] as string) ?? [];
+      const state = statuses.every((status) => status.state === "success")
+        ? statuses.length > 0
+          ? "success"
+          : "pending"
+        : statuses.some((status) => status.state === "pending")
+          ? "pending"
+          : "failure";
+      return json(200, { state, total_count: statuses.length, statuses });
+    }
     if (/^\/repos\/[^/]+\/[^/]+\/check-runs$/.test(path) && method === "POST") {
       return this.createCheck(request.body as Record<string, unknown>);
     }
@@ -323,10 +352,40 @@ export class FakeGitHub {
         200,
         pull.reviews.map((review, index) => ({
           id: index + 1,
-          user: { login: review.login, type: "User" },
+          user: { login: review.login, type: review.type ?? "User" },
           state: review.state,
+          body: review.body ?? "",
+          commit_id: review.commit_id ?? null,
         })),
       );
+    }
+    if (rest === "reviews" && method === "POST") {
+      const {
+        event,
+        body: text = "",
+        commit_id,
+      } = body as {
+        event?: string;
+        body?: string;
+        commit_id?: string;
+      };
+      if (pull.author.toLowerCase() === bot.login.toLowerCase()) {
+        return json(422, { message: "Can not approve your own pull request" });
+      }
+      const state =
+        event === "APPROVE"
+          ? "APPROVED"
+          : event === "REQUEST_CHANGES"
+            ? "CHANGES_REQUESTED"
+            : "COMMENTED";
+      pull.reviews.push({
+        login: bot.login,
+        type: "Bot",
+        state,
+        body: text,
+        commit_id: commit_id ?? pull.head?.sha ?? "0".repeat(40),
+      });
+      return json(200, { id: pull.reviews.length, state, body: text, commit_id, user: bot });
     }
     if (rest === "comments" && method === "GET") return json(200, pull.comments);
     if (rest === "comments" && method === "POST") {

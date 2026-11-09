@@ -25,6 +25,15 @@ describe("parseConfig", () => {
           revert_window_days: 14,
           modules: {},
           module_depth: 1,
+          routes: [],
+          auto_approve: {
+            enabled: false,
+            dry_run: true,
+            max_risk: 20,
+            allowed_paths: ["docs/**", "**/*.md"],
+            require_green_checks: true,
+            require_second_opinion: false,
+          },
         },
         packages: {
           mode: "off",
@@ -263,5 +272,42 @@ describe("validateConfig", () => {
     expect(validateConfig({ version: 1, org: { name: "acme" } }).ok).toBe(true);
     const result = validateConfig({ version: 1, extra: true });
     expect(result.ok ? [] : result.errors.map((e) => e.field)).toEqual(["extra"]);
+  });
+});
+
+describe("[[review.routes]]", () => {
+  it("reads routes and refuses duplicate ids and targets it cannot place", () => {
+    const parsed = parseConfig(`version = 1
+[[review.routes]]
+id = "db"
+kinds = ["pr", "approval"]
+repos = ["acme/*"]
+paths = ["db/**"]
+min_risk = 70
+rule_ids = ["guard.*"]
+tools = ["Bash"]
+to = ["dba@example.com", "role:admin", "team:platform", "@acme/dba", "@octocat", "codeowners"]
+escalate_after_minutes = 15
+
+[[review.routes]]
+id = "db"
+to = ["role:boss", "team:", "@acme/", "@-bad"]
+`);
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.errors.map((e) => [e.field, e.line])).toEqual([
+      ["review.routes[1].id", 14],
+      ["review.routes[1].to[0]", 15],
+      ["review.routes[1].to[1]", 15],
+      ["review.routes[1].to[2]", 15],
+      ["review.routes[1].to[3]", 15],
+    ]);
+  });
+
+  it("refuses a route with nobody to send to or an unknown kind", () => {
+    const parsed = parseConfig(
+      'version = 1\n[[review.routes]]\nid = "x"\nkinds = ["nope"]\nto = []\n',
+    );
+    expect(parsed.ok).toBe(false);
   });
 });

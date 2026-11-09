@@ -6,7 +6,7 @@ import {
   REVIEW_CHECK_NAME,
   type RiskLevel,
 } from "@selfhost/github";
-import type { ResolvedSelfhostConfig } from "@selfhost/schema";
+import type { ResolvedSelfhostConfig, ReviewRoute } from "@selfhost/schema";
 import type { PullReads } from "./github-reads.js";
 
 /** An open agent pull request, from the webhook that announced it. */
@@ -41,6 +41,8 @@ export interface PullContext {
 /** A risk level, with the check run text that explains it. */
 export interface RiskAssessment {
   level: RiskLevel;
+  /** 0 to 100, when the score is known. Auto-approve needs it. */
+  score?: number;
   /** Such as "High risk (score 72)". */
   title?: string;
   /** One paragraph for the check run summary. */
@@ -58,6 +60,29 @@ export interface ReviewBrief {
   summary?: string;
 }
 
+/**
+ * What `[review.auto_approve]` decided for this head commit, as the check run shows it. Nothing
+ * is written by deciding: the approval goes out with the rest of the sync, and the decision log
+ * entry after it.
+ */
+export interface AutoApproval {
+  /** Every check passed: approve, or in dry run only record that it would have. */
+  eligible: boolean;
+  dryRun: boolean;
+  /** Why it may be approved, for the decision log. */
+  reasons: string[];
+  /** One line for the check run summary. */
+  summary: string;
+  /** Markdown for the check run details. */
+  text?: string;
+  /** The approving review to post, when eligible and not in dry run. */
+  approve?: { body: string; marker: string };
+  /** Changed files, for the decision's paths. */
+  files: string[];
+  /** The pull request's open review item, closed as approved once the approval is recorded. */
+  itemId?: string;
+}
+
 /** Where the GitHub delivery gets what it shows. Each one is a seam tests can replace. */
 export interface GitHubProviders {
   /** Default: the ee risk score when this build has ee/, else none and no risk label. */
@@ -72,6 +97,13 @@ export interface GitHubProviders {
   brief(
     ctx: PullContext & { risk?: RiskAssessment; owner?: string },
   ): Promise<ReviewBrief | undefined>;
+  /**
+   * The route the review list picked, for the GitHub accounts it names (`@` targets and
+   * CODEOWNERS), asked to review besides the owner. Default: none without [[review.routes]].
+   */
+  route(ctx: PullContext & { risk?: RiskAssessment }): Promise<ReviewRoute | undefined>;
+  /** Default: [review.auto_approve] with ee/risk; none while it is off. */
+  autoApprove(ctx: PullContext & { risk?: RiskAssessment }): Promise<AutoApproval | undefined>;
 }
 
 /** Who is asked to review, and why, in words the check run can show. */
@@ -92,17 +124,26 @@ export function githubLogin(logins: Record<string, string>, person: string): str
 }
 
 /**
- * The owner's GitHub login when `[review] github_logins` has one, else `[review] github_team`.
- * The pull request's author cannot review their own pull request, so the team gets it then too.
+ * The owner's GitHub login when `[review] github_logins` has one, and the GitHub accounts the
+ * route names, else `[review] github_team`. The pull request's author cannot review their own
+ * pull request, so they are left out, and the team gets it when nobody is left.
  */
 export function chooseReviewers(
   owner: string | undefined,
   pull: Pick<AgentPull, "owner" | "author">,
   review: ResolvedSelfhostConfig["review"],
+  route?: Pick<ReviewRoute, "github" | "id">,
 ): ReviewerChoice {
+  const author = pull.author.toLowerCase();
   const login = owner ? githubLogin(review.github_logins, owner) : undefined;
-  if (login && login.toLowerCase() !== pull.author.toLowerCase()) {
-    return { users: [login], teams: [], note: `Review requested from @${login}.` };
+  const users = [...new Set([...(login ? [login] : []), ...(route?.github?.users ?? [])])].filter(
+    (user) => user.toLowerCase() !== author,
+  );
+  const teams = route?.github?.teams ?? [];
+  if (users.length > 0 || teams.length > 0) {
+    const named = [...users.map((user) => `@${user}`), ...teams.map((t) => `@${pull.owner}/${t}`)];
+    const via = route?.id && route.github ? ` ([[review.routes]] ${JSON.stringify(route.id)})` : "";
+    return { users, teams, note: `Review requested from ${named.join(", ")}${via}.` };
   }
   const why = !owner
     ? "No owner was picked"
@@ -139,18 +180,21 @@ const agentName = (agent: AgentRef) =>
 
 /**
  * Everything the pull request should show, from the providers: the risk and agent labels, the
- * check run with the brief's summary and the risk details, the brief comment and the review
- * request. Draft pull requests get no review request until they are ready.
+ * check run with the brief's summary, the risk details and what auto-approve decided, the brief
+ * comment, the review request and, when auto-approve approves, the approving review. Draft pull
+ * requests get no review request until they are ready.
  */
-export async function desiredState(
+export async function desiredPull(
   ctx: PullContext,
   providers: GitHubProviders,
-): Promise<DesiredState> {
+): Promise<{ desired: DesiredState; autoApproval?: AutoApproval }> {
   const { pull, agent, config } = ctx;
   const risk = await providers.risk(ctx);
   const owner = await providers.owner({ ...ctx, risk });
   const brief = await providers.brief({ ...ctx, risk, owner });
-  const reviewers = chooseReviewers(owner, pull, config.review);
+  const route = await providers.route({ ...ctx, risk });
+  const autoApproval = await providers.autoApprove({ ...ctx, risk });
+  const reviewers = chooseReviewers(owner, pull, config.review, route);
   const conclusion = checkConclusion(risk, config.review);
 
   const lead = brief?.summary ?? `Pull request by ${agentName(agent)}, opened by @${pull.author}.`;
@@ -158,15 +202,17 @@ export async function desiredState(
     lead,
     ...(risk?.summary ? [risk.summary] : []),
     `${pull.draft ? "Draft: no review is requested until it is ready." : reviewers.note}${mergeNote(risk, conclusion)}`,
+    ...(autoApproval ? [autoApproval.summary] : []),
   ].join("\n\n");
   const briefText = brief?.body.replaceAll(brief.marker, "").trim();
   const text = [
     ...(briefText ? [briefText] : []),
     ...(risk?.text ? [risk.text] : []),
+    ...(autoApproval?.text ? [autoApproval.text] : []),
     `Agent: ${agentName(agent)}. Head commit: ${pull.headSha}.`,
   ].join("\n\n");
 
-  return {
+  const desired: DesiredState = {
     labels: { ...(risk ? { risk: risk.level } : {}), agent: agent.vendor },
     check: {
       title: risk ? (risk.title ?? `${LEVEL_NAMES[risk.level]} risk`) : "Not scored",
@@ -176,5 +222,15 @@ export async function desiredState(
     },
     ...(pull.draft ? {} : { reviewers: { users: reviewers.users, teams: reviewers.teams } }),
     ...(brief ? { brief: { body: brief.body, marker: brief.marker } } : {}),
+    ...(autoApproval?.approve ? { approve: autoApproval.approve } : {}),
   };
+  return { desired, ...(autoApproval ? { autoApproval } : {}) };
+}
+
+/** What the pull request should show; see desiredPull. */
+export async function desiredState(
+  ctx: PullContext,
+  providers: GitHubProviders,
+): Promise<DesiredState> {
+  return (await desiredPull(ctx, providers)).desired;
 }

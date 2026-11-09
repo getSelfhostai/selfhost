@@ -2,8 +2,20 @@ export {
   actionsFor,
   deliveryOf,
   groupOf,
+  routeContext,
+  routeInput,
   withPathRisk,
 } from "./build.js";
+export {
+  CODEOWNERS_PATHS,
+  type CodeOwners,
+  type CodeOwnersMatch,
+  type CodeOwnersRule,
+  codeOwnersOf,
+  codeOwnersRegex,
+  codeOwnersRuleFor,
+  parseCodeOwners,
+} from "./codeowners.js";
 export { AlreadyAnsweredError, ReviewInputError, ReviewItemNotFoundError } from "./errors.js";
 export {
   type DecideInput,
@@ -11,6 +23,7 @@ export {
   type ReviewList,
   type ReviewListOptions,
   type ReviewListQuery,
+  routeInputOf,
 } from "./list.js";
 export {
   buildPolicyReport,
@@ -36,7 +49,18 @@ export {
   TIMEOUT_DECIDER,
   weekStart,
 } from "./refresh.js";
-export { type RouteInput, type Routing, routeItem } from "./routing.js";
+export {
+  escalateRoute,
+  explainRoutes,
+  type RouteCheck,
+  type RouteContext,
+  type RouteExplanation,
+  type RouteInput,
+  type Routing,
+  routeByDefaults,
+  routeByRules,
+  routeItem,
+} from "./routing.js";
 export {
   CONTEXT_PROMOTION_REQUEST,
   type Draft,

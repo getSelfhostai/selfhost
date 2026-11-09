@@ -17,7 +17,9 @@ import {
   type ReviewItemsPage,
   validateConfig,
 } from "@selfhost/schema";
+import { routeInput } from "./build.js";
 import { AlreadyAnsweredError, ReviewInputError, ReviewItemNotFoundError } from "./errors.js";
+import type { RouteInput } from "./routing.js";
 import { pullRequestKey } from "./signals.js";
 import {
   claimItem,
@@ -25,6 +27,7 @@ import {
   getItem,
   latestItemByKey,
   listItems,
+  openWaitsOf,
   releaseClaim,
   type Scope,
   type StoredItem,
@@ -72,6 +75,16 @@ export interface ReviewList {
   decide(id: string, input: DecideInput): Promise<DecisionResponse>;
   /** Ranks an open item after the rest until `until`; a time in the past ends the snooze. */
   snooze(id: string, input: { by: string; until: string }): Promise<ReviewItem>;
+  /**
+   * Open items of these sessions or runs that an agent waits on, or that are exceptions: what
+   * keeps auto-approve from approving the pull request they made.
+   */
+  waits(runs: { sessions: readonly string[]; runIds: readonly string[] }): Promise<ReviewItem[]>;
+  /**
+   * Closes an open item as approved by selfhost itself (a system actor, not a person), with
+   * the decision recorded elsewhere: auto-approve. false when the item was not open.
+   */
+  closeApproved(id: string, answer: ReviewItem["answer"] & object): Promise<boolean>;
 }
 
 export interface ReviewListOptions {
@@ -251,7 +264,50 @@ export function openReviewList(ledger: Ledger, options: ReviewListOptions = {}):
         await sleep(CLAIM_POLL_MS);
       }
     },
+
+    waits: (runs) => openWaitsOf(db, scope, runs),
+
+    async closeApproved(id, answer) {
+      const claimed = await claimItem(db, id, scope);
+      if (!claimed) return false;
+      const item: ReviewItem = {
+        ...claimed.item,
+        state: "answered",
+        updated_at: now().toISOString(),
+        source_event_ids: [
+          ...new Set([...claimed.item.source_event_ids, answer.decision_event_id]),
+        ],
+        answer,
+      };
+      if (await finishClaim(db, { ...claimed, item })) return true;
+      await releaseClaim(db, claimed);
+      return false;
+    },
   };
   internals.set(list, { ledger, db, config: options.config ?? defaultConfig(), now, scope });
   return list;
+}
+
+/**
+ * An item with what routing reads about it, including the files and tool the item itself does
+ * not show, for `selfhost review routes --item`. Undefined when the list has no such item.
+ */
+export async function routeInputOf(
+  list: ReviewList,
+  id: string,
+): Promise<{ item: ReviewItem; input: RouteInput } | undefined> {
+  const { db, scope } = internalsOf(list);
+  const stored = await getItem(db, id, scope);
+  if (!stored) return undefined;
+  const { item } = stored;
+  // The session's person is not stored; an item routed to them names them as its owner.
+  const person =
+    item.requested_by ?? (item.route?.from === "the session's person" ? item.owners[0] : undefined);
+  return {
+    item,
+    input: routeInput(item, stored.paths, {
+      ...(stored.tool ? { tool: stored.tool } : {}),
+      ...(person ? { person } : {}),
+    }),
+  };
 }

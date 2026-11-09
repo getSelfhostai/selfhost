@@ -46,6 +46,11 @@ export interface DesiredState {
   reviewers?: { users: string[]; teams: string[] };
   /** The review brief comment, found again by `marker`, which `body` should contain. */
   brief?: { body: string; marker: string };
+  /**
+   * An approving review from the App on the head commit, found again by `marker` (a hidden
+   * HTML comment in `body`). Left out: nothing is approved, and an earlier approval stays.
+   */
+  approve?: { body: string; marker: string };
 }
 
 export type SyncWrite =
@@ -55,7 +60,8 @@ export type SyncWrite =
   | { action: "update_check"; id: number }
   | { action: "request_reviewers"; users: string[]; teams: string[] }
   | { action: "create_comment" }
-  | { action: "update_comment"; id: number };
+  | { action: "update_comment"; id: number }
+  | { action: "approve"; commitId: string };
 
 export interface RefusedReviewRequest {
   users: string[];
@@ -295,6 +301,88 @@ async function syncBrief(
 }
 
 /**
+ * Approves the pull request at the head commit, once: an approval of the App's own (a bot
+ * review holding `marker`) on that commit counts as done. A push gets a new approval only when
+ * the new head is approved again.
+ */
+async function syncApproval(
+  octokit: Octokit,
+  pr: PullRequestRef,
+  approve: NonNullable<DesiredState["approve"]>,
+  writes: SyncWrite[],
+) {
+  if (approve.marker.trim() === "") throw new Error("The approval marker is empty");
+  const pull = { owner: pr.owner, repo: pr.repo, pull_number: pr.number };
+  const reviews = await octokit.paginate(octokit.rest.pulls.listReviews, {
+    ...pull,
+    per_page: 100,
+  });
+  const head = lower(pr.headSha);
+  const done = reviews.some(
+    (review) =>
+      review.user?.type === "Bot" &&
+      review.state === "APPROVED" &&
+      lower(review.commit_id ?? "") === head &&
+      (review.body ?? "").includes(approve.marker),
+  );
+  if (done) return;
+  const body = approve.body.includes(approve.marker)
+    ? approve.body
+    : `${approve.marker}\n${approve.body}`;
+  await octokit.rest.pulls.createReview({
+    ...pull,
+    commit_id: pr.headSha,
+    event: "APPROVE",
+    body: clip(body, MAX_COMMENT_BODY),
+  });
+  writes.push({ action: "approve", commitId: pr.headSha });
+}
+
+/** A check run or commit status on a commit, as auto-approve reads it. */
+export interface HeadCheck {
+  name: string;
+  /** passed: success, neutral or skipped. failed: anything else that finished. */
+  state: "passed" | "failed" | "pending";
+}
+
+const PASSING = new Set(["success", "neutral", "skipped"]);
+
+/**
+ * Every check run and commit status on the head commit, with selfhost's own checks (names
+ * starting `selfhost/`) left out. A check suite re-run shows its newest run per name.
+ */
+export async function readHeadChecks(
+  octokit: Octokit,
+  pr: Pick<PullRequestRef, "owner" | "repo" | "headSha">,
+): Promise<HeadCheck[]> {
+  const where = { owner: pr.owner, repo: pr.repo, ref: pr.headSha };
+  const runs = await octokit.paginate(octokit.rest.checks.listForRef, {
+    ...where,
+    filter: "latest",
+    per_page: 100,
+  });
+  const { data: combined } = await octokit.rest.repos.getCombinedStatusForRef(where);
+  const checks: HeadCheck[] = [];
+  for (const run of runs) {
+    if (run.name.startsWith("selfhost/")) continue;
+    const state =
+      run.status !== "completed"
+        ? "pending"
+        : PASSING.has(run.conclusion ?? "")
+          ? "passed"
+          : "failed";
+    checks.push({ name: run.name, state });
+  }
+  for (const status of combined.statuses ?? []) {
+    if (status.context.startsWith("selfhost/")) continue;
+    const state =
+      status.state === "success" ? "passed" : status.state === "pending" ? "pending" : "failed";
+    checks.push({ name: status.context, state });
+  }
+  return checks;
+}
+
+/**
  * Makes the pull request show `desired`: reads the labels, the check runs on the head commit,
  * the review requests and the comments, then writes only what differs. Each write follows a
  * read of the state it changes, so once a run succeeds the next run with the same `desired`
@@ -304,7 +392,7 @@ async function syncBrief(
  * external_id (one per pull request and head commit) and updated, or created once. Reviewers
  * are only added: someone already requested, or who already reviewed, is not asked again, and
  * requests made by people are never removed. The brief comment is found by its marker and
- * edited in place, or created once.
+ * edited in place, or created once. An approval, when asked for, is made once per head commit.
  */
 export async function syncPullRequest(
   octokit: Octokit,
@@ -316,5 +404,6 @@ export async function syncPullRequest(
   if (desired.check) await syncCheck(octokit, pr, desired.check, result.writes);
   if (desired.brief) await syncBrief(octokit, pr, desired.brief, result.writes);
   if (desired.reviewers) await syncReviewers(octokit, pr, desired.reviewers, result);
+  if (desired.approve) await syncApproval(octokit, pr, desired.approve, result.writes);
   return result;
 }

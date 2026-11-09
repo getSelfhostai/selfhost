@@ -347,8 +347,12 @@ pull request showing its review-list state, through
 - a `selfhost/review` check run on the head commit whose summary is the review brief's summary,
   the risk and who was asked to review, with the brief and the risk inputs in its details;
 - a review request to the owner the review list picked, under their login in
-  `[review] github_logins`, else to the team in `[review] github_team`;
-- the review brief as one comment, edited in place on later deliveries.
+  `[review] github_logins`, plus the GitHub users and teams its `[[review.routes]]` entry names
+  (`@login`, `@org/team`, and `codeowners`, read from CODEOWNERS at the base commit), else to
+  the team in `[review] github_team`;
+- the review brief as one comment, edited in place on later deliveries;
+- under `[review.auto_approve]` (commercial, ee/risk), an approving review from the App (see
+  below).
 
 It answers 404 until `SELFHOST_GITHUB_APP_ID`, `SELFHOST_GITHUB_PRIVATE_KEY` (or
 `SELFHOST_GITHUB_PRIVATE_KEY_FILE`) and `SELFHOST_GITHUB_WEBHOOK_SECRET` are all set; a partial
@@ -366,6 +370,9 @@ setup is reported at start by variable name. It needs no bearer token: the reque
   `github_deliveries`, migration `0005_github_deliveries.sql`, kept 7 days); the same delivery
   again answers `{ delivery, handled: false, duplicate: true }` without a single GitHub call. A
   sync that fails forgets the id and answers 500, so GitHub's redelivery runs it again.
+- `check_suite` with action `completed` syncs the open agent pull requests the suite ran on
+  again, so auto-approve sees checks that finished. While `[review.auto_approve]` is off it
+  answers `handled: false` without a GitHub call.
 - Every other signed delivery (other events, actions, closed pull requests, pull requests by
   people, `ping`) answers 200 with `handled: false` and `skipped`, the reason, which shows in
   the App's delivery log on GitHub.
@@ -399,11 +406,13 @@ search for `selfhost/review` once it has run on a pull request).
 
 Where each part comes from is a provider in `src/github-pull.ts` (tests replace them):
 
-| Provider | Default                                                                                                                                                                                                                                                                              |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `risk`   | The ee/ risk score (`src/github-risk.ts`, loaded through `src/ee.ts` on first use) from the pull request's files and new dependencies; none when ee/ is left out                                                                                                                     |
-| `owner`  | `src/github-review.ts`: the first owner of the pull request's `pr` review item (by PR URL, in `SELFHOST_GITHUB_TEAM`'s items when set); before there is one, `routeItem` on its changed files, the person whose session made its commits, the team's members and `[review] fallback` |
-| `brief`  | `src/github-review.ts`: the [review brief](../../packages/brief/README.md) as one comment, its summary leading the check run, ending with the newest proof receipt (see below) when CI posted one                                                                                    |
+| Provider      | Default                                                                                                                                                                                                                                                                              |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `risk`        | The ee/ risk score (`src/github-risk.ts`, loaded through `src/ee.ts` on first use) from the pull request's files and new dependencies; none when ee/ is left out                                                                                                                     |
+| `owner`       | `src/github-review.ts`: the first owner of the pull request's `pr` review item (by PR URL, in `SELFHOST_GITHUB_TEAM`'s items when set); before there is one, `routeItem` on its changed files, the person whose session made its commits, the team's members and `[review] fallback` |
+| `route`       | `src/github-review.ts`: the GitHub accounts the pull request's route names; nothing is read without `[[review.routes]]`                                                                                                                                                              |
+| `autoApprove` | `src/github-approve.ts`: the `[review.auto_approve]` verdict from ee/risk; nothing is read while it is off                                                                                                                                                                           |
+| `brief`       | `src/github-review.ts`: the [review brief](../../packages/brief/README.md) as one comment, its summary leading the check run, ending with the newest proof receipt (see below) when CI posted one                                                                                    |
 
 The server has no clone and no `gh`, so the brief reads the pull request through the App with
 `readPullRequest` from [`@selfhost/pr`](../../packages/pr/README.md): the files with their
@@ -417,6 +426,41 @@ point at the console's run view, `<SELFHOST_PUBLIC_URL>/runs/<id>` (or the origi
 was sent to when that is unset), and at the run in the team's tracer when `[integrations.tracer]`
 has a `run_url`. The risk score does not read the run yet: the agent run, tests and revert
 history are listed as missing inputs in the check.
+
+### Auto-approve
+
+`[review.auto_approve]` lets the App approve agent pull requests nobody needs to read. It is off
+by default, and turning it on starts in dry run:
+
+```toml
+[review.auto_approve]
+enabled = true                       # default false
+dry_run = true                       # default: only record what it would approve
+max_risk = 20                        # highest risk score, and the level must be low
+allowed_paths = ["docs/**", "**/*.md"] # every changed file must match; high_risk_paths never do
+require_green_checks = true          # every other check run and status passed, at least one
+require_second_opinion = false       # required anyway once [integrations.reviewer] is set
+```
+
+Every check must pass, and a missing input fails its check: not a draft; no open item of the
+pull request or its run that an agent waits on, and no open exception; a risk score, low and at
+most `max_risk`; only `allowed_paths`, none under `[review] high_risk_paths`; green checks on the
+head commit (selfhost's own `selfhost/*` checks left out, a running one waits); an agent run
+recorded for its commits with no guardrail or rule hit in it, observed or enforced; and, when
+required, a passing second opinion. It makes no model call. The check run's summary says what
+it decided and its details list every check.
+
+When eligible and `dry_run = false`, the App posts an approving review on the head commit (body
+marked `<!-- selfhost:auto-approve v1 -->`, once per commit; a push needs a new approval) and the
+server records a `decision.recorded` event: verdict approve, by `selfhost auto-approve` (a system
+actor), surface `auto_approve`, with the reasons, the pull request, the commit and the files,
+and answers the pull request's open review item with it. In dry run nothing is approved: an
+`alert.raised` event with `data.alert = "auto_approve_dry_run"` records it, once per head commit,
+and opens no item. The App needs Pull requests write (as above) and the **Check suite** event.
+
+The second opinion is read from `second_opinion` on the pull request's review item, written by
+the reviewer integration's ingest, through `secondOpinionOf` in `src/github-approve.ts`
+(`verdict` pass, clean or approve passes; anything else fails).
 
 ### Proof receipts
 
@@ -456,7 +500,7 @@ capped by the action); bodies over 2 MB are refused. On GitHub Enterprise Server
 2. Repository permissions: Checks read and write, Pull requests read and write, Issues read and
    write (labels and comments on pull requests), Contents read-only (changed manifests for the
    risk score and the brief), Metadata read-only. Proof receipts need nothing more.
-3. Subscribe to the **Pull request** event.
+3. Subscribe to the **Pull request** event, and to **Check suite** for auto-approve.
 4. Generate a private key, and set `SELFHOST_GITHUB_APP_ID`, `SELFHOST_GITHUB_PRIVATE_KEY_FILE`
    (or `SELFHOST_GITHUB_PRIVATE_KEY`) and `SELFHOST_GITHUB_WEBHOOK_SECRET` on the server, plus
    `SELFHOST_GITHUB_TEAM` on a team server.

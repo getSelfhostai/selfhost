@@ -21,6 +21,18 @@ order. `gatherRiskInputs` reads the inputs locally and never writes to GitHub: t
 attribution and its run through the Apache package [`@selfhost/pr`](../../packages/pr/README.md),
 which the review brief shares, and the revert history from git.
 
+## Auto-approve
+
+`autoApproveVerdict(inputs, config)` decides whether `[review.auto_approve]` approves an agent
+pull request; the server's GitHub App posts the approval and records it
+([`apps/server`](../../apps/server/README.md#auto-approve)). It is pure and makes no model call.
+Every check must pass and a missing input fails its check: ready (not a draft), no open item an
+agent waits on and no exception, a low risk score at most `max_risk`, only `allowed_paths` and
+none under `high_risk_paths`, green checks on the head commit, a recorded run with no guardrail
+or rule hit, and a passing second opinion when the reviewer integration is set or
+`require_second_opinion` is on. `autoApproveSummary`, `autoApproveText` and
+`autoApproveReviewBody` give the check line, the check details and the review body.
+
 ## Inputs
 
 | Input              | Where it comes from                                                                                                                                                                                                                                                                                   |

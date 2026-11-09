@@ -174,6 +174,81 @@ function RuleCard({
   );
 }
 
+/** One line per [[review.routes]] entry: what it matches, who gets it, when it escalates. */
+export function routeRows(policy: PolicyResponse) {
+  const review = policy.config.review;
+  return (review?.routes ?? []).map((route) => {
+    const match = [
+      route.kinds ? `kind ${route.kinds.join(" or ")}` : undefined,
+      route.repos ? `repo ${route.repos.join(", ")}` : undefined,
+      route.paths ? `files ${route.paths.join(", ")}` : undefined,
+      route.min_risk !== undefined ? `risk ${route.min_risk} or more` : undefined,
+      route.rule_ids ? `rule ${route.rule_ids.join(", ")}` : undefined,
+      route.tools ? `tool ${route.tools.join(", ")}` : undefined,
+    ].filter((part): part is string => part !== undefined);
+    return {
+      id: route.id,
+      description: route.description,
+      match: match.length > 0 ? match.join("; ") : "every item",
+      to: route.to.join(", "),
+      escalate:
+        route.escalate_after_minutes !== undefined
+          ? `After ${route.escalate_after_minutes} minutes, the next matching route`
+          : undefined,
+    };
+  });
+}
+
+/** [review.auto_approve] in words. */
+export function autoApproveText(policy: PolicyResponse): string {
+  const auto = policy.config.review?.auto_approve;
+  if (!auto?.enabled) return "Off: every agent pull request waits for a person.";
+  const how = auto.dry_run === false ? "On" : "Dry run (records only)";
+  const paths = (auto.allowed_paths ?? ["docs/**", "**/*.md"]).join(", ");
+  return `${how}: risk ${auto.max_risk ?? 20} or less, only ${paths}, ${auto.require_green_checks === false ? "checks not required" : "green checks"}, no guardrail hits.`;
+}
+
+function RoutingSection({ policy }: { policy: PolicyResponse }) {
+  const rows = routeRows(policy);
+  const fallback = policy.config.review?.fallback ?? [];
+  return (
+    <Section
+      title="Review routing"
+      description="Read only. Change [[review.routes]] and [review.auto_approve] in selfhost.toml; selfhost review routes explains where an item goes."
+    >
+      <div className="space-y-3">
+        {rows.length === 0 ? (
+          <Empty title="No [[review.routes]]: items go to their owner, team or fallback." />
+        ) : (
+          rows.map((row, index) => (
+            <Card key={row.id} className="gap-2 py-4" data-testid="route">
+              <CardContent className="space-y-1 px-4 text-sm">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-muted-foreground">{index + 1}.</span>
+                  <span className="font-medium font-mono">{row.id}</span>
+                </div>
+                {row.description ? (
+                  <p className="text-muted-foreground">{row.description}</p>
+                ) : null}
+                <p>Matches {row.match}</p>
+                <p>Goes to {row.to}</p>
+                {row.escalate ? <p className="text-muted-foreground">{row.escalate}</p> : null}
+              </CardContent>
+            </Card>
+          ))
+        )}
+        <p className="text-muted-foreground text-sm">
+          Nothing matches: [review.owners], then the session's person, the team, then{" "}
+          {fallback.length > 0 ? fallback.join(", ") : "nobody (every reader sees it)"}.
+        </p>
+        <p className="text-sm" data-testid="auto-approve">
+          Auto-approve: {autoApproveText(policy)}
+        </p>
+      </div>
+    </Section>
+  );
+}
+
 export function RulesScreen() {
   const { me, team } = useConsole();
   const loaded = useApi<Loaded>(team ? `rules:${team}` : null, async (signal) => {
@@ -382,6 +457,7 @@ export function RulesScreen() {
               ))}
             </div>
           </Section>
+          <RoutingSection policy={policy} />
         </>
       ) : null}
     </>

@@ -1,0 +1,92 @@
+{
+  "action": "completed",
+  "check_suite": {
+    "id": 9100000001,
+    "node_id": "CS_9100000001",
+    "head_branch": "claude/add-rate-limit",
+    "head_sha": "5786c5c9d81ca4218b7e44bf0007f5580f66c489",
+    "status": "completed",
+    "conclusion": "success",
+    "url": "https://api.github.com/repos/acme/acme-api/check-suites/9100000001",
+    "before": "c3b8739bdcca2b4e2f5bdead2a8f238916813446",
+    "after": "5786c5c9d81ca4218b7e44bf0007f5580f66c489",
+    "pull_requests": [
+      {
+        "url": "https://api.github.com/repos/acme/acme-api/pulls/101",
+        "id": 1500000101,
+        "number": 101,
+        "head": {
+          "ref": "claude/add-rate-limit",
+          "sha": "5786c5c9d81ca4218b7e44bf0007f5580f66c489",
+          "repo": {
+            "id": 810000001,
+            "url": "https://api.github.com/repos/acme/acme-api",
+            "name": "acme-api"
+          }
+        },
+        "base": {
+          "ref": "main",
+          "sha": "c3b8739bdcca2b4e2f5bdead2a8f238916813446",
+          "repo": {
+            "id": 810000001,
+            "url": "https://api.github.com/repos/acme/acme-api",
+            "name": "acme-api"
+          }
+        }
+      }
+    ],
+    "app": {
+      "id": 7100001,
+      "slug": "acme-ci",
+      "name": "Acme CI"
+    },
+    "created_at": "2026-11-10T10:02:00Z",
+    "updated_at": "2026-11-10T10:06:00Z",
+    "latest_check_runs_count": 2,
+    "check_runs_url": "https://api.github.com/repos/acme/acme-api/check-suites/9100000001/check-runs",
+    "head_commit": {
+      "id": "5786c5c9d81ca4218b7e44bf0007f5580f66c489",
+      "tree_id": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "message": "Add per-key rate limiting",
+      "timestamp": "2026-11-10T09:58:00Z",
+      "author": {
+        "name": "alice",
+        "email": "alice@example.com"
+      },
+      "committer": {
+        "name": "alice",
+        "email": "alice@example.com"
+      }
+    }
+  },
+  "repository": {
+    "id": 810000001,
+    "node_id": "R_810000001",
+    "name": "acme-api",
+    "full_name": "acme/acme-api",
+    "private": true,
+    "owner": {
+      "login": "acme",
+      "id": 5000001,
+      "node_id": "U_5000001",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5000001?v=4",
+      "url": "https://api.github.com/users/acme",
+      "html_url": "https://github.com/acme",
+      "type": "Organization",
+      "site_admin": false
+    },
+    "html_url": "https://github.com/acme/acme-api",
+    "default_branch": "main"
+  },
+  "sender": {
+    "login": "acme-ci[bot]",
+    "id": 7100002,
+    "node_id": "BOT_7100002",
+    "type": "Bot",
+    "site_admin": false
+  },
+  "installation": {
+    "id": 61000001,
+    "node_id": "MDIzOkludGVncmF0aW9uSW5zdGFsbGF0aW9uNjEwMDAwMDE="
+  }
+}

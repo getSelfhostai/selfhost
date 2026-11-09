@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -45,13 +45,19 @@ export function tempDir(prefix: string): string {
  */
 export function isolatedEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   const home = tempDir("home");
-  return {
-    PATH: process.env.PATH,
-    HOME: home,
+  const dirs = {
     CODEX_HOME: join(home, ".codex"),
     CLAUDE_CONFIG_DIR: join(home, ".claude"),
     XDG_CONFIG_HOME: join(home, ".config"),
     XDG_DATA_HOME: join(home, ".local", "share"),
+  };
+  // Codex 0.167 and later refuse a CODEX_HOME that does not exist yet, as a fresh install would
+  // have created it.
+  for (const dir of Object.values(dirs)) mkdirSync(dir, { recursive: true });
+  return {
+    PATH: process.env.PATH,
+    HOME: home,
+    ...dirs,
     TMPDIR: tmpdir(),
     NO_COLOR: "1",
     CI: "1",

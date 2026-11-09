@@ -1,0 +1,6 @@
+# Payments code owners, as GitHub reads them: the last matching line wins.
+*                 @acme/payments-core
+/src/ledger/      @bob carol@example.com
+docs/*            @acme/docs
+*.sql             @alice
+/src/ledger/vendor/

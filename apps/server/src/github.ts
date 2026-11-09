@@ -11,9 +11,10 @@ import type { Ledger } from "@selfhost/ledger";
 import { type ApiError, parseConfig, type ResolvedSelfhostConfig } from "@selfhost/schema";
 import type { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { type AgentPull, desiredState, type GitHubProviders } from "./github-pull.js";
+import { autoApprover, recordAutoApproval } from "./github-approve.js";
+import { type AgentPull, desiredPull, type GitHubProviders } from "./github-pull.js";
 import { pullReads } from "./github-reads.js";
-import { reviewBrief, reviewOwner } from "./github-review.js";
+import { reviewBrief, reviewOwner, reviewRoute, reviewRouting } from "./github-review.js";
 import { eeRisk } from "./github-risk.js";
 import type { GitClones } from "./provenance.js";
 
@@ -51,6 +52,8 @@ export interface GitHubRouteOptions {
   clones?: GitClones;
   /** One line per handled delivery: ids, repository and counts, never payloads or secrets. */
   log?: (line: string) => void;
+  /** Clock for auto-approve's ledger records. Default: the system clock. */
+  now?: () => Date;
 }
 
 /** What POST /v1/github/webhooks answers to a verified delivery. */
@@ -108,6 +111,45 @@ function agentPull(
   };
 }
 
+/** A check suite that finished on agent pull requests: auto-approve looks at them again. */
+interface SuitePulls {
+  installation: number;
+  owner: string;
+  repo: string;
+  /** The pull requests whose head the suite ran on. */
+  numbers: number[];
+}
+
+interface CheckSuitePayload {
+  action?: string;
+  check_suite?: {
+    head_sha?: string;
+    pull_requests?: { number: number; head?: { sha?: string } }[];
+  };
+  repository?: { name: string; owner: { login: string } };
+  installation?: { id?: number };
+}
+
+/** The pull requests a completed check suite is about, or why the delivery is not acted on. */
+function suitePulls(payload: unknown): SuitePulls | { skip: string } {
+  const body = payload as CheckSuitePayload;
+  if (body.action !== "completed") return { skip: `action ${body.action} is not handled` };
+  const installation = body.installation?.id;
+  if (!installation) return { skip: "no App installation in the payload" };
+  if (!body.repository) return { skip: "no repository in the payload" };
+  const head = body.check_suite?.head_sha;
+  const numbers = (body.check_suite?.pull_requests ?? [])
+    .filter((pr) => !head || !pr.head?.sha || pr.head.sha === head)
+    .map((pr) => pr.number);
+  if (numbers.length === 0) return { skip: "the check suite is on no pull request" };
+  return {
+    installation,
+    owner: body.repository.owner.login,
+    repo: body.repository.name,
+    numbers,
+  };
+}
+
 /** The fields of a pull request, as the webhook and GET /repos/{owner}/{repo}/pulls/{number} give it. */
 export interface PullRequestFields {
   number: number;
@@ -141,10 +183,13 @@ export interface PullSync {
   /** Runs `work` after every earlier sync of the same pull request, so two never race. */
   serial<T>(installation: number, where: string, work: () => Promise<T>): Promise<T>;
   /**
-   * Syncs the risk and agent labels, the selfhost/review check run, the brief comment and the
-   * review request of one open agent pull request. Not queued: call it inside `serial`.
+   * Syncs the risk and agent labels, the selfhost/review check run, the brief comment, the
+   * review request and, under [review.auto_approve], the approval of one open agent pull
+   * request, then records what auto-approve did. Not queued: call it inside `serial`.
    */
   sync(installation: number, pull: AgentPull, agent: AgentRef, server: string): Promise<SyncResult>;
+  /** The selfhost.toml in use for deliveries. */
+  config(): Promise<ResolvedSelfhostConfig>;
 }
 
 /** `owner/repo#number`, the key `serial` queues on. */
@@ -156,24 +201,28 @@ export function pullSync(
   ledger: Ledger,
   options: Omit<GitHubRouteOptions, "app">,
 ): PullSync {
+  const routing = reviewRouting(ledger, options.team);
   const providers: GitHubProviders = {
     risk: eeRisk(undefined, options.clones, ledger),
-    owner: reviewOwner(ledger, options.team),
+    owner: reviewOwner(ledger, options.team, routing),
     brief: reviewBrief(ledger),
+    route: reviewRoute(ledger, options.team, routing),
+    autoApprove: autoApprover(ledger, options.team),
     ...options.providers,
   };
   const config = options.config ?? (async () => DEFAULT_CONFIG);
   const queued = queue();
   return {
     serial: (installation, where, work) => queued(`${installation}/${where}`, work),
+    config,
     async sync(installation, pull, agent, server) {
       const octokit = github.installation(installation);
       const reads = pullReads(octokit, pull, agent, ledger);
-      const desired = await desiredState(
+      const { desired, autoApproval } = await desiredPull(
         { octokit, pull, agent, config: await config(), reads, server },
         providers,
       );
-      return syncPullRequest(
+      const result = await syncPullRequest(
         octokit,
         {
           owner: pull.owner,
@@ -184,6 +233,10 @@ export function pullSync(
         },
         desired,
       );
+      if (autoApproval) {
+        await recordAutoApproval(ledger, options.team, { pull }, autoApproval, options.now);
+      }
+      return result;
     },
   };
 }
@@ -208,7 +261,9 @@ function queue() {
  *
  * pull_request deliveries (opened, reopened, synchronize, ready_for_review, and labeled by a
  * person) on open agent pull requests sync the risk and agent labels, the selfhost/review check
- * run, the brief comment and the review request. Each X-GitHub-Delivery id is handled once: a
+ * run, the brief comment, the review request and, under [review.auto_approve], the approval.
+ * check_suite deliveries (completed) sync the open agent pull requests the suite ran on again
+ * while auto-approve is on, since green checks are what it waits for. Each X-GitHub-Delivery id is handled once: a
  * delivery that arrives again answers `duplicate: true` and touches nothing. A failed sync
  * forgets the id and answers 500, so a redelivery from GitHub runs it again. Everything else
  * that is signed answers 200 with `handled: false`.
@@ -260,6 +315,70 @@ export function githubRoutes(
         payload = JSON.parse(body);
       } catch {
         return c.json(apiError("invalid_webhook", "Expected a JSON body"), 400);
+      }
+
+      if (event === "check_suite") {
+        const suite = suitePulls(payload);
+        if ("skip" in suite) {
+          return c.json({
+            delivery,
+            handled: false,
+            skipped: suite.skip,
+          } satisfies WebhookResponse);
+        }
+        if (!(await pulls.config()).review.auto_approve.enabled) {
+          return c.json({
+            delivery,
+            handled: false,
+            skipped: "[review.auto_approve] is off, so finished checks change nothing",
+          } satisfies WebhookResponse);
+        }
+        if (!(await ledger.deliveries.claim(delivery, { event }))) {
+          return c.json({ delivery, handled: false, duplicate: true } satisfies WebhookResponse);
+        }
+        const server = options.publicUrl ?? new URL(c.req.url).origin;
+        const octokit = github.installation(suite.installation);
+        let writes = 0;
+        let handled = false;
+        try {
+          for (const number of suite.numbers) {
+            const { data: pr } = await octokit.rest.pulls.get({
+              owner: suite.owner,
+              repo: suite.repo,
+              pull_number: number,
+            });
+            if (pr.state !== "open") continue;
+            const found = webhookPullAgent({
+              user: pr.user,
+              body: pr.body,
+              head: { ref: pr.head.ref },
+            });
+            if (!found) continue;
+            const pull = agentPullOf(suite.owner, suite.repo, pr);
+            const result = await pulls.serial(suite.installation, pullKey(pull), () =>
+              pulls.sync(suite.installation, pull, found.agent, server),
+            );
+            handled = true;
+            writes += result.writes.length;
+          }
+        } catch (error) {
+          await ledger.deliveries.release(delivery);
+          log(`github: delivery ${delivery} check_suite failed: ${errorLine(error)}`);
+          return c.json(
+            apiError("github_sync_failed", "Could not sync the pull requests on GitHub"),
+            500,
+          );
+        }
+        log(`github: delivery ${delivery} check_suite.completed: ${writes} changes`);
+        return c.json(
+          handled
+            ? ({ delivery, handled, writes } satisfies WebhookResponse)
+            : ({
+                delivery,
+                handled,
+                skipped: "not an agent pull request",
+              } satisfies WebhookResponse),
+        );
       }
 
       const target = agentPull(event, payload);

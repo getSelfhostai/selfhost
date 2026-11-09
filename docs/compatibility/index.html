@@ -68,12 +68,12 @@ dd { margin: 2px 0 0 0; color: var(--muted); }
 <body>
 <main>
 <h1>Vendor compatibility</h1>
-<p>Each new release of the coding agent CLIs selfhost supports is installed in CI and checked against selfhost's hooks, log importers, policy compiler and gateway connect: every week, and within hours of a release. A failing run marks that release broken here and opens an issue. Last run 2026-11-08 22:32 UTC, <a href="https://github.com/Ronakkadhi/selfhost/actions/runs/42530591960">CI run</a>.</p>
+<p>Each new release of the coding agent CLIs selfhost supports is installed in CI and checked against selfhost's hooks, log importers, policy compiler and gateway connect: every week, and within hours of a release. A failing run marks that release broken here and opens an issue. Last run 2026-11-09 05:40 UTC, <a href="https://github.com/Ronakkadhi/selfhost/actions/runs/42568480453">CI run</a>.</p>
 <div class="scroll"><table>
 <thead><tr><th>CLI</th><th>Newest tested</th><th>Status</th><th>Live session</th></tr></thead>
 <tbody>
 <tr><td><a href="#claude_code">Claude Code</a></td><td><code>2.1.319</code></td><td><span class="status status-passing">Passing</span></td><td><span class="status status-not-run">Not run</span></td></tr>
-<tr><td><a href="#codex">Codex</a></td><td><code>0.167.0</code></td><td><span class="status status-broken">Broken</span></td><td><span class="status status-not-run">Not run</span></td></tr>
+<tr><td><a href="#codex">Codex</a></td><td><code>0.167.0</code></td><td><span class="status status-passing">Passing</span></td><td><span class="status status-not-run">Not run</span></td></tr>
 <tr><td><a href="#cursor">Cursor CLI</a></td><td><code>2026.11.05-86047df</code></td><td><span class="status status-passing">Passing</span></td><td><span class="status status-not-run">Not run</span></td></tr>
 <tr><td><a href="#opencode">OpenCode</a></td><td><code>1.19.5</code></td><td><span class="status status-passing">Passing</span></td><td><span class="status status-not-run">Not run</span></td></tr>
 </tbody></table></div>
@@ -82,9 +82,9 @@ dd { margin: 2px 0 0 0; color: var(--muted); }
 <div class="scroll"><table>
 <thead><tr><th>Agent</th><th>What connect writes</th><th>Newest tested</th><th>Connect</th></tr></thead>
 <tbody>
-<tr><td>Claude Code</td><td>ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN in the env block of ~/.claude/settings.json (--managed: a managed-settings.d file)</td><td><code>2.1.319</code></td><td><span class="status status-not-run">Not run</span></td></tr>
-<tr><td>Codex</td><td>model_provider and model_providers.selfhost at the top of ~/.codex/config.toml</td><td><code>0.167.0</code></td><td><span class="status status-not-run">Not run</span></td></tr>
-<tr><td>OpenCode</td><td>provider.anthropic and provider.openai baseURL and apiKey in opencode.json</td><td><code>1.19.5</code></td><td><span class="status status-not-run">Not run</span></td></tr>
+<tr><td>Claude Code</td><td>ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN in the env block of ~/.claude/settings.json (--managed: a managed-settings.d file)</td><td><code>2.1.319</code></td><td><span class="status status-pass">Works</span></td></tr>
+<tr><td>Codex</td><td>model_provider and model_providers.selfhost at the top of ~/.codex/config.toml</td><td><code>0.167.0</code></td><td><span class="status status-pass">Works</span></td></tr>
+<tr><td>OpenCode</td><td>provider.anthropic and provider.openai baseURL and apiKey in opencode.json</td><td><code>1.19.5</code></td><td><span class="status status-pass">Works</span></td></tr>
 <tr><td>Goose</td><td>a custom provider, custom_providers/selfhost.json, picked with --provider selfhost</td><td></td><td><span class="muted">Fixture tests only: not installed by CI yet</span></td></tr>
 <tr><td>Cursor CLI</td><td>Nothing: its model traffic leaves from Cursor's servers. Usage comes from Cursor's admin API.</td><td><code>2026.11.05-86047df</code></td><td><span class="muted">Not applicable</span></td></tr>
 <tr><td>GitHub Copilot</td><td>Nothing: its model traffic leaves from GitHub's servers. Usage comes from GitHub's admin API.</td><td></td><td><span class="muted">Not applicable</span></td></tr>
@@ -99,9 +99,9 @@ dd { margin: 2px 0 0 0; color: var(--muted); }
 <td><code>2.1.319</code></td>
 <td><span class="status status-passing">Passing</span> <span class="muted"></span></td>
 <td><span class="status status-not-run">Not run</span></td>
-<td><span class="status status-not-run">Not run</span></td>
+<td><span class="status status-pass">Works</span></td>
 <td>2026-11-08</td>
-<td>2026-11-08</td>
+<td>2026-11-09</td>
 <td><details><summary>Checks</summary>
 <table class="checks"><thead><tr><th>Check</th><th>Result</th><th>Detail</th></tr></thead>
 <tbody>
@@ -111,16 +111,18 @@ dd { margin: 2px 0 0 0; color: var(--muted); }
 <tr><td><code>hook-fields</code></td><td><span class="status status-pass">pass</span></td><td><pre>All 17 payload and answer fields found: cwd, hook_event_name, message, prompt, reason, session_id, source, tool_input, tool_name, tool_response, trigger, transcript_path, tool_use_id, hookSpecificOutput, permissionDecision, permissionDecisionReason, systemMessage</pre></td></tr>
 <tr><td><code>tool-inputs</code></td><td><span class="status status-pass">pass</span></td><td><pre>sdk-tools.d.ts still declares BashInput.command, FileReadInput.file_path, FileEditInput.file_path, FileWriteInput.file_path, NotebookEditInput.notebook_path, WebFetchInput.url</pre></td></tr>
 <tr><td><code>config</code></td><td><span class="status status-pass">pass</span></td><td><pre>claude doctor accepts the managed settings selfhost compiles for this version</pre></td></tr>
+<tr><td><code>gateway-connect</code></td><td><span class="status status-pass">pass</span></td><td><pre>With the settings selfhost gateway connect writes, POST /llm/anthropic/v1/messages reached the stand-in gateway with the virtual key in authorization</pre></td></tr>
 <tr><td><code>live-session</code></td><td><span class="status status-skip">skipped</span></td><td><pre>No ANTHROPIC_API_KEY secret, so no live session ran</pre></td></tr>
 <tr><td><code>suite:schema</code></td><td><span class="status status-pass">pass</span></td><td><pre>Hook payload fixtures and frozen v1 contracts against the payload schemas, and event schema versions</pre></td></tr>
 <tr><td><code>suite:hook-mappers</code></td><td><span class="status status-pass">pass</span></td><td><pre>Hook payload fixtures mapped to ledger events, and ingest of older event versions</pre></td></tr>
 <tr><td><code>suite:importers</code></td><td><span class="status status-pass">pass</span></td><td><pre>Fixture session logs through the local log importers</pre></td></tr>
 <tr><td><code>suite:hooks</code></td><td><span class="status status-pass">pass</span></td><td><pre>Each agent's pre-tool payloads through selfhost hook, the spool and the ledger</pre></td></tr>
 <tr><td><code>suite:compile</code></td><td><span class="status status-pass">pass</span></td><td><pre>Policy compile golden files per vendor config version</pre></td></tr>
+<tr><td><code>suite:gateway-connect</code></td><td><span class="status status-pass">pass</span></td><td><pre>selfhost gateway connect's settings on fixture configs per agent, and disconnect restoring them byte for byte</pre></td></tr>
 <tr><td><code>suite:context</code></td><td><span class="status status-pass">pass</span></td><td><pre>Context compile golden files per agent</pre></td></tr>
 </tbody></table>
 <p>Hook events not modeled by selfhost yet: <code>PostToolUseFailure</code>, <code>PostToolBatch</code>, <code>UserPromptExpansion</code>, <code>StopFailure</code>, <code>SubagentStart</code>, <code>PostCompact</code>, <code>PreModelSwitch</code>, <code>PostModelSwitch</code>, <code>PermissionRequest</code>, <code>PermissionDenied</code>, <code>Setup</code>, <code>TeammateIdle</code>, <code>TaskCreated</code>, <code>TaskCompleted</code>, <code>Elicitation</code>, <code>ElicitationResult</code>, <code>ConfigChange</code>, <code>WorktreeCreate</code>, <code>WorktreeRemove</code>, <code>InstructionsLoaded</code>, <code>CwdChanged</code>, <code>FileChanged</code>, <code>DirectoryAdded</code>, <code>MessageDisplay</code></p>
-<p><a href="https://github.com/Ronakkadhi/selfhost/actions/runs/42530591960">CI run</a></p>
+<p><a href="https://github.com/Ronakkadhi/selfhost/actions/runs/42568480453">CI run</a></p>
 </details></td>
 </tr>
 </tbody></table></div></section>
@@ -131,11 +133,11 @@ dd { margin: 2px 0 0 0; color: var(--muted); }
 <tbody>
 <tr>
 <td><code>0.167.0</code></td>
-<td><span class="status status-broken">Broken</span> <span class="muted">Failed: config</span></td>
+<td><span class="status status-passing">Passing</span> <span class="muted"></span></td>
 <td><span class="status status-not-run">Not run</span></td>
-<td><span class="status status-not-run">Not run</span></td>
+<td><span class="status status-pass">Works</span></td>
 <td>2026-11-08</td>
-<td>2026-11-08</td>
+<td>2026-11-09</td>
 <td><details><summary>Checks</summary>
 <table class="checks"><thead><tr><th>Check</th><th>Result</th><th>Detail</th></tr></thead>
 <tbody>
@@ -143,22 +145,19 @@ dd { margin: 2px 0 0 0; color: var(--muted); }
 <tr><td><code>version</code></td><td><span class="status status-pass">pass</span></td><td><pre>Reports 0.167.0</pre></td></tr>
 <tr><td><code>hook-events</code></td><td><span class="status status-pass">pass</span></td><td><pre>All 13 hook events found: SessionStart, SessionEnd, UserPromptSubmit, PreToolUse, PermissionRequest, PostToolUse, PostModelRequest, Stop, SubagentStart, SubagentStop, PreCompact, PostCompact, Interrupt</pre></td></tr>
 <tr><td><code>hook-fields</code></td><td><span class="status status-pass">pass</span></td><td><pre>All 18 payload, notify and answer fields found: cwd, hook_event_name, prompt, reason, session_id, source, tool_input, tool_name, trigger, turn_id, agent-turn-complete, thread-id, turn-id, input-messages, hookSpecificOutput, permissionDecision, permissionDecisionReason, systemMessage</pre></td></tr>
-<tr><td><code>config</code></td><td><span class="status status-fail">fail</span></td><td><pre>Codex rejects requirements.toml:
-WARNING: proceeding, even though we could not create PATH aliases: CODEX_HOME points to &quot;/tmp/selfhost-compat-home-h2zVTo/.codex&quot;, but that path does not exist
-Error: failed to resolve CODEX_HOME
-
-Caused by:
-    CODEX_HOME points to &quot;/tmp/selfhost-compat-home-h2zVTo/.codex&quot;, but that path does not exist</pre></td></tr>
+<tr><td><code>config</code></td><td><span class="status status-pass">pass</span></td><td><pre>Codex loads the requirements.toml selfhost compiles for this version</pre></td></tr>
+<tr><td><code>gateway-connect</code></td><td><span class="status status-pass">pass</span></td><td><pre>With the settings selfhost gateway connect writes, POST /llm/openai/v1/responses reached the stand-in gateway with the virtual key in authorization</pre></td></tr>
 <tr><td><code>live-session</code></td><td><span class="status status-skip">skipped</span></td><td><pre>No OPENAI_API_KEY secret, so no live session ran</pre></td></tr>
 <tr><td><code>suite:schema</code></td><td><span class="status status-pass">pass</span></td><td><pre>Hook payload fixtures and frozen v1 contracts against the payload schemas, and event schema versions</pre></td></tr>
 <tr><td><code>suite:hook-mappers</code></td><td><span class="status status-pass">pass</span></td><td><pre>Hook payload fixtures mapped to ledger events, and ingest of older event versions</pre></td></tr>
 <tr><td><code>suite:importers</code></td><td><span class="status status-pass">pass</span></td><td><pre>Fixture session logs through the local log importers</pre></td></tr>
 <tr><td><code>suite:hooks</code></td><td><span class="status status-pass">pass</span></td><td><pre>Each agent's pre-tool payloads through selfhost hook, the spool and the ledger</pre></td></tr>
 <tr><td><code>suite:compile</code></td><td><span class="status status-pass">pass</span></td><td><pre>Policy compile golden files per vendor config version</pre></td></tr>
+<tr><td><code>suite:gateway-connect</code></td><td><span class="status status-pass">pass</span></td><td><pre>selfhost gateway connect's settings on fixture configs per agent, and disconnect restoring them byte for byte</pre></td></tr>
 <tr><td><code>suite:context</code></td><td><span class="status status-pass">pass</span></td><td><pre>Context compile golden files per agent</pre></td></tr>
 </tbody></table>
 
-<p><a href="https://github.com/Ronakkadhi/selfhost/actions/runs/42530591960">CI run</a></p>
+<p><a href="https://github.com/Ronakkadhi/selfhost/actions/runs/42568480453">CI run</a></p>
 </details></td>
 </tr>
 </tbody></table></div></section>
@@ -173,7 +172,7 @@ Caused by:
 <td><span class="status status-not-run">Not run</span></td>
 <td><span class="muted">Not applicable</span></td>
 <td>2026-11-08</td>
-<td>2026-11-08</td>
+<td>2026-11-09</td>
 <td><details><summary>Checks</summary>
 <table class="checks"><thead><tr><th>Check</th><th>Result</th><th>Detail</th></tr></thead>
 <tbody>
@@ -187,7 +186,7 @@ Caused by:
 <tr><td><code>suite:context</code></td><td><span class="status status-pass">pass</span></td><td><pre>Context compile golden files per agent</pre></td></tr>
 </tbody></table>
 
-<p><a href="https://github.com/Ronakkadhi/selfhost/actions/runs/42530591960">CI run</a></p>
+<p><a href="https://github.com/Ronakkadhi/selfhost/actions/runs/42568480453">CI run</a></p>
 </details></td>
 </tr>
 </tbody></table></div></section>
@@ -200,9 +199,9 @@ Caused by:
 <td><code>1.19.5</code></td>
 <td><span class="status status-passing">Passing</span> <span class="muted"></span></td>
 <td><span class="status status-not-run">Not run</span></td>
-<td><span class="status status-not-run">Not run</span></td>
+<td><span class="status status-pass">Works</span></td>
 <td>2026-11-08</td>
-<td>2026-11-08</td>
+<td>2026-11-09</td>
 <td><details><summary>Checks</summary>
 <table class="checks"><thead><tr><th>Check</th><th>Result</th><th>Detail</th></tr></thead>
 <tbody>
@@ -210,12 +209,14 @@ Caused by:
 <tr><td><code>version</code></td><td><span class="status status-pass">pass</span></td><td><pre>Reports 1.19.5</pre></td></tr>
 <tr><td><code>hook-events</code></td><td><span class="status status-pass">pass</span></td><td><pre>All 1 plugin hooks found: tool.execute.before</pre></td></tr>
 <tr><td><code>hook-fields</code></td><td><span class="status status-pass">pass</span></td><td><pre>All 2 plugin event fields found: sessionID, callID</pre></td></tr>
+<tr><td><code>gateway-connect</code></td><td><span class="status status-pass">pass</span></td><td><pre>With the settings selfhost gateway connect writes, POST /llm/anthropic/v1/messages reached the stand-in gateway with the virtual key in x-api-key</pre></td></tr>
 <tr><td><code>live-session</code></td><td><span class="status status-skip">skipped</span></td><td><pre>No live session for this CLI yet</pre></td></tr>
 <tr><td><code>suite:hooks</code></td><td><span class="status status-pass">pass</span></td><td><pre>Each agent's pre-tool payloads through selfhost hook, the spool and the ledger</pre></td></tr>
+<tr><td><code>suite:gateway-connect</code></td><td><span class="status status-pass">pass</span></td><td><pre>selfhost gateway connect's settings on fixture configs per agent, and disconnect restoring them byte for byte</pre></td></tr>
 <tr><td><code>suite:context</code></td><td><span class="status status-pass">pass</span></td><td><pre>Context compile golden files per agent</pre></td></tr>
 </tbody></table>
 
-<p><a href="https://github.com/Ronakkadhi/selfhost/actions/runs/42530591960">CI run</a></p>
+<p><a href="https://github.com/Ronakkadhi/selfhost/actions/runs/42568480453">CI run</a></p>
 </details></td>
 </tr>
 </tbody></table></div></section>

@@ -1,7 +1,7 @@
 {
   "schema": "selfhost.vendor_compat/v1",
-  "updated": "2026-11-08T22:32:34.422Z",
-  "run_url": "https://github.com/Ronakkadhi/selfhost/actions/runs/42530591960",
+  "updated": "2026-11-09T05:40:46.034Z",
+  "run_url": "https://github.com/Ronakkadhi/selfhost/actions/runs/42568480453",
   "event_schemas": {
     "schema": "selfhost.event_versions/v1",
     "support_months": 12,
@@ -26,8 +26,8 @@
           "status": "passing",
           "live": "not_run",
           "first_tested": "2026-11-08",
-          "last_tested": "2026-11-08",
-          "run_url": "https://github.com/Ronakkadhi/selfhost/actions/runs/42530591960",
+          "last_tested": "2026-11-09",
+          "run_url": "https://github.com/Ronakkadhi/selfhost/actions/runs/42568480453",
           "checks": [
             {
               "id": "install",
@@ -60,6 +60,11 @@
               "detail": "claude doctor accepts the managed settings selfhost compiles for this version"
             },
             {
+              "id": "gateway-connect",
+              "status": "pass",
+              "detail": "With the settings selfhost gateway connect writes, POST /llm/anthropic/v1/messages reached the stand-in gateway with the virtual key in authorization"
+            },
+            {
               "id": "live-session",
               "status": "skip",
               "detail": "No ANTHROPIC_API_KEY secret, so no live session ran"
@@ -88,6 +93,11 @@
               "id": "suite:compile",
               "status": "pass",
               "detail": "Policy compile golden files per vendor config version"
+            },
+            {
+              "id": "suite:gateway-connect",
+              "status": "pass",
+              "detail": "selfhost gateway connect's settings on fixture configs per agent, and disconnect restoring them byte for byte"
             },
             {
               "id": "suite:context",
@@ -132,11 +142,11 @@
       "versions": [
         {
           "version": "0.167.0",
-          "status": "broken",
+          "status": "passing",
           "live": "not_run",
           "first_tested": "2026-11-08",
-          "last_tested": "2026-11-08",
-          "run_url": "https://github.com/Ronakkadhi/selfhost/actions/runs/42530591960",
+          "last_tested": "2026-11-09",
+          "run_url": "https://github.com/Ronakkadhi/selfhost/actions/runs/42568480453",
           "checks": [
             {
               "id": "install",
@@ -160,8 +170,13 @@
             },
             {
               "id": "config",
-              "status": "fail",
-              "detail": "Codex rejects requirements.toml:\nWARNING: proceeding, even though we could not create PATH aliases: CODEX_HOME points to \"/tmp/selfhost-compat-home-h2zVTo/.codex\", but that path does not exist\nError: failed to resolve CODEX_HOME\n\nCaused by:\n    CODEX_HOME points to \"/tmp/selfhost-compat-home-h2zVTo/.codex\", but that path does not exist"
+              "status": "pass",
+              "detail": "Codex loads the requirements.toml selfhost compiles for this version"
+            },
+            {
+              "id": "gateway-connect",
+              "status": "pass",
+              "detail": "With the settings selfhost gateway connect writes, POST /llm/openai/v1/responses reached the stand-in gateway with the virtual key in authorization"
             },
             {
               "id": "live-session",
@@ -194,6 +209,11 @@
               "detail": "Policy compile golden files per vendor config version"
             },
             {
+              "id": "suite:gateway-connect",
+              "status": "pass",
+              "detail": "selfhost gateway connect's settings on fixture configs per agent, and disconnect restoring them byte for byte"
+            },
+            {
               "id": "suite:context",
               "status": "pass",
               "detail": "Context compile golden files per agent"
@@ -214,8 +234,8 @@
           "status": "passing",
           "live": "not_run",
           "first_tested": "2026-11-08",
-          "last_tested": "2026-11-08",
-          "run_url": "https://github.com/Ronakkadhi/selfhost/actions/runs/42530591960",
+          "last_tested": "2026-11-09",
+          "run_url": "https://github.com/Ronakkadhi/selfhost/actions/runs/42568480453",
           "checks": [
             {
               "id": "install",
@@ -273,8 +293,8 @@
           "status": "passing",
           "live": "not_run",
           "first_tested": "2026-11-08",
-          "last_tested": "2026-11-08",
-          "run_url": "https://github.com/Ronakkadhi/selfhost/actions/runs/42530591960",
+          "last_tested": "2026-11-09",
+          "run_url": "https://github.com/Ronakkadhi/selfhost/actions/runs/42568480453",
           "checks": [
             {
               "id": "install",
@@ -297,6 +317,11 @@
               "detail": "All 2 plugin event fields found: sessionID, callID"
             },
             {
+              "id": "gateway-connect",
+              "status": "pass",
+              "detail": "With the settings selfhost gateway connect writes, POST /llm/anthropic/v1/messages reached the stand-in gateway with the virtual key in x-api-key"
+            },
+            {
               "id": "live-session",
               "status": "skip",
               "detail": "No live session for this CLI yet"
@@ -305,6 +330,11 @@
               "id": "suite:hooks",
               "status": "pass",
               "detail": "Each agent's pre-tool payloads through selfhost hook, the spool and the ledger"
+            },
+            {
+              "id": "suite:gateway-connect",
+              "status": "pass",
+              "detail": "selfhost gateway connect's settings on fixture configs per agent, and disconnect restoring them byte for byte"
             },
             {
               "id": "suite:context",

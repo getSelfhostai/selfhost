@@ -166,3 +166,39 @@ describe("rules and guardrails", () => {
     expect(weekText(undefined)).toBe("Nothing in the last 7 days");
   });
 });
+
+describe("review routing settings", () => {
+  it("lists the routes and auto-approve read only, in the order they are checked", async () => {
+    const policy = {
+      ...POLICY,
+      config: {
+        ...POLICY.config,
+        review: {
+          fallback: ["lead@example.com"],
+          routes: [
+            {
+              id: "prod-db",
+              kinds: ["pr", "approval"],
+              paths: ["db/**"],
+              to: ["dba@example.com", "role:admin"],
+              escalate_after_minutes: 30,
+            },
+            { id: "everything", to: ["@acme/reviewers"] },
+          ],
+          auto_approve: { enabled: true, max_risk: 10, allowed_paths: ["docs/**"] },
+        },
+      },
+    } as unknown as typeof POLICY;
+    mockServer(routes({ "GET /v1/policy": policy }));
+    renderConsole(MEMBER, "?screen=rules");
+    const cards = await screen.findAllByTestId("route");
+    expect(cards.map((card) => card.textContent)).toEqual([
+      "1.prod-dbMatches kind pr or approval; files db/**Goes to dba@example.com, role:adminAfter 30 minutes, the next matching route",
+      "2.everythingMatches every itemGoes to @acme/reviewers",
+    ]);
+    expect(screen.getByTestId("auto-approve").textContent).toBe(
+      "Auto-approve: Dry run (records only): risk 10 or less, only docs/**, green checks, no guardrail hits.",
+    );
+    expect(screen.queryByRole("button", { name: /route/i })).toBeNull();
+  });
+});
