@@ -99,11 +99,14 @@ jobs:
           grep -q '"schema": "selfhost.agents/v1"' agents.json
           sh "$RUNNER_TEMP/ledger-check.sh" env -i PATH="$empty" \
             CLAUDE_CONFIG_DIR="$CLAUDE_CONFIG_DIR" CODEX_HOME="$CODEX_HOME" "$bin"
+      # Kept briefly for a manual download; a full artifact quota must not fail the build.
       - uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: selfhost-cli
           path: apps/cli/dist/selfhost-*
           if-no-files-found: error
+          retention-days: 3
 
   # The proof receipt action (ee/receipt) end to end on the sample app in fixtures/receipt-app,
   # with real Playwright screenshots: once with a fake preview deployment and once without. Only
