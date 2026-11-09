@@ -69,6 +69,33 @@ its own TOML block (`# >>> selfhost <profile> >>>`), so `selfhost guard install`
 `guard`) and `agents configure` are added and removed apart. A hook another profile already
 added counts as already set and is left to that profile.
 
+## The AI gateway
+
+`gateway` (with `profile: GATEWAY_PROFILE`, as `selfhost gateway connect` uses it) points an
+agent's model traffic at an AI gateway with a virtual key: `{ anthropic, openai, key }`, the
+gateway's Anthropic-style base URL, its OpenAI-style one ending in `/v1`, and the key.
+
+| Agent       | What is written                                                                              |
+| ----------- | -------------------------------------------------------------------------------------------- |
+| Claude Code | `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN` in `settings.json` `env`                     |
+| Codex       | `model_provider = "selfhost"` and `model_providers.selfhost` (`experimental_bearer_token`)   |
+| OpenCode    | `provider.anthropic.options` and `provider.openai.options`: `baseURL` and `apiKey`           |
+| Goose       | `custom_providers/selfhost.json`: OpenAI-style, `requires_auth: false`, the key in `headers` |
+| Cursor CLI  | unsupported: its model traffic leaves from Cursor's servers                                  |
+
+Codex's keys are top-level, so the gateway profile's TOML block goes at the start of
+`config.toml`, where a key can't fall into the user's last table, and holds nothing else.
+Claude Code settings with `ANTHROPIC_API_KEY`, `apiKeyHelper` or a `CLAUDE_CODE_USE_*` provider
+in `env` are a conflict: they would send a second key or go past the gateway. Goose reads no
+key from its config files, so the key is a header on the custom provider.
+
+`subscriptionLogin(agent, { home, env, platform, keychain })` says whether an agent is signed
+in with a subscription, whose traffic goes to the vendor and never reaches a gateway: a Claude
+account login (`.credentials.json`, the keychain item, `CLAUDE_CODE_OAUTH_TOKEN`), a ChatGPT
+login in Codex's `auth.json` (or a keychain login, which can't be told from an API key), or an
+OAuth login to Anthropic or OpenAI in OpenCode's `auth.json`. Only the kind of login is looked
+at, never a token.
+
 ## Context files
 
 `findContextFiles` lists `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `AGENTS.override.md`,

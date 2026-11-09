@@ -1,3 +1,4 @@
+import { CONNECT_CHECK } from "./connect.js";
 import type { PageData, PageVendor, PageVersion } from "./report.js";
 
 // The compatibility page: one static HTML file next to compatibility.json, rewritten by every
@@ -34,8 +35,12 @@ const CHECKS_EXPLAINED: [string, string][] = [
     "The CLI loads the configuration selfhost policy compile writes for that release: claude doctor for Claude Code settings, codex features list for Codex requirements.toml.",
   ],
   [
+    CONNECT_CHECK,
+    "selfhost gateway connect's settings for this release go into a fresh home, the CLI runs one prompt, and its model request must reach a stand-in gateway on the runner with the virtual key. No API key is used.",
+  ],
+  [
     "suite:*",
-    "Fixture sessions and hook payloads through selfhost's schemas, hook mappers, log importers, the selfhost hook command, and the policy and context compilers.",
+    "Fixture sessions and hook payloads through selfhost's schemas, hook mappers, log importers, the selfhost hook command, the policy and context compilers, and gateway connect and disconnect on fixture configs.",
   ],
   [
     "live-*",
@@ -45,6 +50,88 @@ const CHECKS_EXPLAINED: [string, string][] = [
 
 function cls(status: string): string {
   return `status status-${status.replace("_", "-")}`;
+}
+
+/**
+ * What `selfhost gateway connect` does per agent. Cursor and Copilot send model traffic from the
+ * vendor's servers; Goose is not installed by CI yet, so only its fixture tests cover it.
+ */
+const CONNECT_AGENTS: {
+  id: string;
+  name: string;
+  writes: string;
+  tested: "ci" | "fixtures" | "none";
+}[] = [
+  {
+    id: "claude_code",
+    name: "Claude Code",
+    writes:
+      "ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN in the env block of ~/.claude/settings.json (--managed: a managed-settings.d file)",
+    tested: "ci",
+  },
+  {
+    id: "codex",
+    name: "Codex",
+    writes: "model_provider and model_providers.selfhost at the top of ~/.codex/config.toml",
+    tested: "ci",
+  },
+  {
+    id: "opencode",
+    name: "OpenCode",
+    writes: "provider.anthropic and provider.openai baseURL and apiKey in opencode.json",
+    tested: "ci",
+  },
+  {
+    id: "goose",
+    name: "Goose",
+    writes: "a custom provider, custom_providers/selfhost.json, picked with --provider selfhost",
+    tested: "fixtures",
+  },
+  {
+    id: "cursor",
+    name: "Cursor CLI",
+    writes:
+      "Nothing: its model traffic leaves from Cursor's servers. Usage comes from Cursor's admin API.",
+    tested: "none",
+  },
+  {
+    id: "copilot",
+    name: "GitHub Copilot",
+    writes:
+      "Nothing: its model traffic leaves from GitHub's servers. Usage comes from GitHub's admin API.",
+    tested: "none",
+  },
+];
+
+const CONNECT_LABEL = { pass: "Works", fail: "Broken", skip: "Not run" } as const;
+
+/** The gateway-connect result of one tested version, as a status badge. */
+function connectStatus(entry: PageVersion): string {
+  const check = entry.checks.find((c) => c.id === CONNECT_CHECK);
+  if (!check) return `<span class="${cls("not_run")}">Not run</span>`;
+  return `<span class="${cls(check.status)}">${CONNECT_LABEL[check.status]}</span>`;
+}
+
+function connectSection(page: PageData): string {
+  const rows = CONNECT_AGENTS.map((agent) => {
+    const newest = page.vendors.find((v) => v.id === agent.id)?.versions[0];
+    const version = newest ? `<code>${html(newest.version)}</code>` : "";
+    const result =
+      agent.tested === "none"
+        ? '<span class="muted">Not applicable</span>'
+        : agent.tested === "fixtures"
+          ? '<span class="muted">Fixture tests only: not installed by CI yet</span>'
+          : newest
+            ? connectStatus(newest)
+            : '<span class="muted">Not tested yet</span>';
+    return `<tr><td>${html(agent.name)}</td><td>${html(agent.writes)}</td><td>${version}</td><td>${result}</td></tr>`;
+  }).join("\n");
+  return `<p><code>selfhost gateway connect &lt;agent&gt;</code> points an agent at the team's AI gateway with the person's virtual key, and <code>selfhost gateway disconnect</code> puts the files back byte for byte. Only API key traffic goes through a gateway: an agent signed in with a subscription is left as it is unless <code>--api-billing</code> is given. Each version's result is in its <code>${CONNECT_CHECK}</code> check below.</p>
+<div class="scroll"><table>
+<thead><tr><th>Agent</th><th>What connect writes</th><th>Newest tested</th><th>Connect</th></tr></thead>
+<tbody>
+${rows}
+</tbody></table></div>`;
 }
 
 function failedSummary(entry: PageVersion): string {
@@ -86,6 +173,7 @@ function vendorSection(vendor: PageVendor): string {
 <td><code>${html(v.version)}</code></td>
 <td><span class="${cls(v.status)}">${STATUS_LABEL[v.status]}</span> <span class="muted">${html(failedSummary(v))}</span></td>
 <td><span class="${cls(v.live)}">${LIVE_LABEL[v.live]}</span></td>
+<td>${vendor.id === "cursor" ? '<span class="muted">Not applicable</span>' : connectStatus(v)}</td>
 <td>${html(v.first_tested)}</td>
 <td>${html(v.last_tested)}</td>
 <td>${versionDetails(v)}</td>
@@ -95,7 +183,7 @@ function vendorSection(vendor: PageVendor): string {
   return `<section id="${vendor.id}"><h2>${html(vendor.name)}</h2>
 <p class="muted">Source: <code>${html(vendor.source)}</code></p>
 <div class="scroll"><table>
-<thead><tr><th>Version</th><th>Status</th><th>Live session</th><th>First tested</th><th>Last tested</th><th></th></tr></thead>
+<thead><tr><th>Version</th><th>Status</th><th>Live session</th><th>Gateway connect</th><th>First tested</th><th>Last tested</th><th></th></tr></thead>
 <tbody>
 ${rows}
 </tbody></table></div></section>`;
@@ -146,7 +234,7 @@ export function renderPage(page: PageData): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vendor compatibility</title>
-<meta name="description" content="Coding agent CLI releases tested against selfhost's hooks, log importers and policy compiler.">
+<meta name="description" content="Coding agent CLI releases tested against selfhost's hooks, log importers, policy compiler and gateway connect.">
 <style>
 :root {
   --bg: #ffffff;
@@ -210,8 +298,11 @@ dd { margin: 2px 0 0 0; color: var(--muted); }
 <body>
 <main>
 <h1>Vendor compatibility</h1>
-<p>Each new release of the coding agent CLIs selfhost supports is installed in CI and checked against selfhost's hooks, log importers and policy compiler: every week, and within hours of a release. A failing run marks that release broken here and opens an issue. ${updated}</p>
+<p>Each new release of the coding agent CLIs selfhost supports is installed in CI and checked against selfhost's hooks, log importers, policy compiler and gateway connect: every week, and within hours of a release. A failing run marks that release broken here and opens an issue. ${updated}</p>
 ${summary(page)}
+<section id="gateway-connect"><h2>Gateway connect</h2>
+${connectSection(page)}
+</section>
 ${page.vendors.map(vendorSection).join("\n")}
 <section id="event-schemas"><h2>Event schema versions</h2>
 ${eventSchemas(page)}

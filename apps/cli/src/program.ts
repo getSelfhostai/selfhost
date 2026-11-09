@@ -549,6 +549,9 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       configPath: deps.configPath ?? defaultConfigPath(),
       fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
       ...(deps.home ? { home: deps.home } : {}),
+      platform: deps.platform,
+      probes: deps.probes,
+      ...(deps.now ? { now: deps.now } : {}),
     }),
     fail,
   );
