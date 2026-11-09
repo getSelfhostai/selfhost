@@ -406,13 +406,13 @@ search for `selfhost/review` once it has run on a pull request).
 
 Where each part comes from is a provider in `src/github-pull.ts` (tests replace them):
 
-| Provider | Default                                                                                                                                                                                                                                                                              |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `risk`   | The ee/ risk score (`src/github-risk.ts`, loaded through `src/ee.ts` on first use) from the pull request's files and new dependencies; none when ee/ is left out                                                                                                                     |
-| `owner`  | `src/github-review.ts`: the first owner of the pull request's `pr` review item (by PR URL, in `SELFHOST_GITHUB_TEAM`'s items when set); before there is one, `routeItem` on its changed files, the person whose session made its commits, the team's members and `[review] fallback` |
-| `route`  | `src/github-review.ts`: the GitHub accounts the pull request's route names; nothing is read without `[[review.routes]]` |
-| `autoApprove` | `src/github-approve.ts`: the `[review.auto_approve]` verdict from ee/risk; nothing is read while it is off |
-| `brief`  | `src/github-review.ts`: the [review brief](../../packages/brief/README.md) as one comment, its summary leading the check run, ending with the newest proof receipt (see below) when CI posted one                                                                                    |
+| Provider      | Default                                                                                                                                                                                                                                                                              |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `risk`        | The ee/ risk score (`src/github-risk.ts`, loaded through `src/ee.ts` on first use) from the pull request's files and new dependencies; none when ee/ is left out                                                                                                                     |
+| `owner`       | `src/github-review.ts`: the first owner of the pull request's `pr` review item (by PR URL, in `SELFHOST_GITHUB_TEAM`'s items when set); before there is one, `routeItem` on its changed files, the person whose session made its commits, the team's members and `[review] fallback` |
+| `route`       | `src/github-review.ts`: the GitHub accounts the pull request's route names; nothing is read without `[[review.routes]]`                                                                                                                                                              |
+| `autoApprove` | `src/github-approve.ts`: the `[review.auto_approve]` verdict from ee/risk; nothing is read while it is off                                                                                                                                                                           |
+| `brief`       | `src/github-review.ts`: the [review brief](../../packages/brief/README.md) as one comment, its summary leading the check run, ending with the newest proof receipt (see below) when CI posted one                                                                                    |
 
 The server has no clone and no `gh`, so the brief reads the pull request through the App with
 `readPullRequest` from [`@selfhost/pr`](../../packages/pr/README.md): the files with their

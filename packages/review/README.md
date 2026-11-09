@@ -117,14 +117,14 @@ none matches everything) and whose `to` names anyone takes it, with `route.step`
 `route.id` and `route.why` (what it matched on). A route that matches but names nobody here is
 skipped. `to` targets:
 
-| Target | Resolves to |
-| --- | --- |
-| a person id | that person |
-| `role:owner`, `role:admin`, `role:member` | the team's people with that role, on a team server; nobody on a laptop |
-| `team:<name>` | `[teams.<name>] members` |
-| `@<login>` | the GitHub user, asked to review a pull request, and the person `[review] github_logins` maps the login to |
-| `@<org>/<team>` | the GitHub team, asked to review a pull request |
-| `codeowners` | the CODEOWNERS owners of the item's files (`.github/CODEOWNERS`, `CODEOWNERS`, then `docs/CODEOWNERS`; last matching line wins): `@login` and `@org/team` as above, emails as person ids |
+| Target                                    | Resolves to                                                                                                                                                                              |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| a person id                               | that person                                                                                                                                                                              |
+| `role:owner`, `role:admin`, `role:member` | the team's people with that role, on a team server; nobody on a laptop                                                                                                                   |
+| `team:<name>`                             | `[teams.<name>] members`                                                                                                                                                                 |
+| `@<login>`                                | the GitHub user, asked to review a pull request, and the person `[review] github_logins` maps the login to                                                                               |
+| `@<org>/<team>`                           | the GitHub team, asked to review a pull request                                                                                                                                          |
+| `codeowners`                              | the CODEOWNERS owners of the item's files (`.github/CODEOWNERS`, `CODEOWNERS`, then `docs/CODEOWNERS`; last matching line wins): `@login` and `@org/team` as above, emails as person ids |
 
 GitHub accounts only count as "names anyone" for `pr` items, and are kept in `route.github`.
 CODEOWNERS comes from `RefreshOptions.codeowners` (the server reads it from its clones under
