@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vendor compatibility</title>
-<meta name="description" content="Coding agent CLI releases tested against selfhost's hooks, log importers and policy compiler.">
+<meta name="description" content="Coding agent CLI releases tested against selfhost's hooks, log importers, policy compiler and gateway connect.">
 <style>
 :root {
   --bg: #ffffff;
@@ -68,7 +68,7 @@ dd { margin: 2px 0 0 0; color: var(--muted); }
 <body>
 <main>
 <h1>Vendor compatibility</h1>
-<p>Each new release of the coding agent CLIs selfhost supports is installed in CI and checked against selfhost's hooks, log importers and policy compiler: every week, and within hours of a release. A failing run marks that release broken here and opens an issue. Last run 2026-11-08 22:32 UTC, <a href="https://github.com/Ronakkadhi/selfhost/actions/runs/42530591960">CI run</a>.</p>
+<p>Each new release of the coding agent CLIs selfhost supports is installed in CI and checked against selfhost's hooks, log importers, policy compiler and gateway connect: every week, and within hours of a release. A failing run marks that release broken here and opens an issue. Last run 2026-11-08 22:32 UTC, <a href="https://github.com/Ronakkadhi/selfhost/actions/runs/42530591960">CI run</a>.</p>
 <div class="scroll"><table>
 <thead><tr><th>CLI</th><th>Newest tested</th><th>Status</th><th>Live session</th></tr></thead>
 <tbody>
@@ -77,14 +77,28 @@ dd { margin: 2px 0 0 0; color: var(--muted); }
 <tr><td><a href="#cursor">Cursor CLI</a></td><td><code>2026.11.05-86047df</code></td><td><span class="status status-passing">Passing</span></td><td><span class="status status-not-run">Not run</span></td></tr>
 <tr><td><a href="#opencode">OpenCode</a></td><td><code>1.19.5</code></td><td><span class="status status-passing">Passing</span></td><td><span class="status status-not-run">Not run</span></td></tr>
 </tbody></table></div>
+<section id="gateway-connect"><h2>Gateway connect</h2>
+<p><code>selfhost gateway connect &lt;agent&gt;</code> points an agent at the team's AI gateway with the person's virtual key, and <code>selfhost gateway disconnect</code> puts the files back byte for byte. Only API key traffic goes through a gateway: an agent signed in with a subscription is left as it is unless <code>--api-billing</code> is given. Each version's result is in its <code>gateway-connect</code> check below.</p>
+<div class="scroll"><table>
+<thead><tr><th>Agent</th><th>What connect writes</th><th>Newest tested</th><th>Connect</th></tr></thead>
+<tbody>
+<tr><td>Claude Code</td><td>ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN in the env block of ~/.claude/settings.json (--managed: a managed-settings.d file)</td><td><code>2.1.319</code></td><td><span class="status status-not-run">Not run</span></td></tr>
+<tr><td>Codex</td><td>model_provider and model_providers.selfhost at the top of ~/.codex/config.toml</td><td><code>0.167.0</code></td><td><span class="status status-not-run">Not run</span></td></tr>
+<tr><td>OpenCode</td><td>provider.anthropic and provider.openai baseURL and apiKey in opencode.json</td><td><code>1.19.5</code></td><td><span class="status status-not-run">Not run</span></td></tr>
+<tr><td>Goose</td><td>a custom provider, custom_providers/selfhost.json, picked with --provider selfhost</td><td></td><td><span class="muted">Fixture tests only: not installed by CI yet</span></td></tr>
+<tr><td>Cursor CLI</td><td>Nothing: its model traffic leaves from Cursor's servers. Usage comes from Cursor's admin API.</td><td><code>2026.11.05-86047df</code></td><td><span class="muted">Not applicable</span></td></tr>
+<tr><td>GitHub Copilot</td><td>Nothing: its model traffic leaves from GitHub's servers. Usage comes from GitHub's admin API.</td><td></td><td><span class="muted">Not applicable</span></td></tr>
+</tbody></table></div>
+</section>
 <section id="claude_code"><h2>Claude Code</h2>
 <p class="muted">Source: <code>@anthropic-ai/claude-code</code></p>
 <div class="scroll"><table>
-<thead><tr><th>Version</th><th>Status</th><th>Live session</th><th>First tested</th><th>Last tested</th><th></th></tr></thead>
+<thead><tr><th>Version</th><th>Status</th><th>Live session</th><th>Gateway connect</th><th>First tested</th><th>Last tested</th><th></th></tr></thead>
 <tbody>
 <tr>
 <td><code>2.1.319</code></td>
 <td><span class="status status-passing">Passing</span> <span class="muted"></span></td>
+<td><span class="status status-not-run">Not run</span></td>
 <td><span class="status status-not-run">Not run</span></td>
 <td>2026-11-08</td>
 <td>2026-11-08</td>
@@ -113,11 +127,12 @@ dd { margin: 2px 0 0 0; color: var(--muted); }
 <section id="codex"><h2>Codex</h2>
 <p class="muted">Source: <code>@openai/codex</code></p>
 <div class="scroll"><table>
-<thead><tr><th>Version</th><th>Status</th><th>Live session</th><th>First tested</th><th>Last tested</th><th></th></tr></thead>
+<thead><tr><th>Version</th><th>Status</th><th>Live session</th><th>Gateway connect</th><th>First tested</th><th>Last tested</th><th></th></tr></thead>
 <tbody>
 <tr>
 <td><code>0.167.0</code></td>
 <td><span class="status status-broken">Broken</span> <span class="muted">Failed: config</span></td>
+<td><span class="status status-not-run">Not run</span></td>
 <td><span class="status status-not-run">Not run</span></td>
 <td>2026-11-08</td>
 <td>2026-11-08</td>
@@ -150,12 +165,13 @@ Caused by:
 <section id="cursor"><h2>Cursor CLI</h2>
 <p class="muted">Source: <code>https://cursor.com/install</code></p>
 <div class="scroll"><table>
-<thead><tr><th>Version</th><th>Status</th><th>Live session</th><th>First tested</th><th>Last tested</th><th></th></tr></thead>
+<thead><tr><th>Version</th><th>Status</th><th>Live session</th><th>Gateway connect</th><th>First tested</th><th>Last tested</th><th></th></tr></thead>
 <tbody>
 <tr>
 <td><code>2026.11.05-86047df</code></td>
 <td><span class="status status-passing">Passing</span> <span class="muted"></span></td>
 <td><span class="status status-not-run">Not run</span></td>
+<td><span class="muted">Not applicable</span></td>
 <td>2026-11-08</td>
 <td>2026-11-08</td>
 <td><details><summary>Checks</summary>
@@ -178,11 +194,12 @@ Caused by:
 <section id="opencode"><h2>OpenCode</h2>
 <p class="muted">Source: <code>opencode-ai</code></p>
 <div class="scroll"><table>
-<thead><tr><th>Version</th><th>Status</th><th>Live session</th><th>First tested</th><th>Last tested</th><th></th></tr></thead>
+<thead><tr><th>Version</th><th>Status</th><th>Live session</th><th>Gateway connect</th><th>First tested</th><th>Last tested</th><th></th></tr></thead>
 <tbody>
 <tr>
 <td><code>1.19.5</code></td>
 <td><span class="status status-passing">Passing</span> <span class="muted"></span></td>
+<td><span class="status status-not-run">Not run</span></td>
 <td><span class="status status-not-run">Not run</span></td>
 <td>2026-11-08</td>
 <td>2026-11-08</td>
@@ -218,7 +235,8 @@ Caused by:
 <dt><code>hook-fields</code></dt><dd>The payload fields selfhost reads and the answer fields it writes still appear in the CLI.</dd>
 <dt><code>tool-inputs</code></dt><dd>Claude Code's own sdk-tools.d.ts still declares the tool input fields the pre-tool check reads.</dd>
 <dt><code>config</code></dt><dd>The CLI loads the configuration selfhost policy compile writes for that release: claude doctor for Claude Code settings, codex features list for Codex requirements.toml.</dd>
-<dt><code>suite:*</code></dt><dd>Fixture sessions and hook payloads through selfhost's schemas, hook mappers, log importers, the selfhost hook command, and the policy and context compilers.</dd>
+<dt><code>gateway-connect</code></dt><dd>selfhost gateway connect's settings for this release go into a fresh home, the CLI runs one prompt, and its model request must reach a stand-in gateway on the runner with the virtual key. No API key is used.</dd>
+<dt><code>suite:*</code></dt><dd>Fixture sessions and hook payloads through selfhost's schemas, hook mappers, log importers, the selfhost hook command, the policy and context compilers, and gateway connect and disconnect on fixture configs.</dd>
 <dt><code>live-*</code></dt><dd>With an API key in CI: a short real session with every hook capturing its payload, checked against the schemas, mapped to ledger events, and the session log imported.</dd>
 </dl>
 <p class="muted">A skipped check could not run in that environment, for example a live session without an API key. Skipped checks never mark a release broken. The same data is in <a href="compatibility.json">compatibility.json</a>.</p>

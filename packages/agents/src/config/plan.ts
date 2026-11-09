@@ -19,6 +19,16 @@ import { vendorTargets } from "./vendors.js";
 
 const MANIFEST_SCHEMA = "selfhost.agent_config/v1";
 
+/** The profile `selfhost gateway connect` writes with. */
+export const GATEWAY_PROFILE = "gateway";
+
+/** The TOML block markers for a profile. The gateway's goes first: it sets top-level keys. */
+function profileBlock(profile: string | undefined) {
+  if (profile === "guard") return tomlBlock(profile, "selfhost guard install");
+  if (profile === GATEWAY_PROFILE) return tomlBlock(profile, "selfhost gateway connect", "start");
+  return tomlBlock(profile);
+}
+
 /**
  * selfhost's record of what it wrote for an agent: `<home>/.selfhost/agents/<agent>.json`, or
  * `<agent>.<profile>.json` for another profile.
@@ -51,7 +61,7 @@ function readManifest(text: string | null, agent: AgentId): Manifest {
   return empty;
 }
 
-const ITEM_ORDER = ["env", "otel", "hooks"];
+const ITEM_ORDER = ["gateway", "env", "otel", "hooks"];
 
 function itemRank(item: PlanItem): string {
   const index = ITEM_ORDER.indexOf(item.item);
@@ -67,7 +77,7 @@ export function planAgentConfig(agent: AgentId, options: PlanOptions): AgentConf
   const { home, processEnv = {}, platform = process.platform, profile, ...input } = options;
   const loc = locate({ home, env: processEnv, platform });
   const statePath = manifestPath(home, agent, profile);
-  const block = tomlBlock(profile, profile === "guard" ? "selfhost guard install" : undefined);
+  const block = profileBlock(profile);
   const stateBefore = readText(statePath);
   const manifest = readManifest(stateBefore, agent);
   const { targets, other } = vendorTargets(agent, input, loc, block, {

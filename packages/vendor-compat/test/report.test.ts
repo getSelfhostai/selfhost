@@ -159,3 +159,39 @@ describe("renderPage", () => {
     expect(html).not.toContain("<turn_id>");
   });
 });
+
+describe("the gateway connect table", () => {
+  it("lists every agent, with each tested version's connect result", () => {
+    const runs = [
+      vendorRun("claude_code", "2.1.319", [pass("gateway-connect")]),
+      vendorRun("codex", "0.167.0", [
+        { id: "gateway-connect", status: "fail", detail: "No /llm/openai/v1/responses request" },
+      ]),
+    ];
+    const html = renderPage(mergeRun(emptyPage(), results(runs), NOW).page);
+    const table = html.slice(
+      html.indexOf('id="gateway-connect"'),
+      html.indexOf('id="claude_code"'),
+    );
+    for (const name of [
+      "Claude Code",
+      "Codex",
+      "OpenCode",
+      "Goose",
+      "Cursor CLI",
+      "GitHub Copilot",
+    ]) {
+      expect(table).toContain(`<td>${name}</td>`);
+    }
+    expect(table).toMatch(
+      /Claude Code<\/td>.*<code>2\.1\.319<\/code><\/td><td><span class="status status-pass">Works/,
+    );
+    expect(table).toMatch(
+      /Codex<\/td>.*<code>0\.167\.0<\/code><\/td><td><span class="status status-fail">Broken/,
+    );
+    expect(table).toMatch(/OpenCode<\/td>.*Not tested yet/);
+    expect(table).toMatch(/Goose<\/td>.*Fixture tests only/);
+    expect(table).toMatch(/Cursor CLI<\/td>.*admin API.*Not applicable/);
+    expect(html).not.toContain("\u2014");
+  });
+});

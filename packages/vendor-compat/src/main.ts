@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { connectCheck } from "./connect.js";
 import { installVendor } from "./install.js";
 import { live } from "./live.js";
 import { renderPage } from "./page.js";
@@ -14,6 +15,7 @@ const USAGE = `Usage: pnpm --filter @selfhost/vendor-compat compat <command> [op
   install --versions '{"claude_code":"2.1.319"}' --dir <dir> --results <file>
   probe   --results <file>           offline checks of each installed CLI
   suites  --results <file>           fixture suites through hooks, importers and compilers
+  connect --results <file>           each CLI with gateway connect's settings, against a local stand-in gateway
   live    --results <file>           real sessions where ANTHROPIC_API_KEY / OPENAI_API_KEY are set
   report  --results <file> [--out docs/compatibility] [--run-url <url>] [--issues <file>]
   page    [--out docs/compatibility] rewrite index.html from compatibility.json
@@ -95,6 +97,9 @@ async function main(): Promise<void> {
       break;
     case "suites":
       results.suites = SUITES.map(runSuite);
+      break;
+    case "connect":
+      for (const vendor of results.vendors) await connectCheck(vendor);
       break;
     case "live":
       for (const vendor of results.vendors) await live(vendor);

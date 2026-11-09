@@ -1182,6 +1182,9 @@ importers:
 
   packages/vendor-compat:
     dependencies:
+      '@selfhost/agents':
+        specifier: workspace:*
+        version: link:../agents
       '@selfhost/compile':
         specifier: workspace:*
         version: link:../compile
