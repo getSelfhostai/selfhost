@@ -16,6 +16,7 @@ import { BUDGET_KEY, budgetResponse, oneSourcePerSession, periodRange } from "@s
 import { isAlive, readCache } from "../alerts/cache.js";
 import { localPerson } from "../alerts/person.js";
 import { statuslineCachePath } from "../alerts/settings.js";
+import { oneCopyPerFact } from "../hooks/dedupe.js";
 import { drainSpool } from "../hooks/drain.js";
 import { exceptionsDir, isOwnException, issueGrants, readGrant } from "../hooks/exceptions.js";
 import { loadPolicy } from "../hooks/pretool.js";
@@ -104,7 +105,11 @@ export function localMcpData(
         );
       }
       // The block is on the spool until the next import; bring it in so the item is listed.
-      await drainSpool(ledger, spoolDir(io.env), { person, now: now(), exceptionsOnly: true });
+      await drainSpool(oneCopyPerFact(ledger), spoolDir(io.env), {
+        person,
+        now: now(),
+        exceptionsOnly: true,
+      });
     },
   });
 

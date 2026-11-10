@@ -6,16 +6,17 @@ import {
   type UsageRow,
   type UsageTotals,
 } from "@selfhost/schema";
-import { COST_SOURCE_PREFERENCE } from "@selfhost/spend";
+import { countedCostsSql, sourceRankSql } from "@selfhost/spend";
 
 /**
  * Usage, cost and outcomes in SQL over the ledger's events table. Nothing here knows which source
  * wrote an event: OpenTelemetry, local logs, hooks, the gateway and vendor admin data all land as
  * the same event kinds, so one query reads them all.
  *
- * - Spend: cost.recorded events. A session (agent vendor and session_id) reported by more than one
- *   source counts the events of one, in the order of COST_SOURCE_PREFERENCE, as `selfhost spend`
- *   and the team overview count it (oneSourcePerSession in @selfhost/spend).
+ * - Spend: cost.recorded events, counted as `selfhost spend` and the team overview count them
+ *   (oneSourcePerSession in @selfhost/spend): a request that went through the model gateway once,
+ *   as the gateway's event (countedCostsSql), then for the rest one source per session (agent
+ *   vendor and session_id), in the order of COST_SOURCE_PREFERENCE.
  * - Sessions: distinct sessions with a session, prompt or cost event in the range.
  * - Pull requests: distinct pull request URLs of pr.opened and pr.merged events in the range.
  * - Cache hit rate: cache reads over cache reads, uncached input and cache writes of the cost
@@ -60,9 +61,7 @@ const DIMENSION_SQL: Record<UsageDimension, { value: string; raw?: string }> = {
 const literal = (text: string) => `'${text.replaceAll("'", "''")}'`;
 const list = (values: readonly string[]) => values.map(literal).join(", ");
 
-const SOURCE_RANK = `CASE source ${COST_SOURCE_PREFERENCE.map(
-  (source, index) => `WHEN ${literal(source)} THEN ${index}`,
-).join(" ")} ELSE ${COST_SOURCE_PREFERENCE.length} END`;
+const SOURCE_RANK = sourceRankSql();
 
 const METRIC_COLUMNS = `
   coalesce(c.usd, 0)::float8 AS usd,
@@ -146,20 +145,25 @@ scoped AS (
   FROM base
   WHERE ${scope}${teamFilter}
 ),
+cost_rows AS (
+  SELECT * FROM scoped WHERE kind = 'cost.recorded'
+),
+${countedCostsSql("cost_rows", "usage")},
 costs AS (
   SELECT *, bool_or(
       coalesce((body#>>'{cost,cache_read_tokens}')::numeric, 0) > 0
       OR coalesce((body#>>'{cost,cache_write_tokens}')::numeric, 0) > 0
     ) OVER (
-      PARTITION BY CASE WHEN coalesce(session_id, '') = '' THEN id::text ELSE session_key END
+      PARTITION BY CASE WHEN coalesce(counted_session, '') = '' THEN id::text
+        ELSE coalesce(vendor, '') || chr(10) || counted_session END
     ) AS cache_known
   FROM (
     SELECT *, first_value(source) OVER (
-      PARTITION BY session_key ORDER BY ${SOURCE_RANK}, source
+      PARTITION BY session_key ORDER BY paired, ${SOURCE_RANK}, source
     ) AS chosen_source
-    FROM scoped WHERE kind = 'cost.recorded'
+    FROM usage_counted
   ) ranked
-  WHERE (coalesce(session_id, '') = '' OR source = chosen_source)
+  WHERE (coalesce(session_id, '') = '' OR paired OR source = chosen_source)
 ),
 cost_agg AS (
   SELECT ${leading}

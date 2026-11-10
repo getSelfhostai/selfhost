@@ -242,7 +242,9 @@ export class CodexMapper implements LineMapper {
     this.originator = str(payload.originator);
     this.thread = codexThreadRequestType(payload.source, payload.thread_source);
     const git = isObject(payload.git) ? payload.git : {};
-    this.repo = repoFromRemote(str(git.repository_url));
+    this.repo =
+      repoFromRemote(str(git.repository_url)) ??
+      (this.cwd ? this.ctx.repoOf?.(this.cwd) : undefined);
   }
 
   private costEvent(usage: CodexUsageEvent): ParsedEvent {
@@ -311,7 +313,8 @@ export class CodexMapper implements LineMapper {
           ts,
           actor: agentActor(VENDOR, this.sessionId),
           model,
-          fields: toolFields(name, details),
+          // The same id a hook's tool.called carries, so the two copies are seen as one call.
+          fields: { ...toolFields(name, details), data: { tool_use_id: callId } },
         }),
       );
       if (isGitCommitCommand(details.command)) {

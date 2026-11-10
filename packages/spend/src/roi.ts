@@ -6,7 +6,7 @@ import {
   type RoiAgentRow,
   type RoiResponse,
 } from "@selfhost/schema";
-import { COST_SOURCE_PREFERENCE } from "./sources.js";
+import { COST_SOURCE_PREFERENCE, pairGatewayCosts } from "./sources.js";
 
 /**
  * Cost per merged pull request (ROI_RULES in @selfhost/schema has the definition in words).
@@ -26,6 +26,11 @@ export interface RoiCost {
   usd: number;
   /** Spent at or after from and before to. */
   in_window: boolean;
+  /**
+   * A gateway request whose agent-side copy was dropped (rule 1 in sources.ts); its session is
+   * the copy's. Always counted, whatever source the session's other rows come from.
+   */
+  paired?: boolean;
 }
 
 export interface RoiPullEvent {
@@ -86,7 +91,7 @@ function oneSource(costs: RoiCost[]): RoiCost[] {
   const key = (cost: RoiCost) => `${cost.agent ?? ""}\n${cost.session}`;
   const chosen = new Map<string, string>();
   for (const cost of costs) {
-    if (!cost.session) continue;
+    if (!cost.session || cost.paired) continue;
     const current = chosen.get(key(cost));
     if (
       current === undefined ||
@@ -96,7 +101,9 @@ function oneSource(costs: RoiCost[]): RoiCost[] {
       chosen.set(key(cost), cost.source);
     }
   }
-  return costs.filter((cost) => !cost.session || chosen.get(key(cost)) === cost.source);
+  return costs.filter(
+    (cost) => !cost.session || cost.paired || chosen.get(key(cost)) === cost.source,
+  );
 }
 
 const KIND_ORDER = { "pr.merged": 0, "pr.closed": 1, "pr.opened": 2 } as const;
@@ -287,22 +294,28 @@ export function roiInputFromEvents(
 ): RoiInput {
   const input: RoiInput = { ...range, costs: [], pulls: [], links: [] };
   const seen = new Set<string>();
-  for (const event of events) {
-    const repo = event.repo?.toLowerCase();
+  const list = [...events];
+  const { copies, twins } = pairGatewayCosts(list);
+  for (const event of list) {
+    if (copies.has(event.id)) continue;
+    const repo = (event.repo ?? twins.get(event.id)?.repo)?.toLowerCase();
     const where = {
       ...(repo ? { repo } : {}),
       ...(event.team ? { team: event.team } : {}),
     };
     const at = Date.parse(event.ts);
     if (event.kind === "cost.recorded" && event.cost) {
+      const twin = twins.get(event.id);
+      const session = event.session_id || twin?.session_id;
       input.costs.push({
-        ...(event.session_id ? { session: event.session_id } : {}),
+        ...(session ? { session } : {}),
         ...(event.agent ? { agent: event.agent.vendor } : {}),
         ...(event.model ? { model: event.model } : {}),
         source: event.source,
         ...where,
         usd: event.cost.usd,
         in_window: at >= range.from.getTime() && at < range.to.getTime(),
+        ...(twin ? { paired: true } : {}),
       });
       continue;
     }

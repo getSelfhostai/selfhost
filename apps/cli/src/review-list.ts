@@ -18,6 +18,7 @@ import {
 import type { Command } from "commander";
 import { findConfig, policyText } from "./find-config.js";
 import { plural, table } from "./format.js";
+import { oneCopyPerFact } from "./hooks/dedupe.js";
 import { drainSpool } from "./hooks/drain.js";
 import { spoolDir } from "./hooks/receive.js";
 import { defaultPerson } from "./import.js";
@@ -187,7 +188,7 @@ export async function runReviewList(
   try {
     const now = () => io.now ?? new Date();
     // Blocked calls not imported yet go in first, so their exception items are on the list.
-    await drainSpool(target, spoolDir(io.env), {
+    await drainSpool(oneCopyPerFact(target), spoolDir(io.env), {
       person: membership?.person ?? defaultPerson(io.env),
       now: now(),
       exceptionsOnly: true,

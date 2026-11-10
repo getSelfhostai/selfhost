@@ -60,6 +60,11 @@ export interface DrainOptions {
   exceptionsOnly?: boolean;
   /** The hook calls already read, for skipping the same call written twice; --watch keeps it. */
   seen?: Map<string, number>;
+  /**
+   * owner/name of the repository at a payload's cwd, set as each event's repo. Default: none,
+   * so a caller that never looks at git (tests, a background run's sandbox) stays fast.
+   */
+  repoOf?: (cwd: string) => string | undefined;
 }
 
 const UUIDV7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -118,6 +123,7 @@ export function guardEvent(
   guard: GuardRecord,
   toolEvent: LedgerEvent | undefined,
   ts: string,
+  repo?: string,
 ): LedgerEvent {
   const call =
     typeof payload === "object" && payload !== null && !Array.isArray(payload)
@@ -170,6 +176,7 @@ export function guardEvent(
     ...(agentRef ? { agent: agentRef } : {}),
     ...(model ? { model } : {}),
     ...(sessionId ? { session_id: sessionId } : {}),
+    ...((toolEvent?.repo ?? repo) ? { repo: toolEvent?.repo ?? repo } : {}),
     ...(details.tool ? { tool: details.tool } : {}),
     ...(details.target ? { target: details.target } : {}),
     decision,
@@ -208,6 +215,7 @@ function mapLine(
   text: string,
   ctx: SourceContext,
   exceptionsOnly = false,
+  repoOf?: (cwd: string) => string | undefined,
 ): LedgerEvent[] | undefined {
   try {
     const line = JSON.parse(text) as Partial<SpoolLine>;
@@ -218,10 +226,13 @@ function mapLine(
       return undefined;
     }
     const ts = new Date(ms).toISOString();
-    const events = MAPPERS[agent](line.payload, { ...ctx, ts });
+    const payload = line.payload as Record<string, unknown> | null | undefined;
+    const cwd = typeof payload?.cwd === "string" && payload.cwd !== "" ? payload.cwd : undefined;
+    const repo = cwd && repoOf ? repoOf(cwd) : undefined;
+    const events = MAPPERS[agent](line.payload, { ...ctx, ts, ...(repo ? { repo } : {}) });
     if (line.guard) {
       const toolEvent = events.find((event) => event.kind === "tool.called");
-      const decision = guardEvent(agent, line.payload, line.guard, toolEvent, ts);
+      const decision = guardEvent(agent, line.payload, line.guard, toolEvent, ts, repo);
       events.push(decision, ...blockedEgress(line.guard, decision));
     }
     return events.every((event) => validateEvent(event).ok) ? events : undefined;
@@ -344,7 +355,7 @@ export async function drainSpool(
         report.repeated += 1;
         continue;
       }
-      const events = mapLine(text, ctx, options.exceptionsOnly);
+      const events = mapLine(text, ctx, options.exceptionsOnly, options.repoOf);
       if (!events) {
         report.malformed += 1;
         continue;
@@ -381,7 +392,7 @@ export async function drainSpool(
 export function watchSpool(
   writer: LedgerWriter,
   dir: string | undefined,
-  options: Pick<DrainOptions, "person" | "logPrompts">,
+  options: Pick<DrainOptions, "person" | "logPrompts" | "repoOf">,
   onBatch: (accepted: number) => void,
   pollMs = 1000,
 ): { close(): Promise<void> } {
