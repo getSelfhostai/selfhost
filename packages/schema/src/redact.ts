@@ -119,11 +119,13 @@ function compile({ name, pattern }: RedactionPattern): RegExp {
 /**
  * Masks secret-shaped values (provider API keys, tokens, private keys, credential assignments,
  * auth headers, credentials in URLs) and email addresses, then every match of `patterns`.
+ * Emails in `keep` (lowercase) stay: the person ids the event stores in the clear anyway.
  * Masking text that is already masked changes nothing.
  */
 export function maskSecrets(
   text: string,
   patterns: readonly RedactionPattern[] = [],
+  keep: ReadonlySet<string> = new Set(),
 ): { text: string; masked: boolean } {
   let out = text;
   for (const pattern of SECRET_PATTERNS) out = out.replace(pattern, REDACTED);
@@ -133,7 +135,9 @@ export function maskSecrets(
     )
     .replace(AUTH_HEADER, (_match, scheme: string) => `${scheme} ${REDACTED}`)
     .replace(URL_CREDENTIALS, `//${REDACTED}@`)
-    .replace(EMAIL, (match) => (match.startsWith("git@") ? match : REDACTED));
+    .replace(EMAIL, (match) =>
+      match.startsWith("git@") || keep.has(match.toLowerCase()) ? match : REDACTED,
+    );
   for (const entry of patterns) {
     out = out.replace(compile(entry), (match) =>
       match === "" || MASK.test(match) ? match : `[redacted:${entry.name}]`,
@@ -147,26 +151,45 @@ function childPath(path: string, key: string): string {
 }
 
 /**
+ * The person ids an event stores in the clear: its actor, who decided, and the ids under `data`
+ * such as `owner`. Lowercase.
+ */
+function identitiesOf(event: LedgerEvent): Set<string> {
+  const ids = new Set<string>();
+  const add = (value: unknown) => {
+    if (typeof value === "string" && value.length > 0) ids.add(value.toLowerCase());
+    else if (Array.isArray(value)) for (const item of value) add(item);
+  };
+  if (event.actor.kind === "person") add(event.actor.id);
+  add(event.decision?.by);
+  for (const key of IDENTITY_DATA_KEYS) add(event.data?.[key]);
+  return ids;
+}
+
+/**
  * The event as it may be stored. Prompt and response text under `data` is dropped unless
  * `logPrompts` is on, and secrets and emails are masked in the free-text fields:
  * `tool.input_summary`, `target.value`, `decision.reason` and every string under `data`. Who did
  * it (`actor`, `decision.by`, person ids under `data` such as `owner`) and the ids, links and
- * counts are kept. Each field path that was
- * dropped or masked is added to `redacted`.
+ * counts are kept, and so are those same person ids where `data` text names them, such as the
+ * person in a budget alert's message: the event holds them in the clear already, and the owners
+ * the alert goes to need to see who it is about. Any other email is masked. Each field path that
+ * was dropped or masked is added to `redacted`.
  */
 export function redactEvent(
   event: LedgerEvent,
   settings: RedactionSettings = DEFAULT_REDACTION,
 ): LedgerEvent {
   const paths: string[] = [];
-  const mask = (text: string, path: string): string => {
+  const people = identitiesOf(event);
+  const mask = (text: string, path: string, keep?: ReadonlySet<string>): string => {
     const known = maskLiterals(text, settings.literals ?? []);
-    const result = maskSecrets(known.text, settings.patterns);
+    const result = maskSecrets(known.text, settings.patterns, keep);
     if (known.masked || result.masked) paths.push(path);
     return result.text;
   };
   const maskValue = (value: unknown, path: string): unknown => {
-    if (typeof value === "string") return mask(value, path);
+    if (typeof value === "string") return mask(value, path, people);
     if (Array.isArray(value)) return value.map((item, i) => maskValue(item, `${path}[${i}]`));
     if (value !== null && typeof value === "object") {
       return Object.fromEntries(

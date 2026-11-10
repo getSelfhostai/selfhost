@@ -6,7 +6,7 @@ import type { CreateTeamResponse, GatewayStatus, JoinResponse } from "@selfhost/
 import { createApp } from "@selfhost/server/app";
 import { parse as parseToml } from "smol-toml";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { ConnectReport } from "../src/gateway/commands.js";
+import { budgetText, type ConnectReport, CUT_OFF_NOTE } from "../src/gateway/commands.js";
 import {
   claudeManagedPath,
   connectKit,
@@ -370,6 +370,20 @@ describe("selfhost gateway connect", () => {
     );
     expect(kit.text).toContain("ANTHROPIC_BASE_URL=https://litellm.example.com\n");
     expect(kit.text).toContain("OPENAI_BASE_URL=https://litellm.example.com/v1\n");
+  });
+});
+
+describe("a spent gateway budget", () => {
+  it("is shown as a cut-off with the HTTP 402 the gateway answers, and who raises it", () => {
+    const text = budgetText([
+      { period: "day", limit_usd: 0.5, spent_usd: 0.52 },
+      { period: "month", limit_usd: 500, spent_usd: 12 },
+    ]);
+    expect(text).toBe(
+      "$0.50 a day, $0.52 spent: CUT OFF, the gateway refuses these requests with HTTP 402 until the day is over; $500.00 a month, $12.00 spent, $488.00 left",
+    );
+    expect(CUT_OFF_NOTE).toContain("[budget.person]");
+    expect(CUT_OFF_NOTE).toContain("get_budget");
   });
 });
 

@@ -113,10 +113,33 @@ function toolEvent(overrides: Partial<LedgerEvent> = {}): LedgerEvent {
 describe("redactEvent", () => {
   it("keeps person ids under data so alerts still reach their owner", () => {
     const event = redactEvent(
-      toolEvent({ data: { owner: "alice@example.com", note: "ping alice@example.com" } }),
+      toolEvent({ data: { owner: "alice@example.com", note: "ping bob@example.com" } }),
     );
     expect(event.data).toEqual({ owner: "alice@example.com", note: "ping [redacted]" });
     expect(event.redacted).not.toContain("data.owner");
+  });
+
+  it("names the event's own people in its data text, and masks every other email", () => {
+    const event = redactEvent({
+      ...toolEvent(),
+      kind: "alert.raised",
+      actor: { kind: "person", id: "Ada@Example.com" },
+      data: {
+        alert: "budget_exceeded",
+        owner: "ada@example.com",
+        message: "ada@example.com spent the day's gateway budget of $0.5",
+        note: `ask bob@example.com, key ${KEY}`,
+      },
+    });
+    expect(event.data?.message).toBe("ada@example.com spent the day's gateway budget of $0.5");
+    expect(event.data?.note).toBe("ask [redacted], key [redacted]");
+    expect(event.redacted).toContain("data.note");
+    expect(event.redacted).not.toContain("data.message");
+    // Tool input is free text an agent wrote: the person's own email is masked there.
+    const call = redactEvent(
+      toolEvent({ tool: { name: "Bash", input_summary: "git log --author alice@example.com" } }),
+    );
+    expect(call.tool?.input_summary).toBe("git log --author [redacted]");
   });
 
   it("drops prompt and response text and masks free-text fields, listing every path", () => {

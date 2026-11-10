@@ -606,7 +606,9 @@ ledger keeps them and `selfhost import` sends through the `apprise` command when
 (`pipx install apprise`); without it, import says so in one line and sends nothing. Solo import
 also raises the 50%, 80% and 100% budget alerts from this laptop's own spend against `[budget]`
 in the repository's `selfhost.toml`, and prints each one (`Budget alert: You spent 80% of the
-day's budget of $20`).
+day's budget of $20`). `selfhost import --watch` does both every 15 seconds whether or not new
+events land, bringing the review list up to date first, so an agent that asks for approval and
+then waits is pushed within seconds, not when the next events arrive.
 
 ## Risk score
 
@@ -995,6 +997,9 @@ selfhost team leave
   and a batch that fails is kept and sent again on the next poll. After pulling, each sync
   installs the managed settings the new policy compiles to (printing the command for any that
   need an admin) and sends a heartbeat when what it says changed or the last one is an hour old.
+  `--watch` pulls the policy and context layers again every five minutes, whether or not events
+  land, installs the managed settings when they changed and sends the heartbeat on the same
+  rule, printing a line only when something changed (`selfhost.team_pull/v1` with `--json`).
 - A heartbeat is a `config.reported` event with `data.heartbeat` (`selfhost.laptop_heartbeat/v1`):
   a random laptop id kept in `~/.selfhost/machine.json`, the host name, platform and CLI version,
   the team policy hash it runs (its config version) and whether its managed files are current,
@@ -1227,7 +1232,15 @@ agent session (`disconnect --dry-run` excepted), and the hooks block an agent th
 - Every five minutes the server writes teams, budgets, providers and on or off to the gateway
   (only what differs) and reads its request logs into the ledger as `cost.recorded` events with
   `source = "gateway"`, attributed to the key's person, team and run, so spend views and the
-  forecast include them. A person whose tokens are revoked has their key turned off.
+  forecast include them. A person whose tokens are revoked has their key turned off. A policy
+  change (`selfhost team policy push`, the console) reaches the gateway within seconds, not at
+  the next sync.
+- A spent hard budget makes the gateway answer HTTP 402 with its own message, which selfhost
+  cannot change. `selfhost gateway` marks the spent budget `CUT OFF` with when it resets, the
+  console's Spend screen lists every budget with the one cutting requests off, and the
+  `get_budget` MCP tool returns it in `budgets` (`cut_off: true`, `raise`), so an agent can say
+  which budget was hit and that an owner or admin of the team raises it in the team's
+  `selfhost.toml`.
 - Each person has one key, shared by every agent they connect. `connect` shows its value to the
   person it is for and keeps it only on that laptop, in `~/.selfhost/gateway-key.json` (mode
   0600), so `connect codex` after `connect claude-code` (or `connect env`) uses the same key and

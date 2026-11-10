@@ -150,7 +150,15 @@ bootstrap admin; everything else is a token the server issues and keeps only as 
 - `GET /v1/teams/{team}/overview?from&to` (anyone in the team): spend (totals, by person, agent
   and model), this month against `[budget] monthly_usd` of the team's file, people, repos and
   open review items. `GET /v1/budget?team&person&period` answers `BudgetResponse` for the day,
-  week or month, as the MCP tool `get_budget` does. The review refresh job also checks each
+  week or month, as the MCP tool `get_budget` does: with `person`, against their
+  `[budget.person]` limit. Its `budgets` lists every budget that applies to the caller in every
+  period that has one: their own `[budget.person]` (a person token's, or the person asked
+  about), the team's `[budget]` and the org's, each `enforcement: "gateway"` (mode hard, held by
+  the gateway, counted with the gateway's own spend when it answers) or `"alert"`, with
+  `cut_off: true` while the gateway refuses the requests and `raise` naming who can raise it.
+  The org's spend shows only to whoever sees every team. A `PUT /v1/policy` (team or repo),
+  `PUT /v1/orgs/{org}/policy` or a router change in `PUT /v1/teams/{team}/integrations/{kind}`
+  pushes budgets and providers to the gateway at once; the five-minute sync stays as well. The review refresh job also checks each
   team's spend against its `[budget]` once a minute and raises an `alert.raised` at 50%, 80% and
   100% of each period's budget, once per window, which the review list files as budget items;
   requests go on (only a gateway with `[budget] mode = "hard"` stops them).

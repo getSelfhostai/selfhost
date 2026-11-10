@@ -2096,7 +2096,7 @@
     },
     {
       "name": "get_budget",
-      "description": "Get spend so far, the budget and what is left (remaining_usd) for your team or for you, this day, week or month.",
+      "description": "Get spend so far, the budget and what is left (remaining_usd) for your team or for you, this day, week or month. budgets lists every budget that applies to you (yours, your team's, your org's; daily, weekly, monthly), whether the gateway stops requests at it (enforcement) and whether it does now (cut_off), and who can raise it. A cut-off budget explains a 402 from the gateway.",
       "annotations": {
         "readOnlyHint": true
       },
@@ -2105,7 +2105,7 @@
         "type": "object",
         "properties": {
           "person": {
-            "description": "Only this person's spend in the team. limit_usd is then null.",
+            "description": "Only this person's spend in the team, against their [budget.person] limit. A person token's own budgets are in budgets either way.",
             "type": "string"
           },
           "team": {
@@ -2114,7 +2114,7 @@
           },
           "period": {
             "default": "month",
-            "description": "The UTC day, the week from Monday, or the calendar month, now.",
+            "description": "The UTC day, the week from Monday, or the calendar month, now, for the top-level fields. budgets lists every period that has a budget.",
             "type": "string",
             "enum": [
               "day",
@@ -2158,7 +2158,7 @@
             "type": "number"
           },
           "limit_usd": {
-            "description": "Budget for the period, or null when none is set.",
+            "description": "Budget for the period, or null when none is set: the person's with person, else the team's.",
             "anyOf": [
               {
                 "minimum": 0,
@@ -2192,6 +2192,105 @@
                 "type": "null"
               }
             ]
+          },
+          "budgets": {
+            "description": "Every budget that applies to the caller, in every period that has one: the person's own (or the one asked about), the team's and the org's, each gateway-enforced or alert-only, cut-off ones first.",
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "title": "BudgetLine",
+              "description": "One budget that applies to the caller, with spend against it.",
+              "type": "object",
+              "required": [
+                "scope",
+                "owner",
+                "period",
+                "from",
+                "to",
+                "limit_usd",
+                "spent_usd",
+                "remaining_usd",
+                "enforcement",
+                "cut_off",
+                "raise"
+              ],
+              "properties": {
+                "scope": {
+                  "description": "person: [budget.person] of the team's selfhost.toml, each person's own. team: [budget] of the team's. org: [budget] of the org's, the total of every team.",
+                  "type": "string",
+                  "enum": [
+                    "person",
+                    "team",
+                    "org"
+                  ]
+                },
+                "owner": {
+                  "description": "The person, team or org id the budget is for.",
+                  "type": "string"
+                },
+                "period": {
+                  "type": "string",
+                  "enum": [
+                    "day",
+                    "week",
+                    "month"
+                  ]
+                },
+                "from": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "to": {
+                  "format": "date-time",
+                  "description": "When the period ends and the budget starts again.",
+                  "type": "string"
+                },
+                "limit_usd": {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "spent_usd": {
+                  "description": "Spend in the period: the gateway's own count for a gateway budget when it answered, else the ledger's. null when the caller may not see it (the org's total needs every team).",
+                  "anyOf": [
+                    {
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "remaining_usd": {
+                  "description": "limit_usd minus spent_usd, never below 0; null with spent_usd.",
+                  "anyOf": [
+                    {
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "enforcement": {
+                  "description": "gateway: [budget] mode = hard and the AI gateway holds this limit, so it refuses requests through it once spent. alert: spend is shown and alerts are raised; nothing is stopped.",
+                  "type": "string",
+                  "enum": [
+                    "gateway",
+                    "alert"
+                  ]
+                },
+                "cut_off": {
+                  "description": "true when the gateway refuses these requests now: a gateway budget whose spend reached its limit, until `to`.",
+                  "type": "boolean"
+                },
+                "raise": {
+                  "description": "Who can raise the budget and where: the selfhost.toml that sets it.",
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }

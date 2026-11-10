@@ -1,4 +1,4 @@
-import type { BudgetResponse, SandboxWasteResponse } from "@selfhost/schema";
+import type { BudgetLine, BudgetResponse, SandboxWasteResponse } from "@selfhost/schema";
 import { PageHeader } from "@/components/common";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -6,7 +6,7 @@ import { UsageView } from "@/components/usage-view";
 import { getJson, getOptional, query, teamPath } from "@/lib/api";
 import { useConsole } from "@/lib/console-context";
 import type { RoiReport } from "@/lib/contracts";
-import { agentName, formatCount, formatUsd } from "@/lib/format";
+import { agentName, formatCount, formatTime, formatUsd } from "@/lib/format";
 import { useApi } from "@/lib/use-api";
 import { rangeOf } from "@/lib/view";
 
@@ -14,11 +14,20 @@ function BudgetCard({ team }: { team: string }) {
   const { data, error } = useApi(`budget:${team}`, (signal) =>
     getJson<BudgetResponse>(`/v1/budget${query({ team, period: "month" })}`, signal),
   );
+  const lines = data?.budgets ?? [];
+  const stops = lines.some((line) => line.enforcement === "gateway");
   return (
     <Card className="gap-2">
       <CardHeader>
-        <CardTitle className="font-medium text-base">Budget this month</CardTitle>
-        <CardDescription>Team {team}. Shown against spend; nothing is stopped.</CardDescription>
+        <CardTitle className="font-medium text-base">
+          {lines.length > 0 ? "Budgets" : "Budget this month"}
+        </CardTitle>
+        <CardDescription>
+          Team {team}.{" "}
+          {stops
+            ? "The AI gateway refuses requests once a gateway budget is spent; the rest only alert."
+            : "Shown against spend; nothing is stopped."}
+        </CardDescription>
       </CardHeader>
       <CardContent className="text-sm">
         {error ? (
@@ -26,10 +35,56 @@ function BudgetCard({ team }: { team: string }) {
         ) : !data ? (
           <Skeleton className="h-16" />
         ) : (
-          <BudgetBody budget={data} />
+          <div className="space-y-3">
+            {data.limit_usd !== null || lines.length === 0 ? <BudgetBody budget={data} /> : null}
+            {lines.length > 0 ? (
+              <ul className="space-y-3">
+                {lines.map((line) => (
+                  <BudgetLineRow key={`${line.scope}:${line.owner}:${line.period}`} line={line} />
+                ))}
+              </ul>
+            ) : null}
+          </div>
         )}
       </CardContent>
     </Card>
+  );
+}
+
+const PERIOD_NAMES = { day: "daily", week: "weekly", month: "monthly" } as const;
+
+function BudgetLineRow({ line }: { line: BudgetLine }) {
+  const whose =
+    line.scope === "person"
+      ? line.owner
+      : line.scope === "team"
+        ? `Team ${line.owner}`
+        : `Org ${line.owner}`;
+  return (
+    <li className="space-y-0.5">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="min-w-0 break-words font-medium">
+          {whose}, {PERIOD_NAMES[line.period]}
+        </span>
+        <span className="shrink-0 text-muted-foreground tabular-nums">
+          {line.spent_usd === null
+            ? `limit ${formatUsd(line.limit_usd)}`
+            : `${formatUsd(line.spent_usd)} of ${formatUsd(line.limit_usd)}`}
+        </span>
+      </div>
+      {line.cut_off ? (
+        <p className="text-destructive">
+          Cut off until {formatTime(line.to)}: the gateway refuses these requests (HTTP 402).{" "}
+          {line.raise}
+        </p>
+      ) : (
+        <p className="text-muted-foreground">
+          {line.enforcement === "gateway"
+            ? "The gateway stops requests at this budget."
+            : "Alert only: requests go on past it."}
+        </p>
+      )}
+    </li>
   );
 }
 
@@ -44,7 +99,7 @@ function BudgetBody({ budget }: { budget: BudgetResponse }) {
       <div className="flex items-baseline justify-between gap-2">
         <span className="font-semibold text-2xl tabular-nums">{formatUsd(spent_usd)}</span>
         <span className="text-muted-foreground">
-          {limit_usd === null ? "No budget set" : `of ${formatUsd(limit_usd)}`}
+          {limit_usd === null ? "No budget set" : `of ${formatUsd(limit_usd)} this month`}
         </span>
       </div>
       {limit_usd !== null ? (

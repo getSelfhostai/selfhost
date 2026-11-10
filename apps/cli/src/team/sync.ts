@@ -103,21 +103,102 @@ export async function syncLedger(
   try {
     await pushLedger(ledger, remote, history ? undefined : since);
     markSynced(configPath, state, history);
-    report.policy_hash = await pullPolicy(client, configPath, state);
     const grants = await pullGrants(client, configPath);
     if (grants !== undefined) report.grants = grants;
-    const context = await pullContext(client, configPath, state);
-    report.context_hash = context.hash;
-    if (context.changed && state.context_repos?.length) {
-      report.context_repos = await compileRepos(configPath, state.context_repos);
-    }
-    if (sync.laptop) {
-      report.laptop = await reportLaptop(client, configPath, membership, state, sync.laptop, false);
-    }
+    const pulled = await pullTeam(sync, state);
+    report.policy_hash = pulled.policy_hash;
+    report.context_hash = pulled.context_hash;
+    if (pulled.context_repos) report.context_repos = pulled.context_repos;
+    if (pulled.laptop) report.laptop = pulled.laptop;
   } catch (error) {
     report.error = error instanceof Error ? error.message : String(error);
   }
   return { ...report, ...remote.totals };
+}
+
+/** What pulling the team's config brought: the part of a sync after the events went up. */
+export interface PullReport {
+  /** sha256 of the team's selfhost.toml pulled, null when the team has none. */
+  policy_hash: string | null;
+  /** true when it differs from the one pulled before. */
+  policy_changed: boolean;
+  context_hash: string;
+  context_repos?: RepoCompile[];
+  laptop?: LaptopReport;
+}
+
+/**
+ * Pulls the team policy and the org and team context layers, compiles again the repositories
+ * whose context was compiled with the layers when they changed, then with a laptop installs the
+ * managed settings the policy compiles to and sends a heartbeat when it is due.
+ */
+export async function pullTeam(sync: TeamSync, state?: SyncState): Promise<PullReport> {
+  const { membership, configPath, client } = sync;
+  const current = state ?? readSyncState(configPath, membership);
+  const before = current.policy_hash;
+  const policyHash = await pullPolicy(client, configPath, current);
+  const context = await pullContext(client, configPath, current);
+  const report: PullReport = {
+    policy_hash: policyHash,
+    policy_changed: before !== undefined && before !== policyHash,
+    context_hash: context.hash,
+  };
+  if (context.changed && current.context_repos?.length) {
+    report.context_repos = await compileRepos(configPath, current.context_repos);
+  }
+  if (sync.laptop) {
+    report.laptop = await reportLaptop(client, configPath, membership, current, sync.laptop, false);
+  }
+  return report;
+}
+
+/** How often `selfhost import --watch` pulls the team's config in team mode. */
+export const TEAM_PULL_MS = 5 * 60_000;
+
+export interface TeamPuller {
+  /** Pulls now, or waits for the pull already running. */
+  run(): Promise<void>;
+  /** Stops the timer and waits for a running pull. */
+  close(): Promise<void>;
+}
+
+/**
+ * For `selfhost import --watch` in team mode: pulls the team policy and context layers, installs
+ * the managed settings again when they changed and sends heartbeats every `intervalMs`, the same
+ * work a one-shot sync does after sending its events, since a watcher may run for days. A failed
+ * pull is reported once and tried again on the next tick.
+ */
+export function startTeamPull(
+  sync: TeamSync,
+  options: {
+    intervalMs?: number;
+    onReport: (report: PullReport) => void;
+    onError: (message: string) => void;
+  },
+): TeamPuller {
+  let running: Promise<void> | undefined;
+  let closed = false;
+  const run = () => {
+    if (closed) return Promise.resolve();
+    running ??= pullTeam(sync)
+      .then(options.onReport, (error: unknown) => {
+        options.onError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        running = undefined;
+      });
+    return running;
+  };
+  const timer = setInterval(run, options.intervalMs ?? TEAM_PULL_MS);
+  timer.unref?.();
+  return {
+    run,
+    async close() {
+      closed = true;
+      clearInterval(timer);
+      await running;
+    },
+  };
 }
 
 /** Records a successful send in the sync state. */

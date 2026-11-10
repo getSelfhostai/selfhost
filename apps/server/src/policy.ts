@@ -21,6 +21,7 @@ import {
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { apiError, authorize, type Caller, orgOf, type Router } from "./access.js";
+import type { Gateway } from "./gateway.js";
 import { invalidQuery, readBody } from "./http.js";
 
 export interface RuleScope {
@@ -114,8 +115,10 @@ async function conflictsWith(ledger: Ledger, org: string, text: string): Promise
  * both kinds of token. A person token reads the policy of any team it is in and changes it
  * when its role there has policy.write; the admin token names the team.
  */
-export function policyRoutes(router: Router, ledger: Ledger): void {
+export function policyRoutes(router: Router, ledger: Ledger, gateway?: Gateway): void {
   const { teams, orgs } = ledger;
+  // Budgets and providers in the policy go to the gateway now, not at its next periodic sync.
+  const changed = () => gateway?.policyChanged?.();
 
   /** The team a query is about: the one named, else the person token's own. */
   const teamOf = (c: Context, caller: Caller, team: string | undefined) => {
@@ -203,6 +206,7 @@ export function policyRoutes(router: Router, ledger: Ledger): void {
       }
       if (repo !== undefined) await orgs.setRepoPolicy(org, repo, body.text);
       else await teams.setPolicy(team, body.text);
+      changed();
       const policy = await orgs.effectivePolicy(team, repo);
       if (!policy) throw new Error(`team ${team} has no policy right after it was set`);
       return c.json(policyResponse(policy, { team }));
@@ -248,6 +252,7 @@ export function policyRoutes(router: Router, ledger: Ledger): void {
       const parsed = parseConfig(body.text);
       if (!parsed.ok) return invalidPolicy(c, parsed.errors, false);
       const stored = await orgs.setOrgPolicy(org, body.text);
+      changed();
       return c.json(await orgPolicyResponse(org, stored.text, stored.updatedAt));
     },
     policyLimit,
