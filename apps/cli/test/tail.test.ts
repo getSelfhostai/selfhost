@@ -381,7 +381,13 @@ describe("selfhost tail in a team", () => {
   it("streams from the server, only the person's teams, with links to the team console", async () => {
     const ledger = await openLedger({ dataDir: "memory://" });
     try {
-      const app = createApp({ version: "test", ledger, token: "admin-token" });
+      const app = createApp({
+        version: "test",
+        ledger,
+        token: "admin-token",
+        // The events are dated Nov 9; tail reads the last 24 hours by the server's clock.
+        now: () => new Date("2026-11-09T12:00:00Z"),
+      });
       const admin = (path: string, body?: unknown) =>
         app.request(path, {
           method: body ? "POST" : "GET",
@@ -454,7 +460,13 @@ describe("selfhost tail in a team, by person and with --since", () => {
   it("shows a person's rule decisions and log tool calls as theirs, the past in time order", async () => {
     const ledger = await openLedger({ dataDir: "memory://" });
     try {
-      const app = createApp({ version: "test", ledger, token: "admin-token" });
+      const app = createApp({
+        version: "test",
+        ledger,
+        token: "admin-token",
+        // The events are dated Nov 9; tail reads the last 24 hours by the server's clock.
+        now: () => new Date("2026-11-09T12:00:00Z"),
+      });
       const created = (await (
         await app.request("/v1/teams", {
           method: "POST",
