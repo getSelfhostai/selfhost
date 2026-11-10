@@ -305,10 +305,15 @@ export const IntegrationsQuerySchema = Type.Object(
   { additionalProperties: false, title: "IntegrationsQuery" },
 );
 
+/** Where an integration's tool is set: the team's policy, or the server's own environment. */
+export const INTEGRATION_SOURCES = ["policy", "server_environment"] as const;
+export type IntegrationSource = (typeof INTEGRATION_SOURCES)[number];
+
 export const IntegrationStateSchema = Type.Object(
   {
     tool: Type.Union([Type.String(), Type.Null()], {
-      description: "The tool picked for this job in [integrations.<kind>], or null when none is.",
+      description:
+        "The tool picked for this job in [integrations.<kind>] ([runtime] default for the runtime), or the one the server's own environment sets up, or null when none is.",
     }),
     status: StringEnum(INTEGRATION_STATUSES, {
       description:
@@ -326,6 +331,12 @@ export const IntegrationStateSchema = Type.Object(
       description:
         "When this check ran. The server keeps a team's results for 60 seconds while its [integrations] stay the same.",
     }),
+    source: Type.Optional(
+      StringEnum(INTEGRATION_SOURCES, {
+        description:
+          "Where the tool comes from: policy, the team's selfhost.toml (the default when absent), or server_environment, the server's own settings (SELFHOST_GATEWAY_TOOL or the server's selfhost.toml) when the team's policy picks none. Changing it there is up to whoever runs the server.",
+      }),
+    ),
   },
   { additionalProperties: false, title: "IntegrationState" },
 );

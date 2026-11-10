@@ -60,9 +60,11 @@ export {
   reapLeftovers,
 } from "./reap.js";
 export {
+  isRefused,
   type RunForRuntime,
   type RuntimeForOptions,
   type RuntimeRefusal,
+  type RuntimeRefused,
   runtimeFor,
 } from "./runtime-for.js";
 export {
@@ -76,6 +78,7 @@ export {
 export {
   hasKey,
   keyEnvs,
+  keyState,
   providerSettings,
   type RuntimeConfig,
   RuntimeKeyError,

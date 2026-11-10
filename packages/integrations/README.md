@@ -12,8 +12,9 @@ choice into `selfhost.toml`.
 | `runtime`  | E2B, Daytona, Modal, Coder, OpenSandbox             |
 | `reviewer` | PR-Agent, the Claude Code GitHub Action, CodeRabbit |
 
-The choice lives in `[integrations]` of `selfhost.toml`. Secrets are never written there, only the
-name of the environment variable that holds them:
+The choice lives in `[integrations]` of `selfhost.toml`, except the runtime, which lives in
+`[runtime]`. Secrets are never written there, only the name of the environment variable that holds
+them:
 
 ```toml
 [integrations.router]
@@ -26,8 +27,11 @@ tool = "langfuse"
 endpoint = "https://cloud.langfuse.com/api/public/otel"
 headers_env = { Authorization = "LANGFUSE_OTLP_AUTH" }
 
-[integrations.runtime]
-tool = "e2b"
+[runtime]
+default = "e2b"
+
+[runtime.providers.e2b]
+api_key_env = "E2B_API_KEY"
 
 [integrations.reviewer]
 tool = "claude-code-action"
@@ -36,6 +40,11 @@ tool = "claude-code-action"
 In a team, the org's `[integrations.<kind>]` is a default, not a floor: a team's own table for the
 same job replaces it whole, so a team that picks another tool does not inherit the org tool's
 settings.
+
+`[integrations.runtime]` (a `tool` and the provider's settings) is a deprecated alias: it is read
+as `[runtime] default = <tool>` with the settings in `[runtime.providers.<tool>]`, with a one-line
+warning, and `selfhost integrations set runtime` moves it there. The runtime row of the list and
+checks shows the runtime `[runtime] default` names.
 
 ## Checks
 

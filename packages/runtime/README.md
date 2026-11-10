@@ -130,8 +130,10 @@ A task that names a runtime outside `allow` is refused with rule `runtime.allow`
 `max_size` with `runtime.max_size`; a region the runtime cannot serve with `runtime.region`; no
 runtime at all with `runtime.default`. `cheapest_allowed` takes the allowed runtime that has a key
 and the lowest list price for the size; runtimes without a price come last. How to reach a
-runtime comes from `[runtime.providers.<name>]`, else `[integrations.runtime]` when it names that
-runtime.
+runtime comes from `[runtime.providers.<name>]`. The deprecated `[integrations.runtime]` is read by
+`parseConfig` as `[runtime] default` with `[runtime.providers.<tool>]`. `runtimeFor` answers a
+refusal with `{ refusal: { rule, message } }` instead of an adapter, so callers show the reason
+as it is.
 
 ## Keys and caps
 

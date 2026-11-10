@@ -4,7 +4,7 @@ import type { SecretResolver } from "./common.js";
 
 /** What every adapter is built from. Tests pass `load` and `fetch` so nothing leaves the process. */
 export interface AdapterOptions<Sdk = never> {
-  /** [runtime.providers.<kind>] or [integrations.runtime]: url, template, usd_per_hour. */
+  /** [runtime.providers.<kind>]: url, template, usd_per_hour. */
   settings: RuntimeProvider;
   /** The team's key, read from the environment by runtimeKey. */
   credentials: RuntimeCredentials;

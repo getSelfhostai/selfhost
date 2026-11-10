@@ -7,6 +7,8 @@ import {
   fakeRuntime,
   findLeftovers,
   hourlyPrice,
+  isRefused,
+  keyState,
   modalRuntime,
   openRuntime,
   openSandboxRuntime,
@@ -299,7 +301,7 @@ describe("pickRuntime", () => {
     expect(pickRuntime({ integrations: { runtime: { tool: "e2b" } } })).toMatchObject({
       ok: true,
       kind: "e2b",
-      why: "[integrations.runtime] tool is e2b.",
+      why: "[runtime] default is e2b.",
     });
     expect(pickRuntime({})).toMatchObject({ ok: false, rule: "runtime.default" });
     expect(
@@ -330,6 +332,17 @@ describe("keys", () => {
     expect(() => runtimeKey("opensandbox", { url: "https://sandbox.example.com" }, {})).toThrow(
       "OPEN_SANDBOX_API_KEY",
     );
+  });
+
+  it("say no key is needed only for an OpenSandbox server with a local url", () => {
+    const env = {};
+    expect(keyState("opensandbox", { url: "http://127.0.0.1:4490" }, env)).toBe("not_needed");
+    expect(keyState("opensandbox", { url: "https://sandbox.example.com" }, env)).toBe("not_set");
+    expect(keyState("opensandbox", {}, env)).toBe("not_set");
+    expect(
+      keyState("opensandbox", { url: "http://localhost:8080", api_key_env: "OS" }, { OS: "k" }),
+    ).toBe("set");
+    expect(keyState("e2b", {}, { E2B_API_KEY: "k" })).toBe("set");
   });
 
   it("[runtime.providers] wins over [integrations.runtime]", () => {
@@ -569,8 +582,9 @@ describe("runtimeFor", () => {
       },
     });
     const adapter = await seam(run, { runtime: { allow: ["e2b"] } });
-    expect(adapter?.kind).toBe("e2b");
-    const sandbox = await adapter?.create({ timeoutMinutes: 30 });
+    if (isRefused(adapter)) throw new Error(adapter.refusal.message);
+    expect(adapter.kind).toBe("e2b");
+    const sandbox = await adapter.create({ timeoutMinutes: 30 });
     time.advance(60_000);
     await sandbox?.exec("echo hi");
     await sandbox?.stop();
@@ -591,13 +605,16 @@ describe("runtimeFor", () => {
       spentToday: async () => 9,
       open: (kind, config) => openRuntime(kind, config, { env: { DAYTONA_API_KEY: "k" } }),
     });
-    expect(
-      await seam({ ...run, runtime: "modal" }, { runtime: { allow: ["e2b"] } }),
-    ).toBeUndefined();
-    expect(await seam(run, {})).toBeUndefined();
+    expect(await seam({ ...run, runtime: "modal" }, { runtime: { allow: ["e2b"] } })).toMatchObject(
+      { refusal: { rule: "runtime.allow" } },
+    );
+    // The seam answers with the reason itself, so callers can show it as it is.
+    expect(await seam(run, {})).toEqual({
+      refusal: { rule: "runtime.key", message: expect.stringContaining("E2B_API_KEY") },
+    });
     expect(
       await seam({ ...run, runtime: "daytona" }, { budget: { runtime_daily_usd: 5 } }),
-    ).toBeUndefined();
+    ).toMatchObject({ refusal: { rule: "budget.runtime_daily_usd" } });
     expect(refused[0]).toMatch(/^runtime.allow: The task asks for modal/);
     expect(refused[1]).toMatch(/^runtime.key: .*E2B_API_KEY/);
     expect(refused[2]).toMatch(/^budget.runtime_daily_usd: Sandbox spend today is \$9.00/);

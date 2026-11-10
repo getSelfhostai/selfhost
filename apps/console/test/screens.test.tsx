@@ -471,6 +471,33 @@ describe("integrations", () => {
     );
   });
 
+  it("shows a gateway the server's environment sets up as the router, with its source", async () => {
+    const fromServer = {
+      ...report,
+      integrations: {
+        ...report.integrations,
+        router: {
+          tool: "bifrost",
+          status: "connected",
+          detail:
+            "The server's own bifrost gateway at https://selfhost.example.com/llm, set up in its environment, answers.",
+          settings: { url: "https://selfhost.example.com/llm" },
+          source: "server_environment",
+        },
+      },
+    };
+    mockServer({ "GET /v1/integrations": fromServer });
+    renderConsole(MEMBER, "?screen=integrations");
+    const cards = await screen.findAllByTestId("integration");
+    const router = within(cards[0] as HTMLElement);
+    expect(router.getByText("Connected")).toBeTruthy();
+    expect(router.queryByText("Not set up")).toBeNull();
+    expect(router.getByTestId("integration-source").textContent).toContain(
+      "Source: the server's environment",
+    );
+    expect(within(cards[1] as HTMLElement).queryByTestId("integration-source")).toBeNull();
+  });
+
   it("is read-only for members", async () => {
     mockServer({ "GET /v1/integrations": report });
     renderConsole(MEMBER, "?screen=integrations");

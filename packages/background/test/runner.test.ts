@@ -114,7 +114,7 @@ describe("background run lifecycle", () => {
 
   it("stops a run with no output after stall_minutes and routes a stuck item to its owner", async () => {
     const h = harness({
-      toml: 'version = 1\n[integrations.runtime]\ntool = "e2b"\n[background]\nstall_minutes = 3\n',
+      toml: 'version = 1\n[runtime]\ndefault = "e2b"\n[background]\nstall_minutes = 3\n',
       agent: ({ stopped }) => stopped.then(() => 0),
     });
     const { run, done } = started(await h.runner.start(h.request()));
@@ -140,7 +140,7 @@ describe("background run lifecycle", () => {
 
   it("stops a run that repeats the same tool call loop_repeats times", async () => {
     const h = harness({
-      toml: 'version = 1\n[integrations.runtime]\ntool = "e2b"\n[background]\nloop_repeats = 4\n',
+      toml: 'version = 1\n[runtime]\ndefault = "e2b"\n[background]\nloop_repeats = 4\n',
       agent: async ({ print, stopped }) => {
         for (let i = 0; i < 5; i++) print(claudeLine("Bash", { command: "npm test" }, `call-${i}`));
         await stopped;
@@ -261,9 +261,7 @@ describe("background run lifecycle", () => {
       credentials: async (_run, { runtime, config }) => {
         seen = {
           runtime: runtime.kind,
-          ...(config.integrations.runtime
-            ? { runtimeSetting: config.integrations.runtime.tool }
-            : {}),
+          ...(config.runtime?.default ? { runtimeSetting: config.runtime.default } : {}),
         };
         return {
           kind: "team_api_key",
@@ -374,7 +372,7 @@ describe("background run lifecycle", () => {
 describe("admission", () => {
   it("refuses people outside the team or allowed list, and records every trigger", async () => {
     const h = harness({
-      toml: 'version = 1\n[integrations.runtime]\ntool = "e2b"\n[background]\nallowed = ["alice@example.com"]\n',
+      toml: 'version = 1\n[runtime]\ndefault = "e2b"\n[background]\nallowed = ["alice@example.com"]\n',
     });
     const refused = await h.runner.start(
       h.request({
@@ -400,7 +398,7 @@ describe("admission", () => {
 
   it("limits runs per hour and runs at once", async () => {
     const h = harness({
-      toml: 'version = 1\n[integrations.runtime]\ntool = "e2b"\n[background]\nrate_limit_per_hour = 2\nmax_concurrent = 1\n',
+      toml: 'version = 1\n[runtime]\ndefault = "e2b"\n[background]\nrate_limit_per_hour = 2\nmax_concurrent = 1\n',
       agent: ({ stopped }) => stopped.then(() => 0),
     });
     const first = started(await h.runner.start(h.request()));
@@ -416,7 +414,22 @@ describe("admission", () => {
 
   it("refuses when the team has no runtime", async () => {
     const h = harness({ noRuntime: true });
-    expect(await h.runner.start(h.request())).toMatchObject({ code: "no_runtime", status: 503 });
+    const none = await h.runner.start(h.request());
+    expect(none).toMatchObject({ code: "no_runtime", status: 503 });
+    expect("refused" in none && none.refused).toContain("set [runtime] default");
+    expect("refused" in none && none.refused).not.toContain("integrations");
+  });
+
+  it("says the runtime seam's own reason, such as the missing key", async () => {
+    const message =
+      "Set the environment variable E2B_API_KEY (api_key_env) where selfhost runs, to an E2B API key. It is not set.";
+    const h = harness({ runtimeRefusal: { rule: "runtime.key", message } });
+    const refused = await h.runner.start(h.request());
+    expect(refused).toMatchObject({
+      code: "no_runtime",
+      status: 503,
+      refused: `No runtime for team platform (runtime.key): ${message}`,
+    });
   });
 
   it("marks runs a stopped server left going as failed", async () => {

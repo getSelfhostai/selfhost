@@ -1051,7 +1051,7 @@
           }
         },
         "default": {
-          "description": "Runtime a background run uses when it names none and policy is default. Unset: the [integrations.runtime] tool.",
+          "description": "Runtime a background run uses when it names none and policy is default. Unset: the one runtime in allow, when allow lists one.",
           "type": "string",
           "enum": [
             "e2b",
@@ -1115,7 +1115,7 @@
         },
         "providers": {
           "additionalProperties": false,
-          "description": "How to reach each runtime a run may use, when it is not the [integrations.runtime] tool, for example [runtime.providers.daytona].",
+          "description": "How to reach each runtime a run may use, and where its key is, for example [runtime.providers.daytona]. Unset: the runtime's usual address and key variable, such as E2B_API_KEY.",
           "type": "object",
           "properties": {
             "e2b": {
@@ -1612,7 +1612,7 @@
         },
         "runtime": {
           "additionalProperties": false,
-          "description": "The runtime for background agents.",
+          "description": "Deprecated alias of [runtime]: read as [runtime] default = tool with these settings in [runtime.providers.<tool>], with a warning. Set [runtime] instead.",
           "type": "object",
           "required": [
             "tool"

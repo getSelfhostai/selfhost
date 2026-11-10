@@ -25,7 +25,7 @@ export interface RuntimeCheckOptions {
   config?: string;
   configPath?: string;
   env: NodeJS.ProcessEnv;
-  /** Targets to check. Default: the [integrations.runtime] tool and the local sandboxes. */
+  /** Targets to check. Default: the [runtime] default and the local sandboxes. */
   targets?: string[];
   team?: string;
   json?: boolean;
@@ -34,7 +34,7 @@ export interface RuntimeCheckOptions {
 
 /** The targets checked when none are named: the team's runtime, then the local sandboxes. */
 export function defaultTargets(config: ResolvedSelfhostConfig): CredentialTarget[] {
-  const runtime = config.integrations?.runtime?.tool;
+  const runtime = config.runtime?.default;
   return [...(runtime ? [runtime] : []), ...LOCAL_SANDBOXES];
 }
 

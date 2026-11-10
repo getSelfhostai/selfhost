@@ -55,6 +55,8 @@ export interface Scenario {
   fetch?: (url: string) => Promise<Response>;
   people?: string[];
   noRuntime?: boolean;
+  /** The runtime seam refuses with this reason instead of giving an adapter. */
+  runtimeRefusal?: { rule: string; message: string };
 }
 
 const until = async (check: () => boolean | Promise<boolean>) => {
@@ -177,9 +179,7 @@ export function harness(scenario: Scenario = {}) {
     },
   };
 
-  const parsed = parseConfig(
-    scenario.toml ?? 'version = 1\n[integrations.runtime]\ntool = "e2b"\n',
-  );
+  const parsed = parseConfig(scenario.toml ?? 'version = 1\n[runtime]\ndefault = "e2b"\n');
   if (!parsed.ok) throw new Error(JSON.stringify(parsed.errors));
   const config: ResolvedSelfhostConfig = parsed.config;
 
@@ -190,7 +190,12 @@ export function harness(scenario: Scenario = {}) {
         events.push(...list);
       },
     },
-    runtime: () => (scenario.noRuntime ? undefined : runtime),
+    runtime: () =>
+      scenario.runtimeRefusal
+        ? { refusal: scenario.runtimeRefusal }
+        : scenario.noRuntime
+          ? undefined
+          : runtime,
     settings: async () => ({
       config,
       policyText: "version = 1\n",

@@ -47,7 +47,12 @@ export {
   type RuntimeCredentials,
   runtimeCredentials,
 } from "./runtime-keys.js";
-export { IntegrationEditError, setIntegrationTable } from "./toml.js";
+export {
+  IntegrationEditError,
+  integrationPlace,
+  setIntegration,
+  setIntegrationTable,
+} from "./toml.js";
 export type {
   Adapter,
   AnyAdapter,

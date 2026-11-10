@@ -44,7 +44,7 @@ export function isLoopbackUrl(value: string | undefined): boolean {
 }
 
 /**
- * The key for one runtime from its settings ([integrations.runtime] or [runtime.providers.<name>])
+ * The key for one runtime from its settings ([runtime.providers.<name>])
  * and the environment, or an error that names the variable to set. An OpenSandbox server on
  * localhost may run without a key; every other runtime needs one, so selfhost never starts a
  * sandbox on a key it owns.

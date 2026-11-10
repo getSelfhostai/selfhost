@@ -260,7 +260,7 @@ team rule (a lower mode, fewer agents, another match) is ignored and the team's 
 `--config` or `SELFHOST_CONFIG` is used as it is.
 
 With `[egress]` or `[secrets]` in the policy, `doctor` also lists, for the runtime in
-`[integrations.runtime]` and each local sandbox (Docker Sandboxes, Claude Code's sandbox
+`[runtime] default` and each local sandbox (Docker Sandboxes, Claude Code's sandbox
 runtime, a devcontainer), every rule that place cannot hold as written: unenforced (nothing
 there holds it; only the hooks check tool calls), weaker (held, but looser) or stricter (held
 tighter, so a run that needs it fails). `selfhost runtime check [targets...] [--team <name>]`
@@ -690,7 +690,9 @@ and `--dry-run` never ask (the files are then only listed). [`AGENTS.md`](AGENTS
 2. It lists the agents it finds and where each keeps its config, then adds a hook running
    `selfhost hook <agent>` to Claude Code and Codex through `agents configure`, which backs up
    every file first. When `selfhost` is not on PATH the hook calls the running node and script
-   by absolute path instead. An agent where `agents configure` already set other settings is
+   by absolute path instead; if those are gone too, it prints one line pointing here and exits 1
+   (`SELFHOST_NPX=1` runs `npx -y selfhostai` instead, for once the package is on npm). An agent
+   where `agents configure` already set other settings is
    left alone, so they are not taken out.
 3. It writes a starter `selfhost.toml` at the git repository root when none is found: four
    rules (`.env` files, force pushes, `rm -rf` on `/` or home, `curl | sh`), all in observe
@@ -1111,21 +1113,27 @@ selfhost runtime reap                  # stop them, record each stop, tell the r
 ```
 
 - `list` prints the policy (`default` or `cheapest_allowed`), region, and per runtime whether
-  `allow` lists it, whether its key is set (by variable name, never the value), how it bills and
-  its list price an hour at its default size. `--json` prints `selfhost.runtimes/v1`.
+  `allow` lists it, whether its key is set (by variable name, never the value; "no key needed for
+  a local server" for an OpenSandbox server with a local `url`), how it bills and its list price
+  an hour at its default size. `--json` prints `selfhost.runtimes/v1`.
 - `check --reach` makes the same call `selfhost integrations check` makes, for every allowed
   runtime or the ones named, next to what `check` says about `[egress]` and `[secrets]`, and
   exits 1 when one fails. `--conformance` runs the conformance suite on the team's account: one
   small sandbox, stopped at the end, a few cents at most.
-- `reap` lists every sandbox selfhost made on the allowed runtimes that have a key, and stops
+- `reap` lists every sandbox selfhost made on the runtimes in use that have a key (`[runtime]
+  default`, a `[runtime.providers]` entry, or sandboxes in the ledger; only those load their
+  optional SDK, and a missing one is named with its `npm install` line), and stops
   those whose run ended at least `--minutes` ago (default `[runtime] leftover_minutes`, 15), or
   that the ledger says already stopped. Each stop is written to the ledger (`sandbox.stopped`,
   reason `reaped`, with its cost) with an alert that puts a review item in front of the run's
   owner. Sandboxes the ledger has no run for are listed and kept unless `--include-unknown`.
   `--dry-run` stops nothing. Takes `--database` / `--data-dir`.
 
-Keys stay in the environment variables `[runtime.providers.<name>]` or `[integrations.runtime]`
-name. Providers, prices, caps and events: [`packages/runtime`](../../packages/runtime/README.md).
+Keys stay in the environment variables `[runtime.providers.<name>]` names. `[runtime]` is the
+one place for the runtime: the older `[integrations.runtime]` still works as an alias, read as
+`[runtime] default = <tool>` with its settings in `[runtime.providers.<tool>]`, and every
+command that reads it says so in one warning line. A run with no runtime says why: the rule
+that refused it, or the key variable to set on the team server. Providers, prices, caps and events: [`packages/runtime`](../../packages/runtime/README.md).
 
 ## Team server: `selfhost up`
 
@@ -1196,8 +1204,14 @@ person, per team and per run, each named `selfhost:<kind>:<team>:<who>`.
   (only what differs) and reads its request logs into the ledger as `cost.recorded` events with
   `source = "gateway"`, attributed to the key's person, team and run, so spend views and the
   forecast include them. A person whose tokens are revoked has their key turned off.
-- A key's value is shown once, to the person it is for (`connect`), and kept nowhere. `connect
-  --rotate` gives a new one. Provider keys never leave the gateway.
+- Each person has one key, shared by every agent they connect. `connect` shows its value to the
+  person it is for and keeps it only on that laptop, in `~/.selfhost/gateway-key.json` (mode
+  0600), so `connect codex` after `connect claude-code` (or `connect env`) uses the same key and
+  the same `[budget.person]` limits. `connect --rotate` gives a new value and rewrites every
+  agent connect wrote on the laptop, or changes nothing and names the settings that can't take
+  it; settings you pasted yourself need the new value pasted too. Disconnecting the last agent
+  deletes the kept copy, and a key that is not kept on the laptop needs `--rotate`. Run keys are
+  never kept. Provider keys never leave the gateway.
 - `connect <agent>` writes the gateway and the key into the agent's own config, with a
   `.selfhost-backup-*` copy of each file it changes and a record in
   `~/.selfhost/gateway-connect.json`; `disconnect [agent]` (or `connect <agent> --undo`) puts
@@ -1211,10 +1225,15 @@ person, per team and per run, each named `selfhost:<kind>:<team>:<who>`.
   - `opencode`: `baseURL` and `apiKey` on the `anthropic` and `openai` providers in
     `opencode.json`.
   - `goose`: a custom provider, `custom_providers/selfhost.json`, picked with
-    `goose session --provider selfhost` or made the default in `goose configure`.
+    `goose session --provider selfhost` or made the default in `goose configure`. Its `models`
+    are the gateway's own list (`/v1/models`), or `claude-sonnet-4-5` and `gpt-5.5` (with
+    `anthropic/` and `openai/` in front on Bifrost) when the gateway does not answer.
+    `disconnect` removes the folders connect made for it once they are empty.
   - `env` prints `ANTHROPIC_*` and `OPENAI_*` exports for anything built on those SDKs.
   - Settings that would take traffic past the gateway (a provider or key the user set, Claude
-    Code's `apiKeyHelper` or `ANTHROPIC_API_KEY`) stop it before a key is issued.
+    Code's `apiKeyHelper` or `ANTHROPIC_API_KEY`) stop it before a key is issued. Shell
+    variables it can't change (`ANTHROPIC_API_KEY`, `CLAUDE_CODE_USE_BEDROCK` and the like) are
+    named first, as warnings.
 - Cursor and GitHub Copilot send model traffic from their own servers and can't use a gateway:
   `connect cursor` and `connect copilot` change nothing and say their usage is read from the
   vendor's admin API.

@@ -7,7 +7,7 @@ import {
   IntegrationEditError,
   type IntegrationStates,
   type RepoView,
-  setIntegrationTable,
+  setIntegration,
   type WorkflowFile,
 } from "@selfhost/integrations";
 import type { Ledger } from "@selfhost/ledger";
@@ -18,6 +18,7 @@ import {
   INTEGRATION_TOOLS,
   INTEGRATIONS_SCHEMA,
   type IntegrationKind,
+  type IntegrationState,
   IntegrationsQuerySchema,
   type IntegrationsResponse,
   SetIntegrationRequestSchema,
@@ -36,6 +37,38 @@ export interface IntegrationRouteOptions {
   repos?: (team: string) => Promise<RepoView | undefined>;
   /** Clock for checked_at and the cache. Default: the system clock. */
   now?: () => Date;
+  /**
+   * The AI gateway the server itself runs (SELFHOST_GATEWAY_TOOL, or the server's own
+   * selfhost.toml), shown as the router of a team whose policy picks none.
+   */
+  gateway?: ServerGateway;
+}
+
+/** What the integrations list needs of the server's own gateway. */
+export interface ServerGateway {
+  tool: string;
+  baseUrl: string;
+  health(): Promise<{ ok: boolean; detail?: string }>;
+}
+
+/** The router row for the server's own gateway, checked with its health call. */
+async function serverRouter(gateway: ServerGateway, now: () => Date): Promise<IntegrationState> {
+  let ok = false;
+  let detail: string | undefined;
+  try {
+    ({ ok, detail } = await gateway.health());
+  } catch (error) {
+    detail = error instanceof Error ? error.message : String(error);
+  }
+  const where = `The server's own ${gateway.tool} gateway at ${gateway.baseUrl}, set up in its environment`;
+  return {
+    tool: gateway.tool,
+    status: ok ? "connected" : "error",
+    detail: ok ? `${where}, answers.` : `${where}, does not answer: ${detail ?? "no detail"}.`,
+    settings: { url: gateway.baseUrl },
+    checked_at: now().toISOString(),
+    source: "server_environment",
+  };
 }
 
 /** How long a team's check results are served again while its [integrations] stay the same. */
@@ -95,7 +128,12 @@ export function integrationRoutes(
           ? { repos: () => options.repos?.(team) ?? Promise.resolve(undefined) }
           : {}),
       };
-      const states = checkIntegrations(integrations, context);
+      const gateway = options.gateway;
+      const states = checkIntegrations(integrations, context).then(async (checked) =>
+        checked.router.tool === null && gateway
+          ? { ...checked, router: await serverRouter(gateway, clock) }
+          : checked,
+      );
       entry = { team, at: now, states };
       cache.set(key, entry);
       states.catch(() => cache.delete(key));
@@ -152,7 +190,7 @@ export function integrationRoutes(
       const current = stored?.text ?? EMPTY_POLICY;
       let text: string;
       try {
-        text = setIntegrationTable(
+        text = setIntegration(
           current,
           kind,
           body.tool === null ? null : { tool: body.tool, ...body.settings },

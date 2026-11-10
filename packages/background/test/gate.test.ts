@@ -8,7 +8,7 @@ function done(result: StartResult) {
 }
 
 const toml = (background: string) =>
-  `version = 1\n[integrations.runtime]\ntool = "e2b"\n[background]\n${background}\n`;
+  `version = 1\n[runtime]\ndefault = "e2b"\n[background]\n${background}\n`;
 
 describe("tests-first gate", () => {
   it("in enforce, opens no pull request when the new test already passes on the base", async () => {

@@ -292,8 +292,12 @@ is the default.
 It also says where background runs may run (`packages/runtime`): `default`, `allow`, `policy`
 (`default` or `cheapest_allowed`), `region`, `max_size` and `leftover_minutes`, and how to reach
 each runtime in `[runtime.providers.<name>]` (`url`, `api_key_env`, `api_secret_env`,
-`template`, `usd_per_hour`), the same fields as `[integrations.runtime]`. A `default` that
-`allow` leaves out is an error.
+`template`, `usd_per_hour`). A `default` that `allow` leaves out is an error. `[runtime]` is the
+one place for the runtime: the deprecated `[integrations.runtime]` (`tool` plus the same fields)
+is read as `[runtime] default = <tool>` with its settings in `[runtime.providers.<tool>]`, where
+`[runtime]` does not set them already, and `parseConfig` returns a one-line `warnings` entry for
+it (`foldRuntimeAlias`). After parsing, `integrations.runtime` is a view of `[runtime]`: its
+`default` and that runtime's settings.
 
 ```toml
 [runtime]
@@ -319,8 +323,9 @@ API_BASE_URL = "http://localhost:${SELFHOST_PORT}"
 ## Integrations
 
 `[integrations]` names the tool for each job: `router` (bifrost, litellm), `tracer` (langfuse,
-phoenix, datadog, otlp), `runtime` (e2b, daytona, modal, coder, opensandbox) and `reviewer` (pr-agent,
-claude-code-action, coderabbit), each with its address. Secrets are referenced by environment
+phoenix, datadog, otlp) and `reviewer` (pr-agent, claude-code-action, coderabbit), each with its
+address. The runtime (e2b, daytona, modal, coder, opensandbox) is `[runtime] default`, see
+Runtime above. Secrets are referenced by environment
 variable name only (`admin_key_env`, `api_key_env`, `api_secret_env`, `headers_env`), never
 written. In a team, a team's table for a job replaces the org's whole (see `src/layers.ts`).
 `INTEGRATION_KINDS` and `INTEGRATION_TOOLS` list them; the checks are in
@@ -332,8 +337,8 @@ tool = "litellm"
 url = "http://litellm:4000"
 admin_key_env = "LITELLM_MASTER_KEY"
 
-[integrations.runtime]
-tool = "modal"                               # MODAL_TOKEN_ID and MODAL_TOKEN_SECRET by default
+[runtime]
+default = "modal"                            # MODAL_TOKEN_ID and MODAL_TOKEN_SECRET by default
 ```
 
 ## Review item

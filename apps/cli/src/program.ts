@@ -219,7 +219,7 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
     )
     .argument(
       "[targets...]",
-      "laptop, sandbox-runtime, docker-sandboxes, devcontainer, e2b, daytona, modal, coder or opensandbox (default: [integrations.runtime] and the local sandboxes)",
+      "laptop, sandbox-runtime, docker-sandboxes, devcontainer, e2b, daytona, modal, coder or opensandbox (default: [runtime] default and the local sandboxes)",
     )
     .option("-c, --config <path>", "path to selfhost.toml")
     .option("--team <name>", "use this team's egress list")

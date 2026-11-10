@@ -205,15 +205,25 @@ function codexGatewayItem(gateway: GatewaySpec): TomlItem {
   };
 }
 
-/** Goose's custom provider: the gateway's OpenAI-style chat completions, models listed by it. */
+/**
+ * The models Goose lists for the gateway when the gateway's own list is not known: names a
+ * LiteLLM proxy commonly routes. Bifrost needs the provider in front (openai/gpt-5.5).
+ */
+export const DEFAULT_GATEWAY_MODELS = ["claude-sonnet-4-5", "gpt-5.5"];
+
+/** The context window Goose assumes for each listed model; it trims history to fit. */
+export const GOOSE_CONTEXT_LIMIT = 128_000;
+
+/** Goose's custom provider: the gateway's OpenAI-style chat completions, with its models. */
 export function gooseGatewayProvider(gateway: GatewaySpec): string {
+  const models = gateway.models?.length ? gateway.models : DEFAULT_GATEWAY_MODELS;
   const provider = {
     name: GATEWAY_PROVIDER,
     engine: "openai",
     display_name: "selfhost gateway",
     description: "Model traffic through the team's AI gateway, with your selfhost key",
     base_url: `${gateway.openai}/chat/completions`,
-    models: [],
+    models: models.map((name) => ({ name, context_limit: GOOSE_CONTEXT_LIMIT })),
     headers: { Authorization: `Bearer ${gateway.key}` },
     supports_streaming: true,
     requires_auth: false,

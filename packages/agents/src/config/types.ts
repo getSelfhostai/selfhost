@@ -53,6 +53,11 @@ export interface GatewaySpec {
   openai: string;
   /** The virtual key the gateway issued: never a provider key. */
   key: string;
+  /**
+   * The gateway's model names, for agents that list them (Goose). Default:
+   * DEFAULT_GATEWAY_MODELS.
+   */
+  models?: string[];
 }
 
 export interface AgentConfigInput {

@@ -177,6 +177,11 @@ export function IntegrationsScreen() {
                   {integration.detail ? (
                     <p className="text-muted-foreground">{integration.detail}</p>
                   ) : null}
+                  {integration.source === "server_environment" ? (
+                    <p className="text-muted-foreground" data-testid="integration-source">
+                      Source: the server's environment. Picking a tool here gives this team its own.
+                    </p>
+                  ) : null}
                   {editing === kind ? (
                     <Editor
                       kind={kind}

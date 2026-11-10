@@ -4055,7 +4055,7 @@ components:
         - checked_at
       properties:
         tool:
-          description: The tool picked for this job in [integrations.<kind>], or null when none is.
+          description: The tool picked for this job in [integrations.<kind>] ([runtime] default for the runtime), or the one the server's own environment sets up, or null when none is.
           anyOf:
             - type: string
             - type: "null"
@@ -4078,6 +4078,12 @@ components:
           format: date-time
           description: When this check ran. The server keeps a team's results for 60 seconds while its [integrations] stay the same.
           type: string
+        source:
+          description: "Where the tool comes from: policy, the team's selfhost.toml (the default when absent), or server_environment, the server's own settings (SELFHOST_GATEWAY_TOOL or the server's selfhost.toml) when the team's policy picks none. Changing it there is up to whoever runs the server."
+          type: string
+          enum:
+            - policy
+            - server_environment
     IntegrationsResponse:
       additionalProperties: false
       title: IntegrationsResponse
@@ -4115,7 +4121,7 @@ components:
                 - checked_at
               properties:
                 tool:
-                  description: The tool picked for this job in [integrations.<kind>], or null when none is.
+                  description: The tool picked for this job in [integrations.<kind>] ([runtime] default for the runtime), or the one the server's own environment sets up, or null when none is.
                   anyOf:
                     - type: string
                     - type: "null"
@@ -4138,6 +4144,12 @@ components:
                   format: date-time
                   description: When this check ran. The server keeps a team's results for 60 seconds while its [integrations] stay the same.
                   type: string
+                source:
+                  description: "Where the tool comes from: policy, the team's selfhost.toml (the default when absent), or server_environment, the server's own settings (SELFHOST_GATEWAY_TOOL or the server's selfhost.toml) when the team's policy picks none. Changing it there is up to whoever runs the server."
+                  type: string
+                  enum:
+                    - policy
+                    - server_environment
             tracer:
               additionalProperties: false
               title: IntegrationState
@@ -4150,7 +4162,7 @@ components:
                 - checked_at
               properties:
                 tool:
-                  description: The tool picked for this job in [integrations.<kind>], or null when none is.
+                  description: The tool picked for this job in [integrations.<kind>] ([runtime] default for the runtime), or the one the server's own environment sets up, or null when none is.
                   anyOf:
                     - type: string
                     - type: "null"
@@ -4173,6 +4185,12 @@ components:
                   format: date-time
                   description: When this check ran. The server keeps a team's results for 60 seconds while its [integrations] stay the same.
                   type: string
+                source:
+                  description: "Where the tool comes from: policy, the team's selfhost.toml (the default when absent), or server_environment, the server's own settings (SELFHOST_GATEWAY_TOOL or the server's selfhost.toml) when the team's policy picks none. Changing it there is up to whoever runs the server."
+                  type: string
+                  enum:
+                    - policy
+                    - server_environment
             runtime:
               additionalProperties: false
               title: IntegrationState
@@ -4185,7 +4203,7 @@ components:
                 - checked_at
               properties:
                 tool:
-                  description: The tool picked for this job in [integrations.<kind>], or null when none is.
+                  description: The tool picked for this job in [integrations.<kind>] ([runtime] default for the runtime), or the one the server's own environment sets up, or null when none is.
                   anyOf:
                     - type: string
                     - type: "null"
@@ -4208,6 +4226,12 @@ components:
                   format: date-time
                   description: When this check ran. The server keeps a team's results for 60 seconds while its [integrations] stay the same.
                   type: string
+                source:
+                  description: "Where the tool comes from: policy, the team's selfhost.toml (the default when absent), or server_environment, the server's own settings (SELFHOST_GATEWAY_TOOL or the server's selfhost.toml) when the team's policy picks none. Changing it there is up to whoever runs the server."
+                  type: string
+                  enum:
+                    - policy
+                    - server_environment
             reviewer:
               additionalProperties: false
               title: IntegrationState
@@ -4220,7 +4244,7 @@ components:
                 - checked_at
               properties:
                 tool:
-                  description: The tool picked for this job in [integrations.<kind>], or null when none is.
+                  description: The tool picked for this job in [integrations.<kind>] ([runtime] default for the runtime), or the one the server's own environment sets up, or null when none is.
                   anyOf:
                     - type: string
                     - type: "null"
@@ -4243,6 +4267,12 @@ components:
                   format: date-time
                   description: When this check ran. The server keeps a team's results for 60 seconds while its [integrations] stay the same.
                   type: string
+                source:
+                  description: "Where the tool comes from: policy, the team's selfhost.toml (the default when absent), or server_environment, the server's own settings (SELFHOST_GATEWAY_TOOL or the server's selfhost.toml) when the team's policy picks none. Changing it there is up to whoever runs the server."
+                  type: string
+                  enum:
+                    - policy
+                    - server_environment
     SetIntegrationRequest:
       additionalProperties: false
       title: SetIntegrationRequest
@@ -10490,7 +10520,7 @@ components:
             - goose
         runtime:
           minLength: 1
-          description: "Runtime kind; default: the team's [integrations.runtime]."
+          description: "Runtime kind; default: the team's [runtime] default."
           type: string
         team:
           minLength: 1

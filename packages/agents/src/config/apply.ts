@@ -18,6 +18,8 @@ export interface AppliedChange {
   action: "created" | "updated" | "deleted";
   /** Copy of the previous content, next to the file; null for new files and selfhost's state. */
   backup: string | null;
+  /** The outermost folder created to hold the file, which undo may remove once empty. */
+  madeDir?: string;
 }
 
 /** Mode for files selfhost creates: settings can hold endpoints and headers. */
@@ -63,6 +65,7 @@ interface Staged {
   target: string;
   temp: string | null;
   backup: string | null;
+  madeDir: string | undefined;
 }
 
 /**
@@ -92,12 +95,13 @@ export function applyAgentConfig(
         writeWithMode(backup, change.before, mode);
       }
       let temp: string | null = null;
+      let madeDir: string | undefined;
       if (change.after !== null) {
-        mkdirSync(dirname(target), { recursive: true });
+        madeDir = mkdirSync(dirname(target), { recursive: true });
         temp = `${target}.selfhost-${process.pid}-${randomBytes(4).toString("hex")}`;
         writeWithMode(temp, change.after, mode);
       }
-      staged.push({ change, target, temp, backup });
+      staged.push({ change, target, temp, backup, madeDir });
     }
   } catch (error) {
     for (const { temp } of staged) if (temp) rmSync(temp, { force: true });
@@ -120,9 +124,10 @@ export function applyAgentConfig(
     throw error;
   }
 
-  return staged.map(({ change, backup }) => ({
+  return staged.map(({ change, backup, madeDir }) => ({
     path: change.path,
     action: change.after === null ? "deleted" : change.before === null ? "created" : "updated",
     backup,
+    ...(madeDir ? { madeDir } : {}),
   }));
 }

@@ -50,8 +50,7 @@ const list = (kinds: readonly string[]) => kinds.join(", ");
 
 /**
  * Picks the runtime for one task from [runtime] in selfhost.toml. A runtime named by the task
- * must be in allow; otherwise policy decides: default uses runtime.default (or the
- * [integrations.runtime] tool), cheapest_allowed the allowed runtime with a key whose list
+ * must be in allow; otherwise policy decides: default uses runtime.default, cheapest_allowed the allowed runtime with a key whose list
  * price for the size is lowest (runtimes without a price come last). A size over max_size, or a
  * region the runtime cannot serve, is refused. A refusal names the rule that blocked it.
  */
@@ -168,7 +167,7 @@ export function pickRuntime(
     runtime.default
       ? `[runtime] default is ${kind}.`
       : fallback
-        ? `[integrations.runtime] tool is ${kind}.`
+        ? `[runtime] default is ${kind}.`
         : `${kind} is the only allowed runtime.`,
   );
 }

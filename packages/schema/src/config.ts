@@ -459,8 +459,8 @@ const EnvName = (description: string) => Type.String({ pattern: ENV_NAME_PATTERN
 const HttpUrl = (description: string) => Type.String({ pattern: "^https?://", description });
 
 /**
- * How selfhost reaches one runtime provider and where its key is. Shared by [integrations.runtime]
- * and [runtime.providers.<name>]. Keys are only ever named here, never written.
+ * How selfhost reaches one runtime provider and where its key is: [runtime.providers.<name>], and
+ * the deprecated [integrations.runtime]. Keys are only ever named here, never written.
  */
 const RUNTIME_CONNECTION_FIELDS = {
   url: Type.Optional(
@@ -557,7 +557,7 @@ export const RuntimeSchema = Type.Object(
     default: Type.Optional(
       StringEnum(RUNTIME_TOOLS, {
         description:
-          "Runtime a background run uses when it names none and policy is default. Unset: the [integrations.runtime] tool.",
+          "Runtime a background run uses when it names none and policy is default. Unset: the one runtime in allow, when allow lists one.",
       }),
     ),
     allow: Type.Optional(
@@ -603,7 +603,7 @@ export const RuntimeSchema = Type.Object(
         {
           additionalProperties: false,
           description:
-            "How to reach each runtime a run may use, when it is not the [integrations.runtime] tool, for example [runtime.providers.daytona].",
+            "How to reach each runtime a run may use, and where its key is, for example [runtime.providers.daytona]. Unset: the runtime's usual address and key variable, such as E2B_API_KEY.",
         },
       ),
     ),
@@ -940,7 +940,11 @@ export const IntegrationsSchema = Type.Object(
           }),
           ...RUNTIME_CONNECTION_FIELDS,
         },
-        { additionalProperties: false, description: "The runtime for background agents." },
+        {
+          additionalProperties: false,
+          description:
+            "Deprecated alias of [runtime]: read as [runtime] default = tool with these settings in [runtime.providers.<tool>], with a warning. Set [runtime] instead.",
+        },
       ),
     ),
     reviewer: Type.Optional(
@@ -1595,8 +1599,50 @@ export type ResolvedSelfhostConfig = Omit<
 };
 
 export type ConfigResult =
-  | { ok: true; config: ResolvedSelfhostConfig }
+  | {
+      ok: true;
+      config: ResolvedSelfhostConfig;
+      /** Settings that still work but should change, one line each: a deprecated alias. */
+      warnings?: string[];
+    }
   | { ok: false; errors: FieldError[] };
+
+/**
+ * [runtime] is the one place a team sets its runtime. The deprecated [integrations.runtime] table
+ * is read as [runtime] default = <tool> with its settings in [runtime.providers.<tool>], where
+ * [runtime] does not already set those, and gives a one-line warning. Afterwards
+ * integrations.runtime is a view of [runtime] (its default and that runtime's settings), so the
+ * integrations list and checks show the runtime [runtime] picks.
+ */
+export function foldRuntimeAlias(config: ResolvedSelfhostConfig): string[] {
+  const warnings: string[] = [];
+  const alias = config.integrations.runtime;
+  if (alias) {
+    const { tool, ...settings } = alias;
+    config.runtime ??= Value.Default(RuntimeSchema, {}) as Runtime;
+    const runtime = config.runtime;
+    runtime.providers ??= {};
+    const providers = runtime.providers;
+    const kept = runtime.default !== undefined && runtime.default !== tool;
+    runtime.default ??= tool;
+    if (providers[tool] === undefined && Object.keys(settings).length > 0) {
+      providers[tool] = settings;
+    }
+    if (Object.keys(providers).length === 0) delete runtime.providers;
+    warnings.push(
+      kept
+        ? `[integrations.runtime] is deprecated and [runtime] default = "${runtime.default}" wins over its tool = "${tool}": move its settings to [runtime.providers.${tool}] and delete it.`
+        : `[integrations.runtime] is deprecated: it is read as [runtime] default = "${tool}"${Object.keys(settings).length > 0 ? ` with [runtime.providers.${tool}]` : ""}; move it there.`,
+    );
+  }
+  const picked = config.runtime?.default;
+  if (picked) {
+    config.integrations.runtime = { tool: picked, ...config.runtime?.providers?.[picked] };
+  } else {
+    delete config.integrations.runtime;
+  }
+  return warnings;
+}
 
 const configCheck = lazyCheck(SelfhostConfigSchema);
 
@@ -1866,19 +1912,24 @@ function secretsErrors(secrets: Secrets): SegmentError[] {
 function check(
   value: unknown,
   options?: ParseOptions,
-): { config?: ResolvedSelfhostConfig; errors: SegmentError[] } {
+): { config?: ResolvedSelfhostConfig; errors: SegmentError[]; warnings?: string[] } {
   const withDefaults = Value.Default(SelfhostConfigSchema, Value.Clone(value));
   const errors = schemaErrors(configCheck(), withDefaults);
   if (errors.length > 0) return { errors };
   const config = withDefaults as ResolvedSelfhostConfig;
   const semantic = semanticErrors(config, options);
-  return semantic.length > 0 ? { errors: semantic } : { config, errors: [] };
+  if (semantic.length > 0) return { errors: semantic };
+  const warnings = foldRuntimeAlias(config);
+  return { config, errors: [], ...(warnings.length > 0 ? { warnings } : {}) };
 }
+
+const okResult = (config: ResolvedSelfhostConfig, warnings?: string[]): ConfigResult =>
+  warnings ? { ok: true, config, warnings } : { ok: true, config };
 
 /** Validates an already parsed config object and applies defaults. */
 export function validateConfig(value: unknown): ConfigResult {
-  const { config, errors } = check(value);
-  if (config) return { ok: true, config };
+  const { config, errors, warnings } = check(value);
+  if (config) return okResult(config, warnings);
   return {
     ok: false,
     errors: errors.map((e) => ({ field: formatField(e.segments), message: e.message })),
@@ -1903,8 +1954,8 @@ export function parseConfig(text: string, options?: ParseOptions): ConfigResult 
     }
     throw error;
   }
-  const { config, errors } = check(raw, options);
-  if (config) return { ok: true, config };
+  const { config, errors, warnings } = check(raw, options);
+  if (config) return okResult(config, warnings);
   const lines = new TomlLineIndex(text);
   return {
     ok: false,

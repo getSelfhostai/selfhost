@@ -7,6 +7,7 @@ import {
   hasKey,
   hourlyPrice,
   keyEnvs,
+  keyState,
   type Leftover,
   openRuntime,
   providerSettings,
@@ -55,7 +56,10 @@ const DAY_MS = 86_400_000;
 /** How far back reap reads the ledger for runs and their sandboxes. */
 const REAP_HISTORY_DAYS = 30;
 
-/** selfhost.toml found from cwd (or --config); the defaults when there is none. */
+/**
+ * selfhost.toml found from cwd (or --config); the defaults when there is none. Its warnings (a
+ * deprecated [integrations.runtime]) are said first, unless the output is JSON.
+ */
 function loadConfig(
   options: RuntimeCommandOptions,
   io: RuntimeIo,
@@ -68,14 +72,14 @@ function loadConfig(
     const lines = parsed.errors.map((error) => `  ${formatConfigError(error, location?.path)}`);
     throw new Error([`${location?.path} is invalid. Run selfhost doctor.`, ...lines].join("\n"));
   }
+  if (!options.json) for (const warning of parsed.warnings ?? []) io.write(`Warning: ${warning}`);
   return { ...(location ? { path: location.path } : {}), config: parsed.config };
 }
 
 const allowedOf = (config: RuntimeConfig): readonly RuntimeKind[] =>
   config.runtime?.allow ?? RUNTIME_KINDS;
 
-const defaultOf = (config: RuntimeConfig) =>
-  config.runtime?.default ?? config.integrations?.runtime?.tool;
+const defaultOf = (config: RuntimeConfig) => config.runtime?.default;
 
 /** The runtimes worth talking to: allowed ones that have a key, or the ones named. */
 function targets(config: RuntimeConfig, io: RuntimeIo, named: string[]): RuntimeKind[] {
@@ -100,7 +104,10 @@ export interface RuntimeListRow {
   default: boolean;
   /** The environment variables the key is read from; never the key. */
   key_env: string[];
+  /** True when the runtime can start a sandbox: its key is set, or it needs none. */
   key_set: boolean;
+  /** not_needed: an OpenSandbox server with a local url, which runs without a key. */
+  key: "set" | "not_needed" | "not_set";
   billing: string;
   /** List price per hour at the runtime's default size; null without one. */
   usd_per_hour: number | null;
@@ -116,13 +123,15 @@ export function runRuntimeList(options: RuntimeCommandOptions, io: RuntimeIo) {
     const settings = providerSettings(config, kind);
     const info = RUNTIMES[kind];
     const price = hourlyPrice(kind, info.defaultSize, { usdPerHour: settings.usd_per_hour });
+    const key = keyState(kind, settings, io.env);
     return {
       runtime: kind,
       name: info.name,
       allowed: allowed.includes(kind),
       default: fallback === kind,
       key_env: keyEnvs(kind, settings),
-      key_set: hasKey(kind, settings, io.env),
+      key_set: key !== "not_set",
+      key,
       billing: info.billing,
       usd_per_hour: price === undefined ? null : Math.round(price * 1e6) / 1e6,
       sdk: info.sdk ? `${info.sdk.name}@${info.sdk.version}` : null,
@@ -149,7 +158,11 @@ export function runRuntimeList(options: RuntimeCommandOptions, io: RuntimeIo) {
       ...rows.map((row) => [
         `${row.runtime}${row.default ? " (default)" : ""}`,
         row.allowed ? "yes" : "no",
-        row.key_set ? `set (${row.key_env.join(", ")})` : `missing: ${row.key_env.join(", ")}`,
+        row.key === "set"
+          ? `set (${row.key_env.join(", ")})`
+          : row.key === "not_needed"
+            ? "no key needed for a local server"
+            : `not set: ${row.key_env.join(", ")}`,
         row.billing,
         row.usd_per_hour === null ? "your rate" : usd(row.usd_per_hour),
       ]),
@@ -229,6 +242,22 @@ export async function runRuntimeCheck(
   return rows;
 }
 
+/** The runtimes the team set up or has sandboxes on, of those given. */
+function inUse(config: RuntimeConfig, events: LedgerEvent[], kinds: RuntimeKind[]): RuntimeKind[] {
+  const used = new Set<string>();
+  for (const event of events) {
+    const runtime = (event.data as { sandbox?: { runtime?: unknown } } | undefined)?.sandbox
+      ?.runtime;
+    if (typeof runtime === "string") used.add(runtime);
+  }
+  return kinds.filter(
+    (kind) =>
+      kind === defaultOf(config) ||
+      config.runtime?.providers?.[kind] !== undefined ||
+      used.has(kind),
+  );
+}
+
 async function history(ledger: Ledger, from: Date): Promise<LedgerEvent[]> {
   const events: LedgerEvent[] = [];
   for (const kind of ["sandbox.started", "sandbox.stopped", "session.ended", "alert.raised"]) {
@@ -252,7 +281,9 @@ export interface ReapReport {
 
 /**
  * `selfhost runtime reap`: finds sandboxes selfhost made that still run after their run ended
- * (or that the ledger says stopped) on every allowed runtime with a key, and stops them. Each
+ * (or that the ledger says stopped) on every runtime in use that has a key, and stops them. In
+ * use: [runtime] default, a [runtime.providers] entry, or a runtime the ledger has sandboxes on;
+ * only those load their SDK, so an optional SDK that is not installed matters only for them. Each
  * stop is written to the ledger with its cost, and the run's owner gets a review item.
  * --dry-run only lists them. Sandboxes the ledger has no record of are only listed, unless
  * --include-unknown.
@@ -274,8 +305,10 @@ export async function runRuntimeReap(
     ledger ??
     (await openLedger({ url: options.database ?? io.env.DATABASE_URL, dataDir: options.dataDir }));
   try {
-    const adapters = targets(config, io, []).map((kind) => open(io, kind, config));
     const events = await history(target, new Date(now().getTime() - REAP_HISTORY_DAYS * DAY_MS));
+    const adapters = inUse(config, events, targets(config, io, [])).map((kind) =>
+      open(io, kind, config),
+    );
     const found = await findLeftovers({ adapters, events, now: now(), leftoverMinutes: minutes });
     let reaped: Reaped[] = found.leftovers.map((leftover) => ({ leftover, stopped: false }));
     if (!options.dryRun) {
@@ -312,7 +345,9 @@ export async function runRuntimeReap(
 
 function printReap(report: ReapReport, runtimes: number, write: (line: string) => void) {
   if (runtimes === 0) {
-    write("No allowed runtime has a key here, so there is nothing to look at.");
+    write(
+      "No runtime in use here has a key ([runtime] default, [runtime.providers] or sandboxes in the ledger), so there is nothing to look at.",
+    );
     return;
   }
   for (const error of report.errors)

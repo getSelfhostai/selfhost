@@ -4,9 +4,10 @@ import { basename } from "node:path";
 import {
   checkIntegrations,
   IntegrationEditError,
+  integrationPlace,
   listIntegrations,
   localRepoView,
-  setIntegrationTable,
+  setIntegration,
 } from "@selfhost/integrations";
 import {
   formatConfigError,
@@ -249,7 +250,7 @@ function missingSettings(
   tool: string,
   errors: readonly { field: string; message: string }[],
 ): Error | undefined {
-  const prefix = `integrations.${kind}.`;
+  const prefix = kind === "runtime" ? `runtime.providers.${tool}.` : `integrations.${kind}.`;
   const keys = errors.flatMap(({ field, message }) =>
     field.startsWith(prefix) && /^Expected required property/.test(message)
       ? [field.slice(prefix.length)]
@@ -263,9 +264,9 @@ function missingSettings(
 }
 
 /**
- * `selfhost integrations set <kind> <tool>`: writes [integrations.<kind>] into the team policy on
- * the server in team mode (owners and admins), else into selfhost.toml here, keeping the rest of
- * the file as it was. `none` removes it.
+ * `selfhost integrations set <kind> <tool>`: writes [integrations.<kind>] ([runtime] default for
+ * the runtime) into the team policy on the server in team mode (owners and admins), else into
+ * selfhost.toml here, keeping the rest of the file as it was. `none` removes it.
  */
 export async function runIntegrationsSet(
   kindArg: string,
@@ -277,7 +278,9 @@ export async function runIntegrationsSet(
   const tool = parseTool(kind, toolArg);
   const settings = parseSettings(options.setting);
   if (tool === null && Object.keys(settings).length > 0) {
-    throw new Error(`--setting: ${NONE} removes [integrations.${kind}], so it takes no settings`);
+    throw new Error(
+      `--setting: ${NONE} removes ${integrationPlace(kind)}, so it takes no settings`,
+    );
   }
   if ("tool" in settings) throw new Error("--setting: give the tool as the second argument");
   const mode = modeOf(options, io);
@@ -295,9 +298,10 @@ export async function runIntegrationsSet(
         const missing = tool === null ? undefined : missingSettings(kind, tool, errors.errors);
         if (missing) throw missing;
         throw new Error(
-          [`The team server refused [integrations.${kind}]:`, ...invalidLines(errors.errors)].join(
-            "\n",
-          ),
+          [
+            `The team server refused ${integrationPlace(kind, tool)}:`,
+            ...invalidLines(errors.errors),
+          ].join("\n"),
         );
       }
       throw error;
@@ -311,7 +315,7 @@ export async function runIntegrationsSet(
     const { text } = readSolo(mode.path);
     let next: string;
     try {
-      next = setIntegrationTable(text, kind, tool === null ? null : { tool, ...settings });
+      next = setIntegration(text, kind, tool === null ? null : { tool, ...settings });
     } catch (error) {
       if (error instanceof IntegrationEditError) throw new Error(`${mode.path}: ${error.message}`);
       throw error;
@@ -322,7 +326,7 @@ export async function runIntegrationsSet(
       if (missing) throw missing;
       throw new Error(
         [
-          `[integrations.${kind}] would make ${mode.path} invalid, so nothing was written:`,
+          `${integrationPlace(kind, tool)} would make ${mode.path} invalid, so nothing was written:`,
           ...parsed.errors.map((e) => `  ${formatConfigError(e)}`),
         ].join("\n"),
       );
@@ -336,8 +340,10 @@ export async function runIntegrationsSet(
     const where = result.team === null ? result.source : `team ${result.team}`;
     io.write(
       tool === null
-        ? `Removed [integrations.${kind}] from ${where}.`
-        : `Set [integrations.${kind}] in ${where}: ${tool}.`,
+        ? `Removed ${integrationPlace(kind)} from ${where}.`
+        : kind === "runtime"
+          ? `Set ${integrationPlace(kind, tool)} in ${where}.`
+          : `Set [integrations.${kind}] in ${where}: ${tool}.`,
     );
     const row = result.integrations[kind];
     if (row.status === "error" && row.detail) io.write(`Check: ${row.detail}`);

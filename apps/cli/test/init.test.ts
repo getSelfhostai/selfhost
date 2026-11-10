@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   existsSync,
@@ -16,7 +16,7 @@ import { createApp } from "@selfhost/server/app";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { appendToSpool } from "../src/hooks/receive.js";
 import { runImport } from "../src/import.js";
-import { HOSTED_URL, hookCommand, parseInvite } from "../src/init/commands.js";
+import { HOSTED_URL, hookCommand, INSTALL_DOCS, parseInvite } from "../src/init/commands.js";
 import { PRESETS } from "../src/init/presets.generated.js";
 import { STARTER_CONFIG } from "../src/init/starter.js";
 import { createProgram } from "../src/program.js";
@@ -546,7 +546,7 @@ describe("parseInvite", () => {
 });
 
 describe("the hook command", () => {
-  it("is selfhost hook on PATH, else finds selfhost each time it runs, falling back to npx", () => {
+  it("is selfhost hook on PATH, else finds selfhost each time it runs, else says how to install", () => {
     expect(hookCommand(() => "/usr/local/bin/selfhost")).toEqual({
       command: "selfhost hook {agent}",
     });
@@ -554,8 +554,22 @@ describe("the hook command", () => {
     expect(command).toMatch(
       /^if command -v selfhost >\/dev\/null 2>&1; then exec selfhost hook \{agent\}; elif \[ -x \S+ \]/,
     );
-    expect(command).toContain(" hook {agent}; else exec npx -y selfhostai hook {agent}; fi");
+    // npx only on request: the package is not on npm yet, so npx could only fail.
+    expect(command).toContain(
+      ' hook {agent}; elif [ "$SELFHOST_NPX" = 1 ]; then exec npx -y selfhostai hook {agent}; else echo',
+    );
     expect(warning).toContain("selfhost is not on PATH");
+    // Neither selfhost nor the script that ran init: one line on stderr, exit 1, no npx call.
+    const gone = command
+      .replace(/elif \[ -x [^;]+; then exec [^;]+; /, "")
+      .replaceAll("{agent}", "claude_code");
+    const bare = { PATH: "/nonexistent" };
+    const failed = spawnSync("/bin/sh", ["-c", gone], { env: bare, encoding: "utf8" });
+    expect(failed.status).toBe(1);
+    expect(failed.stderr.trim().split("\n")).toEqual([
+      `selfhost hook: selfhost is not installed here (not on PATH, and not where selfhost init ran it). Install it: ${INSTALL_DOCS}`,
+    ]);
+    expect(failed.stderr).not.toContain("npx");
     // The hook still runs from a shell: the command parses as one.
     expect(() =>
       execFileSync("sh", ["-n", "-c", command.replaceAll("{agent}", "claude_code")]),

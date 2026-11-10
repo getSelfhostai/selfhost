@@ -1,12 +1,21 @@
-import { existsSync, statSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import {
   AGENT_NAMES,
   type AgentConfigPlan,
   type AgentId,
   type AppliedChange,
   applyAgentConfig,
+  DEFAULT_GATEWAY_MODELS,
   GATEWAY_PROFILE,
   type GatewaySpec,
   manifestPath,
@@ -15,12 +24,13 @@ import {
   planAgentConfig,
   subscriptionLogin,
 } from "@selfhost/agents";
-import type {
-  GatewayBudget,
-  GatewayKey,
-  GatewayKeysResponse,
-  GatewayStatus,
-  IssueGatewayKeyResponse,
+import {
+  type GatewayBudget,
+  type GatewayKey,
+  type GatewayKeysResponse,
+  type GatewayStatus,
+  ROUTER_TOOLS,
+  type RouterTool,
 } from "@selfhost/schema";
 import type { Command } from "commander";
 import { tilde } from "../agents.js";
@@ -32,7 +42,7 @@ import {
   undoRecorded,
 } from "../init/record.js";
 import { type Fetch, TeamClient } from "../team/client.js";
-import { readMembership } from "../team/config.js";
+import { type Membership, readMembership } from "../team/config.js";
 import {
   AGENT_ID,
   type ConnectAgent,
@@ -86,22 +96,34 @@ export interface ConnectReport {
    */
   status: "connected" | "printed" | "not_applicable" | "subscription";
   key: GatewayKey | null;
+  /**
+   * True when the value is the person's key already kept on this laptop: one key per person,
+   * shared by every agent connected here.
+   */
+  reused: boolean;
   value: string | null;
   base_url: string | null;
   settings: string | null;
   target: string | null;
   /** The agent config files written, with the backup of each one that existed. */
   files: AppliedChange[];
+  /** Things on this laptop that would take the agent's traffic past the gateway. */
+  warnings: string[];
   notes: string[];
 }
 
-function client(io: GatewayIo): TeamClient {
+function membershipOf(io: GatewayIo): Membership {
   const membership = readMembership(io.configPath);
   if (!membership) {
     throw new Error(
       "This laptop is not in a team: the gateway lives on the team server. Join one with selfhost join <server> <invite>.",
     );
   }
+  return membership;
+}
+
+function client(io: GatewayIo): TeamClient {
+  const membership = membershipOf(io);
   return new TeamClient(membership.server, membership.token, io.fetch);
 }
 
@@ -207,13 +229,154 @@ const PLACEHOLDER: GatewaySpec = {
   key: "placeholder",
 };
 
-/** Variables in the shell that would send Claude Code past the gateway or with another key. */
-const CLAUDE_SHELL_RIVALS = [
-  "ANTHROPIC_API_KEY",
+/**
+ * The person's own gateway key, kept on this laptop (mode 0600) so that every agent connect
+ * points at the gateway uses the same key and the same [budget.person] limits. Run keys are never
+ * kept.
+ */
+export const gatewayKeyPath = (home: string) => join(home, ".selfhost", "gateway-key.json");
+
+const KEY_SCHEMA = "selfhost.gateway_key/v1";
+
+interface StoredKey {
+  schema: typeof KEY_SCHEMA;
+  server: string;
+  team: string;
+  person: string;
+  name: string;
+  value: string;
+  base_url: string;
+  tool: RouterTool;
+}
+
+const isText = (value: unknown): value is string => typeof value === "string" && value !== "";
+
+/** The kept key, when it is this membership's: another server, team or person never gets it. */
+function readStoredKey(home: string, membership: Membership): StoredKey | undefined {
+  let value: Partial<StoredKey>;
+  try {
+    value = JSON.parse(readFileSync(gatewayKeyPath(home), "utf8")) as Partial<StoredKey>;
+  } catch {
+    return undefined;
+  }
+  const mine =
+    value.schema === KEY_SCHEMA &&
+    value.server === membership.server &&
+    value.team === membership.team &&
+    value.person === membership.person &&
+    isText(value.value) &&
+    isText(value.base_url) &&
+    (ROUTER_TOOLS as readonly unknown[]).includes(value.tool);
+  return mine ? (value as StoredKey) : undefined;
+}
+
+function storeKey(home: string, membership: Membership, held: HeldKey): void {
+  const path = gatewayKeyPath(home);
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  const stored: StoredKey = {
+    schema: KEY_SCHEMA,
+    server: membership.server,
+    team: membership.team,
+    person: membership.person,
+    name: held.key?.name ?? "",
+    value: held.value,
+    base_url: held.base_url,
+    tool: held.tool,
+  };
+  writeFileSync(path, `${JSON.stringify(stored, null, 2)}\n`, { mode: 0o600 });
+  chmodSync(path, 0o600);
+}
+
+/** The agents whose config files connect wrote on this laptop and still owns. */
+const GATEWAY_AGENTS = Object.values(AGENT_ID).filter((id): id is AgentId => id !== null);
+
+function connectedAgents(home: string): AgentId[] {
+  return GATEWAY_AGENTS.filter((id) => existsSync(manifestPath(home, id, GATEWAY_PROFILE)));
+}
+
+/** Variables in the shell that would send Claude Code to a cloud instead of the gateway. */
+const CLAUDE_SHELL_CLOUDS = [
   "CLAUDE_CODE_USE_BEDROCK",
   "CLAUDE_CODE_USE_VERTEX",
   "CLAUDE_CODE_USE_FOUNDRY",
 ];
+
+/**
+ * Shell variables connect can't change that take the agent's traffic past the gateway. Settings
+ * files can't unset a variable the shell exports, so these are said first, as warnings.
+ */
+function shellWarnings(agent: ConnectAgent, env: NodeJS.ProcessEnv): string[] {
+  if (agent !== "claude-code" && agent !== "env") return [];
+  const isSet = (name: string) => (env[name] ?? "").trim() !== "";
+  const who = agent === "claude-code" ? "Claude Code" : "Tools built on the Anthropic SDK";
+  const warnings: string[] = [];
+  if (isSet("ANTHROPIC_API_KEY")) {
+    warnings.push(
+      `ANTHROPIC_API_KEY is set in your shell, and connect can't unset it. ${who} can send that key instead of, or as well as, your gateway key, and anywhere ANTHROPIC_BASE_URL is not set (a project or script that overrides it, a shell without it) requests go straight to Anthropic on it, outside the gateway's budgets and usage. Unset it, and take it out of your shell profile (~/.zshrc, ~/.bashrc).`,
+    );
+  }
+  const clouds = agent === "claude-code" ? CLAUDE_SHELL_CLOUDS.filter(isSet) : [];
+  if (clouds.length > 0) {
+    warnings.push(
+      `${clouds.join(" and ")} ${clouds.length > 1 ? "are" : "is"} set in your shell: Claude Code then sends its requests to that cloud, never to the gateway. Unset ${clouds.length > 1 ? "them" : "it"} to use the gateway.`,
+    );
+  }
+  return warnings;
+}
+
+/** How long connect waits for the gateway's model list before using the defaults. */
+const MODELS_TIMEOUT_MS = 5_000;
+
+/**
+ * The gateway's model names from its OpenAI-style /models, asked with the person's key, for the
+ * agents that list models (Goose). When the gateway does not answer, the defaults, with a note.
+ */
+async function gatewayModels(
+  spec: GatewaySpec,
+  tool: RouterTool,
+  io: GatewayIo,
+): Promise<{ models: string[]; note?: string }> {
+  try {
+    const res = await io.fetch(`${spec.openai}/models`, {
+      method: "GET",
+      headers: { authorization: `Bearer ${spec.key}` },
+      signal: AbortSignal.timeout(MODELS_TIMEOUT_MS),
+    });
+    if (res.ok) {
+      const body = (await res.json()) as { data?: unknown };
+      const ids = Array.isArray(body.data)
+        ? body.data
+            .map((model) => (model as { id?: unknown } | null)?.id)
+            .filter((id): id is string => isText(id))
+        : [];
+      if (ids.length > 0) return { models: [...new Set(ids)].sort() };
+    }
+  } catch {
+    // Not reachable from here: the defaults below.
+  }
+  const models =
+    tool === "bifrost"
+      ? DEFAULT_GATEWAY_MODELS.map((name) =>
+          name.startsWith("claude") ? `anthropic/${name}` : `openai/${name}`,
+        )
+      : DEFAULT_GATEWAY_MODELS;
+  return {
+    models,
+    note: `The gateway did not list its models, so Goose lists ${models.join(" and ")}: add the gateway's other model names to models in the provider file.`,
+  };
+}
+
+/** The gateway settings for one agent, with the gateway's models for an agent that lists them. */
+async function specFor(
+  agent: ConnectAgent,
+  held: HeldKey,
+  io: GatewayIo,
+): Promise<{ spec: GatewaySpec; note?: string }> {
+  const spec = gatewaySpec(held.tool, held.base_url, held.value);
+  if (agent !== "goose") return { spec };
+  const { models, note } = await gatewayModels(spec, held.tool, io);
+  return { spec: { ...spec, models }, ...(note ? { note } : {}) };
+}
 
 interface Scope {
   home: string;
@@ -244,32 +407,82 @@ function itemText(item: PlanItem, home: string): string {
   return `${item.status}${where}${item.message ? `: ${item.message}` : ""}`;
 }
 
-async function issue(options: ConnectOptions, io: GatewayIo): Promise<IssueGatewayKeyResponse> {
+/** The key an agent gets: issued now, or the person's own key already kept on this laptop. */
+interface HeldKey {
+  key: GatewayKey | null;
+  value: string;
+  base_url: string;
+  tool: RouterTool;
+  reused: boolean;
+}
+
+const AGENT_OF: Record<AgentId, ConnectAgent | undefined> = Object.fromEntries(
+  Object.entries(AGENT_ID).map(([agent, id]) => [id, agent]),
+) as Record<AgentId, ConnectAgent | undefined>;
+
+/**
+ * One key per person: issued the first time, and from then on the value kept on this laptop,
+ * whichever agent asks. A key that exists on the gateway but is not kept here (issued on another
+ * laptop, or before keys were kept) needs --rotate.
+ */
+async function holdKey(
+  options: ConnectOptions,
+  io: GatewayIo,
+  membership: Membership,
+  holders: AgentId[],
+): Promise<HeldKey> {
+  const team = client(io);
   try {
-    return await client(io).issueGatewayKey({
+    const issued = await team.issueGatewayKey({
       ...(options.run ? { kind: "run" as const, run_id: options.run } : {}),
       ...(options.rotate ? { rotate: true } : {}),
     });
+    return { ...issued, reused: false };
   } catch (error) {
-    const code = (error as { code?: string }).code;
-    if (code === "key_exists") {
-      throw new Error(
-        "You have a gateway key already, and its value was shown once when it was issued. Run again with --rotate for a new value; the old one stops working.",
-      );
-    }
-    throw error;
+    if ((error as { code?: string }).code !== "key_exists") throw error;
   }
-}
-
-/** Notes about the laptop that connect can't change: shell variables and file modes. */
-function laptopNotes(agent: ConnectAgent, files: AppliedChange[], io: GatewayIo): string[] {
-  const notes: string[] = [];
-  const set = CLAUDE_SHELL_RIVALS.filter((name) => (io.env[name] ?? "").trim() !== "");
-  if (agent === "claude-code" && set.length > 0) {
-    notes.push(
-      `${set.join(" and ")} ${set.length > 1 ? "are" : "is"} set in your shell: unset ${set.length > 1 ? "them" : "it"}, or Claude Code may go past the gateway or send that key too.`,
+  if (options.run) {
+    throw new Error(
+      `Run ${options.run} has a gateway key already, and its value was shown once when it was issued. Run again with --rotate for a new value; the old one stops working.`,
     );
   }
+  const stored = readStoredKey(scope(io).home, membership);
+  if (stored) {
+    const status = await team.gateway();
+    return {
+      key: status.key,
+      value: stored.value,
+      base_url: status.base_url ?? stored.base_url,
+      tool: status.tool ?? stored.tool,
+      reused: true,
+    };
+  }
+  const names = holders.map((id) => AGENT_NAMES[id]);
+  throw new Error(
+    `You have a gateway key already, and its value is not kept on this laptop: it was shown once, when it was issued${names.length > 0 ? `, and is in the settings of ${names.join(" and ")}` : ""}. Run again with --rotate for a new value${names.length > 0 ? ": connect rewrites those settings with it too" : ""}. Anything else that holds the old value (another laptop, settings you pasted) stops working.`,
+  );
+}
+
+/** Writes a plan and records it for disconnect; returns the agent config files it changed. */
+function writePlan(plan: AgentConfigPlan, io: GatewayIo): AppliedChange[] {
+  const applied = applyAgentConfig(plan, io.now ? { now: io.now } : {});
+  const made = new Map<string, string>();
+  for (const file of applied) if (file.madeDir) made.set(file.path, file.madeDir);
+  recordApplied(
+    connectRecordPath(scope(io).home),
+    [plan],
+    new Map(applied.map((file) => [file.path, file.backup])),
+    GATEWAY_RECORD_SCHEMA,
+    made,
+  );
+  return applied.filter((file) =>
+    plan.changes.some((c) => c.path === file.path && c.role === "config"),
+  );
+}
+
+/** Notes about the laptop that connect can't change: file modes. */
+function laptopNotes(files: AppliedChange[], io: GatewayIo): string[] {
+  const notes: string[] = [];
   const { home } = scope(io);
   for (const file of files) {
     if (file.action === "deleted") continue;
@@ -287,12 +500,23 @@ function laptopNotes(agent: ConnectAgent, files: AppliedChange[], io: GatewayIo)
   return notes;
 }
 
-function printConnect(report: ConnectReport, io: GatewayIo): ConnectReport {
+function printConnect(report: ConnectReport, io: GatewayIo, run: boolean): ConnectReport {
   const { write } = io;
   const home = scope(io).home;
+  for (const warning of report.warnings) write(`Warning: ${warning}`);
+  if (report.warnings.length > 0) write("");
   if (report.key) {
-    write(`Gateway key ${report.key.name}. Limits: ${budgetText(report.key.budgets)}.`);
-    write("Its value is shown this once; selfhost keeps no copy. It is not a provider key.");
+    const limits = `Limits: ${budgetText(report.key.budgets)}.`;
+    if (report.reused) {
+      write(`Gateway key ${report.key.name}, the one your other agents here use. ${limits}`);
+    } else {
+      write(`Gateway key ${report.key.name}. ${limits}`);
+      write(
+        run
+          ? "Its value is shown this once; selfhost keeps no copy. It is not a provider key."
+          : `Its value is shown here and kept only on this laptop, in ${tilde(gatewayKeyPath(home), home)} (mode 600), so every agent you connect uses this one key. It is not a provider key.`,
+      );
+    }
     write("");
   }
   if (report.status === "connected") {
@@ -318,19 +542,26 @@ function done(report: ConnectReport, options: ConnectOptions, io: GatewayIo): Co
     io.write(JSON.stringify(report, null, 2));
     return report;
   }
-  return printConnect(report, io);
+  return printConnect(report, io, options.run !== undefined);
 }
 
-const empty = (agent: string, status: ConnectReport["status"], notes: string[]): ConnectReport => ({
+const empty = (
+  agent: string,
+  status: ConnectReport["status"],
+  notes: string[],
+  warnings: string[] = [],
+): ConnectReport => ({
   schema: "selfhost.gateway_connect/v1",
   agent,
   status,
   key: null,
+  reused: false,
   value: null,
   base_url: null,
   settings: null,
   target: null,
   files: [],
+  warnings,
   notes,
 });
 
@@ -353,6 +584,7 @@ export async function gatewayConnect(
   }
   const { agent } = target;
   const id = AGENT_ID[agent];
+  const warnings = shellWarnings(agent, io.env);
   if (options.managed && agent !== "claude-code") {
     throw new Error("--managed is for claude-code: other agents have no managed env settings");
   }
@@ -368,10 +600,15 @@ export async function gatewayConnect(
         : subscriptionLogin(id, { home, env: io.env, platform, keychain: io.probes?.keychain });
     if (login) {
       return done(
-        empty(agent, "subscription", [
-          `${AGENT_NAMES[id]} is signed in with ${login.plan} (${isAbsolute(login.source) ? tilde(login.source, home) : login.source}). That traffic goes straight to the vendor and never reaches the gateway, so the gateway's budgets and usage cover API key traffic only. Nothing was changed and no key was issued.`,
-          `To send ${AGENT_NAMES[id]} through the gateway on API billing instead, run again with --api-billing.`,
-        ]),
+        empty(
+          agent,
+          "subscription",
+          [
+            `${AGENT_NAMES[id]} is signed in with ${login.plan} (${isAbsolute(login.source) ? tilde(login.source, home) : login.source}). That traffic goes straight to the vendor and never reaches the gateway, so the gateway's budgets and usage cover API key traffic only. Nothing was changed and no key was issued.`,
+            `To send ${AGENT_NAMES[id]} through the gateway on API billing instead, run again with --api-billing.`,
+          ],
+          warnings,
+        ),
         options,
         io,
       );
@@ -384,50 +621,94 @@ export async function gatewayConnect(
     }
   }
 
-  const issued = await issue(options, io);
-  const spec = gatewaySpec(issued.tool, issued.base_url, issued.value);
+  const membership = membershipOf(io);
+  // The person's key is shared by every agent connected here: a new value goes into all of them.
+  const others = options.run
+    ? []
+    : connectedAgents(home).filter((other) => !(writes && other === id));
+  if (options.rotate && others.length > 0) {
+    const stuck = others.flatMap((other) =>
+      blocking(planConnect(other, PLACEHOLDER, io)).map(
+        (item) => `${AGENT_NAMES[other]}, ${itemText(item, home)}`,
+      ),
+    );
+    if (stuck.length > 0) {
+      throw new Error(
+        `Nothing was changed and the key was not rotated: these settings hold your key and can't take the new value: ${stuck.join("; ")}. Fix them, or take that agent off the gateway first (selfhost gateway disconnect <agent>).`,
+      );
+    }
+  }
+
+  const held = await holdKey(options, io, membership, others);
+  if (!options.run && !held.reused) storeKey(home, membership, held);
+  const { spec, note: modelsNote } = await specFor(agent, held, io);
   const kit = options.managed
     ? claudeManagedKit(spec, platform)
-    : connectKit(agent, issued.tool, spec);
+    : connectKit(agent, held.tool, spec);
   const report: ConnectReport = {
     schema: "selfhost.gateway_connect/v1",
     agent,
     status: "printed",
-    key: issued.key,
-    value: issued.value,
-    base_url: issued.base_url,
+    key: held.key,
+    reused: held.reused,
+    value: held.value,
+    base_url: held.base_url,
     settings: kit.text,
     target: kit.target,
     files: [],
-    notes: kit.notes,
+    warnings,
+    notes: [...(modelsNote ? [modelsNote] : []), ...kit.notes],
   };
-  if (!writes || !id) return done(report, options, io);
+
+  // A new value: rewrite every other agent connected here, so none is left with the old one.
+  const rewritten: AppliedChange[] = [];
+  const rewriteNotes: string[] = [];
+  if (!held.reused) {
+    for (const other of others) {
+      const otherAgent = AGENT_OF[other];
+      if (!otherAgent) continue;
+      const { spec: otherSpec } = await specFor(otherAgent, held, io);
+      const plan = planConnect(other, otherSpec, io);
+      const stops = blocking(plan);
+      if (stops.length > 0) {
+        rewriteNotes.push(
+          `Not updated, so ${AGENT_NAMES[other]} still has the old value: ${stops.map((item) => itemText(item, home)).join("; ")}`,
+        );
+        continue;
+      }
+      rewritten.push(...writePlan(plan, io));
+    }
+    if (options.rotate) {
+      rewriteNotes.push(
+        "The old value no longer works. Paste the new one wherever you put the old one yourself (--print, --managed, env, another laptop).",
+      );
+    }
+  }
+
+  if (!writes || !id) {
+    report.files = rewritten;
+    report.notes = [...rewriteNotes, ...report.notes];
+    return done(report, options, io);
+  }
 
   const plan = planConnect(id, spec, io);
   const stops = blocking(plan);
   if (stops.length > 0) {
     // The files changed since the check: hand over the settings instead of losing the key.
+    report.files = rewritten;
     report.notes = [
       ...stops.map((item) => `Not written, ${itemText(item, home)}`),
+      ...rewriteNotes,
       ...report.notes,
     ];
     return done(report, options, io);
   }
-  const applied = applyAgentConfig(plan, io.now ? { now: io.now } : {});
-  recordApplied(
-    connectRecordPath(home),
-    [plan],
-    new Map(applied.map((file) => [file.path, file.backup])),
-    GATEWAY_RECORD_SCHEMA,
-  );
-  const files = applied.filter((file) =>
-    plan.changes.some((c) => c.path === file.path && c.role === "config"),
-  );
+  const files = [...writePlan(plan, io), ...rewritten];
   report.status = "connected";
   report.settings = null;
   report.target = null;
   report.files = files;
-  report.notes = [...laptopNotes(agent, files, io), ...kit.notes];
+  report.notes = [...laptopNotes(files, io), ...rewriteNotes, ...report.notes];
   return done(report, options, io);
 }
 
@@ -439,11 +720,14 @@ export interface DisconnectReport {
   files: UndoFile[];
   /** Files left as is; their record entries are kept for another try. */
   left: number;
+  /** The kept key's file, removed once no agent on this laptop is connected. */
+  key_removed: string | null;
 }
 
 /**
  * Puts back, byte for byte, the files `selfhost gateway connect` changed for one agent or all of
- * them, while each still holds what connect wrote. The key stays on the gateway.
+ * them, while each still holds what connect wrote. The key stays on the gateway; its copy on this
+ * laptop goes once no agent here uses it.
  */
 export function gatewayDisconnect(
   agentName: string | undefined,
@@ -460,21 +744,30 @@ export function gatewayDisconnect(
   const record = connectRecordPath(home);
   const dryRun = options.dryRun ?? false;
   const result = undoRecorded(record, dryRun, { schema: GATEWAY_RECORD_SCHEMA, only });
+  const keyPath = gatewayKeyPath(home);
+  let removed: string | null = null;
+  if (!dryRun && connectedAgents(home).length === 0 && existsSync(keyPath)) {
+    rmSync(keyPath, { force: true });
+    removed = keyPath;
+  }
   const report: DisconnectReport = {
     schema: "selfhost.gateway_disconnect/v1",
     dry_run: dryRun,
     record,
     ...result,
+    key_removed: removed,
   };
   if (options.json) {
     io.write(JSON.stringify(report, null, 2));
     return report;
   }
   const { write } = io;
+  const removedText = `Deleted ${removed ? tilde(removed, home) : ""}, the copy of your key: no agent here uses it now. The key stays on the gateway; the next connect asks for --rotate to get a new value.`;
   if (report.files.length === 0) {
     write(
       `Nothing to undo: selfhost gateway connect wrote no files${agentName ? ` for ${agentName}` : ""} on this laptop.`,
     );
+    if (removed) write(removedText);
     return report;
   }
   for (const file of report.files) {
@@ -487,7 +780,8 @@ export function gatewayDisconnect(
       );
     } else write(`${dryRun ? "Would delete" : "Deleted"} ${path}: connect created it.`);
   }
-  if (!dryRun) {
+  if (removed) write(removedText);
+  else if (!dryRun) {
     write(
       "The key itself stays on the gateway; connect --rotate replaces its value if it got out.",
     );

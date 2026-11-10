@@ -2,7 +2,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { composePolicy, parseConfig } from "@selfhost/schema";
 import { describe, expect, it } from "vitest";
-import { IntegrationEditError, listIntegrations, setIntegrationTable } from "../src/index.js";
+import {
+  IntegrationEditError,
+  listIntegrations,
+  setIntegration,
+  setIntegrationTable,
+} from "../src/index.js";
 
 const FIXTURE = readFileSync(
   join(import.meta.dirname, "../../schema/fixtures/config/valid/integrations.toml"),
@@ -92,6 +97,46 @@ high_risk_threshold = 60
     const dotted = 'version = 1\n[integrations]\nrouter.tool = "bifrost"\n';
     expect(() => setIntegrationTable(dotted, "router", null)).toThrow(/dotted keys/);
     expect(() => setIntegrationTable("version = \n", "router", null)).toThrow(/not valid TOML/);
+  });
+});
+
+describe("setIntegration for the runtime", () => {
+  it("writes [runtime] default and [runtime.providers.<tool>], keeping the rest", () => {
+    const text =
+      '# team\nversion = 1\n\n[runtime]\nallow = ["e2b", "daytona"]\n\n[background]\nmax_retries = 1\n';
+    const next = setIntegration(text, "runtime", { tool: "e2b", template: "base" });
+    expect(next).toBe(
+      '# team\nversion = 1\n\n[runtime]\ndefault = "e2b"\nallow = ["e2b", "daytona"]\n\n[background]\nmax_retries = 1\n\n[runtime.providers.e2b]\ntemplate = "base"\n',
+    );
+    const parsed = configOf(next);
+    expect(parsed.runtime).toMatchObject({
+      default: "e2b",
+      providers: { e2b: { template: "base" } },
+    });
+    // Another tool replaces default in place; none takes default and its settings out.
+    const daytona = setIntegration(next, "runtime", { tool: "daytona" });
+    expect(daytona).toContain('[runtime]\ndefault = "daytona"\nallow');
+    const removed = setIntegration(next, "runtime", null);
+    expect(removed).not.toContain("default");
+    expect(removed).not.toContain("[runtime.providers.e2b]");
+    expect(configOf(removed).runtime).toEqual({
+      allow: ["e2b", "daytona"],
+      run_mode: "concurrent",
+    });
+  });
+
+  it("moves a deprecated [integrations.runtime] into [runtime]", () => {
+    const text = 'version = 1\n\n[integrations.runtime]\ntool = "e2b"\ntemplate = "base"\n';
+    const next = setIntegration(text, "runtime", { tool: "modal" });
+    expect(next).not.toContain("[integrations.runtime]");
+    expect(next).toContain('[runtime]\ndefault = "modal"');
+    const result = parseConfig(next);
+    expect(result.ok && result.warnings).toBeUndefined();
+  });
+
+  it("refuses a [runtime] it cannot change line by line", () => {
+    const text = 'version = 1\nruntime.allow = ["e2b"]\n';
+    expect(() => setIntegration(text, "runtime", { tool: "e2b" })).toThrow(IntegrationEditError);
   });
 });
 

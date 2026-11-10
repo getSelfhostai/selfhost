@@ -1,5 +1,5 @@
 import { openLedger } from "@selfhost/ledger";
-import { fakeRuntime, sandboxEvent } from "@selfhost/runtime";
+import { fakeRuntime, isRefused, sandboxEvent } from "@selfhost/runtime";
 import { describe, expect, it } from "vitest";
 import { serverRuntime } from "../src/runtime.js";
 
@@ -19,7 +19,8 @@ describe("the server's runtime seam", () => {
       });
       const config = { budget: { runtime_daily_usd: 5 } };
       const adapter = await seam(run, config);
-      const sandbox = await adapter?.create({ timeoutMinutes: 10 });
+      if (isRefused(adapter)) throw new Error(adapter.refusal.message);
+      const sandbox = await adapter.create({ timeoutMinutes: 10 });
       await sandbox?.stop();
       const stopped = await ledger.query({ kind: "sandbox.stopped", team: "web" });
       expect(stopped.events).toHaveLength(1);
@@ -37,9 +38,30 @@ describe("the server's runtime seam", () => {
         ],
         { team: "web" },
       );
-      expect(await seam({ ...run, id: "run-2" }, config)).toBeUndefined();
+      const refused = await seam({ ...run, id: "run-2" }, config);
+      expect(refused).toMatchObject({ refusal: { rule: "budget.runtime_daily_usd" } });
       expect(log[0]).toContain("budget.runtime_daily_usd");
       expect(log[0]).toContain("$6.00");
+    } finally {
+      await ledger.close();
+    }
+  });
+
+  it("answers a missing key with the variable to set on the team server", async () => {
+    const ledger = await openLedger({ dataDir: "memory://" });
+    try {
+      const log: string[] = [];
+      const seam = serverRuntime(ledger, { env: {}, now: () => NOW, log: (l) => log.push(l) });
+      const refused = await seam(run, { runtime: { default: "e2b" } });
+      expect(refused).toEqual({
+        refusal: {
+          rule: "runtime.key",
+          message: expect.stringContaining(
+            "Set the environment variable E2B_API_KEY (api_key_env) on the team server",
+          ),
+        },
+      });
+      expect(log[0]).toContain("E2B_API_KEY");
     } finally {
       await ledger.close();
     }

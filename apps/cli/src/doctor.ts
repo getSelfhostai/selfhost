@@ -42,6 +42,8 @@ export interface DoctorReport {
     rules: number;
     enforced: number;
     errors: { field: string; line: number | null; message: string }[];
+    /** Settings that still work but should change: a deprecated [integrations.runtime]. */
+    warnings: string[];
   } | null;
   /**
    * The built-in guardrails the hooks apply here, from selfhost.toml or the defaults: they
@@ -103,7 +105,15 @@ export function doctorReport({
     team_policy: location.teamPolicy ?? null,
   };
   if (!existsSync(location.path)) {
-    report.config = { ...base, exists: false, valid: null, rules: 0, enforced: 0, errors: [] };
+    report.config = {
+      ...base,
+      exists: false,
+      valid: null,
+      rules: 0,
+      enforced: 0,
+      errors: [],
+      warnings: [],
+    };
     return report;
   }
   const result = parseConfig(readFileSync(location.path, "utf8"));
@@ -122,6 +132,9 @@ export function doctorReport({
       rules: rules.length,
       enforced,
       errors: [],
+      warnings: [
+        ...new Set([...(result.warnings ?? []), ...(used.ok ? (used.warnings ?? []) : [])]),
+      ],
     };
   } else {
     const errors = result.errors.map(({ field, line, message }) => ({
@@ -129,7 +142,15 @@ export function doctorReport({
       line: line ?? null,
       message,
     }));
-    report.config = { ...base, exists: true, valid: false, rules: 0, enforced: 0, errors };
+    report.config = {
+      ...base,
+      exists: true,
+      valid: false,
+      rules: 0,
+      enforced: 0,
+      errors,
+      warnings: [],
+    };
   }
   return report;
 }
@@ -190,6 +211,7 @@ export function doctor(options: DoctorOptions): number {
       "status",
       `valid, ${config.rules} rules (${config.enforced} enforced, ${config.rules - config.enforced} observe or off)`,
     );
+    for (const warning of config.warnings) row("warning", warning);
     guardsRow();
     const [first, ...rest] = reportLines(report.enforcement);
     if (first !== undefined) {

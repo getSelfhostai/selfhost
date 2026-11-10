@@ -74,6 +74,9 @@ in `~/.selfhost/spool` (readable by this user only) until the next import. With 
   `selfhost import --watch` running to see them as they happen.
 - Look around with `selfhost spend`, `selfhost review list`, `selfhost policy report` and `selfhost scan`. `selfhost console` opens the same ledger in the web console for a person to read.
 - If `selfhost` is not on PATH, each hook looks for it when it runs: `selfhost` on PATH by then,
-  else the node binary and script that ran init while both exist, else `npx selfhostai`.
+  else the node binary and script that ran init while both exist. If neither is there, the hook
+  prints one line pointing at the install docs and exits 1 (agents show it without blocking);
+  `SELFHOST_NPX=1` in the agent's environment makes it run `npx -y selfhostai` instead, for when
+  the package is on npm.
   `selfhost doctor` says when it is not on PATH. Install it globally and run `selfhost init`
   again for the plain `selfhost hook` command.

@@ -77,7 +77,7 @@ type Unstamped = Omit<IntegrationState, "checked_at">;
 const NOT_CONFIGURED = (kind: IntegrationKind): Unstamped => ({
   tool: null,
   status: "not_configured",
-  detail: `No ${kind} picked. Set [integrations.${kind}] in selfhost.toml, or selfhost integrations set ${kind} <tool>.`,
+  detail: `No ${kind} picked. Set ${kind === "runtime" ? "[runtime] default" : `[integrations.${kind}]`} in selfhost.toml, or selfhost integrations set ${kind} <tool>.`,
   settings: {},
 });
 

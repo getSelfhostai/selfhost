@@ -75,6 +75,8 @@ export interface Integration {
   status: IntegrationStatus;
   detail: string;
   settings: Record<string, unknown>;
+  /** server_environment: the server's own setup, shown while the team's policy picks none. */
+  source?: "policy" | "server_environment";
 }
 
 /** GET /v1/integrations; PUT /v1/integrations/{kind} takes { tool, settings }. */

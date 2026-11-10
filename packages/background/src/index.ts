@@ -66,6 +66,7 @@ export {
   type RunGitHub,
   type RunStore,
   type RuntimeFor,
+  type RuntimeRefused,
   type SendAlert,
   type SettingsFor,
   systemClock,

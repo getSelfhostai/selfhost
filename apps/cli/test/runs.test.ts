@@ -176,7 +176,8 @@ describe("selfhost run", () => {
     });
     expect(badAgent.err).toContain("--agent: expected one of claude, codex, opencode, goose");
     const solo = await run(["run", "x", "--repo", "acme/web"], { fetch: api.fetch });
-    expect(solo.err).toContain("Join a team first");
+    expect(solo.err).toContain("Join a team first: selfhost join <server> <invite>");
+    expect(solo.err).not.toContain("team join");
   });
 });
 

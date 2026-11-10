@@ -117,13 +117,47 @@ describe("selfhost runtime", () => {
       allowed: false,
       key_env: ["MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET"],
     });
-    expect(rows.opensandbox).toMatchObject({ key_set: true, usd_per_hour: 0.02 });
+    expect(rows.opensandbox).toMatchObject({
+      key_set: true,
+      key: "not_needed",
+      usd_per_hour: 0.02,
+    });
     expect(rows.coder).toMatchObject({ usd_per_hour: null, sdk: null });
     expect(attempts).toHaveLength(0);
 
     const text = await run(["runtime", "list"], { cwd: dir.root, env: {} });
-    expect(text.out).toContain("missing: DAYTONA_API_KEY");
+    expect(text.out).toContain("not set: DAYTONA_API_KEY");
     expect(text.out).toContain("your rate");
+    // A local OpenSandbox server runs without a key; never "set" for a variable that is not.
+    expect(text.out).toMatch(/opensandbox +yes +no key needed for a local server/);
+    expect(text.out).not.toContain("set (OPEN_SANDBOX_API_KEY)");
+    const remote = repo(
+      'version = 1\n[runtime.providers.opensandbox]\nurl = "https://sandbox.example.com"\napi_key_env = "OPENSANDBOX_KEY"\n',
+    );
+    const unset = await run(["runtime", "list"], { cwd: remote.root, env: {} });
+    expect(unset.out).toMatch(/opensandbox +yes +not set: OPENSANDBOX_KEY/);
+  });
+
+  it("says a deprecated [integrations.runtime] once, and uses it as [runtime] default", async () => {
+    const dir = repo('version = 1\n[integrations.runtime]\ntool = "e2b"\n');
+    const listed = await run(["runtime", "list"], { cwd: dir.root, env: {} });
+    expect(listed.out.split("\n")[0]).toBe(
+      'Warning: [integrations.runtime] is deprecated: it is read as [runtime] default = "e2b"; move it there.',
+    );
+    expect(listed.out).toContain("e2b (default)");
+    const json = JSON.parse((await run(["runtime", "list", "--json"], { cwd: dir.root })).out);
+    expect(json.runtimes[0]).toMatchObject({ runtime: "e2b", default: true });
+  });
+
+  it("exits 1 when a reach check fails, with no runtimes named", async () => {
+    const dir = repo('version = 1\n[runtime]\nallow = ["e2b", "daytona"]\n');
+    const checked = await run(["runtime", "check", "--reach"], {
+      cwd: dir.root,
+      env: {},
+      fetch: async () => new Response("{}", { status: 401 }),
+    });
+    expect(checked.out).toContain("e2b: error.");
+    expect(checked.code).toBe(1);
   });
 
   it("checks each allowed runtime's key, and runs the conformance suite on request", async () => {
@@ -206,6 +240,24 @@ describe("selfhost runtime reap", () => {
       ]);
       expect(lines.join("\n")).toContain("would be stopped");
       expect(await left.status()).toBe("running");
+
+      // A runtime with a key that the team set up nowhere, and has no sandboxes on, is not
+      // opened: its SDK is never loaded.
+      const opened: string[] = [];
+      const quiet = await runRuntimeReap(
+        { dryRun: true },
+        {
+          ...io,
+          env: { E2B_API_KEY: "k", DAYTONA_API_KEY: "d" },
+          openAdapter: (kind: string) => {
+            opened.push(kind);
+            return io.openAdapter(kind);
+          },
+        },
+        ledger,
+      );
+      expect(quiet.errors).toEqual([]);
+      expect(opened.sort()).toEqual(["e2b", "opensandbox"]);
 
       const done = await runRuntimeReap({}, io, ledger);
       expect(done.leftovers[0]?.stopped).toBe(true);

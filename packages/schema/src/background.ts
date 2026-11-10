@@ -470,7 +470,7 @@ export const StartRunRequestSchema = Type.Object(
     repo: RepoSlug({ description: "Repository as owner/name." }),
     agent: Type.Optional(StringEnum(BACKGROUND_AGENTS)),
     runtime: Type.Optional(
-      NonEmpty({ description: "Runtime kind; default: the team's [integrations.runtime]." }),
+      NonEmpty({ description: "Runtime kind; default: the team's [runtime] default." }),
     ),
     team: Type.Optional(NonEmpty({ description: "Default: the caller's team." })),
     base: Type.Optional(NonEmpty({ description: "Branch to start from; default: the repo's." })),

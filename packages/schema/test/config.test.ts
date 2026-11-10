@@ -311,3 +311,35 @@ to = ["role:boss", "team:", "@acme/", "@-bad"]
     expect(parsed.ok).toBe(false);
   });
 });
+
+describe("[runtime] and the deprecated [integrations.runtime]", () => {
+  it("reads [integrations.runtime] as [runtime] default and providers, with one warning", () => {
+    const result = parseConfig(
+      'version = 1\n[integrations.runtime]\ntool = "e2b"\napi_key_env = "TEAM_E2B"\n',
+    );
+    if (!result.ok) throw new Error("expected a valid config");
+    expect(result.config.runtime).toEqual({
+      default: "e2b",
+      run_mode: "concurrent",
+      providers: { e2b: { api_key_env: "TEAM_E2B" } },
+    });
+    expect(result.warnings).toEqual([
+      '[integrations.runtime] is deprecated: it is read as [runtime] default = "e2b" with [runtime.providers.e2b]; move it there.',
+    ]);
+  });
+
+  it("lets [runtime] win, and shows the runtime it picks as the runtime integration", () => {
+    const result = parseConfig(
+      'version = 1\n[runtime]\ndefault = "daytona"\n[runtime.providers.daytona]\napi_key_env = "D"\n[integrations.runtime]\ntool = "e2b"\n',
+    );
+    if (!result.ok) throw new Error("expected a valid config");
+    expect(result.config.runtime?.default).toBe("daytona");
+    expect(result.warnings?.[0]).toContain('[runtime] default = "daytona" wins');
+    expect(result.config.integrations.runtime).toEqual({ tool: "daytona", api_key_env: "D" });
+
+    const plain = parseConfig('version = 1\n[runtime]\ndefault = "modal"\n');
+    if (!plain.ok) throw new Error("expected a valid config");
+    expect(plain.warnings).toBeUndefined();
+    expect(plain.config.integrations.runtime).toEqual({ tool: "modal" });
+  });
+});

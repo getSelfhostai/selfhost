@@ -41,6 +41,7 @@ import {
   type RunGitHub,
   type RunStore,
   type RuntimeFor,
+  type RuntimeRefused,
   type SendAlert,
   type SettingsFor,
   systemClock,
@@ -171,6 +172,15 @@ const firstLine = (text: string, max = 72) => {
 };
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+/**
+ * Why a run has no runtime, as the person who started it sees it: the runtime seam's own reason
+ * (the rule and what to change) when it gave one.
+ */
+function noRuntime(team: string, found: RuntimeRefused | undefined): string {
+  if (found) return `No runtime for team ${team} (${found.refusal.rule}): ${found.refusal.message}`;
+  return `No runtime is set up for team ${team}: set [runtime] default in its selfhost.toml, with that runtime's key in the team server's environment`;
+}
 
 export function createRunner(options: RunnerOptions): Runner {
   const { store, events, clock = systemClock } = options;
@@ -376,9 +386,9 @@ export function createRunner(options: RunnerOptions): Runner {
         ),
       );
 
-      const adapter = await options.runtime(entry.run, settings.config);
-      if (!adapter)
-        throw new RunFailure("No runtime is set up for this team ([integrations.runtime])");
+      const found = await options.runtime(entry.run, settings.config);
+      if (!found || "refusal" in found) throw new RunFailure(noRuntime(entry.run.team, found));
+      const adapter = found;
 
       const prepare = options.credentials ?? noCredentials;
       let granted: Awaited<ReturnType<PrepareCredentials>>;
@@ -821,7 +831,7 @@ export function createRunner(options: RunnerOptions): Runner {
         repo: request.repo,
         task: request.task,
         agent,
-        runtime: request.runtime ?? settings.config.integrations.runtime?.tool ?? "unset",
+        runtime: request.runtime ?? settings.config.runtime?.default ?? "unset",
         state: "queued",
         reason: null,
         person,
@@ -844,14 +854,10 @@ export function createRunner(options: RunnerOptions): Runner {
         gate: null,
       };
       const adapter = await options.runtime(run, settings.config);
-      if (!adapter) {
+      if (!adapter || "refusal" in adapter) {
         return refuse(
           request,
-          {
-            refused: `No runtime is set up for team ${request.team}: set [integrations.runtime] in its selfhost.toml`,
-            status: 503,
-            code: "no_runtime",
-          },
+          { refused: noRuntime(request.team, adapter), status: 503, code: "no_runtime" },
           org,
         );
       }
@@ -931,7 +937,8 @@ export function createRunner(options: RunnerOptions): Runner {
         if (run.sandbox_id) {
           try {
             const { settings } = await settingsOf(run.team);
-            const adapter = await options.runtime(run, settings.config);
+            const found = await options.runtime(run, settings.config);
+            const adapter = found && !("refusal" in found) ? found : undefined;
             await (await adapter?.get(run.sandbox_id))?.stop();
           } catch (error) {
             log(

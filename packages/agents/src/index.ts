@@ -41,7 +41,9 @@ export type {
 } from "./config/types.js";
 export {
   CURSOR_HOOK_EVENTS,
+  DEFAULT_GATEWAY_MODELS,
   GATEWAY_PROVIDER,
+  GOOSE_CONTEXT_LIMIT,
   gooseGatewayProvider,
   OPENCODE_PLUGIN_FILE,
   PRE_TOOL_HOOK_EVENTS,

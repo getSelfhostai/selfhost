@@ -51,7 +51,10 @@ beforeAll(async () => {
     })
   ).json()) as CreateTeamResponse;
   tokens = {};
-  const people = ["ada", "ben", "cy", "di", "ed", "flo", "gus", "hal", "ivy"];
+  const people = [
+    ...["ada", "ben", "cy", "di", "ed", "flo", "gus", "hal", "ivy"],
+    ...["jo", "kim", "lu", "max", "ned"],
+  ];
   for (const person of people.map((name) => `${name}@example.com`)) {
     const res = await app.request(`${SERVER}/v1/join`, {
       method: "POST",
@@ -108,9 +111,12 @@ describe("selfhost gateway connect", () => {
     });
     expect(statSync(settings).mode & 0o777).toBe(0o600);
 
-    const again = await run(["gateway", "connect", "claude-code"], deps);
-    expect(again.code).toBe(1);
-    expect(again.err).toContain("--rotate");
+    // Asking again reuses the key kept on this laptop: one key per person.
+    const again = await run(["gateway", "connect", "claude-code", "--json"], deps);
+    expect(again.code).toBe(0);
+    expect(JSON.parse(again.out)).toMatchObject({ reused: true, value: report.value });
+    const kept = home.path(".selfhost/gateway-key.json");
+    expect(statSync(kept).mode & 0o777).toBe(0o600);
     const rotated = await run(["gateway", "connect", "claude", "--rotate"], deps);
     expect(rotated.code).toBe(0);
     expect(rotated.out).toContain(`Updated ~/.claude/settings.json`);
@@ -123,6 +129,8 @@ describe("selfhost gateway connect", () => {
     expect(undo.out).toContain("Restored ~/.claude/settings.json byte for byte");
     expect(readFileSync(settings, "utf8")).toBe(original);
     expect(existsSync(home.path(".selfhost/gateway-connect.json"))).toBe(false);
+    expect(undo.out).toContain("Deleted ~/.selfhost/gateway-key.json");
+    expect(existsSync(kept)).toBe(false);
     const nothing = await run(["gateway", "connect", "claude-code", "--undo"], deps);
     expect(nothing.out).toContain("Nothing to undo");
   });
@@ -173,6 +181,112 @@ describe("selfhost gateway connect", () => {
     expect(readFileSync(codex, "utf8")).toBe(codexToml);
     expect(existsSync(home.path(".config/opencode/opencode.json"))).toBe(false);
     expect(existsSync(goose)).toBe(false);
+  });
+
+  it("connects a second agent with the same key, and rotate rewrites every agent", async () => {
+    const { home, deps } = laptop("jo@example.com");
+    const settings = home.write(".claude/settings.json", "{}\n");
+    const first = JSON.parse(
+      (await run(["gateway", "connect", "claude-code", "--json"], deps)).out,
+    );
+    const codex = await run(["gateway", "connect", "codex", "--json"], deps);
+    expect(codex.code).toBe(0);
+    const second = JSON.parse(codex.out) as ConnectReport;
+    expect(second).toMatchObject({ status: "connected", reused: true, value: first.value });
+    const codexToml = () => {
+      const toml = parseToml(readFileSync(home.path(".codex/config.toml"), "utf8")) as {
+        model_providers: { selfhost: { experimental_bearer_token: string } };
+      };
+      return toml.model_providers.selfhost.experimental_bearer_token;
+    };
+    expect(codexToml()).toBe(first.value);
+    const env = await run(["gateway", "connect", "env"], deps);
+    expect(env.code).toBe(0);
+    expect(env.out).toContain(`export OPENAI_API_KEY=${first.value}`);
+    expect(env.out).toContain("the one your other agents here use");
+
+    const rotated = JSON.parse(
+      (await run(["gateway", "connect", "codex", "--rotate", "--json"], deps)).out,
+    ) as ConnectReport;
+    expect(rotated.value).not.toBe(first.value);
+    expect(codexToml()).toBe(rotated.value);
+    expect(JSON.parse(readFileSync(settings, "utf8")).env.ANTHROPIC_AUTH_TOKEN).toBe(rotated.value);
+    expect(rotated.files.map((file) => file.path)).toContain(settings);
+    expect(rotated.notes.join(" ")).toContain("old value no longer works");
+
+    // Disconnecting both puts each file back and drops the kept key.
+    const undo = await run(["gateway", "disconnect"], deps);
+    expect(readFileSync(settings, "utf8")).toBe("{}\n");
+    expect(undo.out).toContain("Deleted ~/.selfhost/gateway-key.json");
+    const again = await run(["gateway", "connect", "codex"], deps);
+    expect(again.code).toBe(1);
+    expect(again.err).toContain("not kept on this laptop");
+    expect(again.err).toContain("--rotate");
+  });
+
+  it("refuses to rotate while a connected agent's settings can't take the new value", async () => {
+    const { home, deps } = laptop("kim@example.com");
+    const settings = home.write(".claude/settings.json", "{}\n");
+    expect((await run(["gateway", "connect", "claude-code"], deps)).code).toBe(0);
+    const held = JSON.parse(readFileSync(settings, "utf8"));
+    writeFileSync(settings, JSON.stringify({ ...held, apiKeyHelper: "~/bin/key.sh" }));
+    const before = readFileSync(settings, "utf8");
+    const refused = await run(["gateway", "connect", "env", "--rotate"], deps);
+    expect(refused.code).toBe(1);
+    expect(refused.err).toContain("key was not rotated");
+    expect(refused.err).toContain("Claude Code");
+    expect(refused.err).toContain("apiKeyHelper");
+    expect(readFileSync(settings, "utf8")).toBe(before);
+    // The old value still works: the gateway key was not touched.
+    expect((await run(["gateway", "connect", "env"], deps)).out).toContain(
+      held.env.ANTHROPIC_AUTH_TOKEN,
+    );
+  });
+
+  it("warns that ANTHROPIC_API_KEY in the shell would go past the gateway", async () => {
+    const { deps } = laptop("lu@example.com");
+    const env = { ANTHROPIC_API_KEY: "sk-ant-mine" };
+    const printed = await run(["gateway", "connect", "claude-code", "--print"], { ...deps, env });
+    expect(printed.code).toBe(0);
+    expect(printed.out.split("\n")[0]).toMatch(/^Warning: ANTHROPIC_API_KEY is set in your shell/);
+    expect(printed.out).toContain("outside the gateway's budgets");
+    const json = await run(["gateway", "connect", "claude-code", "--json"], { ...deps, env });
+    expect((JSON.parse(json.out) as ConnectReport).warnings).toHaveLength(1);
+    const codex = await run(["gateway", "connect", "codex", "--print"], { ...deps, env });
+    expect(codex.out).not.toContain("Warning:");
+  });
+
+  it("lists the gateway's models for Goose and removes the folder it made on disconnect", async () => {
+    const { home, deps } = laptop("max@example.com");
+    home.write(".config/goose/config.yaml", "GOOSE_PROVIDER: anthropic\n");
+    const models: (url: string, init: RequestInit) => Promise<Response> = async (url, init) =>
+      url === "https://selfhost.example.com/llm/openai/v1/models"
+        ? Response.json({ data: [{ id: "openai/gpt-5.5" }, { id: "anthropic/claude-opus-4" }] })
+        : fetch(url, init);
+    const result = await run(["gateway", "connect", "goose"], { ...deps, fetch: models });
+    expect(result.code).toBe(0);
+    const file = home.path(".config/goose/custom_providers/selfhost.json");
+    expect(JSON.parse(readFileSync(file, "utf8")).models).toEqual([
+      { name: "anthropic/claude-opus-4", context_limit: 128_000 },
+      { name: "openai/gpt-5.5", context_limit: 128_000 },
+    ]);
+    await run(["gateway", "disconnect", "goose"], deps);
+    expect(existsSync(home.path(".config/goose/custom_providers"))).toBe(false);
+    expect(existsSync(home.path(".config/goose/config.yaml"))).toBe(true);
+
+    // No model list from the gateway: Bifrost's names for the defaults, never an empty list.
+    const other = laptop("ned@example.com");
+    const plain = await run(["gateway", "connect", "goose"], other.deps);
+    expect(plain.out).toContain("did not list its models");
+    const written = JSON.parse(
+      readFileSync(other.home.path(".config/goose/custom_providers/selfhost.json"), "utf8"),
+    );
+    expect(written.models.map((m: { name: string }) => m.name)).toEqual([
+      "anthropic/claude-sonnet-4-5",
+      "openai/gpt-5.5",
+    ]);
+    await run(["gateway", "disconnect"], other.deps);
+    expect(existsSync(other.home.path(".config"))).toBe(false);
   });
 
   it("leaves a file changed since connect as it is, and says where the backup is", async () => {

@@ -2,7 +2,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Webhooks } from "@octokit/webhooks";
-import { manualClock, signWebhook } from "@selfhost/background";
+import { manualClock, type RuntimeFor, signWebhook } from "@selfhost/background";
 import { createGitHubApp } from "@selfhost/github";
 import { FAKE_HEAD_SHA, FakeGitHub } from "@selfhost/github/testing";
 import { type Ledger, openLedger } from "@selfhost/ledger";
@@ -28,6 +28,7 @@ import {
 } from "../src/background.js";
 import { GITHUB_WEBHOOK_PATH } from "../src/github.js";
 import { backgroundRunTests } from "../src/github-risk.js";
+import { serverRuntime } from "../src/runtime.js";
 import { caller, TOKEN } from "./helpers.js";
 
 const WEBHOOKS = join(
@@ -48,8 +49,8 @@ const SECRET = "test-webhook-secret";
 const signer = new Webhooks({ secret: SECRET });
 
 const POLICY = `version = 1
-[integrations.runtime]
-tool = "e2b"
+[runtime]
+default = "e2b"
 [review]
 github_logins = { "lead@example.com" = "octocat" }
 [background]
@@ -88,7 +89,10 @@ afterEach(async () => {
   for (const ledger of open.splice(0)) await ledger.close();
 });
 
-async function harness(env: NodeJS.ProcessEnv = { RUNS_SECRET: "runs-secret" }) {
+async function harness(
+  env: NodeJS.ProcessEnv = { RUNS_SECRET: "runs-secret" },
+  seam?: (ledger: Ledger) => RuntimeFor,
+) {
   const ledger = await openLedger({ dataDir: "memory://" });
   open.push(ledger);
   const clock = manualClock("2026-11-09T01:59:00Z");
@@ -105,7 +109,7 @@ async function harness(env: NodeJS.ProcessEnv = { RUNS_SECRET: "runs-secret" }) 
   const background = createBackground(ledger, {
     config: parsed.config,
     version: "0.4.0",
-    runtime: () => runtime,
+    runtime: seam ? seam(ledger) : () => runtime,
     github: app,
     clock,
     env,
@@ -409,6 +413,22 @@ describe("background runs over HTTP", () => {
     await h.clock.advance(5 * 60_000);
     expect(await h.ledger.backgroundRuns.list()).toHaveLength(1);
     job.stop();
+  });
+
+  it("says why there is no runtime: the key the team server is missing", async () => {
+    const h = await harness(undefined, (ledger) => serverRuntime(ledger, { env: {} }));
+    const res = await h.lead("/v1/background-runs", "POST", {
+      task: "Fix the empty password login",
+      repo: "acme/acme-api",
+      source: "cli",
+    });
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe("no_runtime");
+    expect(body.error.message).toMatch(
+      /^No runtime for team web \(runtime\.key\): Set the environment variable E2B_API_KEY \(api_key_env\) on the team server/,
+    );
+    expect(body.error.message).not.toContain("integrations");
   });
 
   it("answers 503 when background runs are not set up", async () => {

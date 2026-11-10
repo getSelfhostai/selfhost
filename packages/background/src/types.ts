@@ -61,15 +61,25 @@ export interface EventSink {
   append(events: LedgerEvent[]): Promise<unknown>;
 }
 
+/** Why the runtime seam gave a run no adapter, shown to whoever started it as it is. */
+export interface RuntimeRefused {
+  refusal: { rule: string; message: string };
+}
+
 /**
- * The runtime seam: the adapter a run's sandbox is created on. Runtime selection
- * (`pickRuntime(config, request)`) and the adapters (E2B, Daytona, Modal, Coder, OpenSandbox)
- * live outside this package. Undefined means no runtime is set up for the run's team.
+ * The runtime seam: the adapter a run's sandbox is created on, or why there is none (a [runtime]
+ * rule, a missing key, a [budget] cap). Runtime selection (`pickRuntime(config, request)`) and
+ * the adapters (E2B, Daytona, Modal, Coder, OpenSandbox) live outside this package. Undefined
+ * means no runtime is set up for the run's team, with no more said.
  */
 export type RuntimeFor = (
   run: BackgroundRun,
   config: ResolvedSelfhostConfig,
-) => RuntimeAdapter | undefined | Promise<RuntimeAdapter | undefined>;
+) =>
+  | RuntimeAdapter
+  | RuntimeRefused
+  | undefined
+  | Promise<RuntimeAdapter | RuntimeRefused | undefined>;
 
 /**
  * What a run's sandbox signs in with, from the credentials seam. Values never pass through here:

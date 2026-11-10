@@ -52,6 +52,16 @@ describe("selfhost doctor", () => {
     );
   });
 
+  it("warns once about a deprecated [integrations.runtime] and says it is [runtime] default", () => {
+    const dir = repo({ "selfhost.toml": 'version = 1\n[integrations.runtime]\ntool = "e2b"\n' });
+    const { code, output } = run(dir);
+    expect(code).toBe(0);
+    const warnings = output.split("\n").filter((line) => line.startsWith("warning"));
+    expect(warnings).toEqual([
+      'warning  [integrations.runtime] is deprecated: it is read as [runtime] default = "e2b"; move it there.',
+    ]);
+  });
+
   it("says which guardrails block or only record, and warns when selfhost is not on PATH", () => {
     const dir = repo({
       "selfhost.toml": 'version = 1\n[guardrails]\nmode = "observe"\n',
@@ -135,6 +145,7 @@ describe("selfhost doctor", () => {
       errors: [{ field: "ledger.retention_days", line: 3, message: "Expected integer" }],
       exists: true,
       valid: false,
+      warnings: [],
     });
     expect(JSON.parse(run(repo({}), undefined, {}, true).output).config).toBeNull();
   });

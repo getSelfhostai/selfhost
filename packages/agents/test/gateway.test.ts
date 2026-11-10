@@ -8,6 +8,7 @@ import {
   applyAgentConfig,
   GATEWAY_PROFILE,
   type GatewaySpec,
+  gooseGatewayProvider,
   manifestPath,
   planAgentConfig,
   removeAgentConfig,
@@ -278,7 +279,10 @@ describe("Goose custom provider", () => {
       display_name: "selfhost gateway",
       description: expect.any(String),
       base_url: "https://selfhost.example.com/llm/openai/v1/chat/completions",
-      models: [],
+      models: [
+        { name: "claude-sonnet-4-5", context_limit: 128_000 },
+        { name: "gpt-5.5", context_limit: 128_000 },
+      ],
       headers: { Authorization: "Bearer sk-bf-fixture" },
       supports_streaming: true,
       requires_auth: false,
@@ -286,6 +290,17 @@ describe("Goose custom provider", () => {
     expect(read(config)).toBe(yaml);
     disconnect(fx.home, "goose");
     expect(existsSync(file)).toBe(false);
+  });
+
+  it("lists the gateway's models when they are known, never an empty list", () => {
+    const listed = JSON.parse(
+      gooseGatewayProvider({ ...GATEWAY, models: ["openai/gpt-5.5", "anthropic/claude-opus-4"] }),
+    );
+    expect(listed.models.map((m: { name: string }) => m.name)).toEqual([
+      "openai/gpt-5.5",
+      "anthropic/claude-opus-4",
+    ]);
+    expect(JSON.parse(gooseGatewayProvider({ ...GATEWAY, models: [] })).models).toHaveLength(2);
   });
 
   it("follows Goose's Windows config folder", () => {

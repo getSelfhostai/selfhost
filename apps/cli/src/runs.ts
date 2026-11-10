@@ -44,7 +44,7 @@ function client(io: RunsIo): { client: TeamClient; team: string; server: string 
   const membership = readMembership(io.configPath);
   if (!membership) {
     throw new Error(
-      "Background runs go through the team server, which keeps them going after this machine disconnects. Join a team first: selfhost team join <invite>",
+      "Background runs go through the team server, which keeps them going after this machine disconnects. Join a team first: selfhost join <server> <invite>",
     );
   }
   return {

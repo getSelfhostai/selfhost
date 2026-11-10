@@ -215,7 +215,7 @@ describe("selfhost integrations, team mode", () => {
     );
     expect(set.err).toBe("");
     expect(set.out).toBe(
-      "Set [integrations.runtime] in team web: e2b.\nCheck: E2B at https://api.e2b.app accepts the key in E2B_API_KEY.",
+      'Set [runtime] default = "e2b" in team web.\nCheck: E2B at https://api.e2b.app accepts the key in E2B_API_KEY.',
     );
 
     const listed = await run(["integrations", "--json"], as(member.token, "mia@example.com"));
@@ -243,7 +243,7 @@ describe("selfhost integrations, team mode", () => {
       as(owner.token, "ada@example.com"),
     );
     expect(invalid.err).toMatch(
-      /^The team server refused \[integrations\.runtime\]:\n {2}integrations\.runtime\.api_key_env/,
+      /^The team server refused \[runtime\] default = "e2b":\n {2}runtime\.providers\.e2b\.api_key_env/,
     );
     await server.ledger.close();
   });

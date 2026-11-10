@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, sep } from "node:path";
 import type { AgentConfigPlan, AgentId } from "@selfhost/agents";
 
 /**
@@ -21,6 +21,8 @@ export interface RecordedFile {
   before: string | null;
   /** SHA-256 of what init last wrote, null for a file it deleted. Undo needs the file unchanged. */
   sha256: string | null;
+  /** config: the outermost folder selfhost created for the file; undo removes it once empty. */
+  made_dir?: string;
 }
 
 interface InitRecord {
@@ -82,6 +84,7 @@ export function recordApplied(
   plans: AgentConfigPlan[],
   backups: ReadonlyMap<string, string | null>,
   schema = SCHEMA,
+  madeDirs: ReadonlyMap<string, string> = new Map(),
 ): void {
   const files = readRecord(path, schema);
   for (const plan of plans) {
@@ -101,6 +104,8 @@ export function recordApplied(
         before: change.role === "state" ? change.before : null,
         sha256: wrote,
       };
+      const made = change.role === "config" ? madeDirs.get(change.path) : undefined;
+      if (made) entry.made_dir = made;
       if (earlier) files[index] = entry;
       else files.push(entry);
     }
@@ -122,6 +127,21 @@ export function recordCreated(path: string, created: string[]): void {
     });
   }
   writeRecord(path, files);
+}
+
+/** Removes the empty folders from a deleted file's own up to `top`, the one selfhost made. */
+function pruneMade(file: string, top: string): void {
+  let dir = dirname(file);
+  while (dir === top || dir.startsWith(`${top}${sep}`)) {
+    try {
+      if (readdirSync(dir).length > 0) return;
+      rmdirSync(dir);
+    } catch {
+      return;
+    }
+    if (dir === top) return;
+    dir = dirname(dir);
+  }
 }
 
 /** Removes the folders a deleted context file leaves empty, up to the `.selfhost` folder. */
@@ -233,6 +253,7 @@ export function undoRecorded(
       if (original === null) rmSync(file.path, { force: true });
       else writeFileSync(file.path, original);
       if (file.role === "context") pruneEmpty(file.path);
+      if (original === null && file.made_dir) pruneMade(file.path, file.made_dir);
     }
     results.push(result(original === null ? "deleted" : "restored"));
   }

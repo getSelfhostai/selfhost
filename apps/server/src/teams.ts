@@ -293,7 +293,18 @@ function sharedRoutes(
 ): void {
   policyRoutes(router, ledger);
   contextRoutes(router, ledger, { ...(now ? { now } : {}), ...runs });
-  integrationRoutes(router, ledger, integrations);
+  integrationRoutes(router, ledger, {
+    ...integrations,
+    ...(gateway
+      ? {
+          gateway: {
+            tool: gateway.client.tool,
+            baseUrl: gateway.baseUrl,
+            health: () => gateway.client.health(),
+          },
+        }
+      : {}),
+  });
   policyObservedRoutes(router, ledger, now ? { now } : {});
   peopleRoutes(router, ledger);
   laptopRoutes(router, ledger, now ? { now } : {});

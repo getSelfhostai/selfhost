@@ -1,3 +1,5 @@
+import { bifrostClient } from "@selfhost/gateway";
+import { fakeBifrost } from "@selfhost/gateway/testing";
 import type { RepoView } from "@selfhost/integrations";
 import { openLedger } from "@selfhost/ledger";
 import {
@@ -178,7 +180,7 @@ message = "Open a pull request."
         [
           "/v1/integrations/runtime",
           { tool: "e2b", settings: { api_key_env: "not a name" } },
-          "integrations.runtime.api_key_env",
+          "runtime.providers.e2b.api_key_env",
         ],
         ["/v1/integrations/router", { tool: "bifrost", settings: { tool: "x" } }, "tool"],
       ];
@@ -298,5 +300,69 @@ describe("integration check cache", () => {
     expect((await runtime()).checked_at).toBe("2026-11-08T10:01:20.000Z");
     expect(calls).toHaveLength(4);
     await ledger.close();
+  });
+});
+
+describe("the server's own gateway", () => {
+  it("shows as the router of a team whose policy picks none, from the server environment", async () => {
+    const ledger = await openLedger({ dataDir: "memory://" });
+    try {
+      const fake = fakeBifrost();
+      let healthy = true;
+      const client = bifrostClient({
+        url: "http://bifrost:8080",
+        username: "selfhost",
+        password: fake.password,
+        fetch: fake.fetch,
+        minIntervalMs: 0,
+      });
+      const app = createApp({
+        version: "test",
+        ledger,
+        token: TOKEN,
+        integrations: { env: {}, fetch: recordedFetch },
+        gateway: {
+          client: {
+            ...client,
+            tool: client.tool,
+            health: async () =>
+              healthy ? client.health() : { ok: false, detail: "connection refused" },
+          },
+          baseUrl: "https://selfhost.example.com/llm",
+          state: { sync: null, usage: null },
+        },
+      });
+      const admin = caller(app, TOKEN);
+      expect((await admin("/v1/teams", "POST", { name: "Web" })).status).toBe(201);
+      const router = async () => {
+        const res = await admin("/v1/integrations?team=web");
+        const body = (await res.json()) as IntegrationsResponse;
+        expect(responseShape.validate(body).ok).toBe(true);
+        return body.integrations.router;
+      };
+      expect(await router()).toMatchObject({
+        tool: "bifrost",
+        status: "connected",
+        source: "server_environment",
+        settings: { url: "https://selfhost.example.com/llm" },
+      });
+      expect((await router()).detail).toContain("set up in its environment");
+
+      // The team's own choice wins, and is checked as its policy says.
+      const text =
+        'version = 1\n[integrations.router]\ntool = "litellm"\nurl = "http://litellm:4000"\n';
+      expect((await admin("/v1/policy?team=web", "PUT", { text })).status).toBe(200);
+      const own = await router();
+      expect(own.tool).toBe("litellm");
+      expect(own.source).toBeUndefined();
+
+      healthy = false;
+      expect((await admin("/v1/policy?team=web", "PUT", { text: "version = 1\n" })).status).toBe(
+        200,
+      );
+      expect(await router()).toMatchObject({ status: "error", source: "server_environment" });
+    } finally {
+      await ledger.close();
+    }
   });
 });

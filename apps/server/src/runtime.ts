@@ -1,5 +1,5 @@
 import type { Ledger } from "@selfhost/ledger";
-import { type RuntimeForOptions, runtimeFor } from "@selfhost/runtime";
+import { isRefused, type RuntimeForOptions, runtimeFor } from "@selfhost/runtime";
 import type { LedgerEvent } from "@selfhost/schema";
 import { sandboxSpans, sandboxSpendIn } from "@selfhost/spend";
 
@@ -30,14 +30,15 @@ export async function ledgerSandboxSpend(
 /**
  * The runtime seam for background runs on the server: runtime selection over the adapters with
  * the keys in the server's environment, sandbox lifecycle written to the ledger, and the team's
- * [budget] runtime caps read from it. Pass it to createBackground as `runtime`.
+ * [budget] runtime caps read from it. Pass it to createBackground as `runtime`. A refusal comes
+ * back with its reason, which the person starting the run sees as it is, and goes to the log.
  */
 export function serverRuntime(
   ledger: Ledger,
   options: Pick<RuntimeForOptions, "env" | "now" | "open"> & { log?: (line: string) => void },
 ) {
   const now = options.now ?? (() => new Date());
-  return runtimeFor({
+  const seam = runtimeFor({
     ...options,
     emit: async (event) => {
       // Stored under the run's team, so the team's spend views and caps see it.
@@ -49,4 +50,11 @@ export function serverRuntime(
         `background run ${run.id} for team ${run.team}: no runtime (${refusal.rule}). ${refusal.message}`,
       ),
   });
+  return async (...args: Parameters<typeof seam>) => {
+    const found = await seam(...args);
+    if (!isRefused(found) || found.refusal.rule !== "runtime.key") return found;
+    // "Where selfhost runs" is the team server here, not the laptop that asked.
+    const message = found.refusal.message.replace("where selfhost runs", "on the team server");
+    return { refusal: { ...found.refusal, message } };
+  };
 }

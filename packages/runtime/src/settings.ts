@@ -13,8 +13,9 @@ import type { RuntimeKind } from "./types.js";
 export type RuntimeConfig = Pick<SelfhostConfig, "runtime" | "integrations" | "budget">;
 
 /**
- * How to reach one runtime: [runtime.providers.<kind>] when the team set it, else
- * [integrations.runtime] when that table names this runtime, else nothing (the defaults).
+ * How to reach one runtime: [runtime.providers.<kind>], else nothing (the defaults). A config
+ * that did not go through parseConfig may still carry the deprecated [integrations.runtime],
+ * which is read the same way when it names this runtime.
  */
 export function providerSettings(config: RuntimeConfig, kind: RuntimeKind): RuntimeProvider {
   const own = config.runtime?.providers?.[kind];
@@ -56,6 +57,22 @@ export function runtimeKey(
   const found = runtimeCredentials(kind, settings, env);
   if (isCheck(found)) throw new RuntimeKeyError(kind, found.detail);
   return found;
+}
+
+/**
+ * Whether a runtime's key is there: set, not needed (an OpenSandbox server on this machine with
+ * a local url and no key variable set), or not set.
+ */
+export function keyState(
+  kind: RuntimeKind,
+  settings: RuntimeProvider,
+  env: Env,
+): "set" | "not_needed" | "not_set" {
+  try {
+    return runtimeKey(kind, settings, env).key === "" ? "not_needed" : "set";
+  } catch {
+    return "not_set";
+  }
 }
 
 /** Whether a runtime has what it needs to start a sandbox, without saying what is missing. */

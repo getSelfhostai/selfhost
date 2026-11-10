@@ -14,7 +14,7 @@ export interface RunForRuntime {
   org?: string | null;
   repo?: string | null;
   person?: string | null;
-  /** The runtime the run asked for, or the [integrations.runtime] tool it defaulted to. */
+  /** The runtime the run asked for, or the [runtime] default it defaulted to. */
   runtime?: string;
 }
 
@@ -23,6 +23,14 @@ export interface RuntimeRefusal {
   rule: RuntimeRule | "runtime.key" | "budget.runtime_daily_usd";
   message: string;
 }
+
+/** What the runtime seam answers instead of an adapter: the reason, to show as it is. */
+export interface RuntimeRefused {
+  refusal: RuntimeRefusal;
+}
+
+export const isRefused = (value: RuntimeAdapter | RuntimeRefused): value is RuntimeRefused =>
+  "refusal" in value;
 
 export interface RuntimeForOptions {
   /** Where keys and env: secrets are read: the server's environment. */
@@ -41,7 +49,7 @@ export interface RuntimeForOptions {
     exclude: ReadonlySet<string>,
     day: { from: Date; to: Date },
   ) => Promise<number>;
-  /** Told why a run got no runtime, so the refusal names the rule. */
+  /** Told why a run got no runtime, for the log; the seam also answers with the refusal. */
   onRefused?: (run: RunForRuntime, refusal: RuntimeRefusal) => void;
   /** Opens an adapter. Default: openRuntime with the team's key from `env`. Tests pass a fake. */
   open?: (kind: RuntimeKind, config: RuntimeConfig) => RuntimeAdapter;
@@ -53,13 +61,13 @@ const isKind = (value: string | undefined): value is RuntimeKind =>
   value !== undefined && (RUNTIME_KINDS as readonly string[]).includes(value);
 
 /**
- * The runtime seam of background runs: `(run, config) => RuntimeAdapter | undefined`, as
+ * The runtime seam of background runs: `(run, config) => RuntimeAdapter | RuntimeRefused`, as
  * `createBackground({ runtime })` takes it. It picks the runtime with pickRuntime ([runtime] in
- * the team's selfhost.toml), opens it with the team's own key, and refuses (undefined, with the
- * rule told to onRefused) a runtime the policy does not allow, a missing key, or a team over
- * [budget] runtime_daily_usd. Sandboxes created through it are sized and placed as picked, write
- * sandbox.started and sandbox.stopped with their cost and idle time, and are stopped at the
- * team's runtime caps.
+ * the team's selfhost.toml), opens it with the team's own key, and refuses (a RuntimeRefused
+ * naming the rule and saying why, also told to onRefused) a runtime the policy does not allow, a
+ * missing key, or a team over [budget] runtime_daily_usd. Sandboxes created through it are sized
+ * and placed as picked, write sandbox.started and sandbox.stopped with their cost and idle time,
+ * and are stopped at the team's runtime caps.
  */
 export function runtimeFor(options: RuntimeForOptions) {
   const now = options.now ?? (() => new Date());
@@ -92,19 +100,20 @@ export function runtimeFor(options: RuntimeForOptions) {
     return guard;
   };
 
-  return async (run: RunForRuntime, config: RuntimeConfig): Promise<RuntimeAdapter | undefined> => {
-    const refuse = (refusal: RuntimeRefusal) => {
+  return async (
+    run: RunForRuntime,
+    config: RuntimeConfig,
+  ): Promise<RuntimeAdapter | RuntimeRefused> => {
+    const refuse = (refusal: RuntimeRefusal): RuntimeRefused => {
       options.onRefused?.(run, refusal);
-      return undefined;
+      return { refusal };
     };
-    // A run that names no runtime defaults to the [integrations.runtime] tool; under
-    // cheapest_allowed that default is not a request, so policy picks.
+    // A run that names no runtime defaults to [runtime] default; under cheapest_allowed that
+    // default is not a request, so policy picks.
+    const fallback = config.runtime?.default ?? config.integrations?.runtime?.tool;
     const asked =
       isKind(run.runtime) &&
-      !(
-        config.runtime?.policy === "cheapest_allowed" &&
-        run.runtime === config.integrations?.runtime?.tool
-      )
+      !(config.runtime?.policy === "cheapest_allowed" && run.runtime === fallback)
         ? run.runtime
         : undefined;
     const choice = pickRuntime(config, asked ? { kind: asked } : {}, { env: options.env });
