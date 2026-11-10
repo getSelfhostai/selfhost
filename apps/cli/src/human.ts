@@ -8,27 +8,52 @@
 
 /**
  * Environment variables coding agents set for the commands they run. A variable that a person
- * may set in their own shell profile, such as CODEX_HOME, is not one.
+ * may set in their own shell profile, such as CODEX_HOME, is not one, and neither is one an
+ * editor sets in every terminal it opens, such as CURSOR_TRACE_ID.
+ *
+ * - Claude Code: CLAUDECODE, CLAUDE_CODE, CLAUDE_CODE_ENTRYPOINT, CLAUDE_CODE_SESSION_ID.
+ * - Codex: CODEX_SANDBOX, CODEX_SANDBOX_NETWORK_DISABLED, CODEX_CI, CODEX_THREAD_ID and the
+ *   CODEX_MANAGED_BY_* of its installers.
+ * - Cursor's agent: CURSOR_AGENT, and CURSOR_EXTENSION_HOST_ROLE=agent-exec.
+ * - OpenCode: OPENCODE, OPENCODE_CLIENT. Goose: GOOSE_TERMINAL. Gemini CLI: GEMINI_CLI.
+ * - Augment: AUGMENT_AGENT. Antigravity: ANTIGRAVITY_AGENT.
+ * - AI_AGENT, the name several agents (GitHub Copilot among them) set for the tools they run.
  */
 export const AGENT_SESSION_VARIABLES = [
+  "AI_AGENT",
   "CLAUDECODE",
+  "CLAUDE_CODE",
   "CLAUDE_CODE_ENTRYPOINT",
+  "CLAUDE_CODE_SESSION_ID",
   "CODEX_SANDBOX",
   "CODEX_SANDBOX_NETWORK_DISABLED",
+  "CODEX_CI",
   "CODEX_MANAGED_BY_NPM",
   "CODEX_MANAGED_BY_BUN",
   "CODEX_THREAD_ID",
   "CURSOR_AGENT",
   "OPENCODE",
+  "OPENCODE_CLIENT",
   "GOOSE_TERMINAL",
   "GEMINI_CLI",
+  "AUGMENT_AGENT",
+  "ANTIGRAVITY_AGENT",
 ] as const;
+
+/** Variables that mark an agent session only with this value. */
+const AGENT_SESSION_VALUES: Readonly<Record<string, string>> = {
+  CURSOR_EXTENSION_HOST_ROLE: "agent-exec",
+};
 
 /** The first agent session variable set in `env`, or undefined outside an agent session. */
 export function agentSessionVariable(
   env: Readonly<Record<string, string | undefined>>,
 ): string | undefined {
-  return AGENT_SESSION_VARIABLES.find((name) => (env[name] ?? "").trim() !== "");
+  const named = AGENT_SESSION_VARIABLES.find((name) => (env[name] ?? "").trim() !== "");
+  if (named !== undefined) return named;
+  return Object.keys(AGENT_SESSION_VALUES).find(
+    (name) => (env[name] ?? "").trim() === AGENT_SESSION_VALUES[name],
+  );
 }
 
 export interface HumanCheck {

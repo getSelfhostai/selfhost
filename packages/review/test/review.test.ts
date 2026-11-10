@@ -907,6 +907,125 @@ to = ["role:member", "role:admin", "dev@example.com"]
       expect(blocked?.owners).toEqual(["dev@example.com", "mia@example.com", "adam@example.com"]);
     });
 
+    it("applies a synced decision only from someone the team lets give it", async () => {
+      const { ledger } = await setup();
+      await ledger.teams.createTeam({ id: "red", name: "Red" });
+      const db = databaseOf(ledger);
+      for (const [id, role] of [
+        ["olga@example.com", "owner"],
+        [PERSON, "member"],
+        ["mia@example.com", "member"],
+      ]) {
+        await db.query("INSERT INTO people (team_id, id, role) VALUES ('red', $1, $2)", [id, role]);
+      }
+      const lines: string[] = [];
+      const list = openReviewList(ledger, { now: () => new Date(NOW) });
+      const refresh = () => refreshReviewList(ledger, list, { log: (line) => lines.push(line) });
+      const t = at(NOW, -5);
+      const exceptionId = requestId(t, 1);
+      await ledger.append(
+        [
+          exceptionBlock(
+            t,
+            { id: exceptionId, fingerprint: "f1" },
+            { team: "red", actor: { kind: "person", id: PERSON } },
+          ),
+          contextProposal(t, requestId(t, 2)),
+        ],
+        { team: "red" },
+      );
+      await refresh();
+      /** A decision as a laptop syncs it: written with the person's token, in their team. */
+      let minute = 0;
+      const synced = async (actor: string, item: string, by = actor, verdict = "approve") => {
+        minute += 1;
+        const decided = event({
+          kind: "decision.recorded",
+          ts: at(NOW, minute),
+          source: "cli",
+          actor: { kind: "person", id: actor },
+          decision: { verdict: verdict as "approve", by, item_id: item },
+          links: { item_id: item },
+          data: { surface: "cli" },
+        });
+        await ledger.append([decided], { team: "red" });
+        return decided.id;
+      };
+      const red = openReviewList(ledger, { team: "red", now: () => new Date(NOW) });
+      const state = async (id: string) => (await red.get(id))?.state;
+
+      // The requester approves their own exception: refused, the item stays open.
+      const own = await synced(PERSON, exceptionId);
+      // A member writes a decision in the owner's name: refused.
+      await synced(PERSON, exceptionId, "olga@example.com");
+      // Another member approves it: refused, members do not approve exceptions.
+      await synced("mia@example.com", exceptionId);
+      // A member answers the context proposal: refused.
+      await synced("mia@example.com", requestId(t, 2));
+      const result = await refresh();
+      expect(result.refused?.map((r) => [r.by, r.item_id])).toEqual([
+        [PERSON, exceptionId],
+        ["olga@example.com", exceptionId],
+        ["mia@example.com", exceptionId],
+        ["mia@example.com", requestId(t, 2)],
+      ]);
+      expect(result.refused?.[0]?.event_id).toBe(own);
+      expect(result.refused?.[0]?.reason).toMatch(/your own agent asked for/);
+      expect(result.refused?.[1]?.reason).toMatch(/a person decides only as themselves/);
+      expect(result.refused?.[2]?.reason).toMatch(/owner or admin role in team red/);
+      expect(lines).toHaveLength(4);
+      expect(await state(exceptionId)).toBe("open");
+      expect(await state(requestId(t, 2))).toBe("open");
+
+      // The owner approves both.
+      await synced("olga@example.com", exceptionId);
+      await synced("olga@example.com", requestId(t, 2));
+      const after = await refresh();
+      expect(after.refused).toBeUndefined();
+      expect((await red.get(exceptionId))?.answer).toMatchObject({
+        by: "olga@example.com",
+        verdict: "approve",
+      });
+      expect(await state(requestId(t, 2))).toBe("answered");
+    });
+
+    it("lets the requester approve their own exception when the team allows it", async () => {
+      const { ledger } = await setup();
+      await ledger.teams.createTeam({ id: "red", name: "Red" });
+      await ledger.teams.setPolicy(
+        "red",
+        "version = 1\n[review]\nself_approve_exceptions = true\n",
+      );
+      await databaseOf(ledger).query(
+        "INSERT INTO people (team_id, id, role) VALUES ('red', $1, 'member')",
+        [PERSON],
+      );
+      const list = openReviewList(ledger, { now: () => new Date(NOW) });
+      const t = at(NOW, -5);
+      const id = requestId(t, 1);
+      await ledger.append(
+        [
+          exceptionBlock(
+            t,
+            { id, fingerprint: "f1" },
+            { team: "red", actor: { kind: "person", id: PERSON } },
+          ),
+        ],
+        { team: "red" },
+      );
+      await refreshReviewList(ledger, list);
+      const decided = event({
+        kind: "decision.recorded",
+        ts: at(NOW, 1),
+        source: "cli",
+        decision: { verdict: "approve", by: PERSON, item_id: id },
+        links: { item_id: id },
+      });
+      await ledger.append([decided], { team: "red" });
+      expect((await refreshReviewList(ledger, list)).refused).toBeUndefined();
+      expect((await list.get(id))?.state).toBe("answered");
+    });
+
     it("keeps each team's items to its own list and uses the team's stored policy", async () => {
       const { ledger, refresh } = await setup();
       await ledger.teams.createTeam({ id: "red", name: "Red" });

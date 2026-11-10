@@ -2,6 +2,8 @@ import { randomBytes } from "node:crypto";
 import { fileCalls, type Ledger, LedgerQueryError, LedgerValidationError } from "@selfhost/ledger";
 import {
   AlreadyAnsweredError,
+  decisionRefusal,
+  defaultConfig,
   MCP_EXCEPTION_REQUEST,
   MCP_QUESTION_REQUEST,
   openReviewList,
@@ -22,8 +24,9 @@ import type { CallContext, McpData } from "./data.js";
 import { itemOutOfReach, McpToolError, notInTeam } from "./errors.js";
 
 /**
- * Kinds of item an agent waits on, that guard a rule or that change what every agent of the team
- * loads: a person answers them, never the agent itself through record_decision.
+ * Kinds of item an agent waits on, that guard a rule, that change what every agent of the team
+ * loads, or that warn about spend and runs (budget and alert items): a person answers them, never
+ * the agent itself through record_decision.
  */
 export const GATING_KINDS: readonly ReviewItemKind[] = [
   "approval",
@@ -31,7 +34,17 @@ export const GATING_KINDS: readonly ReviewItemKind[] = [
   "exception",
   "blocked_action",
   "context_promotion",
+  "budget",
+  "spend_spike",
+  "stuck_run",
+  "quality",
 ];
+
+/** "an exception", "a budget": the kind as words, with its article. */
+const kindWords = (kind: ReviewItemKind) => {
+  const words = kind.replaceAll("_", " ");
+  return `${/^[aeiou]/.test(words) ? "an" : "a"} ${words}`;
+};
 
 export interface LedgerDataOptions {
   /** Runs `fn` with the ledger open: the server's, or this machine's opened for the call. */
@@ -262,12 +275,24 @@ export function ledgerData(options: LedgerDataOptions): Omit<McpData, "policy" |
     decide: (input) =>
       run(async (ledger) => {
         if (refreshOnRead) await refresh(ledger);
-        const { item, list } = await find(ledger, input.item_id);
+        const { item, list, team } = await find(ledger, input.item_id);
         if (GATING_KINDS.includes(item.kind)) {
           throw new McpToolError(
             "forbidden",
-            `An agent cannot answer a ${item.kind.replace("_", " ")} item: a person answers it in selfhost inbox, the console or chat.`,
+            `An agent cannot answer ${kindWords(item.kind)} item: a person answers it in selfhost inbox, the console or chat.`,
           );
+        }
+        // On a team server, the same rule as every other path an answer takes.
+        if (team !== undefined) {
+          const role = (await ledger.teams.getPerson(team, person))?.role;
+          const refusal = decisionRefusal(
+            item,
+            team,
+            input.verdict,
+            { by: person, ...(role ? { role } : {}) },
+            options.config ?? defaultConfig(),
+          );
+          if (refusal !== undefined) throw new McpToolError("forbidden", refusal);
         }
         return list.decide(item.id, {
           verdict: input.verdict,

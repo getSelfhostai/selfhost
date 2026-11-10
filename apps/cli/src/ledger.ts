@@ -17,6 +17,7 @@ import type { Command } from "commander";
 import { type BackupOptions, runBackup, runRestore } from "./backup.js";
 import { findConfig } from "./find-config.js";
 import { describeTarget } from "./import.js";
+import { refuseWhileWatching } from "./ledger-busy.js";
 import type { Exec } from "./up/resources.js";
 import { STACK_DIR } from "./up/stack.js";
 
@@ -48,6 +49,8 @@ interface LedgerIo {
   now?: Date;
   /** Runs ssh and scp for backup and restore with --host. */
   exec: Exec;
+  /** ~/.selfhost/config.json, next to the feed folder a running `import --watch` writes. */
+  configPath?: string;
 }
 
 interface TargetOptions {
@@ -71,6 +74,17 @@ export interface LedgerMigrateReport extends SchemaStatus {
   rolled_back: string[];
   applied: string[];
 }
+
+/** What refuseWhileWatching reads; none without the config path (tests, library use). */
+const busyCheck = (options: TargetOptions, io: LedgerIo) =>
+  io.configPath === undefined
+    ? undefined
+    : {
+        env: io.env,
+        configPath: io.configPath,
+        ...(options.database ? { database: options.database } : {}),
+        ...(options.dataDir ? { dataDir: options.dataDir } : {}),
+      };
 
 /** Connects without migrating, so status and rollbacks see the schema as it is. */
 async function connectTarget(options: TargetOptions, io: LedgerIo) {
@@ -121,6 +135,7 @@ export async function runMigrate(
   options: TargetOptions & { to?: string },
   io: LedgerIo,
 ): Promise<LedgerMigrateReport> {
+  refuseWhileWatching("selfhost ledger migrate", busyCheck(options, io));
   const db = await connectTarget(options, io);
   try {
     const to = options.to;
@@ -177,6 +192,7 @@ export async function runPrune(
   ledger?: Ledger,
 ): Promise<PruneReport> {
   const { days, from } = retentionDays(options, io);
+  if (!ledger) refuseWhileWatching("selfhost ledger prune", busyCheck(options, io));
   const target =
     ledger ??
     (await openLedger({ url: options.database ?? io.env.DATABASE_URL, dataDir: options.dataDir }));

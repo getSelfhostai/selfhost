@@ -229,6 +229,47 @@ describe("selfhost decision commands", () => {
     expect(guardrailHits(off, bash(command), { env: ENV })).toEqual([]);
   });
 
+  it.each([
+    "s=selfhost; $s inbox approve 019a5b01",
+    'S=selfhost && "$S" decide 019a5b01 approve',
+    "export S=/usr/local/bin/selfhost; $S review approve 019a5b01",
+    '"$(which selfhost)" inbox approve 019a5b01',
+    "`command -v selfhost` decide 019a5b01 approve",
+    "$UNKNOWN_BIN inbox approve 019a5b01",
+  ])("blocks %s, where a variable names the program", async (command) => {
+    const decision = await checkToolCall(off, bash(command), { env: ENV });
+    expect(decision.verdict).toBe("block");
+    expect(decision.hit?.rule_id).toBe("guard.selfhost_decision");
+  });
+
+  it.each([
+    "echo c2VsZmhvc3QgaW5ib3ggYXBwcm92ZQo= | base64 -d | sh",
+    "echo c2VsZmhvc3QgaW5ib3ggYXBwcm92ZQo= | base64 --decode | bash -s",
+    'bash -c "$(echo c2VsZmhvc3Q= | base64 -D)"',
+    'eval "$(printf %s c2VsZmhvc3Q= | openssl base64 -d)"',
+    "xxd -r -p payload.hex | python3",
+    'python3 -c \'import subprocess; subprocess.run(["selfhost", "inbox", "approve", "x"])\'',
+    'python -c \'import os; os.system("self" "host" if 0 else "selfhost inbox approve x")\'',
+    'node -e \'require("child_process").execSync("selfhost decide x approve")\'',
+  ])("asks for %s, which hides what it runs", async (command) => {
+    const decision = await checkToolCall(off, bash(command), { env: ENV });
+    expect(decision.verdict).toBe("ask");
+    expect(decision.hit).toEqual(
+      expect.objectContaining({ rule_id: "guard.selfhost_decision", mode: "enforce" }),
+    );
+  });
+
+  it.each([
+    "echo aGk= | base64 -d",
+    "base64 -d secret.b64 > out.bin && bash build.sh",
+    "python3 -c 'print(1)'",
+    "python3 -c 'import subprocess; subprocess.run([\"ls\"])'",
+    "node -e 'console.log(\"selfhost\")'",
+    "x=ls; $x inbox",
+  ])("allows %s", (command) => {
+    expect(guardrailHits(off, bash(command), { env: ENV })).toEqual([]);
+  });
+
   it("names the command it found", () => {
     expect(selfhostDecisionCommand(["npx", "selfhostai", "inbox", "approve", "x"])).toBe(
       "inbox approve",

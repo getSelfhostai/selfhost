@@ -1,3 +1,4 @@
+export { type Decider, decisionRefusal } from "./authorize.js";
 export {
   actionsFor,
   deliveryOf,
@@ -19,6 +20,7 @@ export {
 export { AlreadyAnsweredError, ReviewInputError, ReviewItemNotFoundError } from "./errors.js";
 export {
   type DecideInput,
+  defaultConfig,
   openReviewList,
   type ReviewList,
   type ReviewListOptions,
@@ -51,6 +53,7 @@ export { compareItems, isSnoozed, type RankKey, rankKey } from "./rank.js";
 export {
   type RefreshOptions,
   type RefreshResult,
+  type RefusedDecision,
   refreshReviewList,
   TIMEOUT_DECIDER,
   weekStart,

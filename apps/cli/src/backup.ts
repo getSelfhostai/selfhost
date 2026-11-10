@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   connect,
@@ -10,6 +10,7 @@ import {
   rowCounts,
   schemaStatus,
 } from "@selfhost/ledger";
+import { refuseWhileWatching } from "./ledger-busy.js";
 import type { SshTarget } from "./up/plan.js";
 import type { Exec } from "./up/resources.js";
 import { parseSshTarget, sshArgs, sshOptions } from "./up/ssh.js";
@@ -31,6 +32,8 @@ export interface BackupIo {
   write: (line: string) => void;
   now?: Date;
   exec: Exec;
+  /** ~/.selfhost/config.json, next to the feed folder a running `import --watch` writes. */
+  configPath?: string;
 }
 
 /** `selfhost ledger backup --json` and `selfhost ledger restore --json`. */
@@ -77,6 +80,16 @@ function embeddedDir(options: BackupOptions, io: BackupIo): string {
   }
   return resolveDataDir(options.dataDir, io.env);
 }
+
+/** What refuseWhileWatching reads; none without the config path (tests, library use). */
+const busyCheck = (options: BackupOptions, io: BackupIo) =>
+  io.configPath === undefined
+    ? undefined
+    : {
+        env: io.env,
+        configPath: io.configPath,
+        ...(options.dataDir ? { dataDir: options.dataDir } : {}),
+      };
 
 /** "rows: events=12 teams=1" from backup.sh or restore.sh. */
 function parseRows(output: string): Record<string, number> {
@@ -163,6 +176,7 @@ export async function runBackup(
       [...sshOptions(target, "-P"), `${login}:${dir}/backups/${name}`, `${local}.partial`],
       true,
     );
+    chmodSync(`${local}.partial`, 0o600);
     renameSync(`${local}.partial`, local);
     return report(
       {
@@ -179,11 +193,15 @@ export async function runBackup(
 
   const dataDir = embeddedDir(options, io);
   if (!existsSync(dataDir)) throw new Error(`There is no embedded ledger at ${dataDir}`);
+  refuseWhileWatching("selfhost ledger backup", busyCheck(options, io));
   const local = resolve(io.cwd, file ?? `selfhost-${stamp(now)}.tar.gz`);
   const { rows } = await countRows(dataDir);
-  // Written to a temporary name first, so a failed backup never looks like a good one.
-  writeFileSync(`${local}.partial`, await dumpDataDir(dataDir));
-  renameSync(`${local}.partial`, local);
+  // Written to a temporary name first, so a failed backup never looks like a good one. The
+  // ledger holds notify target URLs: the file is for this user only.
+  const partial = `${local}.partial`;
+  writeFileSync(partial, await dumpDataDir(dataDir), { mode: 0o600 });
+  chmodSync(partial, 0o600);
+  renameSync(partial, local);
   return report(
     { schema: "selfhost.ledger_backup/v1", file: local, ledger: dataDir, format: "pglite", rows },
     io,
@@ -235,6 +253,7 @@ export async function runRestore(
   }
 
   const dataDir = embeddedDir(options, io);
+  refuseWhileWatching("selfhost ledger restore", busyCheck(options, io));
   const scratch = `${dataDir}.restore-${process.pid}`;
   rmSync(scratch, { recursive: true, force: true });
   try {

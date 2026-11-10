@@ -10,6 +10,7 @@ import { explain, GUARDRAILS_DOCS, PACKAGES_DOCS } from "../src/hooks/explain.js
 import { checkPreToolCall } from "../src/hooks/pretool.js";
 import { runHook, type SpoolLine } from "../src/hooks/receive.js";
 import { type AnswerText, answerText, type HookAgent } from "../src/hooks/vendors.js";
+import { agentSessionVariable } from "../src/human.js";
 import { type InboxIo, runInboxDecide } from "../src/inbox/commands.js";
 import { localReviewList } from "../src/review-list.js";
 import { TeamClient } from "../src/team/client.js";
@@ -633,7 +634,14 @@ describe("only a person approves", () => {
 
   it("refuses the decision commands inside an agent session or without a terminal", async () => {
     const id = "019a5b01-0000-7000-8000-000000000001";
-    for (const env of [{ CLAUDECODE: "1" }, { CODEX_SANDBOX: "seatbelt" }]) {
+    for (const env of [
+      { CLAUDECODE: "1" },
+      { CODEX_SANDBOX: "seatbelt" },
+      { AI_AGENT: "claude-code" },
+      { CLAUDE_CODE_SESSION_ID: "5d1f2c" },
+      { OPENCODE_CLIENT: "cli" },
+      { CURSOR_EXTENSION_HOST_ROLE: "agent-exec" },
+    ]) {
       for (const args of [
         ["inbox", "approve", id],
         ["review", "deny", id],
@@ -643,10 +651,14 @@ describe("only a person approves", () => {
         const result = await run(args, { env });
         expect(result.code).toBe(1);
         expect(result.err).toMatch(
-          /inside a coding agent session \((CLAUDECODE|CODEX_SANDBOX) is set\)/,
+          /inside a coding agent session \((CLAUDECODE|CODEX_SANDBOX|AI_AGENT|CLAUDE_CODE_SESSION_ID|OPENCODE_CLIENT|CURSOR_EXTENSION_HOST_ROLE) is set\)/,
         );
       }
     }
+    // A Cursor terminal a person opened is not the agent's.
+    expect(
+      agentSessionVariable({ CURSOR_EXTENSION_HOST_ROLE: "user", CURSOR_TRACE_ID: "abc" }),
+    ).toBeUndefined();
     const piped = await run(["inbox", "approve", id], { stdinIsTTY: false });
     expect(piped.code).toBe(1);
     expect(piped.err).toContain("needs a person at a terminal");

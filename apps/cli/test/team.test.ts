@@ -974,6 +974,30 @@ describe("RemoteWriter", () => {
     expect(events[1]?.actor.id).toBe("laptop-user");
   });
 
+  it("sends a person's decisions as the joined person's own, whoever they name", async () => {
+    const { client, bodies } = scripted([Response.json({ accepted: 3, duplicates: 0 })]);
+    const decision = (n: number, by: string, verdict: "approve" | "allow"): LedgerEvent => ({
+      ...event(n),
+      source: "cli",
+      kind: "decision.recorded",
+      actor: { kind: "person", id: by },
+      decision: { verdict, by, item_id: "019a5b01-0000-7000-8000-000000000001" },
+    });
+    const forged = decision(1, "alice@example.com", "approve");
+    const own = decision(2, PERSON, "approve");
+    const vendor = {
+      ...decision(3, "laptop-user", "allow"),
+      decision: { verdict: "allow" as const, by: "config" },
+    };
+    await new RemoteWriter(client, { person: PERSON }).append([forged, own, vendor]);
+    const sent = bodies[0]?.events ?? [];
+    expect(sent[0]).toMatchObject({ actor: { id: PERSON }, decision: { by: PERSON } });
+    expect(sent[1]).toEqual(own);
+    // A rule verdict the vendor recorded keeps its own "by".
+    expect(sent[2]?.decision).toEqual({ verdict: "allow", by: "config" });
+    expect(forged.decision?.by).toBe("alice@example.com");
+  });
+
   it("retries an unreachable, rate limited or failing server with backoff", async () => {
     const { client, bodies } = scripted([
       new TypeError("fetch failed"),

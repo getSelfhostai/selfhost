@@ -1,6 +1,7 @@
-import { mkdirSync } from "node:fs";
+import { chmodSync, lstatSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { PGlite } from "@electric-sql/pglite";
 import postgres from "postgres";
 import { MIGRATIONS, type Migration } from "./migrations.generated.js";
@@ -71,10 +72,57 @@ function connectPostgres(url: string): Database {
   };
 }
 
-async function connectPglite(dataDir: string): Promise<Database> {
-  if (dataDir !== MEMORY_DATA_DIR && !dataDir.includes("://")) {
-    mkdirSync(dataDir, { recursive: true });
+/** Folder modes for the embedded ledger: its owner only. */
+const PRIVATE_DIR = 0o700;
+const PRIVATE_FILE = 0o600;
+
+/**
+ * Makes a folder and everything under it readable by its owner only: folders 0700, files 0600.
+ * Symbolic links are left alone. true when anything was opened up to others before.
+ */
+export function makePrivate(dir: string): boolean {
+  let changed = false;
+  const visit = (path: string, folder: boolean) => {
+    try {
+      const mode = lstatSync(path).mode & 0o777;
+      const wanted = folder ? PRIVATE_DIR : PRIVATE_FILE;
+      if (mode !== wanted) {
+        if (mode & 0o077) changed = true;
+        chmodSync(path, wanted);
+      }
+      if (!folder) return;
+      for (const entry of readdirSync(path, { withFileTypes: true })) {
+        if (entry.isDirectory()) visit(join(path, entry.name), true);
+        else if (entry.isFile()) visit(join(path, entry.name), false);
+      }
+    } catch (error) {
+      // A file the database removed on the way, or a folder another process moved.
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  };
+  visit(dir, true);
+  return changed;
+}
+
+/**
+ * Creates the embedded ledger's folder for its owner only. One made by an earlier release (0755
+ * with 0666 files) is fixed here, once, with a note on stderr. The folder holds notify target
+ * URLs and everything the agents did.
+ */
+function privateDataDir(dataDir: string): void {
+  mkdirSync(dataDir, { recursive: true, mode: PRIVATE_DIR });
+  if ((statSync(dataDir).mode & 0o077) === 0) return;
+  if (makePrivate(dataDir)) {
+    console.error(
+      `selfhost: ${dataDir} was readable by other users; it is now private to you (folders 0700, files 0600).`,
+    );
   }
+}
+
+const isFolder = (dataDir: string) => dataDir !== MEMORY_DATA_DIR && !dataDir.includes("://");
+
+async function connectPglite(dataDir: string): Promise<Database> {
+  if (isFolder(dataDir)) privateDataDir(dataDir);
   const db = await PGlite.create(dataDir);
   const wrap = (client: Pick<PGlite, "query" | "exec">): Queryable => ({
     async query<T>(text: string, params: unknown[] = []) {
@@ -88,7 +136,11 @@ async function connectPglite(dataDir: string): Promise<Database> {
     kind: "pglite",
     ...wrap(db),
     transaction: (fn) => db.transaction((tx) => fn(wrap(tx))),
-    close: () => db.close(),
+    async close() {
+      await db.close();
+      // Files PGlite made while open (0666 under its file system) are made private too.
+      if (isFolder(dataDir)) makePrivate(dataDir);
+    },
   };
 }
 
@@ -263,18 +315,52 @@ export async function rowCounts(db: Queryable): Promise<Record<string, number>> 
  * while nothing else has the folder open: PGlite allows one process at a time.
  */
 export async function dumpDataDir(dataDir: string): Promise<Uint8Array> {
+  if (isFolder(dataDir)) privateDataDir(dataDir);
   const db = await PGlite.create(dataDir);
   try {
     const archive = await db.dumpDataDir("gzip");
-    return new Uint8Array(await archive.arrayBuffer());
+    return privateArchive(new Uint8Array(await archive.arrayBuffer()));
   } finally {
     await db.close();
+    if (isFolder(dataDir)) makePrivate(dataDir);
   }
 }
 
+/**
+ * The archive with every entry's mode set for its owner only: 0700 for folders, 0600 for the
+ * rest. PGlite writes 0666 and 0777, which a plain `tar -x` would keep.
+ */
+export function privateArchive(gzipped: Uint8Array): Uint8Array {
+  const tar = Buffer.from(gunzipSync(gzipped));
+  for (let at = 0; at + 512 <= tar.length; ) {
+    const header = tar.subarray(at, at + 512);
+    if (header.every((byte) => byte === 0)) break;
+    const size = Number.parseInt(field(header, 124, 12) || "0", 8);
+    const type = String.fromCharCode(header[156] ?? 0);
+    const mode = type === "5" ? PRIVATE_DIR : PRIVATE_FILE;
+    if (type !== "2" && type !== "1") {
+      header.write(`${mode.toString(8).padStart(7, "0")}\0`, 100, 8, "ascii");
+      header.fill(0x20, 148, 156);
+      const sum = header.reduce((total, byte) => total + byte, 0);
+      header.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148, 8, "ascii");
+    }
+    at += 512 + Math.ceil(size / 512) * 512;
+  }
+  return new Uint8Array(gzipSync(tar));
+}
+
+/** A NUL or space terminated text field of a tar header. */
+const field = (header: Buffer, offset: number, length: number) =>
+  header
+    .subarray(offset, offset + length)
+    .toString("ascii")
+    .replace(/\0.*$/s, "")
+    .trim();
+
 /** Unpacks a dumpDataDir archive into dataDir, which should be a new, empty folder. */
 export async function loadDataDir(dataDir: string, archive: Uint8Array): Promise<void> {
-  mkdirSync(dataDir, { recursive: true });
+  mkdirSync(dataDir, { recursive: true, mode: PRIVATE_DIR });
   const db = await PGlite.create(dataDir, { loadDataDir: new Blob([archive]) });
   await db.close();
+  makePrivate(dataDir);
 }

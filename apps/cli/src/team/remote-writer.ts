@@ -1,5 +1,5 @@
 import type { LedgerWriter } from "@selfhost/importers";
-import { type LedgerEvent, MAX_EVENT_BATCH } from "@selfhost/schema";
+import { type LedgerEvent, MAX_EVENT_BATCH, PERSON_VERDICTS } from "@selfhost/schema";
 import { TeamApiError, type TeamClient } from "./client.js";
 
 export interface RemoteWriterOptions {
@@ -35,8 +35,9 @@ function retryable(error: unknown): boolean {
  * a revoked token) is not retried.
  *
  * The local ledger keeps each event as it was imported; the copy sent here carries the joined
- * person as actor.id on person events, which is the only person the server accepts for the
- * token. Agent actors are sent unchanged.
+ * person as actor.id on person events, and as decision.by on a person's decisions, which is the
+ * only person the server accepts for the token: a decision recorded here with --person for
+ * someone else reaches the server as this person's own. Agent actors are sent unchanged.
  */
 export class RemoteWriter implements LedgerWriter {
   readonly totals: RemoteTotals = { sent: 0, accepted: 0, duplicates: 0 };
@@ -90,7 +91,18 @@ export class RemoteWriter implements LedgerWriter {
 
   private asPerson(event: LedgerEvent): LedgerEvent {
     const { person } = this.options;
-    if (event.actor.kind !== "person" || event.actor.id === person) return event;
-    return { ...event, actor: { ...event.actor, id: person } };
+    if (event.actor.kind !== "person") return event;
+    const { decision } = event;
+    const ownDecision =
+      decision === undefined ||
+      decision.by === undefined ||
+      decision.by === person ||
+      !(PERSON_VERDICTS as readonly string[]).includes(decision.verdict);
+    if (event.actor.id === person && ownDecision) return event;
+    return {
+      ...event,
+      actor: { ...event.actor, id: person },
+      ...(ownDecision ? {} : { decision: { ...decision, by: person } }),
+    };
   }
 }

@@ -114,6 +114,31 @@ review (see [`apps/cli`](./apps/cli/README.md)). Token parsing and prices come f
 pnpm --filter @selfhost/cli dev scan --since 30d --report scan.html --share scan.svg
 ```
 
+## Security
+
+The team server decides who may answer what. The hooks and the CLI's checks on a laptop (a
+command that refuses inside an agent session, a hook that blocks `selfhost inbox approve`) are a
+convenience: an agent running as the same OS user, with the person's token, can always get past
+them, so the server checks every answer itself, whichever way it arrives (the review item route,
+decisions synced from a laptop, the MCP server):
+
+- A person token records decisions only as its own person. A synced `decision.recorded` event
+  whose `decision.by` names someone else is refused; the admin token may name anyone.
+- Approving or overriding a one-time exception needs the owner or admin role in the item's team,
+  and the person whose agent was blocked cannot approve their own unless the team's
+  `selfhost.toml` sets `[review] self_approve_exceptions = true`. Answering a proposal to the
+  team's context needs the owner or admin role. Denying an exception is always allowed.
+- A decision the server refuses is logged and leaves the item open. A laptop in team mode gets a
+  grant only from the server's answer, so a refused decision allows nothing.
+- Agents never answer approvals, questions, exceptions, blocked actions, context proposals or
+  budget and alert items through the MCP `record_decision` tool.
+
+On a laptop, the embedded ledger (`~/.selfhost/data`, which holds notification target URLs) and
+the server's data folder are readable by their owner only: folders 0700, files 0600, fixed on the
+next open for installs made before. `selfhost ledger backup` writes 0600 files, and `selfhost
+ledger restore`, `backup`, `migrate` and `prune` refuse while `selfhost import --watch` holds the
+ledger.
+
 ## License
 
 Apache-2.0, see [LICENSE](./LICENSE). The `ee/` folder is under a separate commercial license,
