@@ -79,6 +79,8 @@ describe.each(BACKENDS)("upgrades and rollbacks on $name", (backend) => {
         await store.close();
       }
     },
+    // Every migration is applied and rolled back in turn, so this grows with each new one.
+    180_000,
   );
 
   // No release is tagged yet, so the previous release is the migration set without its newest
