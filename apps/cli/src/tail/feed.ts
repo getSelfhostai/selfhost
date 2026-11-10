@@ -30,6 +30,8 @@ export interface FeedWatcher {
   schema: "selfhost.feed_watcher/v1";
   pid: number;
   started_at: string;
+  /** The embedded ledger folder it holds open; absent for a Postgres ledger or an older release. */
+  data_dir?: string;
 }
 
 /** ~/.selfhost/feed, next to the config file, or SELFHOST_FEED_DIR. */
@@ -104,7 +106,13 @@ export interface FeedWriter {
  */
 export function startFeed(
   dir: string,
-  options: { now?: () => Date; pid?: number; warn?: (line: string) => void } = {},
+  options: {
+    now?: () => Date;
+    pid?: number;
+    warn?: (line: string) => void;
+    /** The embedded ledger folder the watcher holds, for commands that must wait for it. */
+    dataDir?: string;
+  } = {},
 ): FeedWriter {
   const clock = options.now ?? (() => new Date());
   const pid = options.pid ?? process.pid;
@@ -126,6 +134,7 @@ export function startFeed(
       schema: "selfhost.feed_watcher/v1",
       pid,
       started_at: clock().toISOString(),
+      ...(options.dataDir ? { data_dir: options.dataDir } : {}),
     };
     const temporary = `${watcherPath(dir)}.${pid}.tmp`;
     writeFileSync(temporary, `${JSON.stringify(watcher)}\n`, { mode: 0o600 });

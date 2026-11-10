@@ -426,6 +426,7 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       write: deps.write,
       now: deps.now,
       exec: deps.exec ?? systemExec,
+      configPath: deps.configPath ?? defaultConfigPath(),
     }),
     fail,
   );

@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { userInfo } from "node:os";
+import { resolve as resolvePath } from "node:path";
 import {
   type ImportOptions,
   importAll,
@@ -383,7 +384,13 @@ export async function runWatch(options: ImportCommandOptions, io: ImportIo): Pro
   });
   // The live feed selfhost tail follows, so it never opens the ledger this process holds. It
   // sits under the monitor, so the alerts the monitor raises reach it too.
-  const feed = startFeed(feedDir(io.env, configPathOf(io)), { warn: io.write });
+  const url = options.database ?? io.env.DATABASE_URL;
+  const feed = startFeed(feedDir(io.env, configPathOf(io)), {
+    warn: io.write,
+    ...(url && isPostgresUrl(url)
+      ? {}
+      : { dataDir: resolvePath(resolveDataDir(options.dataDir, io.env)) }),
+  });
   writer = monitor.tap(feed.tap(writer));
   // The saved inbox copy the statusline counts from, and the inbox queue sent on reconnect.
   const inbox = await watchInbox(ledger, {

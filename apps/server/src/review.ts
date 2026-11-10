@@ -4,6 +4,7 @@ import type { Ledger } from "@selfhost/ledger";
 import {
   AlreadyAnsweredError,
   CODEOWNERS_PATHS,
+  decisionRefusal,
   openReviewList,
   type RefreshOptions,
   type RefreshResult,
@@ -225,43 +226,30 @@ export function reviewRoutes<E extends Env>(
   });
 
   /**
-   * The 403 for approving an exception the caller may not: their own agent's, unless the team's
-   * [review] self_approve_exceptions allows it, or another person's without the owner or admin
-   * role. Denying is always allowed.
+   * The 403 for an answer the caller may not give (decisionRefusal, the rule synced decisions
+   * and MCP answers meet too): approving an exception their own agent asked for, unless the
+   * team's [review] self_approve_exceptions allows it, another person's exception or a context
+   * proposal without the owner or admin role. The admin token names anyone in `by`; only the
+   * self-approval check applies to it, under the default policy since its list has no team.
    */
-  const exceptionRefusal = async (
+  const refusal = async (
     c: Context,
     item: ReviewItem,
     team: string | undefined,
     by: string,
     verdict: DecisionRequest["verdict"],
   ): Promise<Response | undefined> => {
-    if (item.kind !== "exception" || (verdict !== "approve" && verdict !== "override")) {
-      return undefined;
-    }
-    const requester = item.requested_by;
-    if (requester !== undefined && requester.toLowerCase() === by.toLowerCase()) {
-      if ((await configOf(team ?? null)).review.self_approve_exceptions) return undefined;
-      return c.json(
-        apiError(
-          "forbidden",
-          "You cannot approve an exception your own agent asked for. An owner or admin of the team approves it, or the team's selfhost.toml sets [review] self_approve_exceptions = true.",
-        ),
-        403,
-      );
-    }
     const person = options.person?.(c);
-    if (!person) return undefined;
-    const where = team ?? person.team;
-    const role = (await options.role?.(c, where)) ?? person.role;
-    if (role === "owner" || role === "admin") return undefined;
-    return c.json(
-      apiError(
-        "forbidden",
-        `Approving another person's exception needs the owner or admin role in team ${where}; you are a ${role} there.`,
-      ),
-      403,
+    const where = team ?? person?.team;
+    const role = person && where !== undefined ? await options.role?.(c, where) : undefined;
+    const reason = decisionRefusal(
+      item,
+      where ?? "",
+      verdict,
+      person ? { by, role: role ?? person.role } : { by, trusted: true },
+      await configOf(where ?? null),
     );
+    return reason === undefined ? undefined : c.json(apiError("forbidden", reason), 403);
   };
 
   app.post("/v1/review-items/:id/decision", limit, async (c) => {
@@ -275,7 +263,7 @@ export function reviewRoutes<E extends Env>(
     const { list, team } = await holder(c, id);
     const item = await list.get(id);
     if (item) {
-      const refused = await exceptionRefusal(c, item, team, by, body.verdict);
+      const refused = await refusal(c, item, team, by, body.verdict);
       if (refused) return refused;
     }
     try {
@@ -386,11 +374,10 @@ export function startReviewRefreshJob(
   const run = () => {
     running ??= budgets()
       .then(() =>
-        refreshReviewList(
-          ledger,
-          list,
-          options.codeowners ? { codeowners: options.codeowners } : {},
-        ),
+        refreshReviewList(ledger, list, {
+          log,
+          ...(options.codeowners ? { codeowners: options.codeowners } : {}),
+        }),
       )
       .then(
         (result) => {

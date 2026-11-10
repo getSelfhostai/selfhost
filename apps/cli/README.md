@@ -535,8 +535,10 @@ one by its id, or any unique start of it:
   inbox writes no event of its own, so nothing is recorded twice. An item someone else already
   answered is reported (`... was already answered by bob@example.com: deny. Nothing changed.`)
   and exits 1. Approve and deny (here, under `selfhost review` and `selfhost decide`) are a
-  person's: they refuse inside a coding agent's session (`CLAUDECODE`, `CODEX_SANDBOX` and the
-  like are set) and when stdin is not a terminal, and the hooks block an agent that runs them.
+  person's: they refuse inside a coding agent's session (`CLAUDECODE`, `AI_AGENT`,
+  `CODEX_SANDBOX` and the like are set) and when stdin is not a terminal, and the hooks block an
+  agent that runs them. These checks are a convenience: on a team server, the server decides who
+  may answer what (see [Security](../../README.md#security)).
 - `selfhost inbox snooze <id> [--for 2h | --until <time>]` hides an item from your list until
   then (default 1h; `--for` takes m, h, d or w).
 - `selfhost inbox open <id> [--no-open]` prints the item with its risk reasons and brief, and

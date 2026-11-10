@@ -19,7 +19,7 @@ import {
 } from "@selfhost/schema";
 import type { Hono } from "hono";
 import postgres from "postgres";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
 import { startReviewRefreshJob } from "../src/review.js";
 import { TOKEN } from "./helpers.js";
@@ -404,6 +404,83 @@ describe.each(BACKENDS)("review items API on $name", (backend) => {
       ).json()) as ReviewItem;
       expect(allowed.owners).toEqual(["dev@example.com", "lead@example.com"]);
       expect((await decide(mine, "approve", dev)).status).toBe(200);
+    });
+
+    it("applies decisions synced from a laptop only as the review item route would", async () => {
+      const { send, post, refresh } = await setup();
+      const created = (await (await post("/v1/teams", { name: "Red" })).json()) as {
+        invite: string;
+      };
+      const join = async (person: string) =>
+        (
+          (await (
+            await post("/v1/join", { invite: created.invite, person })
+          ).json()) as JoinResponse
+        ).token;
+      const lead = await join("lead@example.com");
+      const dev = await join("dev@example.com");
+      const dev2 = await join("dev2@example.com");
+      const id = "019a7000-0000-7000-8000-000000000101";
+      const blocked: LedgerEvent = {
+        id: "019a7000-0000-7000-9000-000000000101",
+        schema: "selfhost.event/v1",
+        ts: NOW,
+        source: "hook",
+        kind: "policy.evaluated",
+        actor: { kind: "system", id: "selfhost-policy" },
+        session_id: "push-sync",
+        tool: { name: "Bash", input_summary: "git push -f" },
+        decision: {
+          verdict: "block",
+          by: "selfhost-policy",
+          rule_id: "guard.force_push",
+          mode: "enforce",
+        },
+        data: { exception: { id, fingerprint: "f" } },
+      };
+      expect((await post("/v1/events", { events: [blocked] }, dev)).status).toBe(200);
+      await refresh();
+      let n = 0;
+      /** `selfhost decide <id> approve`, then `selfhost import`: the event the sync sends. */
+      const synced = (token: string, by?: string) => {
+        n += 1;
+        const event: LedgerEvent = {
+          id: `019a7000-0000-7000-a000-${String(n).padStart(12, "0")}`,
+          schema: "selfhost.event/v1",
+          ts: minutes(n),
+          source: "cli",
+          kind: "decision.recorded",
+          actor: { kind: "person", id: "ignored@example.com" },
+          decision: { verdict: "approve", ...(by ? { by } : {}), item_id: id },
+          links: { item_id: id },
+          data: { surface: "cli" },
+        };
+        const { actor: _, ...rest } = event;
+        return post("/v1/events", { events: [rest] }, token);
+      };
+      const state = async () =>
+        ((await (await send(`/v1/review-items/${id}`, {}, lead)).json()) as ReviewItem).state;
+
+      // In someone else's name: the batch is refused.
+      const forged = await synced(dev, "lead@example.com");
+      expect(forged.status).toBe(400);
+      expect(await forged.json()).toMatchObject({ errors: [{ index: 0, field: "decision.by" }] });
+      // Their own approval of their own exception, and a member's: stored, never applied.
+      expect((await synced(dev, "dev@example.com")).status).toBe(200);
+      expect((await synced(dev2)).status).toBe(200);
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      await refresh();
+      expect(warn.mock.calls.map(([line]) => String(line))).toEqual([
+        expect.stringMatching(/by dev@example.com .* not applied: You cannot approve an exception/),
+        expect.stringMatching(/by dev2@example.com .* needs the owner or admin role in team red/),
+      ]);
+      warn.mockRestore();
+      expect(await state()).toBe("open");
+      // The owner's synced approval answers it.
+      expect((await synced(lead)).status).toBe(200);
+      await refresh();
+      const item = (await (await send(`/v1/review-items/${id}`, {}, dev)).json()) as ReviewItem;
+      expect(item).toMatchObject({ state: "answered", answer: { by: "lead@example.com" } });
     });
   });
 });

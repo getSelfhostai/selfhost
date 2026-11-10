@@ -367,7 +367,7 @@ export const MCP_TOOLS: readonly McpToolDefinition[] = [
   {
     name: "record_decision",
     description:
-      "Record your person's own decision on a review item they asked you to answer, such as a pull request. Items an agent waits on (approvals, questions, exceptions, blocked actions) need a person and are refused. Writes a decision.recorded event.",
+      "Record your person's own decision on a review item they asked you to answer, such as a pull request. Items an agent waits on (approvals, questions, exceptions, blocked actions), proposals to the team's context, and budget and alert items need a person and are refused. Writes a decision.recorded event.",
     readOnly: false,
     inputSchema: RecordDecisionInputSchema,
     outputSchema: DecisionResponseSchema,

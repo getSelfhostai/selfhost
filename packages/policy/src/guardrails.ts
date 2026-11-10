@@ -692,10 +692,8 @@ const DECISION_COMMANDS: readonly { words: readonly string[]; flag?: string }[] 
   { words: ["notify", "remove"] },
 ];
 
-/** The words of a selfhost decision command a shell command runs, if it runs one. */
-export function selfhostDecisionCommand(argv: readonly string[]): string | undefined {
-  const program = basename(argv[0] ?? "");
-  if (!RUNNERS.has(program) && !argv.some((word) => /selfhost/i.test(word))) return undefined;
+/** The selfhost decision command these words name, after the program, if they name one. */
+function decisionWords(argv: readonly string[]): string | undefined {
   const words = argv.slice(1).filter((word) => !word.startsWith("-"));
   for (const command of DECISION_COMMANDS) {
     if (command.flag !== undefined && !argv.includes(command.flag)) continue;
@@ -707,21 +705,121 @@ export function selfhostDecisionCommand(argv: readonly string[]): string | undef
   return undefined;
 }
 
+/** The words of a selfhost decision command a shell command runs, if it runs one. */
+export function selfhostDecisionCommand(argv: readonly string[]): string | undefined {
+  const program = basename(argv[0] ?? "");
+  if (!RUNNERS.has(program) && !argv.some((word) => /selfhost/i.test(word))) return undefined;
+  return decisionWords(argv);
+}
+
+/**
+ * The decision command a parsed command runs, reading variables the line set (`s=selfhost; $s
+ * inbox approve`). A program that cannot be known before it runs (`$(which selfhost)`, a variable
+ * from elsewhere) counts as selfhost when the words after it name a decision command.
+ */
+function decisionCommandOf(command: ShellCommand): string | undefined {
+  const argv = command.argv.map((word) => expandWord(word, command.vars) ?? word);
+  const found = selfhostDecisionCommand(argv);
+  if (found !== undefined) return found;
+  const program = argv[0] ?? "";
+  return /[$`]/.test(program) ? decisionWords(argv) : undefined;
+}
+
+/** Shells and interpreters that run code they read from stdin when given no script. */
+const STDIN_RUNNERS = new Set([
+  "sh",
+  "bash",
+  "zsh",
+  "dash",
+  "ksh",
+  "fish",
+  "python",
+  "python3",
+  "node",
+  "perl",
+  "ruby",
+]);
+const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh", "fish"]);
+
+/** base64 -d, openssl base64 -d, xxd -r, uudecode and the like: text that was hidden. */
+function decodes(command: ShellCommand): boolean {
+  const [program = "", ...args] = command.argv.map(basename);
+  const has = (...flags: string[]) => args.some((arg) => flags.includes(arg));
+  if (program === "base64" || program === "basenc") return has("-d", "-D", "--decode");
+  if (program === "openssl") return has("base64", "enc") && has("-d");
+  if (program === "xxd") return has("-r", "-revert");
+  return program === "uudecode";
+}
+
+/** Runs code it gets at run time: from stdin, or from a command substitution. */
+function runsHiddenCode(command: ShellCommand): boolean {
+  const [path = "", ...args] = command.argv;
+  const program = basename(path);
+  if (program === "eval" || program === "source" || program === ".") return true;
+  if (!STDIN_RUNNERS.has(program)) return false;
+  const operands = args.filter((arg) => !arg.startsWith("-"));
+  if (operands.length === 0 || args.includes("-s") || operands.includes("-")) return true;
+  if (!SHELLS.has(program) || !args.includes("-c")) return false;
+  return args.some((arg) => arg.includes("$(") || arg.includes("`"));
+}
+
+/** Inline code flags: python -c, node -e, perl -e, ruby -e. */
+const INLINE_CODE: Readonly<Record<string, readonly string[]>> = {
+  python: ["-c"],
+  python3: ["-c"],
+  node: ["-e", "--eval", "-p", "--print"],
+  perl: ["-e", "-E"],
+  ruby: ["-e"],
+};
+
+/** What starts a process in that code: subprocess, os.system, child_process, backticks. */
+const SPAWNS =
+  /subprocess|os\.(?:system|exec|spawn|popen)|pty\.spawn|child_process|exec(?:Sync|File)?\s*\(|spawn(?:Sync)?\s*\(|system\s*\(|`|%x/;
+
+/** Inline interpreter code that names selfhost and starts a process. */
+function scriptsSelfhost(command: ShellCommand): boolean {
+  const [path = "", ...args] = command.argv;
+  const flags = INLINE_CODE[basename(path)];
+  if (!flags) return false;
+  return args.some((arg, i) => {
+    const code = flags.includes(args[i - 1] ?? "") ? arg : undefined;
+    return code !== undefined && /selfhost/i.test(code) && SPAWNS.test(code);
+  });
+}
+
+const PERSON_DECIDES =
+  "Tell the user what you need and why, and let them decide in their own terminal or in the console.";
+
 /**
  * The hit for a call that runs one of selfhost's own decision commands. A person decides those,
- * in their own terminal or the console, so it always enforces, whatever [guardrails] says.
+ * in their own terminal or the console, so it always enforces, whatever [guardrails] says. A
+ * line that hides what it runs (decoded text piped to a shell, inline code that starts selfhost
+ * in a subprocess) is put to the person. This is not the security boundary: the team server
+ * checks every answer it is sent, whoever sends it.
  */
 function selfhostDecision(commands: ShellCommand[]): PolicyHit | undefined {
   for (const command of commands) {
-    const found = selfhostDecisionCommand(command.argv);
+    const found = decisionCommandOf(command);
     if (found === undefined) continue;
     return {
       rule_id: SELFHOST_DECISION_RULE_ID,
       mode: "enforce",
       verdict: "block",
       message: `selfhost ${found} is a person's decision, so agents do not run it.`,
-      alternative:
-        "Tell the user what you need and why, and let them decide in their own terminal or in the console.",
+      alternative: PERSON_DECIDES,
+      irreversible: false,
+    };
+  }
+  const hidden = commands.some(decodes) && commands.some(runsHiddenCode);
+  if (hidden || commands.some(scriptsSelfhost)) {
+    return {
+      rule_id: SELFHOST_DECISION_RULE_ID,
+      mode: "enforce",
+      verdict: "ask",
+      message: hidden
+        ? "This runs decoded text as code, which can hide anything, selfhost's own decisions included, so a person checks it."
+        : "This runs selfhost from inline code, where a person's decision command can hide, so a person checks it.",
+      alternative: PERSON_DECIDES,
       irreversible: false,
     };
   }

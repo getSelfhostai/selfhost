@@ -11,10 +11,12 @@ import {
   PERSON_ROLES,
   PERSON_VERDICTS,
   type PersonRole,
+  type PersonVerdict,
   type ResolvedSelfhostConfig,
   type ReviewAnswer,
   type ReviewItem,
 } from "@selfhost/schema";
+import { decisionRefusal } from "./authorize.js";
 import {
   actionsFor,
   type BuildContext,
@@ -53,6 +55,8 @@ export interface RefreshOptions {
    * [[review.routes]]. Default: none, so that target names nobody.
    */
   codeowners?: (repo: string) => Promise<string | undefined>;
+  /** Where a decision that was not applied is reported, one line each. Default: console.warn. */
+  log?: (line: string) => void;
 }
 
 export interface RefreshResult {
@@ -60,6 +64,19 @@ export interface RefreshResult {
   created: number;
   /** Items changed: a signal added, closed by later activity, answered elsewhere, timed out. */
   updated: number;
+  /**
+   * Answers written on another path (a laptop's synced decision, POST /v1/decisions) that the
+   * decider may not give, so the item stays as it was. Only set when there are some.
+   */
+  refused?: RefusedDecision[];
+}
+
+/** A decision event the refresh did not apply to its item, and why. */
+export interface RefusedDecision {
+  event_id: string;
+  item_id: string;
+  by: string;
+  reason: string;
 }
 
 /** Who records a timeout's deny: selfhost itself, as a system actor. */
@@ -250,6 +267,39 @@ async function close(
   return written;
 }
 
+/**
+ * Why a decision written on another path does not answer a team server's item: the same rule the
+ * review item route applies (decisionRefusal). A person token's event (`team` set) decides as
+ * its own person only, in their role in the item's team; the admin token's (no team) names
+ * anyone. Items with no team are one machine's own and are never refused.
+ */
+async function refuseDecision(
+  tx: Queryable,
+  stored: StoredItem,
+  event: LedgerEvent,
+  by: string,
+  team: string | null,
+  run: Run,
+): Promise<string | undefined> {
+  if (stored.team === null) return undefined;
+  const trusted = team === null;
+  if (!trusted && by.toLowerCase() !== event.actor.id.toLowerCase()) {
+    return `The decision names ${by}, but it was sent with ${event.actor.id}'s token: a person decides only as themselves.`;
+  }
+  const roles = trusted ? undefined : await teamRoles(tx, stored.team, run);
+  const id = by.toLowerCase();
+  const role = roles
+    ? PERSON_ROLES.find((r) => roles[r].some((person) => person.toLowerCase() === id))
+    : undefined;
+  return decisionRefusal(
+    stored.item,
+    stored.team,
+    event.decision?.verdict as PersonVerdict,
+    { by, ...(role ? { role } : {}), trusted },
+    run.configFor(stored.team),
+  );
+}
+
 /** A decision recorded on another path (POST /v1/decisions, selfhost decide, GitHub, chat). */
 async function applyDecision(
   tx: Queryable,
@@ -270,21 +320,26 @@ async function applyDecision(
     stored = await openItemByKey(tx, team, `pr:${event.links.pr_url}`);
   }
   if (!stored) return undefined;
-  const answer: ReviewAnswer = {
-    by: decision.by ?? event.actor.id,
-    verdict: decision.verdict,
-    ...(decision.reason !== undefined ? { reason: decision.reason } : {}),
-    at: event.ts,
-    decision_event_id: event.id,
-  };
   const { item } = stored;
   const replaces =
     item.state === "answered" &&
     decision.replaces_event_id !== undefined &&
     item.answer?.decision_event_id.toLowerCase() === decision.replaces_event_id.toLowerCase();
-  if (item.state === "open" || replaces) {
-    await close(tx, stored, event.id, run, "answered", answer);
+  if (item.state !== "open" && !replaces) return item.id;
+  const by = decision.by ?? event.actor.id;
+  const refusal = await refuseDecision(tx, stored, event, by, team, run);
+  if (refusal !== undefined) {
+    const refused = { event_id: event.id, item_id: item.id, by, reason: refusal };
+    run.result.refused = [...(run.result.refused ?? []), refused];
+    return item.id;
   }
+  await close(tx, stored, event.id, run, "answered", {
+    by,
+    verdict: decision.verdict,
+    ...(decision.reason !== undefined ? { reason: decision.reason } : {}),
+    at: event.ts,
+    decision_event_id: event.id,
+  });
   return item.id;
 }
 
@@ -648,5 +703,11 @@ export async function refreshReviewList(
     await weeklyReports(tx, run);
   });
   await applyTimeouts(ledger, db, run);
+  const log = options.log ?? console.warn;
+  for (const refused of run.result.refused ?? []) {
+    log(
+      `review list: decision ${refused.event_id} by ${refused.by} on item ${refused.item_id} not applied: ${refused.reason}`,
+    );
+  }
   return run.result;
 }

@@ -25,7 +25,11 @@ The selfhost HTTP API, specified in
   exception`) goes to the team's owners and admins; approving one needs that role, and the person
   whose agent was blocked (`requested_by`) cannot approve their own unless the team's
   `selfhost.toml` sets `[review] self_approve_exceptions = true`. Both answer 403; denying is
-  always allowed.
+  always allowed. Answering a context proposal needs the owner or admin role too. The same rule
+  holds for `decision.recorded` events a laptop syncs through `POST /v1/events` (a person token's
+  decision must name its own person in `decision.by`, or the batch is refused) and for the MCP
+  `record_decision` tool: the review list does not apply a decision it would refuse here, and logs
+  it.
 - `GET /v1/decisions`: `decision.recorded` and `policy.evaluated` events, newest first, by
   `path` (a file, the files under a folder, the folders that hold it), `topic` (every word in
   the question or reason), `text`, `rule_id`, `verdict`, `repo`, `target`, `person`,

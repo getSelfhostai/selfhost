@@ -1,6 +1,16 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
+import { gunzipSync } from "node:zlib";
 import { connect, MIGRATIONS, migrate, openLedger } from "@selfhost/ledger";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { seedLedger } from "../../../fixtures/ledger/seed.js";
 import type { BackupReport } from "../src/backup.js";
 import type { LedgerMigrateReport, LedgerStatusReport } from "../src/ledger.js";
@@ -138,6 +148,139 @@ describe("selfhost ledger backup and restore, embedded ledger", () => {
     expect(pg.err).toContain("back it up with pg_dump --format=custom");
     const none = await run(["ledger", "backup", "--data-dir", dir.path("none")]);
     expect(none.err).toBe(`There is no embedded ledger at ${dir.path("none")}`);
+  });
+});
+
+/** Every entry of a gzipped tar: its name, type flag and mode. */
+function tarEntries(file: string) {
+  const tar = gunzipSync(readFileSync(file));
+  const entries: { name: string; type: string; mode: number }[] = [];
+  for (let at = 0; at + 512 <= tar.length; ) {
+    const header = tar.subarray(at, at + 512);
+    if (header.every((byte) => byte === 0)) break;
+    const text = (from: number, length: number) =>
+      header
+        .subarray(from, from + length)
+        .toString("ascii")
+        .replace(/\0.*$/s, "")
+        .trim();
+    entries.push({
+      name: text(0, 100),
+      type: String.fromCharCode(header[156] ?? 0),
+      mode: Number.parseInt(text(100, 8), 8),
+    });
+    at += 512 + Math.ceil(Number.parseInt(text(124, 12) || "0", 8) / 512) * 512;
+  }
+  return entries;
+}
+
+const modeOf = (path: string) => statSync(path).mode & 0o777;
+
+describe("selfhost ledger files are for their owner only", () => {
+  it("makes new ledgers and backups private, entries included", async () => {
+    const dir = tempDir("private");
+    const data = dir.path("home", ".selfhost", "data");
+    await seeded(data);
+    expect(modeOf(data)).toBe(0o700);
+    const backup = json<BackupReport>(
+      await run(["ledger", "backup", "--data-dir", data, "--json"], { cwd: dir.root, now: NOW }),
+    );
+    expect(modeOf(backup.file)).toBe(0o600);
+    const entries = tarEntries(backup.file);
+    expect(entries.length).toBeGreaterThan(10);
+    for (const entry of entries) {
+      expect(entry.mode, entry.name).toBe(entry.type === "5" ? 0o700 : 0o600);
+    }
+    const fresh = dir.path("fresh");
+    json(await run(["ledger", "restore", backup.file, "--data-dir", fresh, "--json"]));
+    expect(modeOf(fresh)).toBe(0o700);
+    const loose = readdirSync(fresh, { recursive: true, withFileTypes: true }).filter(
+      (entry) => (statSync(join(entry.parentPath, entry.name)).mode & 0o077) !== 0,
+    );
+    expect(loose.map((entry) => entry.name)).toEqual([]);
+  });
+
+  it("fixes a ledger an earlier release left open to others, once, with a note", async () => {
+    const dir = tempDir("loose");
+    const data = dir.path("data");
+    await seeded(data);
+    chmodSync(data, 0o755);
+    const file = join(data, "PG_VERSION");
+    chmodSync(file, 0o666);
+    const notes: string[] = [];
+    const error = vi.spyOn(console, "error").mockImplementation((line) => notes.push(String(line)));
+    try {
+      await (await openLedger({ dataDir: data })).close();
+      await (await openLedger({ dataDir: data })).close();
+    } finally {
+      error.mockRestore();
+    }
+    expect(modeOf(data)).toBe(0o700);
+    expect(modeOf(file)).toBe(0o600);
+    expect(notes).toEqual([
+      expect.stringMatching(/was readable by other users; it is now private/),
+    ]);
+  });
+});
+
+describe("selfhost ledger commands wait for import --watch", () => {
+  /** A watcher record as `selfhost import --watch` writes it, for a process that is alive. */
+  function watching(configPath: string, dataDir?: string) {
+    const feed = join(dirname(configPath), "feed");
+    mkdirSync(feed, { recursive: true });
+    writeFileSync(
+      join(feed, "watcher.json"),
+      JSON.stringify({
+        schema: "selfhost.feed_watcher/v1",
+        pid: process.ppid,
+        started_at: NOW.toISOString(),
+        ...(dataDir ? { data_dir: dataDir } : {}),
+      }),
+    );
+  }
+
+  it("refuses restore, backup, migrate and prune while a watcher holds the ledger", async () => {
+    const dir = tempDir("busy");
+    const data = dir.path("data");
+    await seeded(data);
+    const configPath = dir.path("selfhost", "config.json");
+    const file = dir.path("backup.tar.gz");
+    json(await run(["ledger", "backup", file, "--data-dir", data, "--json"], { configPath }));
+    watching(configPath, data);
+    for (const args of [
+      ["restore", file, "--force"],
+      ["backup", dir.path("again.tar.gz")],
+      ["migrate"],
+      ["prune", "--days", "1"],
+    ]) {
+      const result = await run(["ledger", ...args, "--data-dir", data], { configPath });
+      expect(result.code, args[0]).toBe(1);
+      expect(result.err).toMatch(
+        new RegExp(
+          `selfhost import --watch \\(pid ${process.ppid}\\) has the ledger at .* open, so selfhost ledger ${args[0]} was refused.*kill ${process.ppid}`,
+        ),
+      );
+    }
+    expect(existsSync(`${data}.before-restore-20261108T120000Z`)).toBe(false);
+    // A watcher on another ledger, or one that is gone, does not hold this one.
+    watching(configPath, dir.path("other"));
+    json(
+      await run(["ledger", "restore", file, "--force", "--data-dir", data, "--json"], {
+        configPath,
+      }),
+    );
+  });
+
+  it("counts a watcher from an earlier release as holding the default ledger", async () => {
+    const dir = tempDir("busy-default");
+    const data = dir.path("data");
+    await seeded(data);
+    const configPath = dir.path("selfhost", "config.json");
+    watching(configPath);
+    const env = { SELFHOST_DATA_DIR: data };
+    const result = await run(["ledger", "migrate"], { configPath, env });
+    expect(result.code).toBe(1);
+    expect(result.err).toMatch(/selfhost import --watch/);
   });
 });
 

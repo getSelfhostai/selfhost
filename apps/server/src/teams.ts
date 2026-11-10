@@ -145,6 +145,12 @@ export function teamRoutes(
   person.post("/v1/events", limit(MAX_BODY_BYTES), async (c) => {
     const stamped = stampEvents(await c.req.text(), c.env.person);
     if ("errors" in stamped) {
+      const forged = stamped.errors.filter((e) => e.field === "decision.by").length;
+      if (forged > 0) {
+        console.warn(
+          `events: refused a batch from ${c.env.person.id} (team ${c.env.person.team}) with ${forged} decision(s) in another person's name`,
+        );
+      }
       const body: IngestEventsError = {
         error: {
           code: "invalid_events",
@@ -384,6 +390,22 @@ export function stampEvents(
         index,
         field: "actor.id",
         message: `Expected ${person.id}, the person this token belongs to`,
+      });
+    }
+    // A person's own answer is recorded for them only: who decided is the token's person.
+    const decision = isObject(event.decision) ? event.decision : undefined;
+    if (
+      isObject(actor) &&
+      actor.kind === "person" &&
+      decision &&
+      (PERSON_VERDICTS as readonly unknown[]).includes(decision.verdict) &&
+      decision.by !== undefined &&
+      (typeof decision.by !== "string" || decision.by.toLowerCase() !== person.id.toLowerCase())
+    ) {
+      errors.push({
+        index,
+        field: "decision.by",
+        message: `Expected ${person.id}, the person this token belongs to: a person token records only its own decisions`,
       });
     }
     if (isObject(actor) && actor.kind === "system") {

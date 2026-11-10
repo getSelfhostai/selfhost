@@ -286,8 +286,42 @@ describe.each(BACKENDS)("MCP over HTTP on $name", (backend) => {
         "Codex asks for this exception: The health check must reach the vendor's status page.",
       );
       expect(result.next).toMatch(/get_answer/);
+
+      const approve = await call(dan, "record_decision", { item_id: id, verdict: "approve" });
+      expect(approve.error?.code).toBe("forbidden");
+      expect(approve.text).toMatch(/An agent cannot answer an exception item/);
     },
   );
+
+  it.skipIf(backend.skip)("refuses an agent's answer to a budget or alert item", async () => {
+    const at = new Date().toISOString();
+    const alert = (n: number, data: Record<string, unknown>): LedgerEvent => ({
+      id: uuidv7(new Date()),
+      schema: "selfhost.event/v1",
+      ts: at,
+      source: "cli",
+      kind: "alert.raised",
+      actor: { kind: "system", id: "selfhost" },
+      session_id: `alert-${n}`,
+      data,
+    });
+    await store.ledger.append(
+      [
+        alert(1, { alert: "budget_exceeded", owner: DAN, period: "monthly" }),
+        alert(2, { alert: "quality_alarm", metric: "tests" }),
+      ],
+      { team: "data" },
+    );
+    await refreshReviewList(store.ledger, openReviewList(store.ledger));
+    const items = await openReviewList(store.ledger, { team: "data" }).list({ limit: 100 });
+    for (const kind of ["budget", "quality"]) {
+      const item = items.items.find((i) => i.kind === kind);
+      expect(item, kind).toBeDefined();
+      const answer = await call(dan, "record_decision", { item_id: item?.id, verdict: "deny" });
+      expect(answer.error?.code, kind).toBe("forbidden");
+      expect(answer.text).toMatch(`An agent cannot answer a ${kind} item`);
+    }
+  });
 
   it.skipIf(backend.skip)("keeps default answers under the token budget", async () => {
     for (const [name, args] of [
