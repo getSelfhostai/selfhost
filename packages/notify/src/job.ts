@@ -239,6 +239,10 @@ export async function runNotify(ledger: Ledger, options: NotifyOptions): Promise
   return result;
 }
 
+/** How far a target's creation may follow an item's or alert's raised time and still get it. */
+const RAISED_GRACE_MS = 2 * 60_000;
+const DIGEST_KINDS: ReadonlySet<NotifyKind> = new Set<NotifyKind>(["digest", "spend_digest"]);
+
 /**
  * Sends one thing to each of a person's targets that has not had it yet and that was added by
  * `since`: when it was raised, or when its digest window opened. So a new target gets no
@@ -260,7 +264,9 @@ async function sendOnce(
   },
 ): Promise<void> {
   const done = await store.done(send.person, send.kind, send.subject);
-  const raised = Date.parse(send.since);
+  // Items and alerts carry the time the laptop raised them, which can trail the server's clock
+  // (or be cut to the second), so a target added a moment later still gets them.
+  const raised = Date.parse(send.since) + (DIGEST_KINDS.has(send.kind) ? 0 : RAISED_GRACE_MS);
   const pending = (await store.targets(send.person)).filter(
     (target) => !done.has(target.name) && Date.parse(target.created_at) <= raised,
   );

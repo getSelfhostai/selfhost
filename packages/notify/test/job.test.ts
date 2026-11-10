@@ -222,6 +222,20 @@ describe("runNotify", () => {
     expect(titles[2]).not.toMatch(/budget/);
   });
 
+  it("still sends an item raised a moment before the target was added, as clocks drift", async () => {
+    await insertItem(ledger, item({ created_at: "2026-11-09T09:45:00.000Z" }));
+    await store().addTarget(
+      "dev@example.com",
+      "phone",
+      PHONE,
+      new Date("2026-11-09T09:45:00.900Z"),
+    );
+    await store().addTarget("dev@example.com", "late", MAIL, new Date("2026-11-09T09:50:00Z"));
+    const { deliver, sent } = fakeDeliver();
+    await runNotify(ledger, { deliver, directory: directory(), now: NOW });
+    expect(sent.map((s) => s.url)).toEqual([PHONE]);
+  });
+
   it("sends a new target's first digest when the next window opens, not at once", async () => {
     await insertItem(ledger, item({ blocking: false, created_at: "2026-11-08T10:00:00.000Z" }));
     const weekly = directory({
