@@ -62,13 +62,17 @@ async function teamServer() {
 
 type Server = Awaited<ReturnType<typeof teamServer>>;
 
+/** A laptop with Claude Code and Codex set up in its home folder, and neither Cursor nor Copilot. */
 function laptop(server: Server, name: string) {
   const home = tempDir(`laptop-${name}`);
   const root = tempDir(`system-${name}`);
+  mkdirSync(home.path(".claude"), { recursive: true });
+  mkdirSync(home.path(".codex"), { recursive: true });
   return {
     home,
     root,
     deps: {
+      home: home.root,
       configPath: home.path(".selfhost", "config.json"),
       fetch: server.fetch,
       systemRoot: root.root,
@@ -124,6 +128,9 @@ describe("laptop rollout through selfhost join", () => {
       "Bash(git push --force *)",
     );
     expect(existsSync(ada.root.path("etc", "codex", "requirements.toml"))).toBe(true);
+    // Cursor and Copilot are not on this laptop, so their files are left out.
+    expect(report.laptop.managed.not_here).toEqual(["cursor", "copilot"]);
+    expect(existsSync(ada.root.path("etc", "cursor"))).toBe(false);
 
     let coverage = await laptops(ada.deps);
     expect(coverage).toMatchObject({
@@ -140,7 +147,7 @@ describe("laptop rollout through selfhost join", () => {
         platform: "linux",
         selfhost_version: expect.any(String),
         policy_hash: hash,
-        managed: { state: "current", files: 5, pending: 0 },
+        managed: { state: "current", files: 3, pending: 0 },
         last_heartbeat: expect.any(String),
         flags: [],
         status: "current",
@@ -154,7 +161,7 @@ describe("laptop rollout through selfhost join", () => {
       bob.deps,
     );
     expect(bobJoined.code).toBe(0);
-    expect(bobJoined.out).toContain("Managed settings install is off here: 5 of 5 files differ");
+    expect(bobJoined.out).toContain("Managed settings install is off here: 3 of 3 files differ");
     expect(existsSync(bob.root.path("etc"))).toBe(false);
 
     // Cy joins from somewhere without the CLI, so no laptop of hers ever reports.
@@ -250,9 +257,14 @@ describe("laptop rollout through selfhost join", () => {
         const joined = await run(["join", SERVER, code, "--person", "ada@example.com"], ada.deps);
         expect(joined.code).toBe(0);
         const staged = ada.home.path(".selfhost", "managed", "codex", "requirements.toml");
+        // Only for the agents on this laptop: no sudo line for Cursor's or Copilot's files.
         expect(joined.out).toContain(
-          "5 files need an admin. Run (selfhost never runs sudo itself):",
+          "3 files need an admin. Run (selfhost never runs sudo itself):",
         );
+        expect(joined.out).toContain(
+          "Left out the managed settings of Cursor, Copilot: not on this laptop. A later sync installs them once one is.",
+        );
+        expect(joined.out).not.toMatch(/sudo .*(cursor|github-copilot)/);
         expect(joined.out).toContain(
           `  sudo mkdir -p '${ada.root.path("etc", "codex")}' && sudo install -o root -m 0644 '${staged}' '${ada.root.path("etc", "codex", "requirements.toml")}'`,
         );
@@ -262,7 +274,7 @@ describe("laptop rollout through selfhost join", () => {
         const coverage = await laptops(ada.deps);
         expect(coverage.laptops[0]).toMatchObject({
           status: "not_installed",
-          managed: { state: "pending", files: 5, pending: 5 },
+          managed: { state: "pending", files: 3, pending: 3 },
         });
       } finally {
         chmodSync(ada.root.path("etc"), 0o755);

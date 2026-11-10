@@ -29,6 +29,7 @@ import { plural, table } from "../format.js";
 import { drainSpool } from "../hooks/drain.js";
 import { managedHooks } from "../hooks/managed-hooks.js";
 import { spoolDir } from "../hooks/receive.js";
+import { refuseAgentSession } from "../human.js";
 import {
   describeTarget,
   type ImportIo,
@@ -606,6 +607,8 @@ async function countSources(options: InitOptions, io: InitIo, where: Paths, sinc
  */
 export async function runInit(options: InitOptions, io: InitIo): Promise<number> {
   if (options.undo) {
+    // A person's script may undo without a terminal; a coding agent session may not.
+    if (!options.dryRun) refuseAgentSession("selfhost init --undo", io.env);
     const home = agentScope(options.home, io).home;
     const report = undoInit(home, options.dryRun ?? false);
     if (options.json) io.write(JSON.stringify(report, null, 2));

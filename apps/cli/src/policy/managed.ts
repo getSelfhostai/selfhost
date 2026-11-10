@@ -1,7 +1,16 @@
 import { createHash } from "node:crypto";
-import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
-import { type CompileResult, PLATFORMS, type Platform } from "@selfhost/compile";
+import type { Env, Which } from "@selfhost/agents";
+import { type CompileResult, PLATFORMS, type Platform, VENDOR_NAMES } from "@selfhost/compile";
 import type { CompileVendor, LaptopManaged, ManagedState } from "@selfhost/schema";
 import { plural } from "../format.js";
 
@@ -57,6 +66,73 @@ export interface ManagedReport {
   files: ManagedFileReport[];
   /** Admin commands that install the files still pending. selfhost prints them, never runs them. */
   commands: string[];
+  /**
+   * Vendors whose files were left out because their agent is not on this laptop (see
+   * vendorsHere); a later sync installs them once it is. Absent when every vendor's were kept.
+   */
+  not_here?: CompileVendor[];
+}
+
+/** Where to look for the agents on a laptop. */
+export interface LaptopAgentsScope {
+  home: string;
+  env: Env;
+  platform: string;
+  which?: Which;
+  /** Where system paths start (/Applications): undefined for the real ones. */
+  root?: string;
+}
+
+/** Signs that a vendor's agent is on a laptop: its folders, its commands, its macOS apps. */
+const VENDOR_SIGNS: Record<
+  CompileVendor,
+  { dirs: (scope: LaptopAgentsScope) => (string | undefined)[]; commands: string[]; apps: string[] }
+> = {
+  claude_code: {
+    dirs: ({ home, env }) => [env.CLAUDE_CONFIG_DIR, join(home, ".claude")],
+    commands: ["claude"],
+    apps: [],
+  },
+  codex: {
+    dirs: ({ home, env }) => [env.CODEX_HOME, join(home, ".codex")],
+    commands: ["codex"],
+    apps: ["Codex.app"],
+  },
+  cursor: {
+    dirs: ({ home }) => [join(home, ".cursor")],
+    commands: ["cursor-agent", "cursor"],
+    apps: ["Cursor.app"],
+  },
+  copilot: {
+    dirs: ({ home, env }) => [env.COPILOT_HOME, join(home, ".copilot")],
+    commands: ["copilot"],
+    apps: [],
+  },
+};
+
+/**
+ * The vendors whose agent is on this laptop: its config folder exists, its command is on PATH
+ * or, on macOS, its app is installed. Join and sync install managed files only for these, so a
+ * laptop without Cursor is not asked to run sudo for Cursor's hooks.json.
+ */
+export function vendorsHere(scope: LaptopAgentsScope): Set<CompileVendor> {
+  const here = new Set<CompileVendor>();
+  for (const [vendor, signs] of Object.entries(VENDOR_SIGNS) as [
+    CompileVendor,
+    (typeof VENDOR_SIGNS)[CompileVendor],
+  ][]) {
+    const found =
+      signs.dirs(scope).some((dir) => dir !== undefined && dir !== "" && existsSync(dir)) ||
+      signs.commands.some((command) => scope.which?.(command) !== undefined) ||
+      (scope.platform === "darwin" &&
+        signs.apps.some(
+          (app) =>
+            existsSync(systemPath(`/Applications/${app}`, scope.root)) ||
+            existsSync(join(scope.home, "Applications", app)),
+        ));
+    if (found) here.add(vendor);
+  }
+  return here;
 }
 
 export interface ManagedInstallOptions {
@@ -312,6 +388,12 @@ export function describeManaged(report: ManagedReport): string[] {
   for (const file of files) {
     if (file.status === "failed") lines.push(`Could not install ${file.path}: ${file.message}`);
     if (file.status === "conflict") lines.push(`Left ${file.path} alone: ${file.message}`);
+  }
+  if (report.not_here && report.not_here.length > 0) {
+    const names = report.not_here.map((vendor) => VENDOR_NAMES[vendor]).join(", ");
+    lines.push(
+      `Left out the managed settings of ${names}: not on this laptop. A later sync installs them once one is.`,
+    );
   }
   if (report.commands.length > 0) {
     const needs = count("needs_admin");

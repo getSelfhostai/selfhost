@@ -121,11 +121,15 @@ function exceptionRoute(
   if (owners.length > 0) {
     return { owners, route: { step: "team", from: "the team's owners and admins" } };
   }
+  const alone = requester !== undefined && approvers.some(same);
   return {
     owners: [],
     route: {
       step: "none",
-      from: "the team has no owner or admin but the person whose agent was blocked; [review] self_approve_exceptions lets them approve it",
+      from: "nobody",
+      why: alone
+        ? `the team's only owner or admin, ${requester}, is the person whose agent was blocked, and nobody approves their own exception. Invite an admin to the team, or set [review] self_approve_exceptions = true in the team's selfhost.toml`
+        : "the team has no owner or admin to approve it. Give someone the admin role",
     },
   };
 }

@@ -2438,7 +2438,7 @@
                 },
                 "run_url": {
                   "format": "uri",
-                  "description": "The run this item came from in the console's run view, <SELFHOST_PUBLIC_URL>/runs/<session_id>. Added by the team server when the item names a session.",
+                  "description": "The run this item came from in the console's run view, <SELFHOST_PUBLIC_URL>/?screen=run&run=<session_id>. Added by the team server when the item names a session.",
                   "type": "string"
                 },
                 "trace_url": {
@@ -4845,7 +4845,7 @@
               },
               "run_url": {
                 "format": "uri",
-                "description": "The run this item came from in the console's run view, <SELFHOST_PUBLIC_URL>/runs/<session_id>. Added by the team server when the item names a session.",
+                "description": "The run this item came from in the console's run view, <SELFHOST_PUBLIC_URL>/?screen=run&run=<session_id>. Added by the team server when the item names a session.",
                 "type": "string"
               },
               "trace_url": {

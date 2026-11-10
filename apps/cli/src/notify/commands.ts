@@ -17,7 +17,7 @@ import {
 } from "@selfhost/schema";
 import type { Command } from "commander";
 import { table } from "../format.js";
-import { agentSessionVariable } from "../human.js";
+import { refuseAgentSession } from "../human.js";
 import { defaultPerson } from "../import.js";
 import { type Fetch, serverUrl, TeamClient } from "../team/client.js";
 import { readMembership } from "../team/config.js";
@@ -303,10 +303,5 @@ export function registerNotify(
  * not. Stdin may be a pipe here (add - reads the URL from it), so only the agent check applies.
  */
 function refuseAgent(what: string, env: Readonly<Record<string, string | undefined>>): void {
-  const marker = agentSessionVariable(env);
-  if (marker !== undefined) {
-    throw new Error(
-      `${what} is a person's decision, and this runs inside a coding agent session (${marker} is set), so it was refused. Run it yourself in a terminal outside the agent.`,
-    );
-  }
+  refuseAgentSession(what, env);
 }

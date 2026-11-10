@@ -271,7 +271,7 @@ describe("selfhost import --hook-events", () => {
 
 describe("selfhost tail on a background run", () => {
   it("prints each run event as one line and filters by run", async () => {
-    const { formatLine, lineOf, matches } = await import("../src/tail/line.js");
+    const { clockIn, formatLine, lineOf, matches } = await import("../src/tail/line.js");
     const base = {
       schema: "selfhost.event/v1" as const,
       ts: "2026-11-09T10:00:00.000Z",
@@ -308,7 +308,9 @@ describe("selfhost tail on a background run", () => {
         },
       },
     ];
-    const lines = events.map((event) => formatLine(lineOf(event, { console: SERVER })));
+    const lines = events.map((event) =>
+      formatLine(lineOf(event, { console: SERVER }), clockIn("UTC")),
+    );
     expect(lines).toEqual([
       "10:00:00  lead@example.com  claude_code  updated running",
       "10:00:00  lead@example.com  claude_code  output editing src/login.ts | running tests",

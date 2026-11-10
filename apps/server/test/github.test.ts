@@ -553,7 +553,7 @@ describe("owner and brief from the review list", () => {
       `- Protected path: [\`src/auth/keys.ts:20\`](${PR_142.html_url}/files#diff-`,
     );
     expect(body).toContain("- New dependency `ioredis`");
-    expect(body).toContain(`[run view](${SERVER}/runs/${SESSION})`);
+    expect(body).toContain(`[run view](${SERVER}/?screen=run&run=${SESSION})`);
     expect(body).not.toContain("0199f2a4");
 
     const [run] = h.github.checkRuns;
@@ -633,7 +633,7 @@ describe("owner and brief from the review list", () => {
     const before = h.github.writes.length;
     await h.deliver(opened142());
     expect(pull.comments.map((c) => c.id)).toEqual([comment?.id]);
-    expect(pull.comments[0]?.body).toContain(`${SERVER}/runs/${SESSION}`);
+    expect(pull.comments[0]?.body).toContain(`${SERVER}/?screen=run&run=${SESSION}`);
     expect(h.github.writes.slice(before).map((w) => w.method)).toEqual(["PATCH", "PATCH"]);
   });
 

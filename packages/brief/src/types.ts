@@ -172,7 +172,7 @@ export interface BriefTraceSession {
   start: string;
   end: string;
   events: number;
-  /** The run in the team server's console (`<server>/runs/<id>`). */
+  /** The run in the team server's console (`<server>/?screen=run&run=<id>`). */
   url?: string;
   /** The run in the team's tracer, from `[integrations.tracer] run_url`. */
   tracerUrl?: string;

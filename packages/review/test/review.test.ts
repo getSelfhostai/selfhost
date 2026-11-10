@@ -29,7 +29,6 @@ import { at, BACKENDS, config, event, readFixture } from "./helpers.js";
 const NOW = "2026-11-10T10:00:00.000Z";
 const PERSON = "dev@example.com";
 const CLAUDE_SESSION = "665bce74-4bdc-4164-8bb1-cc4246de2400";
-const CODEX_SESSION = "01a10ca6-8deb-75c0-92f6-bb789b300b1a";
 const PR_URL = "https://github.com/acme/api/pull/42";
 const HASH = "a".repeat(64);
 
@@ -987,6 +986,34 @@ to = ["role:member", "role:admin", "dev@example.com"]
         verdict: "approve",
       });
       expect(await state(requestId(t, 2))).toBe("answered");
+    });
+
+    it("tells a sole owner why their own exception has nobody to approve it, and how to go on", async () => {
+      const { ledger, refresh } = await setup();
+      await ledger.teams.createTeam({ id: "red", name: "Red" });
+      await databaseOf(ledger).query(
+        "INSERT INTO people (team_id, id, role) VALUES ('red', $1, 'owner')",
+        [PERSON],
+      );
+      const t = at(NOW, -5);
+      await ledger.append(
+        [
+          exceptionBlock(
+            t,
+            { id: requestId(t, 1), fingerprint: "f1" },
+            { team: "red", actor: { kind: "person", id: PERSON } },
+          ),
+        ],
+        { team: "red" },
+      );
+      await refresh();
+      const [item] = await all(openReviewList(ledger, { team: "red", now: () => new Date(NOW) }));
+      expect(item?.owners).toEqual([]);
+      expect(item?.route).toEqual({
+        step: "none",
+        from: "nobody",
+        why: `the team's only owner or admin, ${PERSON}, is the person whose agent was blocked, and nobody approves their own exception. Invite an admin to the team, or set [review] self_approve_exceptions = true in the team's selfhost.toml`,
+      });
     });
 
     it("lets the requester approve their own exception when the team allows it", async () => {

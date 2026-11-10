@@ -65,11 +65,33 @@ export const layeredOnTeam = (location: ConfigLocation): boolean =>
   location.teamPolicy !== undefined &&
   location.teamPolicy.path !== location.path;
 
+/** One file the policy in use is made of, to point at the line that defines a rule. */
+export interface PolicySource {
+  path: string;
+  text: string;
+  /** Which layer the file is, such as "team web's policy"; unset for a lone selfhost.toml. */
+  layer?: string;
+}
+
 export interface PolicyText {
   /** The selfhost.toml in use. */
   text: string;
   /** Fields of the repository's file that would relax the team policy; the team's value is used. */
   conflicts: LayerConflict[];
+  /** The files text is made of, in order: the team policy, then the repository's file. */
+  sources: PolicySource[];
+}
+
+/**
+ * The name of the pulled team policy as a layer. The server composes it from the org floor and
+ * the team's own file when the org has one, and says so in the file's header.
+ */
+export function teamLayerName(team: TeamPolicyFile, text: string): string {
+  const made = /^# The policy in use: (.+)\. Change those, not this file\.$/m.exec(text)?.[1];
+  const layers = made?.split(", then ") ?? [];
+  return layers.some((layer) => layer.startsWith("org "))
+    ? `team ${team.team}'s policy, made of ${layers.join(" then ")}`
+    : `team ${team.team}'s policy`;
 }
 
 /**
@@ -82,15 +104,31 @@ export interface PolicyText {
 export function policyText(location: ConfigLocation): PolicyText {
   const own = readFileSync(location.path, "utf8");
   const team = location.teamPolicy;
-  if (!team || !layeredOnTeam(location)) return { text: own, conflicts: [] };
+  if (location.from === "team" && team) {
+    return {
+      text: own,
+      conflicts: [],
+      sources: [{ path: location.path, text: own, layer: teamLayerName(team, own) }],
+    };
+  }
+  const alone = { text: own, conflicts: [], sources: [{ path: location.path, text: own }] };
+  if (!team || !layeredOnTeam(location)) return alone;
   try {
+    const teamText = readFileSync(team.path, "utf8");
     const composed = composePolicy([
-      { kind: "org", name: `team ${team.team}`, text: readFileSync(team.path, "utf8") },
+      { kind: "org", name: `team ${team.team}`, text: teamText },
       { kind: "repo", name: location.path, text: own },
     ]);
-    return { text: composed.text, conflicts: composed.conflicts };
+    return {
+      text: composed.text,
+      conflicts: composed.conflicts,
+      sources: [
+        { path: team.path, text: teamText, layer: teamLayerName(team, teamText) },
+        { path: location.path, text: own, layer: "this repository's selfhost.toml" },
+      ],
+    };
   } catch {
-    return { text: own, conflicts: [] };
+    return alone;
   }
 }
 

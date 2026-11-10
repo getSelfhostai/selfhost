@@ -125,8 +125,8 @@ describe("buildBrief", () => {
     });
     // Sessions in the order they started.
     expect(brief.trace.map((s) => s.url)).toEqual([
-      "https://selfhost.acme.example.com/runs/5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
-      "https://selfhost.acme.example.com/runs/0199f2a4-6c1d-7e3b-9f20-5b8c7d6e4a31",
+      "https://selfhost.acme.example.com/?screen=run&run=5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+      "https://selfhost.acme.example.com/?screen=run&run=0199f2a4-6c1d-7e3b-9f20-5b8c7d6e4a31",
     ]);
     expect(brief.notes).toEqual({});
   });
@@ -142,7 +142,7 @@ describe("buildBrief", () => {
       `https://langfuse.example.com/trace/${traceIdOf("5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87")}`,
     );
     expect(renderBrief(brief)).toContain(
-      `[run view](https://selfhost.acme.example.com/runs/5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87), [trace in Langfuse](${first?.tracerUrl})`,
+      `[run view](https://selfhost.acme.example.com/?screen=run&run=5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87), [trace in Langfuse](${first?.tracerUrl})`,
     );
     expect(buildBrief({ ...inputs, tracer: { tool: "otlp" } }).trace[0]?.tracerUrl).toBeUndefined();
   });

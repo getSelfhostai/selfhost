@@ -7,18 +7,24 @@ import type { ReplayEntry } from "./sync.js";
 const SHORT = 8;
 const compact = (id: string) => id.replaceAll("-", "").toLowerCase();
 
-/** The shortest prefix, at least 8 characters, that tells each id apart from the others. */
+/**
+ * The shortest tail, at least 8 characters, that tells each id apart from the others. Item ids
+ * are UUIDv7: their first characters are a timestamp, so items made the same minute share them,
+ * while the tail is random.
+ */
 export function shortIds(ids: readonly string[]): Map<string, string> {
   const short = new Map<string, string>();
   for (const id of ids) {
     let length = SHORT;
-    const taken = (n: number) =>
-      ids.some((other) => other !== id && other.startsWith(id.slice(0, n)));
-    while (length < id.length && (taken(length) || id[length - 1] === "-")) length++;
-    short.set(id, id.slice(0, length));
+    const taken = (n: number) => ids.some((other) => other !== id && other.endsWith(id.slice(-n)));
+    while (length < id.length && (taken(length) || id.at(-length) === "-")) length++;
+    short.set(id, id.slice(-length));
   }
   return short;
 }
+
+/** The short form of one id, as a line about a single item shows it. */
+export const shortId = (id: string): string => (id.length > SHORT ? id.slice(-SHORT) : id);
 
 const FULL_ID = /^[0-9a-f]{32}$/;
 
@@ -29,19 +35,38 @@ export function fullId(arg: string): string | undefined {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-/** The one item whose id starts with `arg` (dashes and case ignored). */
-export function resolveId(arg: string, items: readonly ReviewItem[], where: string): string {
+/**
+ * The one item whose id starts or ends with `arg` (dashes and case ignored). When several do,
+ * the one the caller may act on (`mine`), since that is the list they were shown; when that
+ * still leaves more than one, the error lists only theirs, never other people's items.
+ */
+export function resolveId(
+  arg: string,
+  items: readonly ReviewItem[],
+  where: string,
+  mine: (item: ReviewItem) => boolean = () => true,
+): string {
   const full = fullId(arg);
   if (full) return full;
-  const prefix = compact(arg.trim());
-  if (!/^[0-9a-f]{4,}$/.test(prefix)) {
+  const part = compact(arg.trim());
+  if (!/^[0-9a-f]{4,}$/.test(part)) {
     throw new Error(`Expected an item id or at least 4 characters of one, got "${arg}"`);
   }
-  const matches = items.filter((item) => compact(item.id).startsWith(prefix));
+  const matches = items.filter((item) => {
+    const hex = compact(item.id);
+    return hex.startsWith(part) || hex.endsWith(part);
+  });
   if (matches.length === 1 && matches[0]) return matches[0].id;
-  if (matches.length === 0) throw new Error(`No open item ${where} starts with ${arg}`);
-  const ids = matches.map((item) => item.id).join(", ");
-  throw new Error(`${arg} matches ${matches.length} items, type more of the id: ${ids}`);
+  if (matches.length === 0) throw new Error(`No open item ${where} starts or ends with ${arg}`);
+  const yours = matches.filter(mine);
+  if (yours.length === 1 && yours[0]) return yours[0].id;
+  if (yours.length === 0) {
+    throw new Error(
+      `${arg} matches ${matches.length} items, none of them yours to answer. Type more of the id, as selfhost inbox shows it.`,
+    );
+  }
+  const ids = yours.map((item) => item.id).join(", ");
+  throw new Error(`${arg} matches ${yours.length} of your items, type more of the id: ${ids}`);
 }
 
 /** "already answered by bob@example.com: deny", "already expired". */
@@ -116,7 +141,7 @@ export function itemLines(item: ReviewItem, now: Date): string[] {
 export function queuedText(action: QueuedAction): string {
   const until = action.until ? ` until ${action.until}` : "";
   const reason = action.reason ? ` (${action.reason})` : "";
-  return `${action.action} ${action.item_id.slice(0, SHORT)}${until}${reason}`;
+  return `${action.action} ${shortId(action.item_id)}${until}${reason}`;
 }
 
 /** One line per replayed action. */

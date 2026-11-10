@@ -287,7 +287,7 @@ describe("gatherBrief from a pull request", () => {
     ]);
     // Only the session that made a commit in the pull request is its run.
     expect(brief.trace.map((s) => s.url)).toEqual([
-      "https://selfhost.acme.example.com/runs/5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
+      "https://selfhost.acme.example.com/?screen=run&run=5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87",
     ]);
     expect(brief.tests.map((t) => t.result)).toEqual(["failed", "passed"]);
     expect(gh.calls.every((args) => args[0] === "api")).toBe(true);

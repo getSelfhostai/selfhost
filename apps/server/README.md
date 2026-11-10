@@ -428,7 +428,7 @@ the sessions behind them. Per delivery that is one paginated call for the files,
 commits, and one contents call per changed manifest at each side; the risk score, the owner and
 the brief share them (`src/github-reads.ts`), so each is made once. A pull request no session
 made still gets a brief, with every run section saying no run was found and why. Trace links
-point at the console's run view, `<SELFHOST_PUBLIC_URL>/runs/<id>` (or the origin the delivery
+point at the console's run view, `<SELFHOST_PUBLIC_URL>/?screen=run&run=<id>` (or the origin the delivery
 was sent to when that is unset), and at the run in the team's tracer when `[integrations.tracer]`
 has a `run_url`. The risk score does not read the run yet: the agent run, tests and revert
 history are listed as missing inputs in the check. It does read the second opinion: the newest
@@ -561,7 +561,8 @@ for a second server on the same database.
   `[alerts] cache_tip_usd` under `cache_hit_floor`), its ledger events
   oldest first, the pull requests they link to and `trace_url`, the run in the tracer from
   `run_url` (`{run_id}` and `{trace_id}` filled in) once it has been sent. Anyone else gets 403,
-  whether or not the run exists. The console's `/runs/<id>` page reads it.
+  whether or not the run exists. The console's run view, `/?screen=run&run=<id>`, reads it; the
+  server redirects the older `/runs/<id>` links there.
 - Review items that name a session carry `run_url` (the console's run view) and, once the run is
   in the tracer, `trace_url`.
 - `GET /v1/events/tail?after&since&kind&person&agent&repo&session&team&wait&limit` (both kinds of

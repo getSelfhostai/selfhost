@@ -1,4 +1,10 @@
-import type { DecisionResponse, ReviewAction, ReviewItem, ReviewItemsPage } from "@selfhost/schema";
+import type {
+  DecisionResponse,
+  MeResponse,
+  ReviewAction,
+  ReviewItem,
+  ReviewItemsPage,
+} from "@selfhost/schema";
 import { Check, ExternalLink, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Empty, Failed, Loading, PageHeader } from "@/components/common";
@@ -82,6 +88,35 @@ export function routeText(item: ReviewItem, now: Date): string | undefined {
   return parts.join(" · ");
 }
 
+/**
+ * Why the viewer may not approve an item, in one line, or undefined when they may. It mirrors
+ * the server's rule (decisionRefusal in @selfhost/review), which refuses the request anyway: an
+ * exception is approved by an owner or admin of the team, never by the person whose agent asked
+ * for it unless the team's [review] self_approve_exceptions is true. The item's owners include
+ * the requester only when that setting was on as it was routed, so that is what this reads.
+ */
+export function approveRefusal(
+  item: Pick<ReviewItem, "kind" | "requested_by" | "owners" | "route">,
+  me: MeResponse,
+  team: string | undefined,
+): string | undefined {
+  if (item.kind !== "exception" || me.kind === "admin") return undefined;
+  const person = me.person?.id.toLowerCase();
+  const same = (id: string) => id.toLowerCase() === person;
+  if (item.requested_by !== undefined && person !== undefined && same(item.requested_by)) {
+    if (item.owners.some(same)) return undefined;
+    const how =
+      "Invite an admin to approve it, or set [review] self_approve_exceptions = true in the team's selfhost.toml.";
+    return item.route?.step === "none"
+      ? `You cannot approve an exception your own agent asked for, and you are the team's only owner or admin. ${how}`
+      : `You cannot approve an exception your own agent asked for: another owner or admin of the team approves it.`;
+  }
+  if (!can(me, team, "policy.write")) {
+    return "Approving another person's exception needs the owner or admin role in this team.";
+  }
+  return undefined;
+}
+
 /** The review list query for the team on screen: every item with the admin token and no team. */
 export function reviewQuery(state: string, team: string | undefined, limit = 100) {
   return `/v1/review-items${query({ state, team, limit })}`;
@@ -110,6 +145,7 @@ interface Outcome {
 function ItemCard({
   item,
   canAct,
+  noApprove,
   admin,
   now,
   linked,
@@ -117,6 +153,8 @@ function ItemCard({
 }: {
   item: ReviewItem;
   canAct: boolean;
+  /** Why the viewer may not approve this item: Approve is left out and this says why. */
+  noApprove: string | undefined;
   admin: boolean;
   now: Date;
   /** Opened from a notification's link: shown first in view and outlined. */
@@ -295,7 +333,7 @@ function ItemCard({
                 Send answer
               </Button>
             ) : null}
-            {actions.includes("approve") ? (
+            {actions.includes("approve") && !noApprove ? (
               <Button size="sm" disabled={busy} onClick={() => decide("approve")}>
                 <Check />
                 Approve
@@ -320,6 +358,11 @@ function ItemCard({
                   ))}
                 </SelectContent>
               </Select>
+            ) : null}
+            {actions.includes("approve") && noApprove ? (
+              <p className="w-full text-muted-foreground text-xs" data-testid="approve-refusal">
+                {noApprove}
+              </p>
             ) : null}
           </div>
         ) : null}
@@ -402,6 +445,7 @@ export function ReviewScreen() {
               key={item.id}
               item={item}
               canAct={canAct}
+              noApprove={approveRefusal(item, me, scoped ?? team)}
               admin={admin}
               now={now}
               linked={item.id === linked}

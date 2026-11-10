@@ -134,18 +134,29 @@ export function parseVendor(value: string | undefined): Vendor | undefined {
  * `cwd` when given), then the OS user name.
  */
 export function defaultPerson(env: NodeJS.ProcessEnv, cwd?: string): string {
-  if (env.SELFHOST_PERSON) return env.SELFHOST_PERSON;
+  return personSource(env, cwd).person;
+}
+
+/** Where the default person id came from, for a command that should say so. */
+export type PersonFrom = "SELFHOST_PERSON" | "git" | "os_user";
+
+/** The default person id and where it came from: SELFHOST_PERSON, git user.email, the OS user. */
+export function personSource(
+  env: NodeJS.ProcessEnv,
+  cwd?: string,
+): { person: string; from: PersonFrom } {
+  if (env.SELFHOST_PERSON) return { person: env.SELFHOST_PERSON, from: "SELFHOST_PERSON" };
   try {
     const email = execFileSync("git", ["config", "--get", "user.email"], {
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     }).trim();
-    if (email) return email;
+    if (email) return { person: email, from: "git" };
   } catch {
     // No git or no email configured: fall back to the OS user.
   }
-  return userInfo().username;
+  return { person: userInfo().username, from: "os_user" };
 }
 
 function importOptions(

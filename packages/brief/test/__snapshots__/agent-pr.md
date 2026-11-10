@@ -81,5 +81,5 @@ $0.93 across 2 sessions: 4 model requests, 506.9k tokens (`claude-haiku-4-5`, `c
 
 ### Trace
 
-- `5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87` (claude_code, 30 events, 2026-10-12 09:00 to 09:18 UTC): [run view](https://selfhost.acme.example.com/runs/5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87)
-- `0199f2a4-6c1d-7e3b-9f20-5b8c7d6e4a31` (codex, 5 events, 2026-10-12 09:20 to 09:24 UTC): [run view](https://selfhost.acme.example.com/runs/0199f2a4-6c1d-7e3b-9f20-5b8c7d6e4a31)
+- `5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87` (claude_code, 30 events, 2026-10-12 09:00 to 09:18 UTC): [run view](https://selfhost.acme.example.com/?screen=run&run=5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87)
+- `0199f2a4-6c1d-7e3b-9f20-5b8c7d6e4a31` (codex, 5 events, 2026-10-12 09:20 to 09:24 UTC): [run view](https://selfhost.acme.example.com/?screen=run&run=0199f2a4-6c1d-7e3b-9f20-5b8c7d6e4a31)

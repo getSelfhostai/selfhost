@@ -164,6 +164,13 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
     hostname: deps.hostname ?? hostname(),
     version: VERSION,
     ...(deps.now ? { now: () => deps.now as Date } : {}),
+    agents: {
+      home: deps.home ?? homedir(),
+      env: deps.env,
+      platform: deps.platform,
+      ...(deps.probes.which ? { which: deps.probes.which } : {}),
+      ...(deps.systemRoot === undefined ? {} : { root: deps.systemRoot }),
+    },
   });
   const fail = (error: unknown, json: boolean | undefined) => {
     const message = error instanceof Error ? error.message : String(error);

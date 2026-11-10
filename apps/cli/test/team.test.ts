@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { userInfo } from "node:os";
 import { join } from "node:path";
 import { type Ledger, openLedger } from "@selfhost/ledger";
 import type { Actor, EventsPage, LedgerEvent } from "@selfhost/schema";
@@ -155,6 +156,7 @@ describe("team init and join", () => {
       server: SERVER,
       team: created.team,
       person: PERSON,
+      person_from: null,
       role: "owner",
       config: configPath,
       // The team has no context layers yet.
@@ -176,6 +178,33 @@ describe("team init and join", () => {
     expect(again.code).toBe(1);
     expect(parse(again.out).error).toMatch(/Already in team platform/);
     expect(attempts).toEqual([]);
+  });
+
+  it("says which identity it joined as when none was given, and how to change it", async () => {
+    // No git user.email anywhere: the OS user name is used, and join says so.
+    vi.stubEnv("GIT_CONFIG_GLOBAL", "/dev/null");
+    vi.stubEnv("GIT_CONFIG_NOSYSTEM", "1");
+    vi.stubEnv("GIT_DIR", tempDir("no-git").root);
+    const server = await teamServer();
+    const { configPath } = laptop();
+    const deps = { configPath, fetch: server.fetch, env: { SELFHOST_TOKEN: ADMIN } };
+    const { invite } = parse((await run(["team", "init", "--server", SERVER, "--json"], deps)).out);
+    const joined = await run(["join", SERVER, invite], deps);
+    vi.unstubAllEnvs();
+    const user = userInfo().username;
+    expect(joined.code).toBe(0);
+    expect(joined.out).toContain(
+      `${user} is this computer's user name: git has no user.email here, and --person was not given. Your teammates see you by it. To be someone else on the team, run selfhost team leave, then join again with --person <your email>.`,
+    );
+    await run(["team", "leave"], deps);
+    const { invite: second } = parse(
+      (await run(["team", "init", "--server", SERVER, "--name", "Two", "--json"], deps)).out,
+    );
+    const named = await run(["join", SERVER, second, "--json"], {
+      ...deps,
+      env: { ...deps.env, SELFHOST_PERSON: PERSON },
+    });
+    expect(parse(named.out)).toMatchObject({ person: PERSON, person_from: "SELFHOST_PERSON" });
   });
 
   it("keeps the other settings in the config file", async () => {

@@ -289,19 +289,27 @@ async function withSession<T>(
 
 const savedCopy = (session: Session) => readInboxCache(session.paths.cache, session.scope);
 
-/** The full id for what was typed: a full id, or a prefix of one open item. */
+/** Whether an item is the caller's to answer: on a team server, one they own; solo, any. */
+function mineIn(session: Session): (item: ReviewItem) => boolean {
+  if (session.mode !== "team") return () => true;
+  const person = session.scope.person.toLowerCase();
+  return (item) => item.owners.some((owner) => owner.toLowerCase() === person);
+}
+
+/** The full id for what was typed: a full id, or the start or end of one open item's. */
 async function resolveItem(session: Session, arg: string): Promise<string> {
   const full = fullId(arg);
   if (full) return full;
+  const mine = mineIn(session);
   if (session.list) {
     try {
-      return resolveId(arg, await listAll(session.list, { state: "open" }), "on the list");
+      return resolveId(arg, await listAll(session.list, { state: "open" }), "on the list", mine);
     } catch (error) {
       goOffline(session, error);
     }
   }
   const open = savedCopy(session)?.items.filter((item) => item.state === "open") ?? [];
-  return resolveId(arg, open, "in the saved copy");
+  return resolveId(arg, open, "in the saved copy", mine);
 }
 
 function noCopyError(session: Session): Error {

@@ -56,6 +56,14 @@ export function agentSessionVariable(
   );
 }
 
+/**
+ * The variable a person's own script sets to run a decision command without a terminal, such
+ * as a CI job a person wrote that approves with `selfhost inbox approve`. It is ignored inside
+ * a coding agent session, and the pre-tool hooks block an agent that runs a decision command
+ * whatever its environment, so it only lifts the terminal check for a person's scripts.
+ */
+export const PERSON_SCRIPT_VARIABLE = "SELFHOST_PERSON_SCRIPT";
+
 export interface HumanCheck {
   env: Readonly<Record<string, string | undefined>>;
   /** Whether stdin is a terminal a person types into. */
@@ -63,25 +71,38 @@ export interface HumanCheck {
 }
 
 /**
- * Throws unless a person runs the command: not inside an agent session, and at a terminal.
- * `what` names the command, like "selfhost inbox approve". `elsewhere` is where else a person
- * can do it, named in the refusal; null when only the command does it.
+ * Throws inside a coding agent session. For decision commands a person may also script, which
+ * need no terminal: `init --undo`, `gateway connect` and `gateway disconnect`, `notify add` and
+ * `notify remove`. `what` names the command; `elsewhere` is where else a person can do it.
+ */
+export function refuseAgentSession(
+  what: string,
+  env: Readonly<Record<string, string | undefined>>,
+  elsewhere: string | null = null,
+): void {
+  const marker = agentSessionVariable(env);
+  if (marker === undefined) return;
+  const or = elsewhere === null ? "" : `, or ${elsewhere}`;
+  throw new Error(
+    `${what} is a person's decision, and this runs inside a coding agent session (${marker} is set), so it was refused. Run it yourself in a terminal outside the agent${or}.`,
+  );
+}
+
+/**
+ * Throws unless a person runs the command: not inside an agent session, and at a terminal, or
+ * from a person's script that sets SELFHOST_PERSON_SCRIPT=1. `what` names the command, like
+ * "selfhost inbox approve". `elsewhere` is where else a person can do it, named in the refusal;
+ * null when only the command does it.
  */
 export function requireHuman(
   what: string,
   check: HumanCheck,
   elsewhere: string | null = "answer in the console",
 ): void {
+  refuseAgentSession(what, check.env, elsewhere);
+  if (check.stdinIsTTY || (check.env[PERSON_SCRIPT_VARIABLE] ?? "").trim() === "1") return;
   const or = elsewhere === null ? "" : `, or ${elsewhere}`;
-  const marker = agentSessionVariable(check.env);
-  if (marker !== undefined) {
-    throw new Error(
-      `${what} is a person's decision, and this runs inside a coding agent session (${marker} is set), so it was refused. Run it yourself in a terminal outside the agent${or}.`,
-    );
-  }
-  if (!check.stdinIsTTY) {
-    throw new Error(
-      `${what} is a person's decision and needs a person at a terminal; stdin is not one, so it was refused. Run it yourself in a terminal${or}.`,
-    );
-  }
+  throw new Error(
+    `${what} is a person's decision and needs a person at a terminal; stdin is not one, so it was refused. Run it yourself in a terminal${or}. A script of your own (not a coding agent) can set ${PERSON_SCRIPT_VARIABLE}=1 to run it without one.`,
+  );
 }

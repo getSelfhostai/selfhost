@@ -28,7 +28,17 @@ export function tracerRunUrl(template: string | undefined, runId: string): strin
     .replaceAll("{trace_id}", traceIdOf(runId));
 }
 
-/** The console's view of one run: `<public url>/runs/<run id>`. */
+/**
+ * The console's view of one run (an agent session or a background run):
+ * `<public url>/?screen=run&run=<run id>`, the console's own route for it. The console is one
+ * page whose views live in the query string; the server also redirects the older
+ * `<public url>/runs/<run id>` here, so links already sent keep working.
+ */
 export function runViewUrl(server: string, runId: string): string {
-  return `${server.replace(/\/+$/, "")}/runs/${encodeURIComponent(runId)}`;
+  return `${server.replace(/\/+$/, "")}/?screen=run&run=${encodeURIComponent(runId)}`;
+}
+
+/** The console's list of background runs: `<public url>/?screen=runs`. */
+export function backgroundRunsUrl(server: string): string {
+  return `${server.replace(/\/+$/, "")}/?screen=runs`;
 }

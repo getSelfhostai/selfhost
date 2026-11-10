@@ -15,7 +15,7 @@ import {
   SELFHOST_DECISION_RULE_ID,
   validateConfig,
 } from "@selfhost/schema";
-import { findConfig, policyText } from "../find-config.js";
+import { findConfig, type PolicySource, policyText } from "../find-config.js";
 import { extraCheckers } from "./checkers.js";
 import {
   callFingerprint,
@@ -105,8 +105,10 @@ function defaultConfig(): ResolvedSelfhostConfig {
 interface LoadedPolicy {
   config: ResolvedSelfhostConfig;
   source?: { path: string; hash: string };
-  /** The file's text, to find a rule's line in it. */
+  /** The selfhost.toml text in use. */
   text?: string;
+  /** The files the policy is made of, to find the line that defines a rule. */
+  sources?: PolicySource[];
   failure?: string;
 }
 
@@ -119,16 +121,17 @@ export function loadPolicy(
   const location = cwd === undefined ? undefined : findConfig(cwd, undefined, env, configPath);
   if (!location) return { config: defaultConfig() };
   let text: string;
+  let sources: PolicySource[];
   try {
     // On a machine in a team, a repository's file adds to the team policy, never replaces it.
-    text = policyText(location).text;
+    ({ text, sources } = policyText(location));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return { config: defaultConfig(), failure: `${location.path} could not be read: ${message}` };
   }
   const source = { path: location.path, hash: createHash("sha256").update(text).digest("hex") };
   const result = parseConfig(text);
-  if (result.ok) return { config: result.config, source, text };
+  if (result.ok) return { config: result.config, source, text, sources };
   const first = result.errors[0];
   return {
     config: defaultConfig(),
@@ -345,13 +348,7 @@ export async function checkPreToolCall(
           agent: AGENT_LABELS[call.vendor],
           hit,
           answer,
-          link: ruleLink(
-            hit.rule_id,
-            policy.config,
-            policy.source && policy.text !== undefined
-              ? { path: policy.source.path, text: policy.text }
-              : undefined,
-          ),
+          link: ruleLink(hit.rule_id, policy.sources ?? []),
           ...(request ? { exceptionId: request.id } : {}),
         })
       : undefined;

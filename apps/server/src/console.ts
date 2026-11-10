@@ -54,7 +54,10 @@ function secure(c: Context) {
 
 /**
  * GET / and every path outside /v1 serve the console: files under assets/ for a year (their
- * names change with their content), anything else the page itself, never cached.
+ * names change with their content), anything else the page itself, never cached. The console
+ * is one page at / whose views are in the query string, so /runs/<id> (a run link of older
+ * versions) redirects to its run view there; served as is, the page's relative asset paths would
+ * resolve under /runs/ and come back as the page itself.
  */
 export function consoleRoutes(app: Hono, dir: string | undefined): void {
   const isConsolePath = (path: string) => path !== "/v1" && !path.startsWith("/v1/");
@@ -66,6 +69,10 @@ export function consoleRoutes(app: Hono, dir: string | undefined): void {
     });
     return;
   }
+  // Run links before the console moved its views into the query string: /runs/<id>.
+  app.get("/runs/:run_id{[^/]+}", (c) =>
+    c.redirect(`../?screen=run&run=${encodeURIComponent(c.req.param("run_id"))}`, 302),
+  );
   const assets = serveStatic({ root: dir });
   const page = serveStatic({ root: dir, path: "index.html" });
   app.get("*", async (c, next) => {

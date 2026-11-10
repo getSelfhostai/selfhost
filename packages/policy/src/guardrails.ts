@@ -706,6 +706,10 @@ const DECISION_COMMANDS: readonly { words: readonly string[]; flag?: string }[] 
   { words: ["init"], flag: "--undo" },
   { words: ["notify", "add"] },
   { words: ["notify", "remove"] },
+  // Which key, and so which budget, an agent's model traffic goes through (--rotate and --undo
+  // included): an agent that took itself off the gateway would leave its budget behind.
+  { words: ["gateway", "connect"] },
+  { words: ["gateway", "disconnect"] },
 ];
 
 /** The selfhost decision command these words name, after the program, if they name one. */

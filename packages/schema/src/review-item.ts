@@ -173,7 +173,7 @@ export const ReviewItemSchema = Type.Object(
     run_url: Type.Optional(
       Url({
         description:
-          "The run this item came from in the console's run view, <SELFHOST_PUBLIC_URL>/runs/<session_id>. Added by the team server when the item names a session.",
+          "The run this item came from in the console's run view, <SELFHOST_PUBLIC_URL>/?screen=run&run=<session_id>. Added by the team server when the item names a session.",
       }),
     ),
     trace_url: Type.Optional(

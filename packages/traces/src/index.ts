@@ -13,7 +13,13 @@ export {
   SPANS_PER_REQUEST,
   teamOfRun,
 } from "./export.js";
-export { runViewUrl, spanIdOf, traceIdOf, tracerRunUrl } from "./links.js";
+export {
+  backgroundRunsUrl,
+  runViewUrl,
+  spanIdOf,
+  traceIdOf,
+  tracerRunUrl,
+} from "./links.js";
 export {
   type AttributeValue,
   type MapOptions,

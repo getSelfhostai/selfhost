@@ -54,6 +54,26 @@ describe("the console", () => {
     expect((await app.request("/assets/..%2F..%2Fetc%2Fpasswd")).status).toBe(404);
   });
 
+  it("sends an older /runs/<id> link to the run view, where the page's assets load", async () => {
+    const app = createApp({ version: "test", ledger, token: TOKEN, console: { dir } });
+    const res = await app.request("/runs/0199f2a4-6c1d-7e3b-9f20-5b8c7d6e4a31");
+    expect(res.status).toBe(302);
+    const location = res.headers.get("location") ?? "";
+    expect(location).toBe("../?screen=run&run=0199f2a4-6c1d-7e3b-9f20-5b8c7d6e4a31");
+    const target = new URL(location, "http://127.0.0.1:4400/runs/0199f2a4");
+    expect(`${target.pathname}${target.search}`).toBe(
+      "/?screen=run&run=0199f2a4-6c1d-7e3b-9f20-5b8c7d6e4a31",
+    );
+    expect((await app.request("/runs/sess%201")).headers.get("location")).toBe(
+      "../?screen=run&run=sess%201",
+    );
+    // A run's link is the console's own route for its run view.
+    const { runViewUrl } = await import("@selfhost/traces");
+    expect(runViewUrl("http://127.0.0.1:4400/", "abc")).toBe(
+      "http://127.0.0.1:4400/?screen=run&run=abc",
+    );
+  });
+
   it("keeps /v1 behind its tokens", async () => {
     const app = createApp({ version: "test", ledger, token: TOKEN, console: { dir } });
     expect((await app.request("/v1/events")).status).toBe(401);

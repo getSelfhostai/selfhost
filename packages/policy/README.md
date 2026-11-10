@@ -102,10 +102,13 @@ blocked.
 `guard.selfhost_decision` is not in `[guardrails]`: it always enforces, whatever the mode or
 `disable` says. It blocks a command that runs one of selfhost's own decisions, which a person
 makes: `inbox approve|deny`, `review approve|deny`, `decide`, `policy promote`, `team policy
-push`, `team role|revoke|leave`, `guard uninstall`, `agents configure --remove` and `init
---undo`, also through `npx`, `pnpm exec`, `node`, an absolute path or `env` and variable
-prefixes. No one-time exception is offered for it. The commands themselves also refuse inside an
-agent session and without a terminal.
+push`, `team role|revoke|leave`, `guard uninstall`, `agents configure --remove`, `init
+--undo`, `notify add|remove` and `gateway connect|disconnect` (`--rotate` and `--undo`
+included: which key, and so which budget, an agent's model traffic goes through is a person's
+call), also through `npx`, `pnpm exec`, `node`, an absolute path or `env` and variable prefixes.
+No one-time exception is offered for it. The commands themselves also refuse inside an agent
+session; the ones that answer for a person (approve, deny, decide, promote, policy push) also
+refuse without a terminal unless a person's own script sets `SELFHOST_PERSON_SCRIPT=1`.
 
 Every guardrail hit carries an `alternative` (`GUARDRAILS[id].alternative`, more specific for
 some findings, such as `--force-with-lease`), which the hooks show the agent with the message:

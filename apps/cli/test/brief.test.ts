@@ -147,7 +147,7 @@ describe("selfhost review brief", () => {
     expect(brief.err).toBe("");
     expect(brief.out).toContain("1 test run: 1 passed. The last run passed.");
     expect(brief.out).toContain(
-      "- `sess-cli` (codex, 4 events, 2026-10-05 09:00 to 09:30 UTC): [run view](https://selfhost.acme.example.com/runs/sess-cli)",
+      "- `sess-cli` (codex, 4 events, 2026-10-05 09:00 to 09:30 UTC): [run view](https://selfhost.acme.example.com/?screen=run&run=sess-cli)",
     );
 
     const trace = await run(["review", "trace", "sess-cli", "--data-dir", data], { cwd: dir.root });

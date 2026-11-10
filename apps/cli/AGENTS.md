@@ -41,16 +41,20 @@ the repository.
   with `--preset`. The hooks apply the built-in guardrails before each tool call from the first
   run: force pushes, `git reset --hard`, `rm -rf` outside the workspace and reads of `.env` and
   key files are blocked unless `[guardrails] mode` in `selfhost.toml` is `observe` or `off`.
-- Approving or denying a review item, `selfhost decide`, `policy promote`, `team policy push`
-  and the commands that take selfhost out are a person's: the hooks block an agent that runs
-  them (`guard.selfhost_decision`), and the commands refuse inside an agent session or without a
-  terminal. Do not run them; tell the person what to approve.
+- Approving or denying a review item, `selfhost decide`, `policy promote`, `team policy push`,
+  `gateway connect` and `gateway disconnect`, and the commands that take selfhost out (`init
+  --undo` among them) are a person's: the hooks block an agent that runs them
+  (`guard.selfhost_decision`), and the commands refuse inside an agent session. The ones that
+  answer for a person also refuse without a terminal, unless a person's own script (a CI job, not
+  a coding agent) sets `SELFHOST_PERSON_SCRIPT=1`; `init --undo` and `gateway disconnect` need no
+  terminal, so a person can script them. Do not run any of them; tell the person what to run.
 - With `--import-context`: new files in `.selfhost/context/` at the repository root. The context
   files they come from are not changed.
 - Nothing else: no shell profile, no API key, no sign-in.
 
 ## Undo
 
+The person runs it, not an agent: it refuses inside an agent session (`--dry-run` excepted).
 `selfhost init --undo` puts every agent config file back byte for byte from its backup and
 deletes the context files init imported, unless the file was edited since; it then says which
 one and where its backup is. It keeps the ledger, `selfhost.toml`, the context files init copied

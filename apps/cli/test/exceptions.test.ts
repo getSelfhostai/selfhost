@@ -244,6 +244,52 @@ describe("the reason", () => {
     expect(out.systemMessage).toContain(`Rule: ${m.workspace.path("selfhost.toml")}:10`);
   });
 
+  it("links a team rule to its line in the pulled team policy, not to the repository's file", async () => {
+    const m = machine();
+    m.home.write(
+      ".selfhost/config.json",
+      JSON.stringify({ server: "http://127.0.0.1:4400", token: "t", person: PERSON, team: "web" }),
+    );
+    m.home.write(
+      ".selfhost/team-policy.toml",
+      `version = 1
+
+[[rules]]
+id = "team-warn"
+mode = "observe"
+match = { command = '\\bwarn\\b' }
+action = "block"
+message = "Warn."
+
+[[rules]]
+id = "team-no-npm-publish"
+mode = "enforce"
+match = { command = '\\bnpm\\s+publish\\b' }
+action = "block"
+message = "Agents do not publish packages."
+`,
+    );
+    const team = m.home.path(".selfhost/team-policy.toml");
+    const teamOut = claudeOut(await hook(m, "claude", bash(m.workspace.root, "npm publish"), T0));
+    const teamReason = teamOut.hookSpecificOutput?.permissionDecisionReason ?? "";
+    expect(teamReason).toContain(`Rule: ${team}:10 (team web's policy)`);
+    expect(teamReason).not.toContain(m.workspace.path("selfhost.toml"));
+    // A repository rule on the same machine still points at the repository's file.
+    const repoOut = claudeOut(await hook(m, "claude", bash(m.workspace.root, "curl -s x"), T0));
+    expect(repoOut.hookSpecificOutput?.permissionDecisionReason).toContain(
+      `Rule: ${m.workspace.path("selfhost.toml")}:10 (this repository's selfhost.toml)`,
+    );
+    // Composed on the server from an org floor: the link says what the file is made of.
+    m.home.write(
+      ".selfhost/team-policy.toml",
+      `#:schema https://selfhost.ai/schema/selfhost.toml.v1.json\n# The policy in use: org acme, then team web. Change those, not this file.\n${readFileSync(team, "utf8")}`,
+    );
+    const orgOut = claudeOut(await hook(m, "claude", bash(m.workspace.root, "npm publish"), T0));
+    expect(orgOut.hookSpecificOutput?.permissionDecisionReason).toContain(
+      `Rule: ${team}:12 (team web's policy, made of org acme then team web)`,
+    );
+  });
+
   it("says why Codex was blocked on an ask it cannot put to a person", async () => {
     const m = machine();
     const payload = {
@@ -662,6 +708,57 @@ describe("only a person approves", () => {
     const piped = await run(["inbox", "approve", id], { stdinIsTTY: false });
     expect(piped.code).toBe(1);
     expect(piped.err).toContain("needs a person at a terminal");
+    expect(piped.err).toContain("can set SELFHOST_PERSON_SCRIPT=1 to run it without one");
+  });
+
+  it("lets a person's script answer without a terminal, never an agent session", async () => {
+    const id = "019a5b01-0000-7000-8000-000000000001";
+    const scripted = await run(["inbox", "approve", id], {
+      stdinIsTTY: false,
+      env: { SELFHOST_PERSON_SCRIPT: "1" },
+    });
+    expect(scripted.err).not.toContain("person's decision");
+    const agent = await run(["inbox", "approve", id], {
+      stdinIsTTY: false,
+      env: { SELFHOST_PERSON_SCRIPT: "1", CLAUDECODE: "1" },
+    });
+    expect(agent.code).toBe(1);
+    expect(agent.err).toContain("inside a coding agent session (CLAUDECODE is set)");
+  });
+
+  it("refuses init --undo and the gateway commands in an agent session, not in a person's script", async () => {
+    for (const args of [
+      ["init", "--undo"],
+      ["gateway", "disconnect"],
+      ["gateway", "disconnect", "claude-code"],
+      ["gateway", "connect", "claude-code"],
+      ["gateway", "connect", "codex", "--rotate"],
+      ["gateway", "connect", "claude-code", "--undo"],
+    ]) {
+      const refused = await run(args, { env: { CLAUDECODE: "1" } });
+      expect(refused.code, args.join(" ")).toBe(1);
+      expect(refused.err).toMatch(
+        /^selfhost (init --undo|gateway (dis)?connect( --rotate)?) is a person's decision, and this runs inside a coding agent session \(CLAUDECODE is set\)/,
+      );
+    }
+    // Without a terminal, outside an agent: a person's script undoes (here, nothing to undo).
+    const home = tempDir("undo-home");
+    const undo = await run(["init", "--undo", "--home", home.root], { stdinIsTTY: false });
+    expect(undo.err).not.toContain("person's decision");
+    expect(undo.out).toContain("Nothing to undo");
+    const disconnect = await run(["gateway", "disconnect"], {
+      stdinIsTTY: false,
+      home: home.root,
+    });
+    expect(disconnect.err).not.toContain("person's decision");
+    // A dry run changes nothing, so an agent may look.
+    expect(
+      (
+        await run(["init", "--undo", "--dry-run", "--home", home.root], {
+          env: { CLAUDECODE: "1" },
+        })
+      ).err,
+    ).not.toContain("person's decision");
   });
 });
 

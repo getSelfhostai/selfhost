@@ -16,10 +16,12 @@ import {
 import {
   installManaged,
   knownPath,
+  type LaptopAgentsScope,
   type ManagedReport,
   managedDir,
   managedFiles,
   managedSummary,
+  vendorsHere,
 } from "../policy/managed.js";
 import type { TeamClient } from "./client.js";
 import { type Membership, type SyncState, teamPolicyPath, writeSyncState } from "./config.js";
@@ -37,6 +39,11 @@ export interface LaptopIo {
   /** The selfhost CLI version, reported in heartbeats. */
   version: string;
   now?: () => Date;
+  /**
+   * Where to look for the agents on this laptop: managed files go only to vendors found there.
+   * Undefined installs every vendor's.
+   */
+  agents?: LaptopAgentsScope;
 }
 
 /** The `managed` and `heartbeat` parts of `selfhost join --json` and the sync report. */
@@ -87,14 +94,20 @@ export function installTeamManaged(
   const config = parsed.config;
   const team = Object.hasOwn(config.teams, membership.team) ? membership.team : undefined;
   const result = compilePolicy(config, team ? { team } : {});
-  const report = installManaged(managedFiles(result, laptop.platform), {
+  const all = managedFiles(result, laptop.platform);
+  const here = laptop.agents ? vendorsHere(laptop.agents) : undefined;
+  const files = here ? all.filter((file) => here.has(file.vendor)) : all;
+  const notHere = [...new Set(all.map((file) => file.vendor))].filter(
+    (vendor) => here !== undefined && !here.has(vendor),
+  );
+  const report = installManaged(files, {
     platform: laptop.platform,
     ...(laptop.systemRoot === undefined ? {} : { root: laptop.systemRoot }),
     staging: managedDir(configPath),
     known: knownPath(configPath),
     write: !off,
   });
-  return { report };
+  return { report: notHere.length > 0 ? { ...report, not_here: notHere } : report };
 }
 
 const platformOf = (platform: string): LaptopPlatform =>

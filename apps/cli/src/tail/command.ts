@@ -24,6 +24,8 @@ import { type Fetch, TeamApiError, TeamClient } from "../team/client.js";
 import { type Membership, readMembership } from "../team/config.js";
 import { FeedReader, feedDir, feedEvent, watcherAlive } from "./feed.js";
 import {
+  type Clock,
+  clockIn,
   formatLine,
   lineOf,
   matches,
@@ -33,6 +35,7 @@ import {
   TAIL_KINDS,
   type TailFilter,
   type TailLine,
+  zoneText,
 } from "./line.js";
 
 export interface TailCommandOptions {
@@ -64,6 +67,8 @@ export interface TailIo {
   signal?: AbortSignal;
   /** Seconds the team server holds each request. Default 20; tests pass 0. */
   serverWaitSeconds?: number;
+  /** The time zone of the times printed. Default: TZ, else this machine's. */
+  timeZone?: string;
 }
 
 /** How often the embedded feed and the spool are read. */
@@ -152,6 +157,7 @@ class Printer {
     private readonly write: (line: string) => void,
     private readonly json: boolean,
     private readonly since: Date | undefined,
+    private readonly clock: Clock,
   ) {}
 
   event(event: LedgerEvent, repo?: string | null, person?: string | null): void {
@@ -198,7 +204,7 @@ class Printer {
 
   private print(line: TailLine): void {
     if (!matches(line, this.filter)) return;
-    this.write(this.json ? JSON.stringify(line) : formatLine(line));
+    this.write(this.json ? JSON.stringify(line) : formatLine(line, this.clock));
   }
 
   private remember(id: string): void {
@@ -492,7 +498,8 @@ export async function runTail(options: TailCommandOptions, io: TailIo): Promise<
   const membership = options.local ? undefined : readMembership(io.configPath);
   const url = options.database ?? io.env.DATABASE_URL;
   const console = membership?.server ?? `http://127.0.0.1:${DEFAULT_CONSOLE_PORT}`;
-  const printer = new Printer(filter, console, io.write, options.json === true, since);
+  const clock = clockIn(io.timeZone ?? (io.env.TZ?.trim() || undefined));
+  const printer = new Printer(filter, console, io.write, options.json === true, since, clock);
   const ctx: Context = { filter, ...(since ? { since } : {}), printer, io, signal, sleep, now };
   if (!options.json) {
     const where = membership
@@ -500,7 +507,7 @@ export async function runTail(options: TailCommandOptions, io: TailIo): Promise<
       : url && isPostgresUrl(url)
         ? "Postgres (DATABASE_URL)"
         : "this laptop";
-    io.note(`Tailing ${where}. Press Ctrl-C to stop.`);
+    io.note(`Tailing ${where}, times in ${zoneText(clock)}. Press Ctrl-C to stop.`);
   }
   if (membership) return followServer(ctx, membership);
   if (url?.trim() && isPostgresUrl(url)) return followDatabase(ctx, url);

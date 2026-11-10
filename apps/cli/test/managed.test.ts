@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, statSync } from "node:f
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { PolicyCompileReport } from "../src/policy/compile.js";
-import { systemPath } from "../src/policy/managed.js";
+import { systemPath, vendorsHere } from "../src/policy/managed.js";
 import type { MdmBundle } from "../src/policy/mdm.js";
 import { run, tempDir } from "./run.js";
 
@@ -39,6 +39,26 @@ describe("systemPath", () => {
     ).toBe(
       join("/tmp/r", "C", "Program Files", "ClaudeCode", "managed-settings.d", "selfhost.json"),
     );
+  });
+});
+
+describe("vendorsHere", () => {
+  it("finds an agent by its folder, its command on PATH or its macOS app, nothing else", () => {
+    const home = tempDir("agents-home");
+    const root = tempDir("agents-root");
+    const scope = { home: home.root, env: {}, platform: "linux", root: root.root };
+    expect([...vendorsHere(scope)]).toEqual([]);
+    home.write(".claude/settings.json", "{}");
+    root.write("Applications/Cursor.app/Contents/Info.plist", "");
+    expect([...vendorsHere(scope)]).toEqual(["claude_code"]);
+    expect([...vendorsHere({ ...scope, platform: "darwin" })]).toEqual(["claude_code", "cursor"]);
+    const which = (name: string) => (name === "codex" ? "/usr/local/bin/codex" : undefined);
+    expect([...vendorsHere({ ...scope, which })]).toEqual(["claude_code", "codex"]);
+    const codexHome = tempDir("codex-home");
+    expect([...vendorsHere({ ...scope, env: { CODEX_HOME: codexHome.root } })]).toEqual([
+      "claude_code",
+      "codex",
+    ]);
   });
 });
 

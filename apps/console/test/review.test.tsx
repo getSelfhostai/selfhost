@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { exceptionParts } from "../src/components/screens/review";
+import { approveRefusal, exceptionParts } from "../src/components/screens/review";
 import { EXCEPTION, QUESTION, REVIEW_PAGE, RISKY_PR } from "./fixtures";
 import { ADMIN, MEMBER, mockServer, OWNER, renderConsole } from "./harness";
 
@@ -76,6 +76,42 @@ describe("the review list", () => {
     });
     // The admin token reads every team's items.
     expect(server.calls[0]?.url.searchParams.has("team")).toBe(false);
+  });
+
+  it("leaves out Approve, with why, on an exception the viewer may not approve", async () => {
+    const own = {
+      ...EXCEPTION,
+      requested_by: "ada@example.com",
+      owners: [],
+      route: {
+        step: "none" as const,
+        from: "nobody",
+        why: "the team's only owner or admin, ada@example.com, is the person whose agent was blocked, and nobody approves their own exception. Invite an admin to the team, or set [review] self_approve_exceptions = true in the team's selfhost.toml",
+      },
+    };
+    mockServer({ "GET /v1/review-items": { items: [own], next_cursor: null } });
+    renderConsole(OWNER, "?screen=review");
+    const [card] = await items();
+    const scoped = within(card as HTMLElement);
+    expect(scoped.queryByRole("button", { name: "Approve" })).toBeNull();
+    expect(scoped.getByRole("button", { name: "Deny" })).toBeTruthy();
+    expect(scoped.getByTestId("approve-refusal").textContent).toBe(
+      "You cannot approve an exception your own agent asked for, and you are the team's only owner or admin. Invite an admin to approve it, or set [review] self_approve_exceptions = true in the team's selfhost.toml.",
+    );
+    expect(scoped.getByTestId("item-route").textContent).toBe(`Routed by nobody: ${own.route.why}`);
+  });
+
+  it("offers Approve on an own exception only when the team lets its requester approve", () => {
+    const own = { ...EXCEPTION, requested_by: "ada@example.com" };
+    expect(approveRefusal({ ...own, owners: ["ada@example.com"] }, OWNER, "web")).toBeUndefined();
+    expect(approveRefusal({ ...own, owners: ["olga@example.com"] }, OWNER, "web")).toMatch(
+      /another owner or admin of the team approves it/,
+    );
+    expect(approveRefusal(EXCEPTION, MEMBER, "web")).toBe(
+      "Approving another person's exception needs the owner or admin role in this team.",
+    );
+    expect(approveRefusal(EXCEPTION, ADMIN, undefined)).toBeUndefined();
+    expect(approveRefusal(RISKY_PR, MEMBER, "web")).toBeUndefined();
   });
 
   it("answers a question with the text typed", async () => {

@@ -20,7 +20,7 @@ import {
   type TailCommandOptions,
 } from "../src/tail/command.js";
 import { FeedReader, feedDir, readWatcher, startFeed } from "../src/tail/feed.js";
-import type { TailLine } from "../src/tail/line.js";
+import { clockIn, type TailLine } from "../src/tail/line.js";
 import { tempDir } from "./run.js";
 
 const FIXTURES = join(import.meta.dirname, "..", "..", "..", "fixtures");
@@ -62,7 +62,7 @@ async function tail(
   options: TailCommandOptions,
   home: ReturnType<typeof tempDir>,
   steps: (() => Promise<unknown> | unknown)[],
-  extra: { fetch?: (url: string, init: RequestInit) => Promise<Response> } = {},
+  extra: { fetch?: (url: string, init: RequestInit) => Promise<Response>; timeZone?: string } = {},
 ) {
   const out: string[] = [];
   const notes: string[] = [];
@@ -77,6 +77,7 @@ async function tail(
     ...(extra.fetch ? { fetch: extra.fetch } : {}),
     signal: controller.signal,
     serverWaitSeconds: 0,
+    timeZone: extra.timeZone ?? "UTC",
     sleep: async (ms) => {
       // The review list poll runs beside the events; only the events' polls step the script.
       if (ms === REVIEW_POLL_MS) return new Promise((resolve) => setTimeout(resolve, 2));
@@ -157,7 +158,7 @@ describe("selfhost tail on a laptop with import --watch running", () => {
       () => writer.append([cost(9000, 0, { id: "01930c4e-2f1a-7b2c-9d3e-0000000000ff" })]),
     ]);
     feed.close();
-    const link = `http://127.0.0.1:4400/runs/${SESSION}`;
+    const link = `http://127.0.0.1:4400/?screen=run&run=${SESSION}`;
     expect(out).toEqual([
       `10:00:00  ada@example.com  claude_code  prompt  ${link}`,
       `10:00:00  ada@example.com  claude_code  tool Bash: git push --force origin main  ${link}`,
@@ -167,8 +168,29 @@ describe("selfhost tail on a laptop with import --watch running", () => {
       `10:00:00  ada@example.com  claude_code  cost $0.25 claude-sonnet-4-5, 9.2k tokens, cache 66%  ${link}`,
     ]);
     expect(out.join("\n")).not.toContain("secret plan");
-    expect(notes).toEqual(["Tailing this laptop. Press Ctrl-C to stop."]);
+    expect(notes).toEqual(["Tailing this laptop, times in UTC. Press Ctrl-C to stop."]);
     expect(readWatcher(dir)).toBeUndefined();
+  });
+
+  it("prints the person's local time, and says which zone the times are in", async () => {
+    const dir = feedDir({}, home.path(".selfhost", "config.json"));
+    const feed = startFeed(dir, { now: () => new Date("2026-11-09T12:00:00Z") });
+    const writer = feed.tap(ledger);
+    const { out, notes } = await tail(
+      {},
+      home,
+      [() => writer.append([event({ kind: "prompt.submitted" })])],
+      { timeZone: "Asia/Kolkata" },
+    );
+    feed.close();
+    expect(out).toEqual([
+      `15:30:00  ada@example.com  claude_code  prompt  http://127.0.0.1:4400/?screen=run&run=${SESSION}`,
+    ]);
+    expect(notes).toEqual([
+      `Tailing this laptop, times in local time (${clockIn("Asia/Kolkata").zone}). Press Ctrl-C to stop.`,
+    ]);
+    // A zone name Intl does not know falls back to this machine's.
+    expect(clockIn("Not/AZone").zone).toBe(clockIn().zone);
   });
 
   it("narrows by kind, agent, person and repo, and prints JSON lines", async () => {
@@ -215,7 +237,7 @@ describe("selfhost tail on a laptop with import --watch running", () => {
       tokens: 9150,
       cache_hit_rate: 0,
       message: null,
-      run_url: `http://127.0.0.1:4400/runs/${SESSION}`,
+      run_url: `http://127.0.0.1:4400/?screen=run&run=${SESSION}`,
     });
     expect((await lines({ kind: "tool" })).map((l) => l.tool)).toEqual(["Edit", "shell"]);
     expect((await lines({ agent: "codex" })).map((l) => l.tool)).toEqual(["shell"]);
@@ -325,9 +347,9 @@ describe("selfhost tail on a laptop with no watcher", () => {
       "No selfhost import --watch is running: showing hook events from the spool. Start it to see model costs too.",
     );
     expect(out).toEqual([
-      expect.stringMatching(/ {2}tool Bash: git add src\/app\.ts .*\/runs\/665bce74/),
+      expect.stringMatching(/ {2}tool Bash: git add src\/app\.ts .*\?screen=run&run=665bce74/),
       expect.stringMatching(
-        /^11:59:30 {2}ada@example\.com {2}- {2}review item opened, agent waiting: Approve git push --force for acme\/api {2}http:\/\/127\.0\.0\.1:4400\/runs\//,
+        /^11:59:30 {2}ada@example\.com {2}- {2}review item opened, agent waiting: Approve git push --force for acme\/api {2}http:\/\/127\.0\.0\.1:4400\/\?screen=run&run=/,
       ),
     ]);
   });
@@ -420,7 +442,7 @@ describe("selfhost tail in a team", () => {
         { fetch },
       );
       expect(out).toEqual([
-        `10:00:00  ada@example.com  claude_code  tool Bash: npm test  ${server}/runs/${SESSION}`,
+        `10:00:00  ada@example.com  claude_code  tool Bash: npm test  ${server}/?screen=run&run=${SESSION}`,
       ]);
     } finally {
       await ledger.close();

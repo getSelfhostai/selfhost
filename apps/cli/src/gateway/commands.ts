@@ -35,6 +35,7 @@ import {
 import type { Command } from "commander";
 import { tilde } from "../agents.js";
 import { table, usd } from "../format.js";
+import { refuseAgentSession } from "../human.js";
 import {
   GATEWAY_RECORD_SCHEMA,
   recordApplied,
@@ -578,6 +579,8 @@ export async function gatewayConnect(
   io: GatewayIo,
 ): Promise<ConnectReport | DisconnectReport> {
   if (options.undo) return gatewayDisconnect(agentName, options, io);
+  // Which key an agent's traffic goes through, and so which budget holds it, is a person's call.
+  refuseAgentSession(`selfhost gateway connect${options.rotate ? " --rotate" : ""}`, io.env);
   const target = connectTarget(agentName);
   if (target.kind === "admin_api") {
     return done(empty(target.name, "not_applicable", [target.message]), options, io);
@@ -734,6 +737,8 @@ export function gatewayDisconnect(
   options: { dryRun?: boolean; json?: boolean },
   io: GatewayIo,
 ): DisconnectReport {
+  // Taking an agent off the gateway takes it out of the gateway's budgets: a person's call.
+  if (!options.dryRun) refuseAgentSession("selfhost gateway disconnect", io.env);
   let only: Set<AgentId | null> | undefined;
   if (agentName !== undefined) {
     const target = connectTarget(agentName);

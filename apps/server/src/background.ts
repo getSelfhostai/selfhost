@@ -37,6 +37,7 @@ import {
   StartRunRequestSchema,
   WebhookRunRequestSchema,
 } from "@selfhost/schema";
+import { backgroundRunsUrl } from "@selfhost/traces";
 import type { Context, Hono } from "hono";
 import { apiError, authorize, type Caller, type Router } from "./access.js";
 import type { Gateway } from "./gateway.js";
@@ -237,7 +238,7 @@ export function createBackground(ledger: Ledger, options: BackgroundServerOption
           alert: async (run, alert) => {
             if (!run.person) return;
             const store = notifyStore(databaseOf(ledger));
-            const link = options.publicUrl ? `\n${options.publicUrl}/runs/${run.id}` : "";
+            const link = options.publicUrl ? `\n${backgroundRunsUrl(options.publicUrl)}` : "";
             for (const target of await store.targets(run.person)) {
               const sent = await deliver.send(target.url, {
                 title: alert.title,

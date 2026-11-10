@@ -265,7 +265,7 @@ describe("selfhost inbox in team mode", () => {
 
     const text = await run(["inbox"], deps);
     expect(text.out).toContain("2 items to review, 1 blocking:");
-    expect(text.out).toMatch(/019a5b02 +approval, blocking +20 +2h00m +Item 2 \(acme\/api\)/);
+    expect(text.out).toMatch(/\n00000002 +approval, blocking +20 +2h00m +Item 2 \(acme\/api\)/);
 
     const all = parse((await run(["inbox", "--all", "--json"], deps)).out);
     expect(all.items.map((entry: ReviewItem) => entry.title)).toEqual([
@@ -357,16 +357,46 @@ describe("selfhost inbox in team mode", () => {
     const deps = { configPath: joined().configPath, fetch: server.fetch, now: NOW };
 
     const ambiguous = await run(["inbox", "approve", "019a5b01", "--json"], deps);
-    expect(parse(ambiguous.out).error).toMatch(/matches 2 items, type more of the id/);
+    expect(parse(ambiguous.out).error).toMatch(/matches 2 of your items, type more of the id/);
     expect((await run(["inbox", "deny", "ffff"], deps)).err).toBe(
-      "No open item on the list starts with ffff",
+      "No open item on the list starts or ends with ffff",
     );
     expect(shortIds(twins.map((entry) => entry.id))).toEqual(
       new Map([
-        [twins[0]?.id, "019a5b01-2f1a-7b2c-8d3e-000000000001"],
-        [twins[1]?.id, "019a5b01-2f1a-7b2c-8d3e-000000000002"],
+        [twins[0]?.id, "00000001"],
+        [twins[1]?.id, "00000002"],
       ]),
     );
+  });
+
+  it("shows the random tail of each id, takes a start or an end, and never picks another person's item", async () => {
+    blockNetwork();
+    // UUIDv7 ids made the same minute share their first 8 characters.
+    const uuid = (tail: string) => `01a1c46c-2f1a-7b2c-8d3e-${tail}`;
+    const mine = item(1, { id: uuid("4938aa3a90f5") });
+    const bobs = item(2, { id: uuid("77aa00c1b2d3"), owners: [BOB] });
+    const bobs2 = item(3, { id: uuid("1100ffee0042"), owners: [BOB] });
+    const list = new FakeList([mine, bobs, bobs2]);
+    const server = teamServer(list);
+    const deps = { configPath: joined().configPath, fetch: server.fetch, now: NOW };
+
+    const text = await run(["inbox"], deps);
+    expect(text.out).toMatch(/\naa3a90f5 +approval/);
+    expect(text.out).not.toContain("01a1c46c");
+
+    // The shown tail works, and so does the shared start, which only one of the caller's has.
+    const bySuffix = parse((await run(["inbox", "open", "aa3a90f5", "--json"], deps)).out);
+    expect(bySuffix.item.id).toBe(mine.id);
+    const approve = await run(["inbox", "approve", "01a1c46c", "--json"], deps);
+    expect(parse(approve.out)).toMatchObject({ item_id: mine.id, outcome: "applied" });
+
+    // Now only Bob's two match: neither id is printed to someone who cannot answer them.
+    const theirs = await run(["inbox", "approve", "01a1c46c"], deps);
+    expect(theirs.code).toBe(1);
+    expect(theirs.err).toContain("matches 2 items, none of them yours to answer");
+    expect(theirs.err).not.toContain(bobs.id);
+    expect(theirs.err).not.toContain(bobs2.id);
+    expect(list.decisions).toHaveLength(1);
   });
 
   it("snoozes an item off the list until later", async () => {
@@ -484,7 +514,7 @@ describe("offline", () => {
       queued: { action: "approve", reason: "ok", by: PERSON, server: SERVER, team: "t1" },
     });
     const deny = await run(["inbox", "deny", "019a5b02"], deps);
-    expect(deny.out).toContain("Queued deny 019a5b02, sent when http://team.test answers");
+    expect(deny.out).toContain("Queued deny 00000002, sent when http://team.test answers");
     expect(readQueue(paths.queue).map((entry) => entry.action)).toEqual(["approve", "deny"]);
 
     // Queued answers leave the list and the statusline count right away.
@@ -536,7 +566,7 @@ describe("offline", () => {
 
     const listed = await run(["inbox"], deps);
     expect(listed.out).toContain(
-      `Not applied: approve 019a5b01, already answered by ${BOB}: deny.`,
+      `Not applied: approve 00000001, already answered by ${BOB}: deny.`,
     );
     expect(listed.out).toContain("Nothing to review.");
   });
@@ -671,7 +701,7 @@ describe("selfhost inbox in solo mode", () => {
       now: () => NOW,
     });
     await refresh.close();
-    expect(lines).toEqual(["Synced queued approve 019a5b02.", "Synced queued deny 019a5b01."]);
+    expect(lines).toEqual(["Synced queued approve 00000002.", "Synced queued deny 00000001."]);
     expect(list.decisions.map((event) => event.decision?.verdict)).toEqual(["approve", "deny"]);
     expect(readQueue(paths.queue)).toEqual([]);
     expect(readInboxCache(paths.cache, scope)).toMatchObject({ pid: process.pid, items: [] });

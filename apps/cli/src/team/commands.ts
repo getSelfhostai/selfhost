@@ -10,7 +10,7 @@ import {
 import type { Command } from "commander";
 import { pullContext } from "../context/layers.js";
 import { plural } from "../format.js";
-import { defaultPerson } from "../import.js";
+import { type PersonFrom, personSource } from "../import.js";
 import { describeManaged } from "../policy/managed.js";
 import { deploymentToken } from "../up/record.js";
 import { type Fetch, serverUrl, TeamApiError, TeamClient } from "./client.js";
@@ -116,6 +116,12 @@ export interface JoinReport {
   server: string;
   team: TeamInfo;
   person: string;
+  /**
+   * Where the person id came from when --person was not given: SELFHOST_PERSON, git
+   * user.email or, with neither, the OS user name. Null with --person, or when the invite named
+   * the person.
+   */
+  person_from: PersonFrom | null;
   role: PersonRole;
   config: string;
   /** The org and team context layers pulled on joining, or null when they could not be. */
@@ -477,7 +483,8 @@ export async function joinTeam(
   }
   writableConfig(io.configPath);
   const server = serverUrl(url);
-  const person = options.person ?? defaultPerson(io.env);
+  const source = options.person === undefined ? personSource(io.env) : undefined;
+  const person = options.person ?? source?.person ?? "";
   const joined = await new TeamClient(server, undefined, io.fetch).join(
     invite,
     person,
@@ -509,6 +516,7 @@ export async function joinTeam(
     server,
     team: joined.team,
     person: joined.person.id,
+    person_from: source && joined.person.id === source.person ? source.from : null,
     role: joined.person.role,
     config: io.configPath,
     context,
@@ -518,6 +526,7 @@ export async function joinTeam(
   const layers = context?.layers ?? [];
   print(io, options.json, report, [
     `Joined team ${joined.team.name} (${joined.team.id}) on ${server} as ${joined.person.id} (${joined.person.role}).`,
+    ...identityLines(report),
     "Your local ledger and selfhost.toml keep working as they are. The next selfhost import shares",
     "your local history and usage with the team and pulls the team policy.",
     contextError !== undefined
@@ -528,6 +537,24 @@ export async function joinTeam(
     ...joinLaptopLines(report),
   ]);
   return report;
+}
+
+/** Which identity join used when none was given, and how to join as another. */
+function identityLines(report: JoinReport): string[] {
+  const again =
+    "To be someone else on the team, run selfhost team leave, then join again with --person <your email>.";
+  switch (report.person_from) {
+    case "os_user":
+      return [
+        `${report.person} is this computer's user name: git has no user.email here, and --person was not given. Your teammates see you by it. ${again}`,
+      ];
+    case "git":
+      return [`${report.person} is your git user.email. ${again}`];
+    case "SELFHOST_PERSON":
+      return [`${report.person} is from SELFHOST_PERSON. ${again}`];
+    default:
+      return [];
+  }
 }
 
 /** Pulls the team policy, installs its managed settings and sends the first heartbeat. */

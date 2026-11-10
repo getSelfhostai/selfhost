@@ -271,7 +271,7 @@ describe("GET /v1/runs/{run_id}", () => {
     const res = await as.lead("/v1/review-items?state=open");
     const { items } = (await res.json()) as ReviewItemsPage;
     const item = items.find((i) => i.session_id === RUN);
-    expect(item?.run_url).toBe(`${PUBLIC_URL}/runs/${RUN}`);
+    expect(item?.run_url).toBe(`${PUBLIC_URL}/?screen=run&run=${RUN}`);
     expect(item?.trace_url).toBe(`https://langfuse.example.com/trace/${traceIdOf(RUN)}?run=${RUN}`);
   });
 });

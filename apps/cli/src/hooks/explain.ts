@@ -4,10 +4,12 @@ import {
   MCP_ALLOW_RULE_ID,
   MODELS_ALLOW_RULE_ID,
   PACKAGE_RULE_PREFIX,
-  type ResolvedSelfhostConfig,
   SELFHOST_DECISION_RULE_ID,
+  type Segment,
   TomlLineIndex,
 } from "@selfhost/schema";
+import { parse as parseToml } from "smol-toml";
+import type { PolicySource } from "../find-config.js";
 
 /**
  * What a block or an ask says, to the agent and to the person. The agent's text names the rule,
@@ -42,15 +44,30 @@ export interface Explained {
 /** The command a person runs to allow a blocked call once. */
 export const approveCommand = (id: string) => `selfhost inbox approve ${id}`;
 
+/** Where in one file a rule is defined, as TOML key segments, or undefined when it is not. */
+function definedAt(ruleId: string, text: string): Segment[] | undefined {
+  let raw: Record<string, unknown>;
+  try {
+    raw = parseToml(text) as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+  const rules = Array.isArray(raw.rules) ? (raw.rules as { id?: unknown }[]) : [];
+  const index = rules.findIndex((rule) => rule?.id === ruleId);
+  if (index !== -1) return ["rules", index];
+  if (ruleId === MCP_ALLOW_RULE_ID && raw.mcp !== undefined) return ["mcp"];
+  if (ruleId === MODELS_ALLOW_RULE_ID && raw.models !== undefined) return ["models"];
+  return undefined;
+}
+
 /**
  * Where a rule is defined: the built-in docs for guardrails and package checks, else the line of
- * the rule (or of [mcp] or [models]) in the policy file the hook read.
+ * the rule (or of [mcp] or [models]) in the file that defines it. On a machine in a team the
+ * policy is the team's file with the repository's on top, so the rule is looked up in each, the
+ * repository's first since its restatement of a team rule is the one in use, and the link names
+ * the layer.
  */
-export function ruleLink(
-  ruleId: string,
-  config: ResolvedSelfhostConfig,
-  source: { path: string; text: string } | undefined,
-): string | undefined {
+export function ruleLink(ruleId: string, sources: readonly PolicySource[]): string | undefined {
   if (
     (GUARDRAIL_IDS as readonly string[]).includes(ruleId) ||
     ruleId === SELFHOST_DECISION_RULE_ID
@@ -58,18 +75,16 @@ export function ruleLink(
     return GUARDRAILS_DOCS;
   }
   if (ruleId.startsWith(PACKAGE_RULE_PREFIX)) return PACKAGES_DOCS;
-  if (!source) return undefined;
-  const index = config.rules.findIndex((rule) => rule.id === ruleId);
-  const segments =
-    index !== -1
-      ? ["rules", index]
-      : ruleId === MCP_ALLOW_RULE_ID
-        ? ["mcp"]
-        : ruleId === MODELS_ALLOW_RULE_ID
-          ? ["models"]
-          : undefined;
-  const line = segments ? new TomlLineIndex(source.text).lineOf(segments) : undefined;
-  return line === undefined ? source.path : `${source.path}:${line}`;
+  const named = (source: PolicySource, at: string) =>
+    source.layer ? `${at} (${source.layer})` : at;
+  for (const source of [...sources].reverse()) {
+    const segments = definedAt(ruleId, source.text);
+    if (!segments) continue;
+    const line = new TomlLineIndex(source.text).lineOf(segments);
+    return named(source, line === undefined ? source.path : `${source.path}:${line}`);
+  }
+  const last = sources.at(-1);
+  return last ? named(last, last.path) : undefined;
 }
 
 function tail(e: Explanation): string[] {

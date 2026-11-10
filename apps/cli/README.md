@@ -529,9 +529,12 @@ the repository it runs in. It writes nothing; `--json` prints `selfhost.review_r
 ## Inbox
 
 `selfhost inbox [--all] [--json]` lists the review items waiting on you, ranked like the review
-list (blocking first, then by risk, then oldest), each with the shortest id prefix that tells it
-apart. `--all` lists every open item, other people's and the ones you snoozed included. Act on
-one by its id, or any unique start of it:
+list (blocking first, then by risk, then oldest), each with the shortest end of its id (at least
+8 characters) that tells it apart. Ids are UUIDv7, whose first characters are a timestamp, so
+items made the same minute share their start; the end is random. `--all` lists every open item,
+other people's and the ones you snoozed included. Act on one by its id, or any unique start or
+end of it. When what you typed matches several open items, the one you can answer is picked;
+when more than one of yours matches, the error lists only yours, never other people's items:
 
 - `selfhost inbox approve <id> [--reason <text>]` and `selfhost inbox deny <id> [--reason
   <text>]` answer the item. The review list records each answer as one `decision.recorded`
@@ -541,7 +544,9 @@ one by its id, or any unique start of it:
   and exits 1. Approve and deny (here, under `selfhost review` and `selfhost decide`) are a
   person's: they refuse inside a coding agent's session (`CLAUDECODE`, `AI_AGENT`,
   `CODEX_SANDBOX` and the like are set) and when stdin is not a terminal, and the hooks block an
-  agent that runs them. These checks are a convenience: on a team server, the server decides who
+  agent that runs them. A script a person wrote, such as a CI job, sets
+  `SELFHOST_PERSON_SCRIPT=1` to run them without a terminal; it changes nothing inside an agent
+  session, which is still refused. These checks are a convenience: on a team server, the server decides who
   may answer what (see [Security](../../README.md#security)).
 - `selfhost inbox snooze <id> [--for 2h | --until <time>]` hides an item from your list until
   then (default 1h; `--for` takes m, h, d or w).
@@ -736,7 +741,8 @@ and `--dry-run` never ask (the files are then only listed). [`AGENTS.md`](AGENTS
 `--dry-run` prints the same plan, with the number of log files and hook events it would import,
 and writes nothing. `selfhost init --undo` puts every agent config file init changed back byte
 for byte from its backup (recorded in `~/.selfhost/init.json`) and deletes the context files it
-imported, unless a file was edited since;
+imported, unless a file was edited since. It needs no terminal, so a person can script it, but
+it refuses inside a coding agent session (`--dry-run` excepted);
 `agents configure --remove` takes the same settings out but writes the file in its own layout.
 The ledger, `selfhost.toml` and a team membership are kept.
 
@@ -1207,6 +1213,10 @@ The team server configures an AI gateway: the bundled Bifrost (`selfhost up --ga
 runs (`[integrations.router] tool = "litellm"` with `url` and `admin_key_env` in the server's
 `selfhost.toml`). The gateway holds the provider keys; people and runs get virtual keys, one per
 person, per team and per run, each named `selfhost:<kind>:<team>:<who>`.
+
+`gateway connect` (with `--rotate` and `--undo`) and `gateway disconnect` decide which key, and so
+which budget, an agent's traffic goes through, so they are a person's: they refuse inside a coding
+agent session (`disconnect --dry-run` excepted), and the hooks block an agent that runs them.
 
 - Budgets: `[budget]` in the team's `selfhost.toml`. With `mode = "hard"` the team's
   `daily_usd`, `weekly_usd` and `monthly_usd` go on the gateway's team, `[budget.person]` on each

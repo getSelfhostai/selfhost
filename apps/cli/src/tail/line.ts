@@ -266,10 +266,40 @@ function what(line: TailLine): string {
   }
 }
 
+/** HH:MM:SS of a timestamp in a time zone. */
+export type Clock = ((iso: string) => string) & { zone: string };
+
+/**
+ * The clock text lines use: the person's own time zone (`timeZone`, else this machine's),
+ * falling back to the machine's for a zone name Intl does not know.
+ */
+export function clockIn(timeZone?: string): Clock {
+  let format: Intl.DateTimeFormat;
+  try {
+    format = new Intl.DateTimeFormat("en-GB", {
+      timeZone,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    });
+  } catch {
+    return clockIn(undefined);
+  }
+  const clock = (iso: string) => {
+    const at = new Date(iso);
+    return Number.isNaN(at.getTime()) ? iso.slice(11, 19) : format.format(at);
+  };
+  return Object.assign(clock, { zone: format.resolvedOptions().timeZone });
+}
+
+/** "UTC", or "local time (Asia/Kolkata)": what the times of the lines are in. */
+export const zoneText = (clock: Clock): string =>
+  clock.zone === "UTC" || clock.zone === "Etc/UTC" ? "UTC" : `local time (${clock.zone})`;
+
 /** One line of text: time, who, agent, what happened and the link to its run. */
-export function formatLine(line: TailLine): string {
-  const time = line.ts.slice(11, 19);
-  const parts = [time, line.who, line.agent ?? "-", what(line)];
+export function formatLine(line: TailLine, clock: Clock = clockIn()): string {
+  const parts = [clock(line.ts), line.who, line.agent ?? "-", what(line)];
   if (line.run_url) parts.push(line.run_url);
   return parts.join("  ");
 }
