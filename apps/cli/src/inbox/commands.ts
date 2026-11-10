@@ -8,6 +8,7 @@ import { localPerson } from "../alerts/person.js";
 import { statuslineCachePath } from "../alerts/settings.js";
 import { clock, duration } from "../alerts/text.js";
 import { plural } from "../format.js";
+import { oneCopyPerFact } from "../hooks/dedupe.js";
 import { drainSpool } from "../hooks/drain.js";
 import type { ExceptionGrant, GrantsReport, LookupItem } from "../hooks/exceptions.js";
 import { spoolDir } from "../hooks/receive.js";
@@ -208,7 +209,7 @@ async function openSolo(
   try {
     // Blocked calls not imported yet go in first, so an exception asked for a moment ago is on
     // the list.
-    await drainSpool(ledger, spoolDir(io.env), {
+    await drainSpool(oneCopyPerFact(ledger), spoolDir(io.env), {
       person: scope.person,
       now: base.now,
       exceptionsOnly: true,

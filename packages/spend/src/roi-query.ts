@@ -13,6 +13,7 @@ import {
   type RoiPullEvent,
   type RoiReport,
 } from "./roi.js";
+import { countedCostsSql } from "./sources.js";
 
 /**
  * The ROI input from the ledger's tables, and the frozen baseline in roi_baselines. An event's
@@ -95,15 +96,24 @@ export async function readRoiInput(
   );
   const wanted = new Set(urls);
   const joined = [...new Set(links.filter((l) => wanted.has(l.pr)).map((l) => l.session))];
+  // A gateway request counts once, under its agent-side copy's session (rule 1 in sources.ts);
+  // costPerMergedPr applies rule 2 to the rows.
   const costs = await db.query<Nullable<RoiCost>>(
-    `SELECT e.session_id AS session, e.agent, e.model, e.source, ${REPO} AS repo, ${TEAM} AS team,
-       (e.ts >= $1::timestamptz AND e.ts < $2::timestamptz) AS in_window,
-       sum((e.body#>>'{cost,usd}')::numeric)::float8 AS usd
-     FROM ${teamed("$3")}
-     WHERE e.kind = 'cost.recorded'
-       AND ((e.ts >= $1::timestamptz AND e.ts < $2::timestamptz)
-         OR e.session_id IN (SELECT jsonb_array_elements_text($4::text::jsonb)))
-     GROUP BY 1, 2, 3, 4, 5, 6, 7`,
+    `WITH cost_rows AS (
+       SELECT e.id, e.ts, e.source, e.session_id, e.agent, e.model, e.body,
+         ${REPO} AS repo, ${TEAM} AS team
+       FROM ${teamed("$3")}
+       WHERE e.kind = 'cost.recorded'
+         AND ((e.ts >= $1::timestamptz AND e.ts < $2::timestamptz)
+           OR e.session_id IN (SELECT jsonb_array_elements_text($4::text::jsonb)))
+     ),
+     ${countedCostsSql("cost_rows", "roi")}
+     SELECT counted_session AS session, agent, model, source,
+       coalesce(repo, lower(counted_repo)) AS repo, team, paired,
+       (ts >= $1::timestamptz AND ts < $2::timestamptz) AS in_window,
+       sum((body#>>'{cost,usd}')::numeric)::float8 AS usd
+     FROM roi_counted
+     GROUP BY 1, 2, 3, 4, 5, 6, 7, 8`,
     [...range, JSON.stringify(joined)],
   );
   return {

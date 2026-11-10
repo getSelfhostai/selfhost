@@ -63,6 +63,12 @@ interface PendingCost {
   sidechain: boolean;
   /** First response in its thread after an API error. */
   retry: boolean;
+  /** The response this record belongs to: advisor records share their response's group. */
+  group: string;
+  /** Timestamp of the newest line of the response seen so far. */
+  lastTs: string;
+  /** The response is complete: its final line, carrying the final usage, has been read. */
+  settled: boolean;
 }
 
 interface UsageRecord {
@@ -145,8 +151,16 @@ function threadKey(line: Json, sessionId: string): string {
 /** Maps Claude Code transcript lines (`~/.claude/projects/<project>/<session>.jsonl`). */
 export class ClaudeCodeMapper implements LineMapper {
   private readonly sessions = new Map<string, SessionState>();
+  /**
+   * Usage of responses read so far, by dedupe key. Claude Code writes one line per content block
+   * of a response, each with the usage so far; only the last line has the final output tokens.
+   * A record is emitted once its response is complete (see settle), so a log read while the
+   * response is still being written, as `import --watch` does, counts what a later full read does.
+   */
   private readonly pendingCosts = new Map<string, PendingCost>();
   private readonly emittedCosts = new Set<string>();
+  /** The response still being written in each thread, by its group. */
+  private readonly openResponses = new Map<string, string>();
   private readonly pendingCommits = new Map<string, PendingCommit>();
   /** querySource of each api-request line, by its id. */
   private readonly querySources = new Map<string, string>();
@@ -154,6 +168,10 @@ export class ClaudeCodeMapper implements LineMapper {
   private readonly failedThreads = new Set<string>();
   private readonly fileSessionId: string;
   private readonly person: Actor;
+  /** Working folder of each session, from its first line that names one. */
+  private readonly cwds = new Map<string, string>();
+  /** owner/name of the repository at each working folder, or null for none. */
+  private readonly repos = new Map<string, string | null>();
 
   constructor(private readonly ctx: MapContext) {
     this.fileSessionId = basename(ctx.path, ".jsonl");
@@ -169,6 +187,8 @@ export class ClaudeCodeMapper implements LineMapper {
     const ts = isoTimestamp(line.timestamp);
     if (!ts) return [];
     const sessionId = str(line.sessionId) ?? this.fileSessionId;
+    const cwd = str(line.cwd);
+    if (cwd && !this.cwds.has(sessionId)) this.cwds.set(sessionId, cwd);
     const sidechain = line.isSidechain === true;
     const version = str(line.version);
     if (!sidechain) this.track(sessionId, ts, line, version);
@@ -224,15 +244,30 @@ export class ClaudeCodeMapper implements LineMapper {
       }
     }
     for (const [key, cost] of this.pendingCosts) {
+      // A response with no final line yet waits, unless its log went quiet: it was cut off.
+      if (!cost.settled && now - Date.parse(cost.lastTs) <= SESSION_IDLE_MS) continue;
+      this.pendingCosts.delete(key);
       this.emittedCosts.add(key);
       out.push(this.costEvent(cost));
     }
-    this.pendingCosts.clear();
     return out;
   }
 
   private event(input: EventInput): ParsedEvent {
-    return buildEvent(VENDOR, input);
+    const repo = this.repoOf(input.sessionId);
+    return buildEvent(VENDOR, repo ? { ...input, fields: { repo, ...input.fields } } : input);
+  }
+
+  /** The repository the session ran in, from its working folder. */
+  private repoOf(sessionId: string): string | undefined {
+    const cwd = this.cwds.get(sessionId);
+    if (!cwd || !this.ctx.repoOf) return undefined;
+    let repo = this.repos.get(cwd);
+    if (repo === undefined) {
+      repo = this.ctx.repoOf(cwd) ?? null;
+      this.repos.set(cwd, repo);
+    }
+    return repo ?? undefined;
   }
 
   private track(sessionId: string, ts: string, line: Json, version: string | undefined) {
@@ -264,7 +299,10 @@ export class ClaudeCodeMapper implements LineMapper {
     const model = reported === "<synthetic>" ? undefined : reported;
     const entry = claudeUsageEntry(line);
     const thread = threadKey(line, sessionId);
-    if (entry) {
+    const group = entry ? this.responseGroup(entry, sessionId, ts) : undefined;
+    // A line of another response, or one with no usage, means the open response is complete.
+    if (this.openResponses.get(thread) !== group) this.settle(thread);
+    if (entry && group !== undefined) {
       const records: UsageRecord[] = [
         { suffix: "", model: entry.model, usage: entry.usage, costUsd: entry.costUsd },
         ...claudeAdvisorUsages(line).map((advisor, index) => ({
@@ -278,9 +316,12 @@ export class ClaudeCodeMapper implements LineMapper {
         sidechain,
         retry: this.failedThreads.has(thread),
       };
-      if (this.addUsageRecords(entry, ts, sessionId, version, records, request)) {
+      if (this.addUsageRecords(entry, ts, sessionId, version, records, { ...request, group })) {
         this.failedThreads.delete(thread);
       }
+      this.openResponses.set(thread, group);
+      // The final line of a response carries its stop reason; the lines before it carry none.
+      if (typeof message.stop_reason === "string") this.settle(thread);
     }
     if (line.isApiErrorMessage === true) this.failedThreads.add(thread);
     const hit = claudeLimitHit(line);
@@ -318,13 +359,35 @@ export class ClaudeCodeMapper implements LineMapper {
           model,
           fields: {
             ...toolFields(name, details),
-            ...(sidechain ? { data: { sidechain: true } } : {}),
+            // The same id a hook's tool.called carries, so the two copies are seen as one call.
+            data: { tool_use_id: id, ...(sidechain ? { sidechain: true } : {}) },
           },
         }),
       );
       if (name === "Bash" && isGitCommitCommand(details.command)) {
         this.pendingCommits.set(id, { sessionId, version, model, details });
       }
+    }
+  }
+
+  private responseKey(entry: ClaudeUsageEntry, sessionId: string, ts: string) {
+    return entry.messageId
+      ? claudeUsageDedupeKey(entry.messageId, entry.requestId, sessionId, ts)
+      : { scope: sessionId, identity: `line@${ts}` };
+  }
+
+  private responseGroup(entry: ClaudeUsageEntry, sessionId: string, ts: string): string {
+    const base = this.responseKey(entry, sessionId, ts);
+    return `${base.scope}\n${base.identity}`;
+  }
+
+  /** Marks the thread's open response complete, so flush emits its usage. */
+  private settle(thread: string) {
+    const group = this.openResponses.get(thread);
+    if (group === undefined) return;
+    this.openResponses.delete(thread);
+    for (const cost of this.pendingCosts.values()) {
+      if (cost.group === group) cost.settled = true;
     }
   }
 
@@ -335,15 +398,13 @@ export class ClaudeCodeMapper implements LineMapper {
     sessionId: string,
     version: string | undefined,
     records: UsageRecord[],
-    request: Pick<PendingCost, "requestRef" | "sidechain" | "retry">,
+    request: Pick<PendingCost, "requestRef" | "sidechain" | "retry" | "group">,
   ): boolean {
     let added = false;
     for (const record of records) {
       if (!record.model || record.model === "<synthetic>") continue;
       if (claudeUsageTotal(record.usage) === 0) continue;
-      const base = entry.messageId
-        ? claudeUsageDedupeKey(entry.messageId, entry.requestId, sessionId, ts)
-        : { scope: sessionId, identity: `line@${ts}` };
+      const base = this.responseKey(entry, sessionId, ts);
       const identity = `${base.identity}${record.suffix}`;
       const key = `${base.scope}\n${identity}`;
       if (this.emittedCosts.has(key)) continue;
@@ -353,12 +414,13 @@ export class ClaudeCodeMapper implements LineMapper {
           : undefined;
       const existing = this.pendingCosts.get(key);
       if (existing) {
-        // Keep the line with the most tokens, but the first line's timestamp, so the id is
-        // stable however the lines of one response are split across reads.
-        if (claudeUsageTotal(record.usage) > claudeUsageTotal(existing.usage)) {
+        // Keep the final usage (the latest line, which has the most tokens), but the first line's
+        // timestamp, so the id is stable however the lines of one response are split across reads.
+        if (claudeUsageTotal(record.usage) >= claudeUsageTotal(existing.usage)) {
           existing.usage = record.usage;
           existing.costUsd = record.costUsd;
         }
+        if (ts > existing.lastTs) existing.lastTs = ts;
         continue;
       }
       this.pendingCosts.set(key, {
@@ -372,6 +434,8 @@ export class ClaudeCodeMapper implements LineMapper {
         costUsd: record.costUsd,
         replay,
         ...request,
+        lastTs: ts,
+        settled: false,
       });
       added = true;
     }
@@ -457,8 +521,12 @@ export class ClaudeCodeMapper implements LineMapper {
       }
     }
     const text = promptText(line);
-    // A new prompt after an error is the person's next request, not a retry.
-    if (text !== undefined) this.failedThreads.delete(threadKey(line, sessionId));
+    if (text !== undefined) {
+      // A new prompt after an error is the person's next request, not a retry. It also means
+      // the previous response is over, even one cut off before its final line.
+      this.failedThreads.delete(threadKey(line, sessionId));
+      this.settle(threadKey(line, sessionId));
+    }
     if (!this.ctx.logPrompts || sidechain) return;
     const uuid = str(line.uuid);
     if (text === undefined || !uuid) return;

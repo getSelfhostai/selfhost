@@ -29,10 +29,19 @@ such as the ledger store. Nothing here opens a network connection; a test fails 
 | `session.started`  | The first line of a session.                                                                                                                             |
 | `session.ended`    | The last line, once the session has been quiet for 30 minutes or logged a SessionEnd hook.                                                               |
 | `cost.recorded`    | Each API response (Claude Code) or `token_count` delta (Codex): model, input, output, cache read and cache write tokens, and USD with `estimated: true`. |
-| `tool.called`      | Each tool call: the tool name and a short `input_summary`, plus a `target` for commands, files and URLs.                                                 |
+| `tool.called`      | Each tool call: the tool name and a short `input_summary`, plus a `target` for commands, files and URLs, and the agent's call id in `data.tool_use_id`.  |
 | `commit.created`   | A `git commit` call whose output shows `[branch sha]`, with `links.commit_sha`.                                                                          |
 | `prompt.submitted` | Only with `logPrompts: true`. The text goes in `data.prompt`, masked and capped at 2000 characters.                                                      |
 | `alert.raised`     | A plan usage limit hit, with `data.alert: "usage_limit"` and, when the log says, `window` (`session` or `weekly`) and `resets_at`. See below.            |
+
+Claude Code writes one line per content block of a response, and only the last carries the final
+output tokens and a stop reason. A response's `cost.recorded` waits for that line (or the next
+response or prompt in its thread, or 30 quiet minutes for one cut off), so tailing a log line by
+line with `watchLogs` gives the same events and totals as one `importAll` of the finished file.
+
+With `repoOf` (the CLI passes one that reads the git origin of the session's working folder),
+every event of a session also gets `repo` as owner/name; a Codex rollout's own git URL comes
+first.
 
 Summaries keep the first line of a command or a file path relative to the session's cwd, masked
 for secret-shaped values and email addresses (`maskSecrets` from `@selfhost/schema`, the same

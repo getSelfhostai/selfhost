@@ -15,6 +15,12 @@ export interface ImportOptions {
   codexDir?: string;
   /** Person the sessions belong to. Default: the OS user name. */
   actorId?: string;
+  /**
+   * owner/name of the repository at a session's working folder. The CLI passes one that reads
+   * the folder's git origin remote, as the MCP server's get_policy does. Without it, events of
+   * sessions whose log names no repository carry none.
+   */
+  repoOf?: (cwd: string) => string | undefined;
 }
 
 export interface WatchOptions extends ImportOptions {
@@ -47,6 +53,7 @@ export interface MapContext {
   path: string;
   person: Actor;
   logPrompts: boolean;
+  repoOf?: (cwd: string) => string | undefined;
 }
 
 export interface EventInput {

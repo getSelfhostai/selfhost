@@ -1,0 +1,36 @@
+{
+  "vendor": "Claude Code",
+  "cli": "claude",
+  "synthetic": false,
+  "observedVersions": [
+    "2.1.83"
+  ],
+  "capturedAt": "2026-11-10",
+  "scrubbed": "scripts/capture-fixtures.mjs for the transcripts: every text, tool input and output masked to placeholder text of the same length, ids, timestamps, token counts and model ids kept. Spool and gateway lines: prompts, file contents and replies masked, paths moved under the dev home folder.",
+  "files": [
+    {
+      "path": "claude-code/projects/-home-dev-project-1/e47b0f2d-1c53-402b-a447-f6d3eb628c4d.jsonl",
+      "description": "Direct to the vendor, claude-haiku-4-5: 4 responses, each over two or three lines (thinking, then tool_use or text) that share a message id; only the last line has the final output tokens (667 in all) and a stop reason. Write, Read, Write; the first Write failed validation before its pre-tool hook ran."
+    },
+    {
+      "path": "claude-code/projects/-home-dev-project-1/1e4bd4cd-c12d-4937-b679-d9a8041f63e2.jsonl",
+      "description": "Direct to the vendor: one response over four lines with three parallel tool calls (Read, Bash, Bash), all blocked by the pre-tool hook, then a text reply."
+    },
+    {
+      "path": "claude-code/projects/-home-dev-project-1/915dc8f5-6c69-4388-8b5b-2998a83d4e4d.jsonl",
+      "description": "Through the Bifrost gateway: MCP calls to selfhost, a Bash call blocked by the hook; 4 responses."
+    },
+    {
+      "path": "claude-code/projects/-home-dev-project-1/fd281561-c586-42ca-8bf5-caeaa48b5b19.jsonl",
+      "description": "Through the Bifrost gateway: one response, a request refused by the gateway's budget (synthetic API error line), then two more responses after the budget was raised."
+    },
+    {
+      "path": "spool/hooks-2026-11-10.jsonl",
+      "description": "selfhost hook lines for e47b0f2d and 1e4bd4cd: SessionStart, UserPromptSubmit, PreToolUse with the pre-tool decision, PostToolUse, Stop, SessionEnd."
+    },
+    {
+      "path": "bifrost-logs.json",
+      "description": "Bifrost's 8 request logs for the gateway sessions: 7 successes, whose token counts match the transcripts' final usage, and the budget refusal. No session id and no vendor message id."
+    }
+  ]
+}

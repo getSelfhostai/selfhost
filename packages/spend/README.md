@@ -104,12 +104,29 @@ Each flag has `day`, `request_type`, `usd`, `day_usd`, `share`, `previous_share`
 with spend, or `null`) and `trend`: the `trendDays` days before (default 7) that the series covers,
 oldest first, with their USD and share.
 
-## One source per session
+## Where spend comes from: one source per request, then per session
 
-A session can reach the ledger from several sources at once, for example OpenTelemetry and the
-local logs. `oneSourcePerSession(events)` keeps the cost events of one source per agent and
-session, in the order `otel`, `local_log`, `hook`, `gateway`, `vendor_api`, so nothing is counted
-twice. OpenTelemetry comes first because it is the only source that sees every request.
+A request can reach the ledger from several sources at once. `oneSourcePerSession(events)`
+counts each once, by two rules applied in order:
+
+1. **A request that went through the model gateway counts once, as the gateway's event.** The
+   gateway logs it as billed (`source: gateway`), and the agent's session log, OpenTelemetry or
+   a hook logs it again on the laptop. The gateway's request log names no session, so its event
+   takes the session (and repo and request type) of its agent-side copy. No shared id joins the
+   two: Bifrost and LiteLLM log their own request ids, not the vendor's message id. They are
+   joined on the request itself: the person (when both name one), prompt tokens (uncached input,
+   cache reads and cache writes together) and output tokens, the n-th request of a size on one
+   side with the n-th of that size on the other, no more than `GATEWAY_PAIR_WINDOW_MS` (10
+   minutes) apart. Requests under `GATEWAY_PAIR_MIN_TOKENS` (100) are never joined, as sizes
+   that small repeat.
+2. **Everything else counts one source per session.** A session (agent and session id) reported
+   by more than one source keeps the cost events of one, in the order `otel`, `local_log`,
+   `hook`, `gateway`, `vendor_api`. OpenTelemetry comes first because it is the only source that
+   sees every request. Sessions that did not go through the gateway keep their session log.
+
+`pairGatewayCosts(events)` returns the pairs of rule 1. `countedCostsSql(input, prefix)` is rule 1
+as SQL CTEs over a table of cost rows, for the server's usage and ROI queries; it pairs the same
+events, so `GET /v1/usage`, the team overview, `GET /v1/budget`, ROI and `selfhost spend` agree.
 
 ## Prompt cache hit rate
 

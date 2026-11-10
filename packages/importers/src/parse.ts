@@ -27,6 +27,7 @@ export function createFileState(vendor: Vendor, path: string, opts: ImportOption
     path,
     person: { kind: "person" as const, id: opts.actorId ?? defaultActorId() },
     logPrompts: opts.logPrompts === true,
+    ...(opts.repoOf ? { repoOf: opts.repoOf } : {}),
   };
   const mapper = vendor === "claude_code" ? new ClaudeCodeMapper(ctx) : new CodexMapper(ctx);
   return { vendor, path, offset: 0, mapper, lines: 0, skipped: 0 };

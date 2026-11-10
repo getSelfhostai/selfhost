@@ -222,10 +222,14 @@ embedded database alone, whatever source wrote them: OpenTelemetry, local logs, 
 gateway and vendor admin data all land as the same event kinds, so nothing here knows about
 sources.
 
-- Spend (`usd`, the four token counts and `tokens`, `requests`) adds up `cost.recorded` events.
-  A session (agent and `session_id`) that more than one source reports counts the events of
-  one, in the order `otel`, `local_log`, `hook`, `gateway`, `vendor_api`, as `selfhost spend`
-  and the team overview count it, so a team's total equals its overview's spend.
+- Spend (`usd`, the four token counts and `tokens`, `requests`) adds up `cost.recorded` events,
+  as `selfhost spend`, the team overview, `GET /v1/budget` and ROI count them, so a team's total
+  equals its overview's spend. A request that went through the gateway counts once, as the
+  gateway's event, in the session of its copy from the session log, OpenTelemetry or a hook
+  (joined on person, prompt and output tokens, at most 10 minutes apart). For the rest, a session (agent
+  and `session_id`) that more than one source reports counts the events of one, in the order
+  `otel`, `local_log`, `hook`, `gateway`, `vendor_api`. See "Where spend comes from" in
+  [`packages/spend`](../../packages/spend/README.md).
 - `sessions` counts distinct sessions with a `session.started`, `session.ended`,
   `prompt.submitted` or `cost.recorded` event in the range. A session counts once in every row
   its events fall in (a session over midnight is in two days) and once in the total, so rows

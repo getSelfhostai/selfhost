@@ -301,8 +301,10 @@ describe("selfhost init", () => {
 
     const text = await init("--data-dir", "memory://");
     expect(text.code).toBe(0);
+    // The hook payload is a call from a fixture session, so the log's copy of it is the one
+    // already in the ledger: the hook's, read first.
     expect(text.out).toMatch(
-      /^Imported \d+ new events from 6 log files \(0 already in the ledger\)\.$/m,
+      /^Imported \d+ new events from 6 log files \(1 already in the ledger\)\.$/m,
     );
     expect(text.out).toContain("Imported 1 new hook events from the spool");
     expect(text.out).toContain(
@@ -333,7 +335,7 @@ describe("selfhost init", () => {
       "observe",
       "warnings",
     ]);
-    expect(report.import).toMatchObject({ schema: "selfhost.import/v1", files: 6, duplicates: 0 });
+    expect(report.import).toMatchObject({ schema: "selfhost.import/v1", files: 6, duplicates: 1 });
     expect(report.import.hooks).toMatchObject({ accepted: 1, malformed: 0 });
 
     // The same numbers selfhost import and selfhost spend give for the same logs.

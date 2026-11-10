@@ -28,7 +28,9 @@ pnpm --filter @selfhost/cli dev migrate conductor --dry-run --history ~/conducto
 
 `selfhost spend [--since 7d] [--by request_type,model] [--threshold 10] [--min-usd 0] [--json]`
 reads `cost.recorded` events from the ledger (the same one `selfhost import` writes, or
-`--database` / `--data-dir`), keeps one source per session, and prints spend per group with its
+`--database` / `--data-dir`), counts each request once (the gateway's copy of a request that
+went through it, then one source per session; see [`packages/spend`](../../packages/spend/README.md)),
+and prints spend per group with its
 share, then every request type that crossed `--threshold` percent of a day's spend, with the day
 it crossed and the days before. `--by` takes `request_type`, `agent`, `model` and `person`; flags
 are always by request type. See [`packages/spend`](../../packages/spend/README.md).
@@ -84,7 +86,11 @@ own ledger.
 retention from the ledger (the one `selfhost import` writes, or `--database` / `--data-dir`):
 `--days`, else `ledger.retention_days` in `selfhost.toml` (found like `doctor` does), else 90.
 `selfhost import` keeps prompt text only with `--prompts`, and masks secrets and emails either
-way; the ledger drops prompt text from any import without it.
+way; the ledger drops prompt text from any import without it. It reads the hook spool before the
+session logs, and keeps one copy of a tool call (by the agent's call id) and of a session start
+(by session id) that both report, usually the hook's, which its pre-tool decision links to. Each
+hook and log event gets `repo` (owner/name of the git origin of the session's working folder),
+which `selfhost tail --repo` and the team views filter on.
 
 `selfhost ledger status [--json]` prints the ledger's schema version against the migrations this
 release knows (pending ones, and any from a newer release, which this one refuses to run on) and

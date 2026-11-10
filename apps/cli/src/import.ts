@@ -15,6 +15,8 @@ import type { LedgerEvent } from "@selfhost/schema";
 import { startMonitor } from "./alerts/monitor.js";
 import { defaultConfigPath } from "./config-file.js";
 import { plural } from "./format.js";
+import { cachedRepoOf } from "./git-repo.js";
+import { oneCopyPerFact } from "./hooks/dedupe.js";
 import { drainSpool, type SpoolReport, watchSpool } from "./hooks/drain.js";
 import { spoolDir } from "./hooks/receive.js";
 import { refreshGrants } from "./inbox/grants.js";
@@ -181,6 +183,7 @@ function importOptions(
     actorId: options.person ?? membership?.person ?? defaultPerson(io.env),
     claudeDir: options.claudeDir,
     codexDir: options.codexDir,
+    repoOf: cachedRepoOf(),
   };
 }
 
@@ -239,6 +242,7 @@ export async function printHookEvents(
     logPrompts: opts.logPrompts,
     now: io.now,
     keep: true,
+    repoOf: opts.repoOf,
   });
 }
 
@@ -257,12 +261,15 @@ export async function runImport(
   const opts = importOptions(options, io, membership);
   const target = ledger ?? (await openTarget(options, io));
   try {
-    const result = await importAll(target, opts);
-    const hooks = await drainSpool(target, options.spoolDir ?? spoolDir(io.env), {
+    // Hooks first: a tool call or session start both sources report is kept as the hook's copy.
+    const writer = oneCopyPerFact(target);
+    const hooks = await drainSpool(writer, options.spoolDir ?? spoolDir(io.env), {
       person: opts.actorId ?? "",
       logPrompts: opts.logPrompts,
       now: io.now,
+      repoOf: opts.repoOf,
     });
+    const result = await importAll(writer, opts);
     const report: ImportReport = {
       schema: "selfhost.import/v1",
       ...result,
@@ -507,7 +514,7 @@ export async function runWatch(options: ImportCommandOptions, io: ImportIo): Pro
   const membership = readMembership(configPathOf(io));
   const opts = importOptions(options, io, membership);
   const person = opts.actorId ?? defaultPerson(io.env);
-  let writer: LedgerWriter = ledger;
+  let writer: LedgerWriter = oneCopyPerFact(ledger);
   let synced = () => {};
   let puller: TeamPuller | undefined;
   if (membership) {
@@ -519,7 +526,7 @@ export async function runWatch(options: ImportCommandOptions, io: ImportIo): Pro
           if (retried.error) throw new Error(retried.error);
         }
       : undefined;
-    writer = syncingWriter(ledger, sync.remote, catchUp);
+    writer = oneCopyPerFact(ledger, syncingWriter(ledger, sync.remote, catchUp));
     synced = () => markSynced(sync.configPath, readSyncState(sync.configPath, membership));
     // The team policy, context layers, managed settings and heartbeat, as a one-shot sync pulls
     // them; the first import just did, so the first pull comes one interval later.
@@ -584,7 +591,7 @@ export async function runWatch(options: ImportCommandOptions, io: ImportIo): Pro
   const hookWatcher = watchSpool(
     writer,
     options.spoolDir ?? spoolDir(io.env),
-    { person: opts.actorId ?? "", logPrompts: opts.logPrompts },
+    { person: opts.actorId ?? "", logPrompts: opts.logPrompts, repoOf: opts.repoOf },
     onBatch,
   );
   await new Promise<void>((resolve) => {

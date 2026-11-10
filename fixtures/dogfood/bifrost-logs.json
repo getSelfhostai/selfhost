@@ -1,0 +1,417 @@
+{
+  "logs": [
+    {
+      "id": "9098db8c-9c2a-444d-9fd1-93a20c6ba071",
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5",
+      "status": "success",
+      "object": "responses_stream",
+      "timestamp": "2026-11-10T07:42:49.093Z",
+      "created_at": "2026-11-10T07:42:49.093Z",
+      "number_of_retries": 0,
+      "fallback_index": 0,
+      "latency": 2514.65975,
+      "cost": 0.03641875000000001,
+      "virtual_key_id": "2ba93c62-7b9d-4044-8292-0ccd9c3d6034",
+      "virtual_key_name": "selfhost:person:marketing:bob@example.com",
+      "session_id": null,
+      "stream": true,
+      "token_usage": {
+        "prompt_tokens": 28453,
+        "prompt_tokens_details": {
+          "cached_write_tokens": 28443,
+          "cached_write_token_details": {
+            "cached_write_tokens_5m": 28443,
+            "cached_write_tokens_1h": 0
+          },
+          "cached_tokens": 0,
+          "cache_write_tokens": 28443
+        },
+        "completion_tokens": 171,
+        "completion_tokens_details": {
+          "reasoning_tokens": 81
+        },
+        "total_tokens": 28624,
+        "cost": {
+          "input_cost": 0.035563750000000005,
+          "input_cost_details": {
+            "text_cost": 9.999999999999999e-06,
+            "cached_write_cost": 0.03555375
+          },
+          "output_cost": 0.0008550000000000001,
+          "output_cost_details": {
+            "text_cost": 0.0008550000000000001
+          },
+          "total_cost": 0.03641875000000001
+        }
+      },
+      "metadata": {
+        "selfhost_team": "marketing",
+        "selfhost_kind": "person",
+        "user-agent": "claude-cli/2.1.83 (external, sdk-cli)",
+        "selfhost_person": "bob@example.com"
+      }
+    },
+    {
+      "id": "7f0f75ce-dc20-4952-94cf-dc705ef48983",
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5",
+      "status": "error",
+      "object": "responses_stream",
+      "timestamp": "2026-11-10T07:42:51.717Z",
+      "created_at": "2026-11-10T07:42:51.717Z",
+      "number_of_retries": 0,
+      "fallback_index": 0,
+      "latency": 0.0,
+      "cost": null,
+      "virtual_key_id": "2ba93c62-7b9d-4044-8292-0ccd9c3d6034",
+      "virtual_key_name": "selfhost:person:marketing:bob@example.com",
+      "session_id": null,
+      "stream": true,
+      "metadata": {
+        "user-agent": "claude-cli/2.1.83 (external, sdk-cli)",
+        "selfhost_person": "bob@example.com",
+        "selfhost_team": "marketing",
+        "selfhost_kind": "person"
+      },
+      "error_details": {
+        "type": "budget_exceeded",
+        "is_bifrost_error": false,
+        "status_code": 402,
+        "error": {
+          "message": "Budget exceeded: vk_model_config * budget exceeded: 0.0364 >= 0.0100 dollars"
+        },
+        "extra_fields": {
+          "routing_info": {},
+          "provider": "anthropic",
+          "original_model_requested": "claude-haiku-4-5",
+          "resolved_model_used": "claude-haiku-4-5",
+          "request_type": "responses_stream",
+          "error_type": "policy_budget_exceeded"
+        }
+      }
+    },
+    {
+      "id": "d4d77d7d-dab4-45c7-bb1c-43f7027e3d92",
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5",
+      "status": "success",
+      "object": "responses_stream",
+      "timestamp": "2026-11-10T07:46:17.170Z",
+      "created_at": "2026-11-10T07:46:17.170Z",
+      "number_of_retries": 0,
+      "fallback_index": 0,
+      "latency": 2601.761125,
+      "cost": 0.009235100000000001,
+      "virtual_key_id": "2ba93c62-7b9d-4044-8292-0ccd9c3d6034",
+      "virtual_key_name": "selfhost:person:marketing:bob@example.com",
+      "session_id": null,
+      "stream": true,
+      "token_usage": {
+        "prompt_tokens": 28849,
+        "prompt_tokens_details": {
+          "cached_read_tokens": 24351,
+          "cached_write_tokens": 4488,
+          "cached_write_token_details": {
+            "cached_write_tokens_5m": 4488,
+            "cached_write_tokens_1h": 0
+          },
+          "cached_tokens": 24351,
+          "cache_write_tokens": 4488
+        },
+        "completion_tokens": 236,
+        "completion_tokens_details": {
+          "reasoning_tokens": 82
+        },
+        "total_tokens": 29085,
+        "cost": {
+          "input_cost": 0.0080551,
+          "input_cost_details": {
+            "text_cost": 9.999999999999999e-06,
+            "cached_read_cost": 0.0024351,
+            "cached_write_cost": 0.00561
+          },
+          "output_cost": 0.00118,
+          "output_cost_details": {
+            "text_cost": 0.00118
+          },
+          "total_cost": 0.009235100000000001
+        }
+      },
+      "metadata": {
+        "user-agent": "claude-cli/2.1.83 (external, sdk-cli)",
+        "selfhost_person": "bob@example.com",
+        "selfhost_team": "marketing",
+        "selfhost_kind": "person"
+      }
+    },
+    {
+      "id": "d41b32c9-a8d6-44d0-82bb-72e080640ed9",
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5",
+      "status": "success",
+      "object": "responses_stream",
+      "timestamp": "2026-11-10T07:46:20.555Z",
+      "created_at": "2026-11-10T07:46:20.555Z",
+      "number_of_retries": 0,
+      "fallback_index": 0,
+      "latency": 3890.028542,
+      "cost": 0.01179515,
+      "virtual_key_id": "2ba93c62-7b9d-4044-8292-0ccd9c3d6034",
+      "virtual_key_name": "selfhost:person:marketing:bob@example.com",
+      "session_id": null,
+      "stream": true,
+      "token_usage": {
+        "prompt_tokens": 34742,
+        "prompt_tokens_details": {
+          "cached_read_tokens": 28839,
+          "cached_write_tokens": 5893,
+          "cached_write_token_details": {
+            "cached_write_tokens_5m": 5893,
+            "cached_write_tokens_1h": 0
+          },
+          "cached_tokens": 28839,
+          "cache_write_tokens": 5893
+        },
+        "completion_tokens": 307,
+        "completion_tokens_details": {
+          "reasoning_tokens": 165
+        },
+        "total_tokens": 35049,
+        "cost": {
+          "input_cost": 0.01026015,
+          "input_cost_details": {
+            "text_cost": 9.999999999999999e-06,
+            "cached_read_cost": 0.0028839,
+            "cached_write_cost": 0.00736625
+          },
+          "output_cost": 0.0015350000000000001,
+          "output_cost_details": {
+            "text_cost": 0.0015350000000000001
+          },
+          "total_cost": 0.01179515
+        }
+      },
+      "metadata": {
+        "selfhost_team": "marketing",
+        "selfhost_kind": "person",
+        "selfhost_person": "bob@example.com",
+        "user-agent": "claude-cli/2.1.83 (external, sdk-cli)"
+      }
+    },
+    {
+      "id": "ebeabb5c-6f6a-43dd-8d66-6cc8bb231055",
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5",
+      "status": "success",
+      "object": "responses_stream",
+      "timestamp": "2026-11-10T07:46:59.548Z",
+      "created_at": "2026-11-10T07:46:59.548Z",
+      "number_of_retries": 0,
+      "fallback_index": 0,
+      "latency": 2429.6625,
+      "cost": 0.04104000000000001,
+      "virtual_key_id": "2ba93c62-7b9d-4044-8292-0ccd9c3d6034",
+      "virtual_key_name": "selfhost:person:marketing:bob@example.com",
+      "session_id": null,
+      "stream": true,
+      "token_usage": {
+        "prompt_tokens": 32030,
+        "prompt_tokens_details": {
+          "cached_write_tokens": 32020,
+          "cached_write_token_details": {
+            "cached_write_tokens_5m": 32020,
+            "cached_write_tokens_1h": 0
+          },
+          "cached_tokens": 0,
+          "cache_write_tokens": 32020
+        },
+        "completion_tokens": 201,
+        "completion_tokens_details": {
+          "reasoning_tokens": 122
+        },
+        "total_tokens": 32231,
+        "cost": {
+          "input_cost": 0.04003500000000001,
+          "input_cost_details": {
+            "text_cost": 9.999999999999999e-06,
+            "cached_write_cost": 0.040025000000000005
+          },
+          "output_cost": 0.001005,
+          "output_cost_details": {
+            "text_cost": 0.001005
+          },
+          "total_cost": 0.04104000000000001
+        }
+      },
+      "metadata": {
+        "selfhost_kind": "person",
+        "user-agent": "claude-cli/2.1.83 (external, sdk-cli)",
+        "selfhost_person": "bob@example.com",
+        "selfhost_team": "marketing"
+      }
+    },
+    {
+      "id": "e67a5c8e-6aa3-4eea-a512-e8658971508c",
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5",
+      "status": "success",
+      "object": "responses_stream",
+      "timestamp": "2026-11-10T07:47:02.102Z",
+      "created_at": "2026-11-10T07:47:02.102Z",
+      "number_of_retries": 0,
+      "fallback_index": 0,
+      "latency": 3100.387708,
+      "cost": 0.0059635,
+      "virtual_key_id": "2ba93c62-7b9d-4044-8292-0ccd9c3d6034",
+      "virtual_key_name": "selfhost:person:marketing:bob@example.com",
+      "session_id": null,
+      "stream": true,
+      "token_usage": {
+        "prompt_tokens": 33304,
+        "prompt_tokens_details": {
+          "cached_read_tokens": 32020,
+          "cached_write_tokens": 1270,
+          "cached_write_token_details": {
+            "cached_write_tokens_5m": 1270,
+            "cached_write_tokens_1h": 0
+          },
+          "cached_tokens": 32020,
+          "cache_write_tokens": 1270
+        },
+        "completion_tokens": 232,
+        "completion_tokens_details": {
+          "reasoning_tokens": 128
+        },
+        "total_tokens": 33536,
+        "cost": {
+          "input_cost": 0.0048035000000000005,
+          "input_cost_details": {
+            "text_cost": 1.4e-05,
+            "cached_read_cost": 0.003202,
+            "cached_write_cost": 0.0015875000000000002
+          },
+          "output_cost": 0.00116,
+          "output_cost_details": {
+            "text_cost": 0.00116
+          },
+          "total_cost": 0.0059635
+        }
+      },
+      "metadata": {
+        "user-agent": "claude-cli/2.1.83 (external, sdk-cli)",
+        "selfhost_kind": "person",
+        "selfhost_person": "bob@example.com",
+        "selfhost_team": "marketing"
+      }
+    },
+    {
+      "id": "4849e467-7b05-4112-b3f2-f28abae7d490",
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5",
+      "status": "success",
+      "object": "responses_stream",
+      "timestamp": "2026-11-10T07:47:05.313Z",
+      "created_at": "2026-11-10T07:47:05.313Z",
+      "number_of_retries": 0,
+      "fallback_index": 0,
+      "latency": 1642.78525,
+      "cost": 0.00432425,
+      "virtual_key_id": "2ba93c62-7b9d-4044-8292-0ccd9c3d6034",
+      "virtual_key_name": "selfhost:person:marketing:bob@example.com",
+      "session_id": null,
+      "stream": true,
+      "token_usage": {
+        "prompt_tokens": 33633,
+        "prompt_tokens_details": {
+          "cached_read_tokens": 33290,
+          "cached_write_tokens": 329,
+          "cached_write_token_details": {
+            "cached_write_tokens_5m": 329,
+            "cached_write_tokens_1h": 0
+          },
+          "cached_tokens": 33290,
+          "cache_write_tokens": 329
+        },
+        "completion_tokens": 114,
+        "completion_tokens_details": {
+          "reasoning_tokens": 27
+        },
+        "total_tokens": 33747,
+        "cost": {
+          "input_cost": 0.00375425,
+          "input_cost_details": {
+            "text_cost": 1.4e-05,
+            "cached_read_cost": 0.003329,
+            "cached_write_cost": 0.00041125000000000005
+          },
+          "output_cost": 0.0005700000000000001,
+          "output_cost_details": {
+            "text_cost": 0.0005700000000000001
+          },
+          "total_cost": 0.00432425
+        }
+      },
+      "metadata": {
+        "selfhost_team": "marketing",
+        "selfhost_kind": "person",
+        "selfhost_person": "bob@example.com",
+        "user-agent": "claude-cli/2.1.83 (external, sdk-cli)"
+      }
+    },
+    {
+      "id": "16697e4a-c8c4-427b-9ce0-1be6e11a5fc4",
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5",
+      "status": "success",
+      "object": "responses_stream",
+      "timestamp": "2026-11-10T07:47:07.054Z",
+      "created_at": "2026-11-10T07:47:07.054Z",
+      "number_of_retries": 0,
+      "fallback_index": 0,
+      "latency": 4563.508042,
+      "cost": 0.007133250000000001,
+      "virtual_key_id": "2ba93c62-7b9d-4044-8292-0ccd9c3d6034",
+      "virtual_key_name": "selfhost:person:marketing:bob@example.com",
+      "session_id": null,
+      "stream": true,
+      "token_usage": {
+        "prompt_tokens": 33799,
+        "prompt_tokens_details": {
+          "cached_read_tokens": 32020,
+          "cached_write_tokens": 1769,
+          "cached_write_token_details": {
+            "cached_write_tokens_5m": 1769,
+            "cached_write_tokens_1h": 0
+          },
+          "cached_tokens": 32020,
+          "cache_write_tokens": 1769
+        },
+        "completion_tokens": 342,
+        "completion_tokens_details": {
+          "reasoning_tokens": 168
+        },
+        "total_tokens": 34141,
+        "cost": {
+          "input_cost": 0.00542325,
+          "input_cost_details": {
+            "text_cost": 9.999999999999999e-06,
+            "cached_read_cost": 0.003202,
+            "cached_write_cost": 0.00221125
+          },
+          "output_cost": 0.0017100000000000001,
+          "output_cost_details": {
+            "text_cost": 0.0017100000000000001
+          },
+          "total_cost": 0.007133250000000001
+        }
+      },
+      "metadata": {
+        "selfhost_team": "marketing",
+        "user-agent": "claude-cli/2.1.83 (external, sdk-cli)",
+        "selfhost_kind": "person",
+        "selfhost_person": "bob@example.com"
+      }
+    }
+  ]
+}

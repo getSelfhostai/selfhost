@@ -109,7 +109,17 @@ export {
   sandboxWaste,
   spanCost,
 } from "./sandbox.js";
-export { COST_SOURCE_PREFERENCE, oneSourcePerSession } from "./sources.js";
+export {
+  AGENT_COST_SOURCES,
+  COST_SOURCE_PREFERENCE,
+  countedCostsSql,
+  GATEWAY_PAIR_MIN_TOKENS,
+  GATEWAY_PAIR_WINDOW_MS,
+  type GatewayPairs,
+  oneSourcePerSession,
+  pairGatewayCosts,
+  sourceRankSql,
+} from "./sources.js";
 export {
   DEFAULT_BASELINE_DAYS,
   DEFAULT_MAD_K,
