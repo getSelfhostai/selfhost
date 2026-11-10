@@ -229,12 +229,13 @@ describe("budget alerts on a solo laptop", () => {
       expect(first.notify?.budget_alerts).toEqual(["You spent 50% of the day's budget of $1"]);
       expect(lines).toContain("Budget alert: You spent 50% of the day's budget of $1");
 
-      // No targets yet, so nothing was sent. A target added later gets what is raised after
-      // it, not the 50% alert from before; spend that jumps past 80% and 100% raises 100% only.
-      const added = new Date(NOW.getTime() + 60_000);
+      // No targets yet, so nothing was sent. A target added later (beyond the two-minute grace
+      // for clock drift) gets what is raised after it, not the 50% alert from before; spend
+      // that jumps past 80% and 100% raises 100% only.
+      const added = new Date(NOW.getTime() + 5 * 60_000);
       await notifyStore(databaseOf(ledger)).addTarget("dev@example.com", "phone", PHONE, added);
       await ledger.append([cost(0.6)]);
-      const later = { ...io, now: new Date(NOW.getTime() + 120_000) };
+      const later = { ...io, now: new Date(NOW.getTime() + 6 * 60_000) };
       const second = await runImport(options, later, ledger);
       expect(second.notify?.budget_alerts).toEqual([
         "You went over the day's budget of $1: $1.2 spent, $0.2 over",
