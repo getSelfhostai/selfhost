@@ -185,6 +185,26 @@ describe("selfhost init", () => {
     expect((await run(["init", "--undo", "--home", home.root])).out).toMatch(/^Nothing to undo/);
   });
 
+  it("adds no user hook for an agent whose managed settings already run selfhost's hooks", async () => {
+    const { home, settings, deps } = laptop();
+    const system = tempDir("init-system");
+    system.write(
+      "etc/claude-code/managed-settings.d/selfhost.json",
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [{ hooks: [{ type: "command", command: "selfhost hook claude_code" }] }],
+        },
+      }),
+    );
+    const args = ["init", "--home", home.root, "--person", PERSON, "--json", "--data-dir"];
+    const result = await run([...args, "memory://"], { ...deps, systemRoot: system.root });
+    const report = JSON.parse(result.out);
+    expect(report.agents[0]).toMatchObject({ id: "claude_code", hooks: "skipped" });
+    expect(report.agents[0].message).toContain("already run selfhost's hooks for this agent");
+    expect(report.agents[1]).toMatchObject({ id: "codex", hooks: "create" });
+    expect(readFileSync(settings, "utf8")).toBe(CLAUDE_SETTINGS);
+  });
+
   it("leaves a file edited since init alone; agents configure --remove keeps the settings, not the bytes", async () => {
     const { home, settings, init } = laptop();
     await init("--json", "--data-dir", "memory://", "--agent", "claude");

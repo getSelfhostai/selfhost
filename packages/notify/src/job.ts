@@ -147,8 +147,12 @@ export async function runNotify(ledger: Ledger, options: NotifyOptions): Promise
     kind: NotifyKind,
     subject: string,
     build: () => Promise<Message | undefined> | Message | undefined,
-  ) => sendOnce(store, deliver, now, result, { person, kind, subject, build });
+    since: string,
+  ) => sendOnce(store, deliver, now, result, { person, kind, subject, build, since });
 
+  // Instant pushes, oldest first: items agents wait on and budget alerts, in the order they
+  // were raised. Each target gets only what was raised after it was added.
+  const pushes: { at: string; order: string; push: () => Promise<void> }[] = [];
   const waiting = await db.query<{ body: unknown; team: string | null }>(
     `SELECT body, team FROM review_items
      WHERE state = 'open' AND blocking AND created_at >= $1::timestamptz
@@ -157,9 +161,15 @@ export async function runNotify(ledger: Ledger, options: NotifyOptions): Promise
   );
   for (const row of waiting) {
     const item = json<ReviewItem>(row.body);
-    for (const person of withTargets(await recipientsOf(item, row.team, directory))) {
-      await send(person, "item", item.id, () => itemMessage(item, consoleUrl));
-    }
+    pushes.push({
+      at: item.created_at,
+      order: item.id,
+      push: async () => {
+        for (const person of withTargets(await recipientsOf(item, row.team, directory))) {
+          await send(person, "item", item.id, () => itemMessage(item, consoleUrl), item.created_at);
+        }
+      },
+    });
   }
 
   const alerts = await alertsSince(ledger, new Date(now.getTime() - SPEND_WINDOW_MS));
@@ -168,37 +178,61 @@ export async function runNotify(ledger: Ledger, options: NotifyOptions): Promise
     (event) => isSpendAlert(event) && (options.solo === true || event.source !== "cli"),
   );
   for (const event of spendAlerts) {
-    const owner = typeof event.data?.owner === "string" ? [event.data.owner] : [];
-    const owners = [...(await directory.budgetOwners(event.team ?? null)), ...owner];
-    for (const person of withTargets(owners)) {
-      await send(person, "spend", event.id, () => spendAlertMessage(event, consoleUrl));
-    }
+    pushes.push({
+      at: event.ts,
+      order: event.id,
+      push: async () => {
+        const owner = typeof event.data?.owner === "string" ? [event.data.owner] : [];
+        const owners = [...(await directory.budgetOwners(event.team ?? null)), ...owner];
+        for (const person of withTargets(owners)) {
+          const build = () => spendAlertMessage(event, consoleUrl);
+          await send(person, "spend", event.id, build, event.ts);
+        }
+      },
+    });
   }
+  pushes.sort(
+    (a, b) =>
+      Date.parse(a.at) - Date.parse(b.at) || (a.order < b.order ? -1 : a.order > b.order ? 1 : 0),
+  );
+  for (const { push } of pushes) await push();
 
   const list = openReviewList(ledger, { now: () => now });
   for (const { person, settings } of people) {
     const cadence: NotifyCadence = (await store.digest(person)) ?? settings.digest;
     const window = digestWindow(cadence, now, settings.digest_hour);
     if (window && cadence !== "off") {
-      await send(person, "digest", window.key, async () => {
-        const page = await list.list({
-          state: "open",
-          ...(options.solo ? { for: person } : { owner: person }),
-          limit: DIGEST_ITEMS,
-        });
-        const items = page.items.filter((item) => !isSnoozed(item, now));
-        return items.length > 0 ? digestMessage(items, cadence, consoleUrl) : undefined;
-      });
+      await send(
+        person,
+        "digest",
+        window.key,
+        async () => {
+          const page = await list.list({
+            state: "open",
+            ...(options.solo ? { for: person } : { owner: person }),
+            limit: DIGEST_ITEMS,
+          });
+          const items = page.items.filter((item) => !isSnoozed(item, now));
+          return items.length > 0 ? digestMessage(items, cadence, consoleUrl) : undefined;
+        },
+        window.start.toISOString(),
+      );
     }
     const spendDigest = directory.spendDigest;
     if (settings.spend_digest && spendDigest) {
       const spend = spendDigestWindow(now, settings.digest_hour);
-      await send(person, "spend_digest", spend.key, async () => {
-        const digest = await spendDigest(person, now);
-        return digest && !isEmptyDigest(digest)
-          ? spendDigestMessage(digest, consoleUrl)
-          : undefined;
-      });
+      await send(
+        person,
+        "spend_digest",
+        spend.key,
+        async () => {
+          const digest = await spendDigest(person, now);
+          return digest && !isEmptyDigest(digest)
+            ? spendDigestMessage(digest, consoleUrl)
+            : undefined;
+        },
+        spend.start.toISOString(),
+      );
     }
   }
   await store.prune(now);
@@ -206,8 +240,11 @@ export async function runNotify(ledger: Ledger, options: NotifyOptions): Promise
 }
 
 /**
- * Sends one thing to each of a person's targets that has not had it yet. The message is built
- * only when some target still needs it; undefined means there is nothing to send this time.
+ * Sends one thing to each of a person's targets that has not had it yet and that was added by
+ * `since`: when it was raised, or when its digest window opened. So a new target gets no
+ * backlog, and its first digest comes at the next digest_hour (the next Monday for weekly), not
+ * on the first pass. The message is built only when some target still needs it; undefined means
+ * there is nothing to send this time.
  */
 async function sendOnce(
   store: NotifyStore,
@@ -219,10 +256,14 @@ async function sendOnce(
     kind: NotifyKind;
     subject: string;
     build: () => Promise<Message | undefined> | Message | undefined;
+    since: string;
   },
 ): Promise<void> {
   const done = await store.done(send.person, send.kind, send.subject);
-  const pending = (await store.targets(send.person)).filter((target) => !done.has(target.name));
+  const raised = Date.parse(send.since);
+  const pending = (await store.targets(send.person)).filter(
+    (target) => !done.has(target.name) && Date.parse(target.created_at) <= raised,
+  );
   if (pending.length === 0) return;
   const message = await send.build();
   if (!message) return;

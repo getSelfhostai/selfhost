@@ -79,10 +79,11 @@ export async function pushTeamPolicy(
   options: TeamPolicyOptions,
   io: TeamPolicyIo,
 ): Promise<TeamPolicyReport> {
-  requireHuman("selfhost team policy push", {
-    env: io.env,
-    stdinIsTTY: io.stdinIsTTY === true,
-  });
+  requireHuman(
+    "selfhost team policy push",
+    { env: io.env, stdinIsTTY: io.stdinIsTTY === true },
+    null,
+  );
   const { membership, client: team } = client(io, "selfhost team policy push");
   const file = fileArg
     ? resolve(io.cwd, fileArg)

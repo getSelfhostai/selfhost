@@ -125,6 +125,7 @@ export function tailRoutes(router: Router, ledger: Ledger, options: TailRouteOpt
     }
     const settings = new Map<string | null, ReturnType<typeof redactionSettings>>();
     const events: LedgerEvent[] = [];
+    const people: Record<string, string> = {};
     for (const row of page.rows) {
       let found = settings.get(row.team);
       if (!found) {
@@ -132,7 +133,10 @@ export function tailRoutes(router: Router, ledger: Ledger, options: TailRouteOpt
         settings.set(row.team, found);
       }
       events.push(redactEvent(row.event, found));
+      if (row.person && row.event.actor.kind !== "person") people[row.event.id] = row.person;
     }
-    return c.json({ schema: TAIL_SCHEMA, events, cursor: page.cursor } satisfies TailResponse);
+    const response: TailResponse = { schema: TAIL_SCHEMA, events, cursor: page.cursor };
+    if (Object.keys(people).length > 0) response.people = people;
+    return c.json(response);
   });
 }

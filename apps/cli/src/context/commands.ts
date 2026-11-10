@@ -35,6 +35,11 @@ export interface ContextIo {
   /** ~/.selfhost/config.json: the org, team and personal layers sit next to it. */
   configPath: string;
   fetch: Fetch;
+  /**
+   * The agents found on this machine, for a first compile with no --agent. Default: none found,
+   * so a first compile writes for every agent.
+   */
+  detect?: () => ContextAgent[];
 }
 
 export interface ContextCompileOptions {
@@ -182,7 +187,13 @@ export async function contextCompile(
   const built =
     local.errors.length > 0
       ? ({ ok: false, errors: local.errors } as const)
-      : await buildContext(root, { agents, out, force: options.force, layers: local.layers });
+      : await buildContext(root, {
+          agents,
+          out,
+          force: options.force,
+          layers: local.layers,
+          ...(agents === undefined && io.detect ? { detected: io.detect() } : {}),
+        });
   const report: ContextCompileReport = {
     schema: "selfhost.context_compile/v1",
     root,
@@ -311,7 +322,7 @@ export function registerContext(
     )
     .option(
       "--agent <name...>",
-      "claude, codex, cursor, copilot, gemini, opencode or goose (default: the agents of the last compile, else all)",
+      "claude, codex, cursor, copilot, gemini, opencode or goose (default: the agents of the last compile, else those found on this machine and those an item names)",
     )
     .option("--out <dir>", "write into this folder instead of the repository")
     .option("--check", "write nothing; exit 1 when a generated file differs from the source")

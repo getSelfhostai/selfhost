@@ -383,7 +383,10 @@ and `.opencode/`, `.goosehints` and `.mcp.json`. Rules files are written through
 a table of every item per agent: `compiled`, `partial`, `none` (the agent can't express it) or
 `n/a`, with `n/a*` where an agent reads an item that is not for it, then each gap and why.
 `--agent` (claude, codex, cursor, copilot, gemini, opencode, goose) sets the agents; later runs
-keep them. `--out` writes into another folder instead. A file selfhost did not write is never
+keep them. Without it a first compile writes for the agents found on this machine plus any an
+item names in its `agents` list (every agent, with a warning, when there are none). Rules that
+contradict each other once merged, such as "Use npm" in one and "Use pnpm" in another, get a
+warning; the compile goes on. `--out` writes into another folder instead. A file selfhost did not write is never
 replaced without `--force`, and nothing is written then. `.selfhost/context.lock.json` records
 every generated file with its source and the skill version each agent received; commit it with
 the files. When the repository has `.selfhost/context`, `selfhost policy compile --apply` writes
@@ -507,8 +510,9 @@ ledger (`--database` / `--data-dir` as for `spend`).
 ## Review list
 
 `selfhost review list [--state open|answered|dismissed|expired] [--owner <person>] [--json]`
+in team mode reads the team server's list, the one `selfhost inbox` reads; in solo mode it
 brings the review list in the local ledger up to date (`--database` / `--data-dir` as for
-`spend`) and prints it: what needs a person, blocking first, then by risk, then oldest first.
+`spend`, which read that ledger even in team mode) and prints it: what needs a person, blocking first, then by risk, then oldest first.
 Routing and the approval timeout come from the `selfhost.toml` the other commands find. `--limit`
 and `--cursor` page through. Answer an item with `selfhost review approve|deny <id> [--reason
 <text>]` (the same as `selfhost inbox approve|deny`) or `selfhost decide <item-id>
@@ -572,17 +576,24 @@ Slack, email, Teams, Discord or ntfy is a different URL, not different code.
 - `selfhost notify add <apprise-url> [--name <name>]` adds a target, such as
   `tgram://<bot token>/<chat id>`, `slack://...`, `mailtos://...` or `ntfys://<topic>`. Pass
   `-` to read the URL from stdin and keep it out of shell history. The URL holds a secret, so it
-  is never printed back: lists show its name and `tgram://****`.
+  is never printed back: lists show its name and `tgram://****`. On a team server any member
+  can add a hosted service (Telegram, Slack, Discord, Teams and the like, or `ntfys://<topic>`,
+  which goes to ntfy.sh); a URL that names its own host, such as email (`mailtos://`, whose SMTP
+  host can be anything), a self-hosted ntfy or a webhook, needs a team owner or admin.
 - `selfhost notify [list]`, `selfhost notify remove <name>`, and `selfhost notify test
   [--name <name>]`, which sends a test to each target and exits 1 when one fails.
 - `selfhost notify digest daily|weekly|off` picks how often your digest comes (default
   `[notify] digest` in `selfhost.toml`, daily at `[notify] digest_hour` UTC; weekly on Mondays).
 
 An agent that waits on you (an approval, a question) is pushed at once; everything else on your
-review list comes in the digest. Budget alerts at 50%, 80% and 100% of `[budget]` go to the
-budget owners, who also get a daily spend digest: top spenders, fastest-growing teams and runs
-that hit their cap. A message holds a summary written by selfhost and a link to the item in the
-console, where you answer it; never code, a diff, a prompt or a secret.
+review list comes in the digest, one line per kind of item with its rule, repository and agent,
+and a count for repeats. Budget alerts at 50%, 80% and 100% of `[budget]` (only the highest
+share crossed, when spend jumps past several at once) are review items the budget owners own
+and are pushed to them; they also get a daily spend digest: top spenders, fastest-growing teams
+and runs that hit their cap. A message holds a summary written by selfhost and a link to the
+item in the console, where you answer it; never code, a diff, a prompt or a secret. A new target
+gets only what is raised after it was added, oldest first, and its first digest when the next
+digest window opens (the next `digest_hour`, or the next Monday for weekly).
 
 In team mode the server keeps the targets and sends through its Apprise (`compose.notify.yml`,
 see [`deploy/docker`](../../deploy/docker/README.md#notifications)). In solo mode the local
@@ -1010,6 +1021,7 @@ Every command takes `--json` and prints one object with a `schema` tag: `selfhos
 `selfhost.policy_promote/v1`, `selfhost.review_item/v1` (from `policy report`),
 `selfhost.decide/v1`, `selfhost.review_risk/v1`, `selfhost.review_brief/v1`,
 `selfhost.review_trace/v1`, `selfhost.review_list/v1`, `selfhost.decisions/v1`,
+`selfhost.notify/v1` (from `notify list`, `add`, `remove` and `digest`), `selfhost.notify_test/v1`,
 `selfhost.inbox/v1`, `selfhost.inbox_action/v1`, `selfhost.inbox_item/v1`,
 `selfhost.inbox_sync/v1`,
 `selfhost.limit_forecast/v1`, `selfhost.plan_tiers/v1`, `selfhost.spend_alarms/v1`,

@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import type { Command } from "commander";
+import { findConfig } from "./find-config.js";
 import { readMembership } from "./team/config.js";
 
 export interface ConsoleOptions {
@@ -37,6 +38,8 @@ export interface ConsoleIo {
   untilStopped?: () => Promise<void>;
   /** ~/.selfhost/config.json: in a team, the console is the team server's. */
   configPath?: string;
+  /** Where selfhost.toml is looked for, shown read-only in the solo console. */
+  cwd?: string;
 }
 
 export const DEFAULT_CONSOLE_PORT = 4400;
@@ -107,7 +110,9 @@ export async function runConsole(options: ConsoleOptions, io: ConsoleIo): Promis
   const host = options.host?.trim() || "127.0.0.1";
   // The server and its dependencies load only for this command.
   const { startLocalServer } = await import("@selfhost/server/local");
+  const policy = io.cwd ? findConfig(io.cwd, undefined, io.env)?.path : undefined;
   const server = await startLocalServer({
+    ...(policy ? { policyPath: policy } : {}),
     version: io.version,
     url: options.database ?? io.env.DATABASE_URL,
     dataDir: options.dataDir,

@@ -68,6 +68,7 @@ describe("selfhost notify on a laptop", () => {
 
     const listed = await run(["notify", "list", "--json", ...flags], { env });
     expect(JSON.parse(listed.out)).toMatchObject({
+      schema: "selfhost.notify/v1",
       person: "dev@example.com",
       targets: [{ name: "phone", service: "tgram", masked: "tgram://****" }],
       digest: "daily",
@@ -198,7 +199,7 @@ const cost = (usd: number): LedgerEvent => ({
 });
 
 describe("budget alerts on a solo laptop", () => {
-  it("raises 50%, 80% and 100% from the local ledger on import, once each, and sends them", async () => {
+  it("raises the highest share crossed from the local ledger on import, once, and sends it", async () => {
     const repo = tempDir("repo");
     repo.write("selfhost.toml", "version = 1\n[budget]\ndaily_usd = 1\n");
     const logs = tempDir("logs");
@@ -226,24 +227,26 @@ describe("budget alerts on a solo laptop", () => {
       expect(first.notify?.budget_alerts).toEqual(["You spent 50% of the day's budget of $1"]);
       expect(lines).toContain("Budget alert: You spent 50% of the day's budget of $1");
 
-      // No targets yet, so nothing was sent; with one, the next alerts go out.
-      await notifyStore(databaseOf(ledger)).addTarget("dev@example.com", "phone", PHONE);
+      // No targets yet, so nothing was sent. A target added later gets what is raised after
+      // it, not the 50% alert from before; spend that jumps past 80% and 100% raises 100% only.
+      const added = new Date(NOW.getTime() + 60_000);
+      await notifyStore(databaseOf(ledger)).addTarget("dev@example.com", "phone", PHONE, added);
       await ledger.append([cost(0.6)]);
-      const second = await runImport(options, io, ledger);
-      expect(second.notify?.budget_alerts.sort()).toEqual([
-        "You spent 80% of the day's budget of $1",
+      const later = { ...io, now: new Date(NOW.getTime() + 120_000) };
+      const second = await runImport(options, later, ledger);
+      expect(second.notify?.budget_alerts).toEqual([
         "You went over the day's budget of $1: $1.2 spent, $0.2 over",
       ]);
-      expect(second.notify?.sent).toBe(3);
+      expect(second.notify?.sent).toBe(1);
       // Each message's first line is its URL and title; the body follows on its own lines.
-      expect(apprise.lines().filter((line) => line.startsWith(`${PHONE}|-t `))).toHaveLength(3);
+      expect(apprise.lines().filter((line) => line.startsWith(`${PHONE}|-t `))).toHaveLength(1);
 
-      const third = await runImport(options, io, ledger);
+      const third = await runImport(options, later, ledger);
       expect(third.notify).toBeUndefined();
 
       const alerts = (await ledger.query({ kind: "alert.raised" })).events;
       expect(alerts.map((a) => [a.source, a.actor.id, a.data?.owner])).toEqual(
-        Array(3).fill(["cli", "selfhost", "dev@example.com"]),
+        Array(2).fill(["cli", "selfhost", "dev@example.com"]),
       );
     } finally {
       await ledger.close();
@@ -274,7 +277,7 @@ describe("budget alerts on a solo laptop", () => {
         },
         ledger,
       );
-      expect(report.notify?.budget_alerts).toHaveLength(3);
+      expect(report.notify?.budget_alerts).toHaveLength(1);
       expect(report.notify?.skipped).toBe(
         "Notifications skipped: the apprise command is not on PATH (install it with pipx install apprise).",
       );

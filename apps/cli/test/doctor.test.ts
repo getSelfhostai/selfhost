@@ -21,9 +21,24 @@ function repo(files: Record<string, string>): string {
   return dir;
 }
 
+/** An empty folder for system paths, so no test reads this machine's managed settings. */
+function noSystem(): string {
+  const dir = mkdtempSync(join(tmpdir(), "selfhost-doctor-root-"));
+  dirs.push(dir);
+  return dir;
+}
+
 function run(cwd: string, config?: string, env: NodeJS.ProcessEnv = {}, json = false) {
   const lines: string[] = [];
-  const code = doctor({ cwd, config, env, version: "0.0.0", write: (l) => lines.push(l), json });
+  const code = doctor({
+    cwd,
+    config,
+    env,
+    version: "0.0.0",
+    write: (l) => lines.push(l),
+    json,
+    systemRoot: noSystem(),
+  });
   return { code, output: lines.join("\n") };
 }
 
@@ -63,6 +78,7 @@ describe("selfhost doctor", () => {
       version: "0.0.0",
       write: (line) => lines.push(line),
       which: () => undefined,
+      systemRoot: noSystem(),
     });
     expect(code).toBe(0);
     const output = lines.join("\n");
@@ -116,6 +132,8 @@ describe("selfhost doctor", () => {
       "guardrails",
       "on_path",
       "enforcement",
+      "team_floor",
+      "managed_hooks",
     ]);
     expect(report.enforcement).toEqual([]);
     expect(report.guardrails).toMatchObject({ mode: "enforce", observed: [] });
@@ -137,5 +155,91 @@ describe("selfhost doctor", () => {
       valid: false,
     });
     expect(JSON.parse(run(repo({}), undefined, {}, true).output).config).toBeNull();
+  });
+
+  it("reports the guardrails the team floor keeps on when the repository turns them off", () => {
+    const dir = repo({ "selfhost.toml": 'version = 1\n[guardrails]\nmode = "off"\n' });
+    const home = noSystem();
+    const configPath = join(home, ".selfhost", "config.json");
+    mkdirSync(join(home, ".selfhost"), { recursive: true });
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        server: "http://team.test",
+        token: "t",
+        person: "dev@example.com",
+        team: "web",
+      }),
+    );
+    writeFileSync(
+      join(home, ".selfhost", "team-policy.toml"),
+      'version = 1\n[guardrails]\nmode = "enforce"\n',
+    );
+    const lines: string[] = [];
+    doctor({
+      cwd: dir,
+      env: {},
+      version: "0.0.0",
+      write: (line) => lines.push(line),
+      configPath,
+      systemRoot: noSystem(),
+    });
+    const output = lines.join("\n");
+    expect(output).not.toContain("the guardrails are off");
+    expect(output).toContain("6 guardrails block in every hook");
+    expect(output).toMatch(/^floor {4}the team policy holds guardrails\.mode/m);
+  });
+
+  it("says when an agent runs selfhost's hooks from managed settings and from the user's config", () => {
+    const dir = repo({});
+    const root = noSystem();
+    const home = noSystem();
+    const managed = join(root, "etc", "claude-code", "managed-settings.d", "selfhost.json");
+    mkdirSync(join(managed, ".."), { recursive: true });
+    writeFileSync(
+      managed,
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [{ hooks: [{ type: "command", command: "selfhost hook claude_code" }] }],
+        },
+      }),
+    );
+    const lines: string[] = [];
+    const check = () => {
+      lines.length = 0;
+      doctor({
+        cwd: dir,
+        env: {},
+        version: "0.0.0",
+        write: (line) => lines.push(line),
+        platform: "linux",
+        systemRoot: root,
+        home,
+      });
+      return lines.join("\n");
+    };
+    expect(check()).toContain(`Claude Code's hooks come from the managed settings at ${managed}`);
+    const user = join(home, ".claude", "settings.json");
+    mkdirSync(join(home, ".claude"), { recursive: true });
+    writeFileSync(
+      user,
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [
+            {
+              hooks: [
+                {
+                  type: "command",
+                  command: "if command -v selfhost; then exec selfhost hook claude_code; fi",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    expect(check()).toContain(
+      `Claude Code runs selfhost's hooks twice: from the managed settings at ${managed} and from ${user}.`,
+    );
   });
 });

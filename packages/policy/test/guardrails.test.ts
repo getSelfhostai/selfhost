@@ -315,6 +315,24 @@ describe("secret files", () => {
     expect(isSecretPath(path)).toBe(false);
   });
 
+  it("names selfhost's own files with an alternative that fits them", () => {
+    const read: ToolCall = {
+      tool: "Read",
+      path: "/home/dev/.selfhost/exceptions/key",
+      access: "read",
+      root: WORKSPACE,
+    };
+    const [hit] = guardrailHits(policy, read, { env: ENV });
+    expect(hit?.rule_id).toBe("guard.secret_read");
+    expect(hit?.message).toBe(
+      "selfhost's own files (its team token and the exception key) are not read by agents (key)",
+    );
+    expect(hit?.alternative).toMatch(/^Nothing in it is needed for the task\./);
+    expect(hit?.alternative).not.toContain(".env.example");
+    const env = guardrailHits(policy, bash("cat .env"), { env: ENV })[0];
+    expect(env?.alternative).toContain(".env.example");
+  });
+
   it("does not block a write to a secret file or a mention of one", () => {
     const write: ToolCall = { tool: "Write", path: ".env", access: "write", root: WORKSPACE };
     expect(guardrailHits(policy, write, { env: ENV })).toEqual([]);

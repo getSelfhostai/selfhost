@@ -62,10 +62,33 @@ describe("messages hold a summary and a link only", () => {
   });
 
   it("says when a digest has more items than it lists", () => {
-    const many = Array.from({ length: 20 }, () => item({ blocking: false }));
+    const many = Array.from({ length: 20 }, (_, n) =>
+      item({ blocking: false, repo: `acme/repo-${n}` }),
+    );
     const body = digestMessage(many, "weekly", undefined).body;
     expect(body).toContain("Your weekly digest: 20 items waiting for you.");
-    expect(body).toContain("...and 5 more.");
+    expect(body).toContain("...and 5 more kinds of item.");
+  });
+
+  it("names the rule, repo and agent of each digest line, and counts the same line once", () => {
+    const blocked = (repo: string) =>
+      item({
+        kind: "blocked_action",
+        blocking: false,
+        repo,
+        agent: { vendor: "codex" },
+        why: { signal: "policy.evaluated", rule_id: "no-npm-publish", text: SECRET },
+      });
+    const body = digestMessage(
+      [...Array.from({ length: 10 }, () => blocked("acme/web")), blocked("acme/api")],
+      "daily",
+      undefined,
+    ).body;
+    expect(body.split("\n").filter((line) => line.startsWith("- "))).toEqual([
+      "- Blocked action: A rule blocked an agent's action (rule no-npm-publish, acme/web, Codex), 10 times",
+      "- Blocked action: A rule blocked an agent's action (rule no-npm-publish, acme/api, Codex)",
+    ]);
+    expectClean(body);
   });
 
   it("writes budget alerts and the spend digest without secrets", () => {

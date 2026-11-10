@@ -23,6 +23,7 @@ export {
 } from "./job.js";
 export {
   budgetHistoryStart,
+  highestShares,
   laptopBudgetAlerts,
   laptopDirectory,
   raiseLaptopBudgetAlerts,

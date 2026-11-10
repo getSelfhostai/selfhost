@@ -1110,5 +1110,7 @@ describe("selfhost team policy", () => {
     expect(invalid.err).toMatch(/bad\.toml is not valid, so nothing was sent/);
     const agent = await run(["team", "policy", "push"], { ...asOwner, env: { CLAUDECODE: "1" } });
     expect(agent.err).toContain("inside a coding agent session");
+    expect(agent.err).toMatch(/Run it yourself in a terminal outside the agent\.$/);
+    expect(agent.err).not.toContain("console");
   });
 });

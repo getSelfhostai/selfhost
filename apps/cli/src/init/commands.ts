@@ -27,6 +27,7 @@ import {
 import { findConfig } from "../find-config.js";
 import { plural, table } from "../format.js";
 import { drainSpool } from "../hooks/drain.js";
+import { managedHooks } from "../hooks/managed-hooks.js";
 import { spoolDir } from "../hooks/receive.js";
 import {
   describeTarget,
@@ -85,6 +86,8 @@ export interface InitIo extends AgentsIo {
   retry?: ImportIo["retry"];
   /** Asks whether to import the context files; undefined when stdin is not a terminal. */
   ask?: Ask;
+  /** Read system paths (managed settings) under this folder instead; for images and tests. */
+  systemRoot?: string;
 }
 
 export interface InitOptions {
@@ -619,8 +622,12 @@ export async function runInit(options: InitOptions, io: InitIo): Promise<number>
       ? planConfigure({ home: options.home, agent: wanted, hookCommand: command }, io)
       : { plans: [] as AgentConfigPlan[] };
   const skipped = new Map<AgentId, string>();
+  const managed = managedHooks(io.platform, io.systemRoot);
   for (const plan of plans) {
-    const reason = screen(plan);
+    const hooked = managed.find((entry) => entry.agent === plan.agent);
+    const reason = hooked
+      ? `the managed settings at ${hooked.path} already run selfhost's hooks for this agent; a user hook as well would run them twice`
+      : screen(plan);
     if (reason) skipped.set(plan.agent, reason);
   }
   const apply = plans.filter((plan) => !skipped.has(plan.agent));

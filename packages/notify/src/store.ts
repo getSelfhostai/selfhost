@@ -54,12 +54,21 @@ export function notifyStore(db: Queryable) {
       return rows.map((row) => row.person);
     },
 
-    /** undefined when the person already has a target with this name. */
-    async addTarget(person: string, name: string, url: string): Promise<StoredTarget | undefined> {
+    /**
+     * undefined when the person already has a target with this name. `at` is when it was added
+     * (default: the database's clock): it gets nothing raised before then.
+     */
+    async addTarget(
+      person: string,
+      name: string,
+      url: string,
+      at?: Date,
+    ): Promise<StoredTarget | undefined> {
       const [row] = await db.query<{ created_at: unknown }>(
-        `INSERT INTO notify_targets (person, name, url) VALUES ($1, $2, $3)
+        `INSERT INTO notify_targets (person, name, url, created_at)
+         VALUES ($1, $2, $3, coalesce($4::timestamptz, now()))
          ON CONFLICT DO NOTHING RETURNING created_at`,
-        [person, name, url],
+        [person, name, url, at?.toISOString() ?? null],
       );
       return row ? { person, name, url, created_at: iso(row.created_at) } : undefined;
     },

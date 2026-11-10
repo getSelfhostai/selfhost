@@ -1,5 +1,6 @@
 import type { ProvenanceReport, TeamProvenance, TeamProvenanceModules } from "@selfhost/schema";
-import { Empty, Failed, Loading, NoTeam, PageHeader, Section } from "@/components/common";
+import { Empty, Failed, Loading, PageHeader, Section } from "@/components/common";
+import { NoTeamYet, SoloCode } from "@/components/solo";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -138,12 +139,7 @@ export function CodeScreen() {
   });
 
   if (!team) {
-    return (
-      <>
-        <PageHeader title="Code" />
-        <NoTeam />
-      </>
-    );
+    return <NoTeamYet title="Code" render={(solo) => <SoloCode solo={solo} />} />;
   }
   const data = loaded.data;
   const flagged = data?.modules.modules.filter((row) => row.above_threshold) ?? [];

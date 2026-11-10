@@ -33,6 +33,11 @@ export interface BuildContext {
    * through [review.owners]. Undefined on a laptop.
    */
   approvers?: readonly string[];
+  /**
+   * Who gets budget items on a team server: [notify] budget_owners, else the team's owners.
+   * Undefined on a laptop.
+   */
+  budgetOwners?: readonly string[];
   /** The team's people by role, on a team server, for `role:` targets in [[review.routes]]. */
   roles?: RouteContext["roles"];
   /** The CODEOWNERS of the item's repository, when the server or laptop can read it. */
@@ -125,6 +130,15 @@ function exceptionRoute(
   };
 }
 
+/** Budget items on a team server go to the people who hold the budget. */
+function budgetRoute(owners: readonly string[], named: boolean): Routing | undefined {
+  if (owners.length === 0) return undefined;
+  return {
+    owners: [...new Set(owners)],
+    route: { step: "team", from: named ? "[notify] budget_owners" : "the team's owners" },
+  };
+}
+
 /** What routing reads from an item and its signal. */
 export function routeInput(
   item: Pick<ReviewItem, "kind" | "repo" | "why" | "risk">,
@@ -189,8 +203,13 @@ function routed(
     tool: draft.tool,
   });
   const rules = routeByRules(ctx.config, input, routeContext(item, ctx, now, person));
+  const budget =
+    item.kind === "budget" && ctx.budgetOwners !== undefined
+      ? budgetRoute(ctx.budgetOwners, ctx.config.notify.budget_owners.length > 0)
+      : undefined;
   const { owners, route } =
     rules ??
+    budget ??
     (item.kind === "exception" && ctx.approvers !== undefined
       ? exceptionRoute(ctx.approvers, item.requested_by ?? person, ctx.config)
       : routeByDefaults(ctx.config, input));

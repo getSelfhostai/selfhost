@@ -2037,7 +2037,7 @@ paths:
         - name: person
           in: query
           required: false
-          description: actor.id of a person.
+          description: "A person: events they acted in, sent (data.sent_by), or that belong to one of their sessions, such as rule decisions and tool calls read from logs."
           schema:
             minLength: 1
             type: string
@@ -9686,6 +9686,12 @@ components:
         cursor:
           description: Pass as after to get what lands next.
           type: string
+        people:
+          description: "The person each event belongs to, by event id, for events whose actor is not a person (an agent, the policy engine): who sent it, else the person of its session."
+          type: object
+          patternProperties:
+            ^(.*)$:
+              type: string
     BackgroundRun:
       additionalProperties: false
       title: BackgroundRun

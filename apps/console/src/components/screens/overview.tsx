@@ -11,8 +11,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getJson, getOptional, query } from "@/lib/api";
 import { RunLink, screenView, useConsole, ViewLink } from "@/lib/console-context";
+import type { SoloResponse } from "@/lib/contracts";
 import { ago, formatCount, formatUsd, plural } from "@/lib/format";
 import { REVIEW_KIND_NAMES } from "@/lib/labels";
+import { useSolo } from "@/lib/solo";
 import { useApi } from "@/lib/use-api";
 import { rangeOf } from "@/lib/view";
 
@@ -25,8 +27,18 @@ interface Week {
   observed: PolicyObservedResponse | null;
 }
 
+/** What the rules card says with no team: the laptop's own rules in solo mode. */
+function noTeamRules(solo: SoloResponse | null | undefined): string {
+  if (!solo) return "Pick a team to see its rules";
+  if (!solo.policy) return "No selfhost.toml where the console started";
+  if (!solo.policy.valid) return `${solo.policy.path} is invalid`;
+  const recording = solo.policy.rules.filter((rule) => (rule.mode ?? "observe") === "observe");
+  return `${plural(solo.policy.rules.length, "rule")} in this laptop's selfhost.toml, ${formatCount(recording.length)} recording only`;
+}
+
 export function OverviewScreen() {
   const { me, view, team, now } = useConsole();
+  const solo = useSolo();
   const scoped = view.filters.team ?? (me.kind === "person" ? team : undefined);
   const week = rangeOf({ range: "7d", filters: {}, metric: "usd" }, now);
   const loaded = useApi<Week>(`overview:${scoped ?? ""}:${week.from}`, async (signal) => {
@@ -58,7 +70,7 @@ export function OverviewScreen() {
     <>
       <PageHeader
         title="This week"
-        description={`What agents did in the last 7 days${scoped ? ` for team ${scoped}` : " across every team"}, and what needs a person.`}
+        description={`What agents did in the last 7 days${scoped ? ` for team ${scoped}` : solo ? " on this laptop" : " across every team"}, and what needs a person.`}
       />
       {loaded.error ? <Failed error={loaded.error} what="this week" /> : null}
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-3" aria-label="This week">
@@ -86,7 +98,7 @@ export function OverviewScreen() {
               value={totals ? formatCount(totals.blocked + totals.asked) : "-"}
               detail={
                 !scoped
-                  ? "Pick a team to see its rules"
+                  ? noTeamRules(solo)
                   : !totals
                     ? "Not reported by this server yet"
                     : totals.would_block + totals.would_ask > 0

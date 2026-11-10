@@ -38,6 +38,11 @@ export interface RouteContext {
   roles?: Partial<Record<PersonRole, readonly string[]>>;
   /** The CODEOWNERS of the item's repository, when it can be read here. */
   codeowners?: CodeOwners;
+  /**
+   * Why the `codeowners` target names nobody when codeowners is absent, such as "No CODEOWNERS
+   * file in the repository". Default: it cannot be read here.
+   */
+  codeownersNote?: string;
   /** Only these people may get the item, such as the team's approvers for an exception. */
   eligible?: (person: string) => boolean;
   /** When the route is picked: escalates_at counts from here. Default: no escalates_at. */
@@ -179,7 +184,7 @@ function resolveTargets(
       login(target.slice(1));
     } else if (target === CODEOWNERS_TARGET) {
       if (!ctx.codeowners) {
-        notes.push("CODEOWNERS cannot be read here");
+        notes.push(ctx.codeownersNote ?? "CODEOWNERS cannot be read here");
         continue;
       }
       const found = codeOwnersOf(ctx.codeowners, input.paths);

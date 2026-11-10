@@ -10,8 +10,9 @@ import type {
 } from "@selfhost/schema";
 import { Copy, Trash2 } from "lucide-react";
 import { type FormEvent, useState } from "react";
-import { Empty, Failed, Loading, NoTeam, PageHeader, Section } from "@/components/common";
+import { Empty, Failed, Loading, PageHeader, Section } from "@/components/common";
 import { Notifications } from "@/components/notifications";
+import { NoTeamYet, SoloTeam } from "@/components/solo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -457,12 +458,7 @@ function Laptops({ team }: { team: string }) {
 export function TeamScreen() {
   const { me, team } = useConsole();
   if (!team) {
-    return (
-      <>
-        <PageHeader title="Team" />
-        <NoTeam />
-      </>
-    );
+    return <NoTeamYet title="Team" render={(solo) => <SoloTeam solo={solo} />} />;
   }
   return (
     <>

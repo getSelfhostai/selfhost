@@ -9,7 +9,8 @@ import type {
 } from "@selfhost/schema";
 import { ShieldCheck } from "lucide-react";
 import { type ReactNode, useState } from "react";
-import { Empty, Failed, Loading, NoTeam, PageHeader, Section } from "@/components/common";
+import { Empty, Failed, Loading, PageHeader, Section } from "@/components/common";
+import { NoTeamYet, SoloRules } from "@/components/solo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -265,12 +266,7 @@ export function RulesScreen() {
   const [message, setMessage] = useState<{ text: string; failed?: boolean }>();
 
   if (!team) {
-    return (
-      <>
-        <PageHeader title="Rules" />
-        <NoTeam />
-      </>
-    );
+    return <NoTeamYet title="Rules" render={(solo) => <SoloRules solo={solo} />} />;
   }
   const canWrite = can(me, team, "policy.write");
   const data = loaded.data;

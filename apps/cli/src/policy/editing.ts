@@ -309,10 +309,11 @@ export function registerPolicyEditing(
     .action(async (rule: string, options: PromoteCommandOptions) => {
       try {
         const promoteIo = io();
-        requireHuman("selfhost policy promote", {
-          env: promoteIo.env,
-          stdinIsTTY: promoteIo.stdinIsTTY === true,
-        });
+        requireHuman(
+          "selfhost policy promote",
+          { env: promoteIo.env, stdinIsTTY: promoteIo.stdinIsTTY === true },
+          "promote it on the console's Rules screen",
+        );
         await runPromote(rule, options, promoteIo);
       } catch (error) {
         fail(error, options.json);

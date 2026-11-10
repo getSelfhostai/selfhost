@@ -21,6 +21,8 @@ import { plural, table } from "./format.js";
 import { drainSpool } from "./hooks/drain.js";
 import { spoolDir } from "./hooks/receive.js";
 import { defaultPerson } from "./import.js";
+import { httpReviewList } from "./inbox/http.js";
+import type { Fetch } from "./team/client.js";
 import { readMembership } from "./team/config.js";
 
 export interface ReviewListIo {
@@ -30,6 +32,8 @@ export interface ReviewListIo {
   now?: Date;
   /** ~/.selfhost/config.json: the pulled team policy when the repository has no selfhost.toml. */
   configPath?: string;
+  /** For the team server's list in team mode. Default: the global fetch. */
+  fetch?: Fetch;
 }
 
 export interface ReviewListCommandOptions {
@@ -46,8 +50,10 @@ export interface ReviewListCommandOptions {
 /** `selfhost review list --json`: one page of the list, ranked, after a refresh. */
 export interface ReviewListReport extends ReviewItemsPage {
   schema: "selfhost.review_list/v1";
-  /** What the refresh before the read changed. */
+  /** What the refresh before the read changed. The team server refreshes its own list. */
   refreshed: RefreshResult;
+  /** Where the list was read: the team server in team mode, else the local ledger. */
+  source?: "server" | "local";
 }
 
 const TITLE_WIDTH = 60;
@@ -125,9 +131,38 @@ function print(page: ReviewItemsPage, state: ReviewItemState, io: ReviewListIo):
   }
 }
 
+function query(
+  options: ReviewListCommandOptions,
+  state: ReviewItemState,
+  limit: number | undefined,
+) {
+  return {
+    state,
+    ...(options.owner !== undefined ? { owner: options.owner } : {}),
+    ...(limit !== undefined ? { limit } : {}),
+    ...(options.cursor !== undefined ? { cursor: options.cursor } : {}),
+  };
+}
+
+function report(
+  page: ReviewItemsPage,
+  refreshed: RefreshResult,
+  source: "server" | "local",
+  state: ReviewItemState,
+  options: ReviewListCommandOptions,
+  io: ReviewListIo,
+): ReviewListReport {
+  const out: ReviewListReport = { schema: "selfhost.review_list/v1", ...page, refreshed, source };
+  if (options.json) io.write(JSON.stringify(out, null, 2));
+  else print(page, state, io);
+  return out;
+}
+
 /**
- * `selfhost review list`: brings the local review list up to date with the local ledger, then
- * prints one page of it in rank order. Pass a ledger to reuse an open one.
+ * `selfhost review list`: in team mode, one page of the team server's list, the one
+ * `selfhost inbox` reads; otherwise brings the local review list up to date with the local
+ * ledger, then prints one page of it in rank order. --database or --data-dir read a ledger even
+ * in team mode. Pass a ledger to reuse an open one.
  */
 export async function runReviewList(
   options: ReviewListCommandOptions,
@@ -136,6 +171,15 @@ export async function runReviewList(
 ): Promise<ReviewListReport> {
   const state = parseState(options.state) ?? "open";
   const limit = parseLimit(options.limit);
+  const membership = io.configPath ? readMembership(io.configPath) : undefined;
+  const local =
+    ledger !== undefined || options.database !== undefined || options.dataDir !== undefined;
+  if (membership && !local) {
+    const fetcher: Fetch = io.fetch ?? ((url, init) => fetch(url, init));
+    const list = httpReviewList(membership.server, membership.token, fetcher);
+    const page = await list.list(query(options, state, limit));
+    return report(page, { created: 0, updated: 0 }, "server", state, options, io);
+  }
   const config = reviewConfig(options, io);
   const target =
     ledger ??
@@ -143,7 +187,6 @@ export async function runReviewList(
   try {
     const now = () => io.now ?? new Date();
     // Blocked calls not imported yet go in first, so their exception items are on the list.
-    const membership = io.configPath ? readMembership(io.configPath) : undefined;
     await drainSpool(target, spoolDir(io.env), {
       person: membership?.person ?? defaultPerson(io.env),
       now: now(),
@@ -151,16 +194,8 @@ export async function runReviewList(
     });
     const list = openReviewList(target, { config, now });
     const refreshed = await refreshReviewList(target, list);
-    const page = await list.list({
-      state,
-      ...(options.owner !== undefined ? { owner: options.owner } : {}),
-      ...(limit !== undefined ? { limit } : {}),
-      ...(options.cursor !== undefined ? { cursor: options.cursor } : {}),
-    });
-    const report: ReviewListReport = { schema: "selfhost.review_list/v1", ...page, refreshed };
-    if (options.json) io.write(JSON.stringify(report, null, 2));
-    else print(page, state, io);
-    return report;
+    const page = await list.list(query(options, state, limit));
+    return report(page, refreshed, "local", state, options, io);
   } finally {
     if (!ledger) await target.close();
   }
@@ -214,15 +249,21 @@ export function registerReviewList(
   review
     .command("list")
     .description(
-      "the review list on this laptop: what needs a person, blocking first, then by risk",
+      "the review list: what needs a person, blocking first, then by risk (the team server's in team mode)",
     )
     .option("--state <state>", "open (default), answered, dismissed or expired")
     .option("--owner <person>", "only items this person owns")
     .option("--limit <n>", "items per page (default 100)")
     .option("--cursor <cursor>", "next_cursor from the previous page")
     .option("-c, --config <path>", "path to selfhost.toml, for routing and timeouts")
-    .option("--database <url>", "Postgres url (default: DATABASE_URL, else the embedded ledger)")
-    .option("--data-dir <path>", "embedded ledger folder (default: ~/.selfhost/data)")
+    .option(
+      "--database <url>",
+      "Postgres url (default: DATABASE_URL, else the embedded ledger); reads it even in team mode",
+    )
+    .option(
+      "--data-dir <path>",
+      "embedded ledger folder (default: ~/.selfhost/data); reads it even in team mode",
+    )
     .option("--json", "print JSON")
     .action(async (options: ReviewListCommandOptions) => {
       try {

@@ -9,7 +9,7 @@ export {
 export { discoverLogFiles } from "./discover.js";
 export { EVENT_SCHEMAS } from "./events.js";
 export { deterministicUuidv7 } from "./ids.js";
-export { importAll, type WriteResult, writeEvents } from "./import.js";
+export { importAll, type SkippedLines, type WriteResult, writeEvents } from "./import.js";
 export { claudeLimitHit, codexLimitHit, USAGE_LIMIT_ALERT, type UsageLimitHit } from "./limits.js";
 export { parseLogFile } from "./parse.js";
 export type {

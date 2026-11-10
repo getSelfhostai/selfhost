@@ -1,13 +1,15 @@
 import { spendAlerts } from "@selfhost/gateway";
 import { databaseOf, type Ledger, LedgerValidationError } from "@selfhost/ledger";
+import { highestShares } from "@selfhost/notify";
 import { periodRange } from "@selfhost/spend";
 import { costsOf, totalOf } from "./orgs.js";
 
 /**
  * Budget alerts from the spend in the ledger: each team whose selfhost.toml sets [budget] gets
  * an alert at 50%, 80% and 100% of each period's budget, once per window, as the gateway raises
- * its own. They become budget items on the review list. Requests are never stopped here; only a
- * gateway with [budget] mode = "hard" does that.
+ * its own; when spend crosses several shares between two checks only the highest is raised.
+ * They become budget items on the review list, for the budget owners. Requests are never stopped
+ * here; only a gateway with [budget] mode = "hard" does that.
  */
 export async function raiseBudgetAlerts(ledger: Ledger, now: Date): Promise<number> {
   const db = databaseOf(ledger);
@@ -35,7 +37,7 @@ export async function raiseBudgetAlerts(ledger: Ledger, now: Date): Promise<numb
         const start = periodRange(period, now).from.getTime();
         return totalOf(costs.filter((event) => Date.parse(event.ts) >= start)).usd;
       };
-      const alerts = spendAlerts(team.id, limits, spent, now);
+      const alerts = highestShares(spendAlerts(team.id, limits, spent, now));
       if (alerts.length === 0) continue;
       try {
         raised += (await ledger.append(alerts, { team: team.id })).accepted.length;

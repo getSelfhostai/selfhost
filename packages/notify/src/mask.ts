@@ -25,9 +25,10 @@ export function nameProblem(name: string): string | undefined {
 
 /**
  * Apprise services that only ever reach the vendor's own public host, so a target cannot point
- * the server at a machine on its own network. Anything else (json://, form://, mailto://, a
- * self-hosted ntfy or Gotify, a plain https:// webhook) takes a host, and only a team's owners and
- * admins may add it.
+ * the server at a machine on its own network. Anything else (json://, form://, mailto:// and
+ * mailtos:// with their SMTP host, a self-hosted ntfy or Gotify, a plain https:// webhook) takes
+ * a host, and only a team's owners and admins may add it. ntfy with a topic alone is hosted too:
+ * see isHostedService.
  */
 export const HOSTED_SERVICES: ReadonlySet<string> = new Set([
   "tgram",
@@ -41,9 +42,15 @@ export const HOSTED_SERVICES: ReadonlySet<string> = new Set([
   "opsgenie",
 ]);
 
-/** True when the URL's service only reaches the vendor's public host. */
+/** ntfy:// or ntfys:// with a topic and no host, which Apprise sends to ntfy.sh. */
+const NTFY_TOPIC = /^ntfys?:\/\/[A-Za-z0-9_-]{1,64}\/?$/i;
+
+/**
+ * True when the URL's service only reaches the vendor's public host: one of HOSTED_SERVICES, or
+ * ntfy with a topic alone (ntfys://<topic> goes to ntfy.sh). ntfy with a host is self-hosted.
+ */
 export function isHostedService(url: string): boolean {
-  return HOSTED_SERVICES.has(serviceOf(url));
+  return HOSTED_SERVICES.has(serviceOf(url)) || NTFY_TOPIC.test(url);
 }
 
 /** The URL's scheme in lower case, such as tgram or mailtos. */

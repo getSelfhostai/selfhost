@@ -64,18 +64,24 @@ export interface HumanCheck {
 
 /**
  * Throws unless a person runs the command: not inside an agent session, and at a terminal.
- * `what` names the command, like "selfhost inbox approve".
+ * `what` names the command, like "selfhost inbox approve". `elsewhere` is where else a person
+ * can do it, named in the refusal; null when only the command does it.
  */
-export function requireHuman(what: string, check: HumanCheck): void {
+export function requireHuman(
+  what: string,
+  check: HumanCheck,
+  elsewhere: string | null = "answer in the console",
+): void {
+  const or = elsewhere === null ? "" : `, or ${elsewhere}`;
   const marker = agentSessionVariable(check.env);
   if (marker !== undefined) {
     throw new Error(
-      `${what} is a person's decision, and this runs inside a coding agent session (${marker} is set), so it was refused. Run it yourself in a terminal outside the agent, or answer in the console.`,
+      `${what} is a person's decision, and this runs inside a coding agent session (${marker} is set), so it was refused. Run it yourself in a terminal outside the agent${or}.`,
     );
   }
   if (!check.stdinIsTTY) {
     throw new Error(
-      `${what} is a person's decision and needs a person at a terminal; stdin is not one, so it was refused. Run it yourself in a terminal, or answer in the console.`,
+      `${what} is a person's decision and needs a person at a terminal; stdin is not one, so it was refused. Run it yourself in a terminal${or}.`,
     );
   }
 }

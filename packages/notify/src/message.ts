@@ -143,20 +143,38 @@ export function itemMessage(item: ReviewItem, consoleUrl: string | undefined): M
   };
 }
 
-/** A person's digest of their open review items, best first. */
+/**
+ * An item's digest line: its kind and summary, with the rule that raised it, its repository and
+ * its agent when the summary does not name one. Ids only, never the item's text.
+ */
+function digestLine(item: ReviewItem): string {
+  const summary = summaryOf(item);
+  const rule = plainId(item.why?.rule_id);
+  const agent = item.agent ? AGENT_NAMES[item.agent.vendor] : undefined;
+  const notes = [
+    rule ? `rule ${rule}` : undefined,
+    plainId(item.repo),
+    agent && !summary.includes(agent) ? agent : undefined,
+    item.blocking ? "an agent waits" : undefined,
+  ].filter((note) => note !== undefined);
+  const after = notes.length > 0 ? ` (${notes.join(", ")})` : "";
+  return `- ${KIND_NAMES[item.kind]}: ${summary}${after}`;
+}
+
+/** A person's digest of their open review items, best first, the same line once with a count. */
 export function digestMessage(
   items: readonly ReviewItem[],
   cadence: Exclude<NotifyCadence, "off">,
   consoleUrl: string | undefined,
 ): Message {
-  const shown = items.slice(0, DIGEST_LINES).map((item) => {
-    const notes = [plainId(item.repo), item.blocking ? "an agent waits" : undefined].filter(
-      (note) => note !== undefined,
-    );
-    const after = notes.length > 0 ? ` (${notes.join(", ")})` : "";
-    return `- ${KIND_NAMES[item.kind]}: ${summaryOf(item)}${after}`;
-  });
-  const more = items.length - shown.length;
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    const line = digestLine(item);
+    counts.set(line, (counts.get(line) ?? 0) + 1);
+  }
+  const lines = [...counts].map(([line, n]) => (n > 1 ? `${line}, ${n} times` : line));
+  const shown = lines.slice(0, DIGEST_LINES);
+  const more = lines.length - shown.length;
   const link = listLink(consoleUrl);
   const count = `${items.length} ${items.length === 1 ? "item" : "items"}`;
   return {
@@ -164,7 +182,7 @@ export function digestMessage(
     body: [
       `Your ${cadence} digest: ${count} waiting for you.`,
       ...shown,
-      ...(more > 0 ? [`...and ${more} more.`] : []),
+      ...(more > 0 ? [`...and ${more} more kinds of item.`] : []),
       link ? `Review list: ${link}` : "Open them with selfhost inbox or selfhost console.",
     ].join("\n"),
     type: "info",

@@ -83,3 +83,24 @@ export interface IntegrationsReport {
   team: string;
   integrations: Record<IntegrationKind, Integration>;
 }
+
+/**
+ * GET /v1/solo, on the server `selfhost console` runs on a solo laptop: the laptop's own
+ * selfhost.toml, read-only, and the command that starts a team. Team servers answer 404.
+ */
+export interface SoloResponse {
+  schema: "selfhost.solo/v1";
+  team_init: string;
+  policy:
+    | {
+        path: string;
+        valid: true;
+        rules: { id: string; mode?: string; action: string; message: string }[];
+        guardrails: { mode: string; disable: string[] };
+        integrations: Partial<
+          Record<"router" | "tracer" | "runtime" | "reviewer", { tool: string }>
+        >;
+      }
+    | { path: string; valid: false; errors: { field: string; message: string }[] }
+    | null;
+}

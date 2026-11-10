@@ -5,6 +5,7 @@ import {
   type ImportOptions,
   importAll,
   type LedgerWriter,
+  type SkippedLines,
   type Vendor,
   watchLogs,
 } from "@selfhost/importers";
@@ -55,6 +56,8 @@ export interface ImportReport {
   files: number;
   accepted: number;
   duplicates: number;
+  /** Log files with lines that are not JSON the importer reads, skipped, with counts. */
+  skipped: SkippedLines[];
   /** Where the events went: "Postgres (DATABASE_URL)" or the embedded ledger folder. */
   ledger: string;
   /** Hook events from `selfhost hook`, drained from the spool. */
@@ -274,10 +277,15 @@ export async function runImport(
         `Imported ${result.accepted} new events from ${result.files} log files ` +
           `(${result.duplicates} already in the ledger).`,
       );
+      for (const line of describeSkipped(result.skipped)) io.write(line);
       if (hooks.lines > 0) {
+        const repeated =
+          hooks.repeated > 0
+            ? `, ${plural(hooks.repeated, "line")} from a second hook entry for the same call skipped`
+            : "";
         io.write(
           `Imported ${hooks.accepted} new hook events from the spool (${hooks.duplicates} already ` +
-            `in the ledger, ${hooks.malformed} malformed lines skipped).`,
+            `in the ledger, ${hooks.malformed} malformed lines skipped${repeated}).`,
         );
       }
       io.write(`Ledger: ${report.ledger}`);
@@ -314,6 +322,15 @@ async function laptopNotify(
     const reason = scrub(error instanceof Error ? error.message : String(error));
     return { budget_alerts: [], sent: 0, failed: 0, skipped: `Notifications failed: ${reason}` };
   }
+}
+
+/** A warning per log file with lines the importer could not read. */
+export function describeSkipped(skipped: readonly SkippedLines[]): string[] {
+  return skipped.map((file) =>
+    file.skipped === file.lines
+      ? `Warning: none of the ${plural(file.lines, "line")} in ${file.file} is JSON the importer reads; all skipped. Is it an agent session log?`
+      : `Warning: ${file.skipped} of ${plural(file.lines, "line")} in ${file.file} are not JSON the importer reads; skipped.`,
+  );
 }
 
 function describeNotify(notify: LaptopNotifyReport): string[] {

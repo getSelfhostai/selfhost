@@ -317,7 +317,8 @@ describe("selfhost tail on a laptop with no watcher", () => {
           item("01930c4e-2f1a-7b2c-9d3e-00000000aaaa", "Old item"),
           item("01930c4e-2f1a-7b2c-9d3e-00000000bbbb", "Approve git push --force for acme/api"),
         ]),
-      () => {},
+      // The review poll runs on its own timer: give it time to read the new item.
+      () => new Promise((resolve) => setTimeout(resolve, 20)),
       () => {},
     ]);
     expect(notes).toContain(
@@ -421,6 +422,106 @@ describe("selfhost tail in a team", () => {
       expect(out).toEqual([
         `10:00:00  ada@example.com  claude_code  tool Bash: npm test  ${server}/runs/${SESSION}`,
       ]);
+    } finally {
+      await ledger.close();
+    }
+  });
+});
+
+describe("selfhost tail in a team, by person and with --since", () => {
+  it("shows a person's rule decisions and log tool calls as theirs, the past in time order", async () => {
+    const ledger = await openLedger({ dataDir: "memory://" });
+    try {
+      const app = createApp({ version: "test", ledger, token: "admin-token" });
+      const created = (await (
+        await app.request("/v1/teams", {
+          method: "POST",
+          headers: { authorization: "Bearer admin-token", "content-type": "application/json" },
+          body: JSON.stringify({ name: "Web" }),
+        })
+      ).json()) as CreateTeamResponse;
+      const join = async (person: string) =>
+        (
+          (await (
+            await app.request("/v1/join", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ invite: created.invite, person }),
+            })
+          ).json()) as JoinResponse
+        ).token;
+      const ada = await join("ada@example.com");
+      const bob = await join("bob@example.com");
+      const server = "https://selfhost.acme.example.com";
+      const fetch = (url: string, init: RequestInit) =>
+        Promise.resolve(app.request(url.replace(server, ""), init));
+      const push = (token: string, events: LedgerEvent[]) =>
+        app.request("/v1/events", {
+          method: "POST",
+          headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+          body: JSON.stringify({ events }),
+        });
+      const bobs = "b0b00000-0000-4000-8000-000000000000";
+      // Pushed out of order: the later one first.
+      expect(
+        (
+          await push(bob, [
+            event({
+              kind: "tool.called",
+              ts: "2026-11-09T11:50:00.000Z",
+              source: "local_log",
+              session_id: bobs,
+              actor: { kind: "agent", id: `claude_code:session:${bobs}` },
+              tool: { name: "Bash", input_summary: "npm test" },
+            }),
+            event({
+              kind: "policy.evaluated",
+              ts: "2026-11-09T11:45:00.000Z",
+              session_id: bobs,
+              actor: { kind: "system", id: "selfhost-policy" },
+              tool: { name: "Bash", input_summary: "npm publish" },
+              decision: {
+                verdict: "block",
+                by: "selfhost-policy",
+                rule_id: "no-npm-publish",
+                mode: "enforce",
+              },
+            }),
+            event({
+              kind: "session.started",
+              ts: "2026-11-09T11:40:00.000Z",
+              session_id: bobs,
+              actor: { kind: "person", id: "bob@example.com" },
+            }),
+          ])
+        ).status,
+      ).toBe(200);
+      await push(ada, [event({ kind: "session.started", ts: "2026-11-09T11:41:00.000Z" })]);
+
+      const home = tempDir("tail-team-person");
+      home.write(
+        ".selfhost/config.json",
+        JSON.stringify({ server, token: ada, person: "ada@example.com", team: "web" }),
+      );
+      const policy = await tail(
+        { person: "bob@example.com", kind: "policy", since: "30m", json: true },
+        home,
+        [() => {}],
+        { fetch },
+      );
+      expect(policy.out.map((line) => (JSON.parse(line) as TailLine).rule_id)).toEqual([
+        "no-npm-publish",
+      ]);
+
+      const all = await tail({ since: "30m", json: true }, home, [() => {}], { fetch });
+      const lines = all.out.map((line) => JSON.parse(line) as TailLine);
+      expect(lines.map((line) => [line.ts.slice(11, 16), line.kind, line.who])).toEqual([
+        ["11:40", "session.started", "bob@example.com"],
+        ["11:41", "session.started", "ada@example.com"],
+        ["11:45", "policy.evaluated", "selfhost-policy"],
+        ["11:50", "tool.called", "bob@example.com"],
+      ]);
+      expect(lines[2]?.person).toBe("bob@example.com");
     } finally {
       await ledger.close();
     }

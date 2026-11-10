@@ -168,12 +168,24 @@ export function loadPolicy(
   return { location, config: result.config };
 }
 
-export function checkTeam(config: ResolvedSelfhostConfig, team: string | undefined): void {
+/**
+ * Refuses a --team that names no [teams.<name>] table. --team picks the overrides of a table in
+ * the policy, not a team on the server, so the error names the file it read and the tables
+ * there are.
+ */
+export function checkTeam(
+  config: ResolvedSelfhostConfig,
+  team: string | undefined,
+  path?: string,
+): void {
   if (team === undefined || Object.hasOwn(config.teams, team)) return;
   const known = Object.keys(config.teams);
+  const file = path ?? "selfhost.toml";
   throw new Error(
-    `--team: "${team}" has no [teams.${team}] table in selfhost.toml` +
-      (known.length > 0 ? ` (teams: ${known.join(", ")})` : ""),
+    `--team: looked for a [teams.${team}] table in ${file} and there is none. --team names a [teams.<name>] table of the policy, not a team on the server. ` +
+      (known.length > 0
+        ? `Tables there: ${known.map((name) => `[teams.${name}]`).join(", ")}.`
+        : "It has no [teams.<name>] tables; leave --team out to compile the policy for everyone."),
   );
 }
 
@@ -244,7 +256,7 @@ export async function policyTest(
   io: PolicyIo,
 ): Promise<PolicyTestReport> {
   const { location, config } = loadPolicy(io.cwd, options.config, io);
-  checkTeam(config, options.team);
+  checkTeam(config, options.team, location.path);
   const agent = parseAgent(options.agent);
   const mcpServer = mcpServerOf(options.tool);
   // As the hook sees it: a file tool reads or writes its file, which guard.secret_read needs.
@@ -316,7 +328,7 @@ export async function policyReplay(
   ledger?: Ledger,
 ): Promise<PolicyReplayReport> {
   const { location, config } = loadPolicy(io.cwd, options.config, io);
-  checkTeam(config, options.team);
+  checkTeam(config, options.team, location.path);
   let recorded: { calls: RecordedCall[]; skipped: number };
   let source: PolicyReplayReport["source"];
   let from: string;
@@ -459,7 +471,7 @@ export async function policyObserve(
   const repo = options.repo === undefined ? undefined : repoDir(options.repo, io.cwd);
   const flag = options.config === undefined ? undefined : resolve(io.cwd, options.config);
   const { location, config } = loadPolicy(repo ?? io.cwd, flag, io);
-  checkTeam(config, options.team);
+  checkTeam(config, options.team, location.path);
   const repoRoot = repo ?? repoDir(undefined, io.cwd) ?? dirname(location.path);
   const source = await policySource(location.path);
   const target =

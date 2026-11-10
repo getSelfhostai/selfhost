@@ -17,6 +17,8 @@ export interface LocalServerOptions {
   /** 0 picks a free port. */
   port: number;
   env?: NodeJS.ProcessEnv;
+  /** The selfhost.toml where the console was started, shown read-only in solo mode. */
+  policyPath?: string;
 }
 
 export interface LocalServer {
@@ -45,7 +47,13 @@ export async function startLocalServer(options: LocalServerOptions): Promise<Loc
   });
   const { token, path } = loadApiToken(dataDir, env);
   const dir = findConsoleDir(env);
-  const app = createApp({ version: options.version, ledger, token, console: { dir } });
+  const app = createApp({
+    version: options.version,
+    ledger,
+    token,
+    console: { dir },
+    solo: options.policyPath ? { policyPath: options.policyPath } : {},
+  });
   let server: ReturnType<typeof serve> | undefined;
   try {
     const port = await new Promise<number>((resolve, reject) => {

@@ -49,7 +49,13 @@ export const TailQuerySchema = Type.Object(
           "Comma-separated event kinds, or their first part (tool for tool.called and tool.result).",
       }),
     ),
-    person: Type.Optional(Type.String({ minLength: 1, description: "actor.id of a person." })),
+    person: Type.Optional(
+      Type.String({
+        minLength: 1,
+        description:
+          "A person: events they acted in, sent (data.sent_by), or that belong to one of their sessions, such as rule decisions and tool calls read from logs.",
+      }),
+    ),
     agent: Type.Optional(StringEnum(AGENT_VENDORS, { description: "agent.vendor." })),
     repo: Type.Optional(
       RepoSlug({ description: "owner/name: the event's repo, else its run's repo." }),
@@ -88,6 +94,12 @@ export const TailResponseSchema = Type.Object(
         "Oldest to reach the ledger first, at most limit. Redacted under each team's current [ledger] and [[redaction]] settings, as the run view shows them.",
     }),
     cursor: Type.String({ description: "Pass as after to get what lands next." }),
+    people: Type.Optional(
+      Type.Record(Type.String(), Type.String(), {
+        description:
+          "The person each event belongs to, by event id, for events whose actor is not a person (an agent, the policy engine): who sent it, else the person of its session.",
+      }),
+    ),
   },
   { additionalProperties: false, title: "TailResponse" },
 );

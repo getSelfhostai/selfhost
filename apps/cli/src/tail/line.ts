@@ -16,8 +16,12 @@ export interface TailLine {
   kind: string;
   /** The ledger event, or the review item for review.opened. */
   id: string;
-  /** actor.id: the person, or the agent or system that acted. */
+  /**
+   * actor.id: the person, or the system that acted. An agent's event read from a log shows the
+   * person of its session when that is known.
+   */
   who: string;
+  /** The person the event belongs to: its actor, who sent it, or its session's person. */
   person: string | null;
   agent: string | null;
   model: string | null;
@@ -80,17 +84,24 @@ export class SessionCache {
 
 export function lineOf(
   event: LedgerEvent,
-  options: { console: string; repo?: string | null; cacheHitRate?: number | null },
+  options: {
+    console: string;
+    repo?: string | null;
+    cacheHitRate?: number | null;
+    /** The person of an event whose actor is not one: who sent it, or its session's person. */
+    person?: string | null;
+  },
 ): TailLine {
   const cost = event.cost;
   const decision = event.decision;
+  const person = event.actor.kind === "person" ? event.actor.id : (options.person ?? null);
   return {
     schema: "selfhost.tail_line/v1",
     ts: event.ts,
     kind: event.kind,
     id: event.id,
-    who: event.actor.id,
-    person: event.actor.kind === "person" ? event.actor.id : null,
+    who: event.actor.kind === "agent" && person ? person : event.actor.id,
+    person,
     agent: event.agent?.vendor ?? null,
     model: event.model ?? null,
     repo: event.repo ?? options.repo ?? null,
@@ -178,7 +189,9 @@ export function matches(line: TailLine, filter: TailFilter): boolean {
     const group = line.kind.split(".")[0] ?? "";
     if (!filter.kinds.includes(line.kind) && !filter.kinds.includes(group)) return false;
   }
-  if (filter.person !== undefined && line.who !== filter.person) return false;
+  if (filter.person !== undefined && line.person !== filter.person && line.who !== filter.person) {
+    return false;
+  }
   if (filter.agent !== undefined && line.agent !== filter.agent) return false;
   if (filter.session !== undefined && line.session_id !== filter.session) return false;
   if (filter.run !== undefined && line.run_id !== filter.run) return false;

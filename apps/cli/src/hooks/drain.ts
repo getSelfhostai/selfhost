@@ -34,6 +34,11 @@ export interface SpoolReport {
   duplicates: number;
   /** Lines that are not a payload the mappers accept, skipped. */
   malformed: number;
+  /**
+   * Lines skipped as the same hook call written twice: two hook entries (the managed settings'
+   * and the user's) that both ran `selfhost hook` for one tool call or one event.
+   */
+  repeated: number;
   /** Files of finished days, fully imported and deleted. */
   removed: number;
 }
@@ -53,12 +58,19 @@ export interface DrainOptions {
    * the rest (those lines again as duplicates), with its own prompt setting.
    */
   exceptionsOnly?: boolean;
+  /** The hook calls already read, for skipping the same call written twice; --watch keeps it. */
+  seen?: Map<string, number>;
 }
 
 const UUIDV7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 /** A past day's file left untouched this long gets no more lines: hooks write today's file. */
 const SETTLED_MS = 60_000;
+/** Two lines of one hook call arrive this close together: both hooks run at once. */
+const REPEAT_MS = 5_000;
+/** --watch forgets hook calls older than this once it remembers more than SEEN_MAX. */
+const SEEN_KEEP_MS = 10 * 60_000;
+const SEEN_MAX = 10_000;
 
 /**
  * Ledger events for each agent's payloads. Cursor and OpenCode payloads map to no events of
@@ -218,6 +230,49 @@ function mapLine(
   }
 }
 
+const textOf = (value: unknown) => (typeof value === "string" && value !== "" ? value : undefined);
+
+/**
+ * What makes two spool lines the same hook call, when two hook entries both ran `selfhost hook`
+ * for it: the agent, session, hook event and the agent's tool call id (for an event with no tool
+ * call, such as a prompt or a session start, the whole payload), received within a few seconds
+ * of each other, as both hooks run at once.
+ */
+export function repeatKey(text: string): { key: string; ms: number } | undefined {
+  try {
+    const line = JSON.parse(text) as Partial<SpoolLine>;
+    const ms = typeof line.received_at === "string" ? Date.parse(line.received_at) : Number.NaN;
+    const payload = line.payload;
+    if (Number.isNaN(ms) || typeof payload !== "object" || payload === null) return undefined;
+    const p = payload as Record<string, unknown>;
+    const session = textOf(p.session_id) ?? textOf(p.conversation_id) ?? "";
+    const event = textOf(p.hook_event_name) ?? textOf(p.type) ?? "";
+    const call = textOf(p.tool_use_id) ?? textOf(p.call_id);
+    if (call) return { key: `call\n${line.agent}\n${session}\n${event}\n${call}`, ms };
+    const hash = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+    return { key: `payload\n${line.agent}\n${hash}`, ms };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Whether a line repeats a hook call already read, remembering it when it does not. */
+function repeated(text: string, seen: Map<string, number>): boolean {
+  const found = repeatKey(text);
+  if (!found) return false;
+  const before = seen.get(found.key);
+  if (before !== undefined && Math.abs(found.ms - before) <= REPEAT_MS) {
+    return true;
+  }
+  seen.set(found.key, found.ms);
+  return false;
+}
+
+function forgetOld(seen: Map<string, number>, now: Date): void {
+  if (seen.size <= SEEN_MAX) return;
+  for (const [key, ms] of seen) if (now.getTime() - ms > SEEN_KEEP_MS) seen.delete(key);
+}
+
 interface Pending {
   event: LedgerEvent;
   /** file:line, to count a rejected line once. */
@@ -255,9 +310,11 @@ export async function drainSpool(
     accepted: 0,
     duplicates: 0,
     malformed: 0,
+    repeated: 0,
     removed: 0,
   };
   if (!dir) return report;
+  const seen = options.seen ?? new Map<string, number>();
   const now = options.now ?? new Date();
   const today = now.toISOString().slice(0, 10);
   const ctx: SourceContext = { person: options.person, logPrompts: options.logPrompts };
@@ -283,6 +340,10 @@ export async function drainSpool(
     for (const [n, text] of lines.entries()) {
       if (text.trim() === "") continue;
       report.lines += 1;
+      if (repeated(text, seen)) {
+        report.repeated += 1;
+        continue;
+      }
       const events = mapLine(text, ctx, options.exceptionsOnly);
       if (!events) {
         report.malformed += 1;
@@ -301,6 +362,7 @@ export async function drainSpool(
     report.duplicates += result.duplicates.length;
   }
   report.malformed += rejected.size;
+  forgetOld(seen, now);
 
   for (const { path, end, settled } of read) {
     if (options.exceptionsOnly) continue;
@@ -324,12 +386,13 @@ export function watchSpool(
   pollMs = 1000,
 ): { close(): Promise<void> } {
   const offsets = new Map<string, number>();
+  const seen = new Map<string, number>();
   let closed = false;
   let timer: NodeJS.Timeout | undefined;
   let running: Promise<void> = Promise.resolve();
   const tick = async (): Promise<void> => {
     try {
-      const report = await drainSpool(writer, dir, { ...options, offsets });
+      const report = await drainSpool(writer, dir, { ...options, offsets, seen });
       if (report.accepted + report.duplicates > 0) onBatch(report.accepted);
     } catch {
       // Left in the spool; the next poll tries again.

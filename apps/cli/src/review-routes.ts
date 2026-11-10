@@ -64,15 +64,20 @@ function parseRisk(value: string | undefined): number | undefined {
   return risk;
 }
 
-/** The repository's CODEOWNERS, where GitHub would read it, from the working tree. */
-function localCodeowners(cwd: string): { path: string; codeowners: CodeOwners } | undefined {
+/**
+ * The repository's CODEOWNERS, where GitHub would read it, from the working tree; else why
+ * there is none.
+ */
+function localCodeowners(
+  cwd: string,
+): { path: string; codeowners: CodeOwners } | { missing: string } {
   const root = repoDir(undefined, cwd);
-  if (!root) return undefined;
+  if (!root) return { missing: "not in a git repository here, so there is no CODEOWNERS file" };
   for (const path of CODEOWNERS_PATHS) {
     const file = join(root, path);
     if (existsSync(file)) return { path, codeowners: parseCodeOwners(readFileSync(file, "utf8")) };
   }
-  return undefined;
+  return { missing: `No CODEOWNERS file in the repository (${CODEOWNERS_PATHS.join(", ")})` };
 }
 
 async function itemInput(
@@ -138,6 +143,14 @@ function print(report: ReviewRoutesReport, config: ResolvedSelfhostConfig, io: R
     const named = [...route.github.users.map((u) => `@${u}`), ...route.github.teams];
     io.write(`GitHub reviewers for a pull request: ${named.join(", ")}.`);
   }
+  if (routing.owners.length === 0) {
+    const later = report.routes.find((r) => r.matched && r.empty?.includes("needs a team server"));
+    if (later) {
+      io.write(
+        `On the team server, which knows each person's role, [[review.routes]] ${JSON.stringify(later.id)} takes it.`,
+      );
+    }
+  }
   if (report.escalation.length > 0) {
     io.write(`Nobody answers: it escalates to ${report.escalation.join(", then ")}.`);
   }
@@ -169,13 +182,17 @@ export async function runReviewRoutes(
         ...(options.person ? { person: options.person } : {}),
       };
   const local = localCodeowners(io.cwd);
-  const explained = explainRoutes(config, input, local ? { codeowners: local.codeowners } : {});
+  const explained = explainRoutes(
+    config,
+    input,
+    "missing" in local ? { codeownersNote: local.missing } : { codeowners: local.codeowners },
+  );
   const report: ReviewRoutesReport = {
     schema: "selfhost.review_routes/v1",
     ...(options.item ? { item: options.item } : {}),
     input,
     ...explained,
-    ...(local ? { codeowners: local.path } : {}),
+    ...("missing" in local ? {} : { codeowners: local.path }),
   };
   if (options.json) io.write(JSON.stringify(report, null, 2));
   else print(report, config, io);

@@ -1,11 +1,15 @@
 import { basename } from "node:path";
 import { stableEventId } from "@selfhost/ledger";
 import {
+  BUILT_IN_RULE_IDS,
+  GUARDRAIL_IDS,
   type LedgerEvent,
+  PACKAGE_RULE_PREFIX,
   REVIEW_ITEM_SCHEMA,
   type ReviewItem,
   type Rule,
   type RuleMode,
+  SELFHOST_DECISION_RULE_ID,
 } from "@selfhost/schema";
 
 export interface PolicyReportOptions {
@@ -55,7 +59,27 @@ const DAY_MS = 86_400_000;
 const PSEUDO_RULES: Record<string, string> = {
   "mcp.allow": "MCP allowlist",
   "models.allow": "model allowlist",
+  "egress.allow": "egress allowlist",
 };
+
+/**
+ * The selfhost.toml section that sets a built-in check's mode, for ids that are not [[rules]]
+ * tables: the package guard's and the guardrails'. Undefined for a rule id.
+ */
+export function builtInSection(ruleId: string): string | undefined {
+  if (ruleId.startsWith(PACKAGE_RULE_PREFIX)) return "[packages]";
+  if ((GUARDRAIL_IDS as readonly string[]).includes(ruleId)) return "[guardrails]";
+  if (ruleId === SELFHOST_DECISION_RULE_ID) return "nothing: it always enforces";
+  if ((BUILT_IN_RULE_IDS as readonly string[]).includes(ruleId)) return `[${ruleId.split(".")[0]}]`;
+  return undefined;
+}
+
+/**
+ * A path rule written to keep agents off secret files (.env, keys, credentials): reading them is
+ * what it is there to catch, so a read is never a likely false positive.
+ */
+const SECRET_PATH =
+  /(^|[/*{,(|!?])\.env\b|secret|credential|password|token|\.pem\b|\.key\b|\.p12\b|id_rsa|id_ed25519|\.npmrc|\.netrc|\.pgpass|\.aws\b|\.ssh\b|kubeconfig|\.kube\b/i;
 
 /** Tools that only read: Claude Code, Codex and OpenCode names. */
 const READ_ONLY_TOOLS = new Set([
@@ -236,7 +260,8 @@ function commandText(event: LedgerEvent): string | undefined {
  * (a) A path rule that names no tool matched a tool that only reads (Read, Grep, Glob, LS and
  *     the like). Path rules are mostly written to keep agents from changing files; reading the
  *     same file is usually fine. A rule that names a tool meant to catch that tool, so it is
- *     never marked.
+ *     never marked, and neither is a rule on secret files (.env, keys, credentials), where the
+ *     read is the point.
  * (b) A command rule matched only text that the shell does not run: inside quotes, after `#`,
  *     or in the arguments of echo, grep or rg. `git commit -m "no rm -rf"` is a message, not a
  *     deletion. Commands that could run that text (`bash -c`, `| sh`, `$(...)`) are never marked.
@@ -247,7 +272,8 @@ function commandText(event: LedgerEvent): string | undefined {
 export function falsePositiveReason(event: LedgerEvent, rule: Rule | undefined): string | null {
   if (!rule) return null;
   const tool = event.tool?.name;
-  if (rule.match.path !== undefined && rule.match.tool === undefined && tool) {
+  const path = rule.match.path;
+  if (path !== undefined && rule.match.tool === undefined && tool && !SECRET_PATH.test(path)) {
     if (READ_ONLY_TOOLS.has(tool)) return FALSE_POSITIVE.readOnly(tool);
   }
   const command = commandText(event);
@@ -422,6 +448,11 @@ function ruleSection(rule: ObservedRule, haveRules: boolean): string[] {
   if (rule.more_examples > 0) lines.push(`- and ${plural(rule.more_examples, "other call")}`);
   lines.push("");
   if (label) return lines;
+  const section = builtInSection(rule.rule_id);
+  if (section) {
+    lines.push(`A built-in check, not a [[rules]] entry: its mode is set by ${section}.`, "");
+    return lines;
+  }
   if (haveRules && rule.mode === null) lines.push("No longer in selfhost.toml.", "");
   else if (rule.mode !== null && rule.mode !== "observe") {
     lines.push(`Now in ${rule.mode} mode in selfhost.toml.`, "");

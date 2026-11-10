@@ -176,15 +176,23 @@ async function teamRoles(tx: Queryable, team: string, run: Run): Promise<Roles> 
   return roles;
 }
 
-/** What routing needs about a team scope: its people by role and approvers, on a team server. */
+/**
+ * What routing needs about a team scope, on a team server: its people by role, approvers, and
+ * who holds its budget ([notify] budget_owners, else its owners).
+ */
 async function teamRouting(
   tx: Queryable,
   team: string | null,
   run: Run,
-): Promise<Pick<BuildContext, "roles" | "approvers">> {
+): Promise<Pick<BuildContext, "roles" | "approvers" | "budgetOwners">> {
   if (team === null) return {};
   const roles = await teamRoles(tx, team, run);
-  return { roles, approvers: [...roles.owner, ...roles.admin].sort() };
+  const named = run.configFor(team).notify.budget_owners;
+  return {
+    roles,
+    approvers: [...roles.owner, ...roles.admin].sort(),
+    budgetOwners: named.length > 0 ? [...named] : [...roles.owner],
+  };
 }
 
 /** Parsed CODEOWNERS per repository, read once per refresh. */
