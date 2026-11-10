@@ -297,7 +297,7 @@ function sharedRoutes(
   gateway: Gateway | undefined,
   background: Background | undefined,
 ): void {
-  policyRoutes(router, ledger);
+  policyRoutes(router, ledger, gateway);
   contextRoutes(router, ledger, { ...(now ? { now } : {}), ...runs });
   integrationRoutes(router, ledger, {
     ...integrations,
@@ -308,13 +308,14 @@ function sharedRoutes(
             baseUrl: gateway.baseUrl,
             health: () => gateway.client.health(),
           },
+          policyChanged: () => gateway.policyChanged?.(),
         }
       : {}),
   });
   policyObservedRoutes(router, ledger, now ? { now } : {});
   peopleRoutes(router, ledger);
   laptopRoutes(router, ledger, now ? { now } : {});
-  orgRoutes(router, ledger, now ? { now } : {});
+  orgRoutes(router, ledger, { ...(now ? { now } : {}), ...(gateway ? { gateway } : {}) });
   usageRoutes(router, ledger, now ? { now } : {});
   roiRoutes(router, ledger, now ? { now } : {});
   sandboxRoutes(router, ledger, now ? { now } : {});

@@ -141,11 +141,20 @@ export function budgetText(budgets: GatewayBudget[]): string {
       const spent =
         b.spent_usd === null
           ? ""
-          : `, ${usd(b.spent_usd)} spent, ${usd(Math.max(b.limit_usd - b.spent_usd, 0))} left`;
+          : b.spent_usd >= b.limit_usd
+            ? `, ${usd(b.spent_usd)} spent: CUT OFF, the gateway refuses these requests with HTTP 402 until the ${b.period === "run" ? "run ends" : `${b.period} is over`}`
+            : `, ${usd(b.spent_usd)} spent, ${usd(Math.max(b.limit_usd - b.spent_usd, 0))} left`;
       return `${usd(b.limit_usd)} ${PERIOD[b.period]}${spent}`;
     })
     .join("; ");
 }
+
+/**
+ * What the gateway's HTTP 402 means. Its body is the gateway's own text, which selfhost cannot
+ * change, so connect and status say it here.
+ */
+export const CUT_OFF_NOTE =
+  "When a gateway budget is spent the gateway answers HTTP 402 with its own message. selfhost gateway status, the console's Spend screen and the get_budget MCP tool name the budget that was hit; an owner or admin of the team raises it in the team's selfhost.toml ([budget] or [budget.person]) and the gateway gets it within seconds.";
 
 export async function gatewayStatus(options: TeamOption, io: GatewayIo): Promise<GatewayStatus> {
   const status = await client(io).gateway(options.team);
@@ -186,6 +195,10 @@ export async function gatewayStatus(options: TeamOption, io: GatewayIo): Promise
     ],
     write,
   );
+  const spent = [...status.team_budgets, ...(status.key?.budgets ?? [])].some(
+    (b) => b.spent_usd !== null && b.spent_usd >= b.limit_usd,
+  );
+  if (spent) write(`Note: ${CUT_OFF_NOTE}`);
   for (const note of status.notes) write(`Note: ${note}`);
   return status;
 }
@@ -506,7 +519,7 @@ function printConnect(report: ConnectReport, io: GatewayIo, run: boolean): Conne
   for (const warning of report.warnings) write(`Warning: ${warning}`);
   if (report.warnings.length > 0) write("");
   if (report.key) {
-    const limits = `Limits: ${budgetText(report.key.budgets)}.`;
+    const limits = `Limits: ${budgetText(report.key.budgets)}.${report.key.budgets.length > 0 ? ` ${CUT_OFF_NOTE}` : ""}`;
     if (report.reused) {
       write(`Gateway key ${report.key.name}, the one your other agents here use. ${limits}`);
     } else {

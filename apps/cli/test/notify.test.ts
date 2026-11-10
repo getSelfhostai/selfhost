@@ -2,8 +2,10 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { databaseOf, openLedger } from "@selfhost/ledger";
 import { notifyStore } from "@selfhost/notify";
 import { EVENT_SCHEMA, type LedgerEvent } from "@selfhost/schema";
-import { describe, expect, it } from "vitest";
-import { runImport } from "../src/import.js";
+import { describe, expect, it, vi } from "vitest";
+import { runImport, startLaptopNotify } from "../src/import.js";
+import { watchInbox } from "../src/inbox/sync.js";
+import { localReviewList } from "../src/review-list.js";
 import { run, tempDir } from "./run.js";
 
 const PHONE = "tgram://123456:BOTSECRET/987";
@@ -283,6 +285,68 @@ describe("budget alerts on a solo laptop", () => {
       );
       expect(lines.filter((line) => line.startsWith("Notifications skipped"))).toHaveLength(1);
     } finally {
+      await ledger.close();
+    }
+  });
+});
+
+describe("pushes from selfhost import --watch on a solo laptop", () => {
+  it("pushes an item an agent waits on with no later batch of events, after the list refresh", async () => {
+    const repo = tempDir("repo");
+    repo.write("selfhost.toml", "version = 1\n");
+    const apprise = fakeApprise();
+    const ledger = await openLedger({ dataDir: "memory://" });
+    const configPath = tempDir("config").path("config.json");
+    const lines: string[] = [];
+    const env = { PATH: apprise.bin, LOG: apprise.log, SELFHOST_PERSON: "dev@example.com" };
+    const io = { env, cwd: repo.root, write: (line: string) => lines.push(line), configPath };
+    const inbox = await watchInbox(ledger, {
+      membership: undefined,
+      person: "dev@example.com",
+      configPath,
+      fetch: async () => {
+        throw new Error("no server in solo mode");
+      },
+      localReviewList: localReviewList({ ...io, cwd: repo.root }),
+      write: io.write,
+    });
+    if (!inbox) throw new Error("no inbox refresh");
+    const refreshNow = vi.spyOn(inbox, "refreshNow");
+    const notifier = startLaptopNotify(ledger, "dev@example.com", io, {
+      intervalMs: 20,
+      refresh: () => inbox.refreshNow(),
+    });
+    try {
+      await notifyStore(databaseOf(ledger)).addTarget(
+        "dev@example.com",
+        "phone",
+        PHONE,
+        new Date(Date.now() - 60_000),
+      );
+      // The agent asks and then waits: this is the last event until someone answers.
+      await ledger.append([
+        {
+          id: "01930c4e-2f1a-7b2c-9d3e-00000000a001",
+          schema: EVENT_SCHEMA,
+          ts: new Date().toISOString(),
+          source: "hook",
+          kind: "approval.requested",
+          actor: { kind: "person", id: "dev@example.com" },
+          session_id: "waiting-session",
+          agent: { vendor: "claude_code" },
+          data: { message: "Claude needs your permission to use Bash" },
+        },
+      ]);
+      // Nobody calls kick(): the timer alone sends the push.
+      await vi.waitFor(
+        () => expect(apprise.lines().some((line) => line.includes("an agent waits"))).toBe(true),
+        { timeout: 10_000 },
+      );
+      expect(refreshNow).toHaveBeenCalled();
+      expect(lines).toContain("Notifications: 1 sent, 0 failed.");
+    } finally {
+      await notifier.close();
+      await inbox.close();
       await ledger.close();
     }
   });

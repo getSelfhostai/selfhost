@@ -1,4 +1,10 @@
-export { BUDGET_KEY, budgetResponse, periodRange } from "./budget.js";
+export {
+  BUDGET_KEY,
+  budgetLine,
+  budgetResponse,
+  periodRange,
+  sortBudgetLines,
+} from "./budget.js";
 export {
   CACHE_HIT_ALERT,
   CACHE_RECENT_REQUESTS,

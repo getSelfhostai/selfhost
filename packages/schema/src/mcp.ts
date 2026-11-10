@@ -296,7 +296,7 @@ export const MCP_TOOLS: readonly McpToolDefinition[] = [
   {
     name: "get_budget",
     description:
-      "Get spend so far, the budget and what is left (remaining_usd) for your team or for you, this day, week or month.",
+      "Get spend so far, the budget and what is left (remaining_usd) for your team or for you, this day, week or month. budgets lists every budget that applies to you (yours, your team's, your org's; daily, weekly, monthly), whether the gateway stops requests at it (enforcement) and whether it does now (cut_off), and who can raise it. A cut-off budget explains a 402 from the gateway.",
     readOnly: true,
     inputSchema: BudgetQuerySchema,
     outputSchema: BudgetResponseSchema,

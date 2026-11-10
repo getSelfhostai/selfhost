@@ -19,6 +19,7 @@ import { drainSpool, type SpoolReport, watchSpool } from "./hooks/drain.js";
 import { spoolDir } from "./hooks/receive.js";
 import { refreshGrants } from "./inbox/grants.js";
 import { type OpenLocalReviewList, watchInbox } from "./inbox/sync.js";
+import { spendSnapshotPath, startSpendSnapshots } from "./mcp/spend.js";
 import { type LaptopNotifyReport, notifyOnLaptop } from "./notify/laptop.js";
 import { describeManaged } from "./policy/managed.js";
 import { feedDir, startFeed } from "./tail/feed.js";
@@ -26,7 +27,16 @@ import type { Fetch } from "./team/client.js";
 import { type Membership, readMembership, readSyncState } from "./team/config.js";
 import type { LaptopIo } from "./team/laptop.js";
 import type { RemoteWriterOptions } from "./team/remote-writer.js";
-import { markSynced, type SyncReport, syncingWriter, syncLedger, teamSync } from "./team/sync.js";
+import {
+  markSynced,
+  type PullReport,
+  type SyncReport,
+  startTeamPull,
+  syncingWriter,
+  syncLedger,
+  type TeamPuller,
+  teamSync,
+} from "./team/sync.js";
 
 export interface ImportCommandOptions {
   since?: string;
@@ -190,8 +200,11 @@ function teamSyncFor(membership: Membership, io: ImportIo) {
 
 const configPathOf = (io: ImportIo) => io.configPath ?? defaultConfigPath();
 
-/** How often `selfhost import --watch` checks budgets and sends notifications on a laptop. */
-const LAPTOP_NOTIFY_MS = 60_000;
+/**
+ * How often `selfhost import --watch` checks budgets and sends notifications on a laptop, with
+ * or without new events: an agent that waits on a person writes nothing more until answered.
+ */
+export const LAPTOP_NOTIFY_MS = 15_000;
 
 /**
  * `selfhost import --hook-events`: the hook spool's events, one JSON line each, on stdout. Nothing
@@ -354,20 +367,125 @@ function describeSync(sync: SyncReport): string[] {
   const what = sync.history ? "Shared the local history with" : "Synced";
   const policy = sync.policy_hash ? `, team policy ${sync.policy_hash.slice(0, 12)}` : "";
   const counts = `${sync.sent} events (${sync.accepted} new, ${sync.duplicates} already there)`;
-  const repos = (sync.context_repos ?? []).map((repo) =>
+  return [`${what} ${where}: ${counts}${policy}.`, ...describeRepos(sync), ...describeLaptop(sync)];
+}
+
+function describeRepos(pulled: Pick<SyncReport, "context_repos">): string[] {
+  return (pulled.context_repos ?? []).map((repo) =>
     repo.error
       ? `The team's context changed, but ${repo.root} was not compiled again: ${repo.error}`
       : `The team's context changed: compiled ${repo.root} again (${repo.changed} files changed).`,
   );
-  const laptop = sync.laptop;
-  const managed = [
+}
+
+function describeLaptop({ laptop }: Pick<SyncReport, "laptop">): string[] {
+  return [
     // Quiet on the usual sync, when every file was already in place.
     ...(laptop?.managed?.files.some((file) => file.status !== "current")
       ? describeManaged(laptop.managed)
       : []),
     ...(laptop?.managed_error ? [`Managed settings not installed: ${laptop.managed_error}`] : []),
   ];
-  return [`${what} ${where}: ${counts}${policy}.`, ...repos, ...managed];
+}
+
+/** What a watcher's pull of the team config prints: nothing when nothing changed. */
+export function describePull(pull: PullReport): string[] {
+  return [
+    ...(pull.policy_changed && pull.policy_hash
+      ? [`Pulled the new team policy ${pull.policy_hash.slice(0, 12)}.`]
+      : pull.policy_changed
+        ? ["The team policy was removed on the server."]
+        : []),
+    ...describeRepos(pull),
+    ...describeLaptop(pull),
+    ...(pull.laptop?.heartbeat.error ? [`Heartbeat not sent: ${pull.laptop.heartbeat.error}`] : []),
+  ];
+}
+
+export interface LaptopNotifier {
+  /** Runs now unless a run is going or the last one was under the interval ago. */
+  kick(): void;
+  /** Stops the timer and waits for a running check. */
+  close(): Promise<void>;
+}
+
+/**
+ * For `selfhost import --watch` in solo mode: budget alerts and the pushes for items an agent
+ * waits on, every `intervalMs` whether or not events land (an agent that waits on a person writes
+ * nothing more until answered), and after batches at most that often. Each run first brings the
+ * review list up to date and waits for it, so the item the last batch opened is pushed on this
+ * run, not on a later one.
+ */
+export function startLaptopNotify(
+  ledger: Ledger,
+  person: string,
+  io: ImportIo,
+  options: {
+    intervalMs?: number;
+    refresh?: () => Promise<unknown>;
+    json?: boolean;
+    /** The note the first import printed, so it is not printed again. */
+    skipped?: string;
+  } = {},
+): LaptopNotifier {
+  const intervalMs = options.intervalMs ?? LAPTOP_NOTIFY_MS;
+  // The import before the watcher just ran this.
+  let notifiedAt = Date.now();
+  let notifying: Promise<void> | undefined;
+  let closed = false;
+  let skipped = options.skipped;
+  const run = (throttled: boolean) => {
+    if (closed || notifying || (throttled && Date.now() - notifiedAt < intervalMs)) return;
+    notifiedAt = Date.now();
+    notifying = laptopNotify(ledger, person, io, {
+      ...(options.refresh ? { refresh: options.refresh } : {}),
+    })
+      .then((notify) => {
+        if (options.json) {
+          if (notify.budget_alerts.length > 0 || notify.sent + notify.failed > 0) {
+            io.write(JSON.stringify({ schema: "selfhost.notify_batch/v1", ...notify }));
+          }
+          return;
+        }
+        const lines = describeNotify({ ...notify, skipped: undefined });
+        if (notify.skipped && notify.skipped !== skipped) lines.push(notify.skipped);
+        skipped = notify.skipped;
+        for (const line of lines) io.write(line);
+      })
+      .finally(() => {
+        notifying = undefined;
+      });
+  };
+  const timer = setInterval(() => run(false), intervalMs);
+  timer.unref?.();
+  return {
+    kick: () => run(true),
+    async close() {
+      closed = true;
+      clearInterval(timer);
+      await notifying;
+    },
+  };
+}
+
+/** The pull's lines, each printed once until it changes; errors once until a pull works. */
+function pullPrinter(io: ImportIo, json: boolean | undefined) {
+  let failed: string | undefined;
+  return {
+    onReport(report: PullReport) {
+      failed = undefined;
+      const lines = describePull(report);
+      if (lines.length === 0) return;
+      if (json) io.write(JSON.stringify({ schema: "selfhost.team_pull/v1", ...report }));
+      else for (const line of lines) io.write(line);
+    },
+    onError(message: string) {
+      if (message === failed) return;
+      failed = message;
+      if (json) io.write(JSON.stringify({ schema: "selfhost.team_pull/v1", error: message }));
+      else io.write(`Pulling the team config failed: ${message}. Trying again in a few minutes.`);
+    },
+  };
 }
 
 /** Imports once, then keeps tailing the logs until interrupted. */
@@ -377,8 +495,10 @@ export async function runWatch(options: ImportCommandOptions, io: ImportIo): Pro
   if (!options.json) io.write("Watching for new log lines. Press Ctrl+C to stop.");
   const membership = readMembership(configPathOf(io));
   const opts = importOptions(options, io, membership);
+  const person = opts.actorId ?? defaultPerson(io.env);
   let writer: LedgerWriter = ledger;
   let synced = () => {};
+  let puller: TeamPuller | undefined;
   if (membership) {
     const sync = teamSyncFor(membership, io);
     // A failed first sync is retried with the next batch instead of only on the next run.
@@ -390,10 +510,13 @@ export async function runWatch(options: ImportCommandOptions, io: ImportIo): Pro
       : undefined;
     writer = syncingWriter(ledger, sync.remote, catchUp);
     synced = () => markSynced(sync.configPath, readSyncState(sync.configPath, membership));
+    // The team policy, context layers, managed settings and heartbeat, as a one-shot sync pulls
+    // them; the first import just did, so the first pull comes one interval later.
+    puller = startTeamPull(sync, pullPrinter(io, options.json));
   }
   // Limit forecasts, spend alarms and the statusline cache, checked as batches land.
   const monitor = await startMonitor(ledger, {
-    person: opts.actorId ?? defaultPerson(io.env),
+    person,
     json: options.json,
     write: io.write,
     env: io.env,
@@ -412,42 +535,36 @@ export async function runWatch(options: ImportCommandOptions, io: ImportIo): Pro
   // The saved inbox copy the statusline counts from, and the inbox queue sent on reconnect.
   const inbox = await watchInbox(ledger, {
     membership,
-    person: opts.actorId ?? defaultPerson(io.env),
+    person,
     configPath: configPathOf(io),
     fetch: io.fetch ?? globalFetch,
     localReviewList: io.localReviewList,
     write: io.write,
     json: options.json,
   });
-  // Budget alerts and notifications on a laptop, at most once a minute as batches land.
-  let notifiedAt = Date.now();
-  let notifying: Promise<void> | undefined;
-  let skipped: string | undefined = first.notify?.skipped;
-  const notifyLaptop = () => {
-    if (membership || notifying || Date.now() - notifiedAt < LAPTOP_NOTIFY_MS) return;
-    notifiedAt = Date.now();
-    notifying = laptopNotify(ledger, opts.actorId ?? defaultPerson(io.env), io, {})
-      .then((notify) => {
-        if (options.json) {
-          if (notify.budget_alerts.length > 0 || notify.sent + notify.failed > 0) {
-            io.write(JSON.stringify({ schema: "selfhost.notify_batch/v1", ...notify }));
-          }
-          return;
-        }
-        const lines = describeNotify({ ...notify, skipped: undefined });
-        if (notify.skipped && notify.skipped !== skipped) lines.push(notify.skipped);
-        skipped = notify.skipped;
-        for (const line of lines) io.write(line);
-      })
-      .finally(() => {
-        notifying = undefined;
+  // Budget alerts and notifications on a laptop; in a team the server sends them.
+  const notifier = membership
+    ? undefined
+    : startLaptopNotify(ledger, person, io, {
+        ...(inbox ? { refresh: () => inbox.refreshNow() } : {}),
+        json: options.json,
+        ...(first.notify?.skipped ? { skipped: first.notify.skipped } : {}),
       });
-  };
+  // The spend selfhost mcp's get_budget answers from while this process holds the embedded
+  // ledger, which takes one process at a time.
+  const snapshots =
+    url && isPostgresUrl(url)
+      ? undefined
+      : startSpendSnapshots(ledger, person, spendSnapshotPath(io.env, configPathOf(io)), {
+          intervalMs: LAPTOP_NOTIFY_MS,
+          warn: io.write,
+        });
   const onBatch = (n: number) => {
     synced();
     monitor.check();
     inbox?.refresh();
-    notifyLaptop();
+    notifier?.kick();
+    snapshots?.kick();
     if (n === 0) return;
     const batch: ImportBatchReport = { schema: "selfhost.import_batch/v1", accepted: n };
     io.write(options.json ? JSON.stringify(batch) : `+${n} events`);
@@ -466,7 +583,9 @@ export async function runWatch(options: ImportCommandOptions, io: ImportIo): Pro
   });
   await watcher.close();
   await hookWatcher.close();
-  await notifying;
+  await notifier?.close();
+  await snapshots?.close();
+  await puller?.close();
   await monitor.close();
   await inbox?.close();
   feed.close();

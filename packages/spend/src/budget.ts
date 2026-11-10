@@ -1,4 +1,13 @@
-import type { Budget, BudgetPeriod, BudgetResponse } from "@selfhost/schema";
+import {
+  BUDGET_PERIODS,
+  BUDGET_SCOPES,
+  type Budget,
+  type BudgetEnforcement,
+  type BudgetLine,
+  type BudgetPeriod,
+  type BudgetResponse,
+  type BudgetScope,
+} from "@selfhost/schema";
 
 const DAY_MS = 86_400_000;
 /** A forecast needs this share of the period behind it. */
@@ -46,4 +55,41 @@ export function budgetResponse(
     remaining_usd: limitUsd === undefined ? null : round(Math.max(limitUsd - spent, 0)),
     forecast_usd: forecast === null ? null : round(forecast),
   };
+}
+
+/** One budget and the spend against it; spent is null when the caller may not see it. */
+export function budgetLine(input: {
+  scope: BudgetScope;
+  owner: string;
+  period: BudgetPeriod;
+  now: Date;
+  limitUsd: number;
+  spentUsd: number | null;
+  enforcement: BudgetEnforcement;
+  raise: string;
+}): BudgetLine {
+  const { from, to } = periodRange(input.period, input.now);
+  const spent = input.spentUsd === null ? null : round(input.spentUsd);
+  return {
+    scope: input.scope,
+    owner: input.owner,
+    period: input.period,
+    from: from.toISOString(),
+    to: to.toISOString(),
+    limit_usd: input.limitUsd,
+    spent_usd: spent,
+    remaining_usd: spent === null ? null : round(Math.max(input.limitUsd - spent, 0)),
+    enforcement: input.enforcement,
+    cut_off: input.enforcement === "gateway" && spent !== null && spent >= input.limitUsd,
+    raise: input.raise,
+  };
+}
+
+/** Cut-off budgets first, then the person's, the team's and the org's, shortest period first. */
+export function sortBudgetLines(lines: BudgetLine[]): BudgetLine[] {
+  const rank = (line: BudgetLine) =>
+    (line.cut_off ? 0 : 100) +
+    BUDGET_SCOPES.indexOf(line.scope) * 10 +
+    BUDGET_PERIODS.indexOf(line.period);
+  return [...lines].sort((a, b) => rank(a) - rank(b));
 }

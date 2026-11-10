@@ -1,5 +1,11 @@
 import { decisionPaths } from "@selfhost/ledger";
-import type { AgentVendor, LedgerEvent, ReviewItemKind, ReviewWhy } from "@selfhost/schema";
+import {
+  type AgentVendor,
+  type LedgerEvent,
+  REDACTED,
+  type ReviewItemKind,
+  type ReviewWhy,
+} from "@selfhost/schema";
 
 /**
  * What one ledger signal says about the item it belongs to. Signals with the same dedupeKey make
@@ -423,11 +429,16 @@ function fromAlert(event: LedgerEvent): Draft | undefined {
       const person = personId(data.owner) ?? eventPerson(event);
       const window = text(data.window) ?? "";
       const hit = alert === "usage_limit";
+      // Alerts stored before person ids were kept in their own messages lost the name.
+      const named =
+        person && message?.startsWith(`${REDACTED} `)
+          ? `${person}${message.slice(REDACTED.length)}`
+          : message;
       return {
         ...common,
         dedupeKey: `budget:${alert}:${person ?? event.actor.id}:${text(data.plan) ?? text(data.cap) ?? event.agent?.vendor ?? ""}:${window}`,
         title: title(
-          message ??
+          named ??
             (hit
               ? `${agent} reached its ${window ? `${window} ` : ""}usage limit`
               : "Budget or plan limit warning"),

@@ -43,3 +43,24 @@ describe("runtime alerts", () => {
     expect(left("e2")?.dedupeKey).not.toBe(cap?.dedupeKey);
   });
 });
+
+describe("gateway budget alerts", () => {
+  it("names the person in a budget item stored with the name masked", () => {
+    const draft = draftFor({
+      ...alert("01930000-0000-7000-8000-000000000003", {
+        alert: "budget_exceeded",
+        message: "[redacted] spent the day's gateway budget of $0.01",
+        owner: "bob@example.com",
+        period: "day",
+        window: "2026-11-09T00:00:00.000Z",
+      }),
+      source: "gateway",
+      actor: { kind: "person", id: "bob@example.com" },
+    });
+    expect(draft).toMatchObject({
+      kind: "budget",
+      person: "bob@example.com",
+      title: "bob@example.com spent the day's gateway budget of $0.01",
+    });
+  });
+});

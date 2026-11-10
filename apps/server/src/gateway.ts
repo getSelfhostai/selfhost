@@ -42,6 +42,12 @@ export interface Gateway {
   fallbackProviders?: string[];
   /** The last sync and usage read, for GET /v1/gateway. */
   state: { sync: GatewaySyncReport | null; usage: GatewayUsageReport | null; usageFrom?: Date };
+  /**
+   * Set by the gateway job: writes teams, budgets and key settings to the gateway now. The
+   * policy routes call it when a selfhost.toml changes, so a new budget holds within seconds
+   * instead of at the next periodic sync.
+   */
+  policyChanged?: () => void;
 }
 
 /** Where the bundled Bifrost answers inside the compose network. */
@@ -378,13 +384,16 @@ export async function readUsageNow(
 
 export interface GatewayJob {
   run(): Promise<void>;
+  /** Writes the policies to the gateway now (what a policy change triggers); usage waits. */
+  push(): Promise<void>;
   stop(): void;
 }
 
 /**
- * Syncs the gateway and reads its usage now and every intervalMs. A run still going when the
- * next is due is not started twice, the timer never keeps the process alive, and the log names
- * counts and errors, never keys.
+ * Syncs the gateway and reads its usage now and every intervalMs, and writes the policies to it
+ * as soon as one changes (gateway.policyChanged). A run still going when the next is due is not
+ * started twice, a run and a push never write at the same time, the timer never keeps the
+ * process alive, and the log names counts and errors, never keys.
  */
 export function startGatewayJob(
   ledger: Ledger,
@@ -394,30 +403,69 @@ export function startGatewayJob(
   const { intervalMs = GATEWAY_INTERVAL_MS, log = console.log } = options;
   const now = options.now ?? (() => new Date());
   let running: Promise<void> | undefined;
-  const once = async () => {
-    const sync = await syncNow(ledger, gateway, now);
-    for (const error of sync.errors) log(`gateway: ${error}`);
-    if (sync.created + sync.updated + sync.deactivated + sync.alerts > 0) {
+  let pushing: Promise<void> | undefined;
+  let again = false;
+  const failed = (error: unknown) => {
+    log(`gateway: ${error instanceof Error ? error.message : error}`);
+  };
+  const sync = async () => {
+    const report = await syncNow(ledger, gateway, now);
+    for (const error of report.errors) log(`gateway: ${error}`);
+    if (report.created + report.updated + report.deactivated + report.alerts > 0) {
       log(
-        `gateway: ${sync.created} teams created, ${sync.updated} updated, ${sync.deactivated} keys turned off, ${sync.alerts} budget alerts`,
+        `gateway: ${report.created} teams created, ${report.updated} updated, ${report.deactivated} keys turned off, ${report.alerts} budget alerts`,
       );
     }
+  };
+  const once = async () => {
+    await sync();
     const usage = await readUsageNow(ledger, gateway, now);
     if (usage.error) log(`gateway: reading usage: ${usage.error}`);
     else if (usage.events > 0) log(`gateway: ${usage.events} requests into the ledger`);
   };
   const run = () => {
-    running ??= once()
-      .catch((error: unknown) => {
-        log(`gateway: ${error instanceof Error ? error.message : error}`);
-      })
+    const after = pushing ?? Promise.resolve();
+    running ??= after
+      .then(once)
+      .catch(failed)
       .finally(() => {
         running = undefined;
       });
     return running;
   };
+  // A change while a push writes is pushed again after it, since that push may have read the
+  // policies before the change.
+  const push = () => {
+    if (pushing) {
+      again = true;
+      return pushing;
+    }
+    const after = running ?? Promise.resolve();
+    pushing = after
+      .then(async () => {
+        do {
+          again = false;
+          await sync();
+        } while (again);
+      })
+      .catch(failed)
+      .finally(() => {
+        pushing = undefined;
+      });
+    return pushing;
+  };
+  gateway.policyChanged = () => {
+    void push();
+  };
   const timer = setInterval(run, intervalMs);
   timer.unref();
   void run();
-  return { run, stop: () => clearInterval(timer) };
+  return {
+    run,
+    push,
+    stop: () => {
+      clearInterval(timer);
+      gateway.policyChanged = undefined;
+    },
+  };
 }

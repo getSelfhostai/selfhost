@@ -94,7 +94,7 @@ describe("spend", () => {
     });
     renderConsole(OWNER, "?screen=spend");
     await screen.findByText("On pace for $450.00 by month end, over budget.", { exact: false });
-    expect(screen.getByText("of $300.00")).toBeTruthy();
+    expect(screen.getByText("of $300.00 this month")).toBeTruthy();
     expect(await screen.findByText("$6.00")).toBeTruthy();
     expect(screen.getByText("Down 25% from $8.00 the period before.")).toBeTruthy();
     expect(screen.getByText("Codex")).toBeTruthy();
@@ -164,6 +164,62 @@ describe("spend", () => {
     expect(screen.getByText(/E2B bills the CPU and memory/)).toBeTruthy();
     expect(screen.getByText(/, still running/)).toBeTruthy();
     expect(screen.getByText("$0.11 after 40 min")).toBeTruthy();
+  });
+
+  it("shows every budget that applies, which ones the gateway enforces, and a cut-off", async () => {
+    mockServer({
+      "GET /v1/usage": USAGE,
+      "GET /v1/budget": {
+        period: "month",
+        from: "2026-11-01T00:00:00.000Z",
+        to: "2026-12-01T00:00:00.000Z",
+        spent_usd: 3,
+        limit_usd: null,
+        remaining_usd: null,
+        forecast_usd: null,
+        budgets: [
+          {
+            scope: "person",
+            owner: "bob@example.com",
+            period: "day",
+            from: "2026-11-09T00:00:00.000Z",
+            to: "2026-11-10T00:00:00.000Z",
+            limit_usd: 0.5,
+            spent_usd: 0.52,
+            remaining_usd: 0,
+            enforcement: "gateway",
+            cut_off: true,
+            raise:
+              "An owner or admin of team web can raise it: [budget.person] daily_usd in the team's selfhost.toml (selfhost team policy push).",
+          },
+          {
+            scope: "org",
+            owner: "default",
+            period: "month",
+            from: "2026-11-01T00:00:00.000Z",
+            to: "2026-12-01T00:00:00.000Z",
+            limit_usd: 1000,
+            spent_usd: null,
+            remaining_usd: null,
+            enforcement: "alert",
+            cut_off: false,
+            raise:
+              "The server's admin can raise it: [budget] monthly_usd in org default's selfhost.toml.",
+          },
+        ],
+      },
+      "GET /v1/teams/web/roi": { status: 404, message: "No route" },
+    });
+    renderConsole(OWNER, "?screen=spend");
+    await screen.findByText("bob@example.com, daily");
+    expect(screen.getByText("$0.52 of $0.50")).toBeTruthy();
+    expect(screen.getByText(/the gateway refuses these requests \(HTTP 402\)/)).toBeTruthy();
+    expect(screen.getByText(/\[budget\.person\] daily_usd/)).toBeTruthy();
+    expect(screen.getByText("Org default, monthly")).toBeTruthy();
+    expect(screen.getByText("limit $1,000.00")).toBeTruthy();
+    expect(screen.getByText("Alert only: requests go on past it.")).toBeTruthy();
+    expect(screen.queryByText("No budget set")).toBeNull();
+    expect(screen.queryByText(/nothing is stopped/)).toBeNull();
   });
 
   it("says how far over a spent budget is, not $0.00 left", async () => {

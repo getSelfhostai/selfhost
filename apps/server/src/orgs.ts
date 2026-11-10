@@ -1,10 +1,21 @@
+import {
+  type BudgetLimit,
+  budgetMode,
+  GatewayError,
+  keySettings,
+  teamLimits,
+} from "@selfhost/gateway";
 import type { Ledger, TeamCost } from "@selfhost/ledger";
 import {
   AddRepoRequestSchema,
+  BUDGET_PERIODS,
+  type BudgetLine,
+  type BudgetPeriod,
   BudgetQuerySchema,
   type BudgetResponse,
   CreateOrgRequestSchema,
   createValidator,
+  type GatewayBudget,
   type LedgerEvent,
   type OrgInfo,
   type OrgOverview,
@@ -21,14 +32,17 @@ import {
 } from "@selfhost/schema";
 import {
   BUDGET_KEY,
+  budgetLine,
   budgetResponse,
   dimensionValue,
   oneSourcePerSession,
   periodRange,
   type SpendDimension,
+  sortBudgetLines,
 } from "@selfhost/spend";
 import type { Context, Hono, MiddlewareHandler } from "hono";
 import { apiError, authorize, type Caller, orgOf, type Router } from "./access.js";
+import type { Gateway } from "./gateway.js";
 import { invalidQuery, limit, readBody, SMALL_BODY_BYTES } from "./http.js";
 import { teamId } from "./ids.js";
 
@@ -83,6 +97,8 @@ export function totalOf(events: LedgerEvent[]): SpendTotals {
 
 export interface OrgRouteOptions {
   now?: () => Date;
+  /** The AI gateway, which holds the hard budgets and counts the spend against them. */
+  gateway?: Gateway;
 }
 
 /**
@@ -93,6 +109,7 @@ export interface OrgRouteOptions {
 export function orgRoutes(router: Router, ledger: Ledger, options: OrgRouteOptions = {}): void {
   const { teams, orgs } = ledger;
   const now = options.now ?? (() => new Date());
+  const { gateway } = options;
   const small = limit(SMALL_BODY_BYTES);
 
   /** The policy in use for a team; a team with none, or a broken one, has no budget. */
@@ -225,29 +242,158 @@ export function orgRoutes(router: Router, ledger: Ledger, options: OrgRouteOptio
     if (refused) return refused;
     const info = await teams.getTeam(team);
     if (!info) return c.json(apiError("not_found", `No team ${team}`), 404);
+    const org = info.org ?? "";
     const period = query.value.period ?? "month";
     const at = now();
-    const { from } = periodRange(period, at);
-    const costs = await orgs.teamCosts(
-      info.org ?? "",
-      [team],
-      from.toISOString(),
-      at.toISOString(),
+    const costs = costsOf(
+      await orgs.teamCosts(org, [team], earliestStart(at).toISOString(), at.toISOString()),
+      team,
     );
     const { person } = query.value;
-    const events = costsOf(costs, team).filter(
-      (event) => person === undefined || dimensionValue(event, "person") === person,
-    );
-    const budget = person === undefined ? (await configOf(team))?.budget : undefined;
-    return c.json(
-      budgetResponse(
-        period,
-        at,
-        totalOf(events).usd,
-        budget?.[BUDGET_KEY[period]],
-      ) satisfies BudgetResponse,
-    );
+    const config = await configOf(team);
+    const budget = config?.budget;
+    const key = BUDGET_KEY[period];
+    const limitUsd = person === undefined ? budget?.[key] : budget?.person?.[key];
+    const response = budgetResponse(period, at, spentIn(costs, period, at, person), limitUsd);
+    const lines = await budgetLines({
+      caller,
+      org,
+      team,
+      config,
+      costs,
+      at,
+      // A person token's own budget applies to it whatever it asks about.
+      person: person ?? (caller.kind === "person" ? caller.person.id : undefined),
+    });
+    if (lines.length > 0) response.budgets = lines;
+    return c.json(response satisfies BudgetResponse);
   });
+
+  /**
+   * Every budget that applies: the person's [budget.person], the team's [budget] and the org's,
+   * in each period that has one. The gateway holds a person's and a team's when [budget] mode is
+   * hard; its own count of the spend is used for those when it answers, since that count is what
+   * makes it refuse requests. The org's total is shown only to whoever sees every team.
+   */
+  async function budgetLines(input: {
+    caller: Caller;
+    org: string;
+    team: string;
+    config: ResolvedSelfhostConfig | undefined;
+    costs: LedgerEvent[];
+    at: Date;
+    person: string | undefined;
+  }): Promise<BudgetLine[]> {
+    const { org, team, config, costs, at, person } = input;
+    const budget = config?.budget;
+    const hard = budgetMode(budget) === "hard" && gateway !== undefined;
+    const held = (limits: BudgetLimit[]) =>
+      new Set((hard && gateway ? gateway.client.held(limits) : []).map((l) => l.period));
+    const personHeld =
+      person === undefined
+        ? new Set<string>()
+        : held(keySettings({ kind: "person", team, person }, config).budgets);
+    const teamHeld = held(teamLimits(config));
+    const counted = await gatewayCounts(team, person, personHeld.size + teamHeld.size > 0);
+    const teamRaise = (field: string) =>
+      `An owner or admin of team ${team} can raise it: ${field} in the team's selfhost.toml (selfhost team policy push).`;
+    const lines: BudgetLine[] = [];
+    for (const period of BUDGET_PERIODS) {
+      const key = BUDGET_KEY[period];
+      const personLimit = budget?.person?.[key];
+      if (person !== undefined && personLimit !== undefined) {
+        const gatewaySpent = personHeld.has(period) ? counted.person.get(period) : undefined;
+        lines.push(
+          budgetLine({
+            scope: "person",
+            owner: person,
+            period,
+            now: at,
+            limitUsd: personLimit,
+            spentUsd: gatewaySpent ?? spentIn(costs, period, at, person),
+            enforcement: personHeld.has(period) ? "gateway" : "alert",
+            raise: teamRaise(`[budget.person] ${key}`),
+          }),
+        );
+      }
+      const teamLimit = budget?.[key];
+      if (teamLimit !== undefined) {
+        const gatewaySpent = teamHeld.has(period) ? counted.team.get(period) : undefined;
+        lines.push(
+          budgetLine({
+            scope: "team",
+            owner: team,
+            period,
+            now: at,
+            limitUsd: teamLimit,
+            spentUsd: gatewaySpent ?? spentIn(costs, period, at),
+            enforcement: teamHeld.has(period) ? "gateway" : "alert",
+            raise: teamRaise(`[budget] ${key}`),
+          }),
+        );
+      }
+    }
+    lines.push(...(await orgBudgetLines(input.caller, org, at)));
+    return sortBudgetLines(lines);
+  }
+
+  /** The gateway's own count of the person's key and the team's spend, by period, when it answers. */
+  async function gatewayCounts(team: string, person: string | undefined, wanted: boolean) {
+    const counts = { person: new Map<string, number>(), team: new Map<string, number>() };
+    if (!wanted || !gateway) return counts;
+    const fill = (into: Map<string, number>, budgets: GatewayBudget[] | undefined) => {
+      for (const b of budgets ?? []) if (b.spent_usd !== null) into.set(b.period, b.spent_usd);
+    };
+    try {
+      const [keys, gatewayTeams] = await Promise.all([
+        person === undefined ? Promise.resolve([]) : gateway.client.keys(),
+        gateway.client.teams(),
+      ]);
+      fill(
+        counts.person,
+        keys.find((k) => k.kind === "person" && k.team === team && k.person === person)?.budgets,
+      );
+      fill(counts.team, gatewayTeams.find((t) => t.team === team)?.budgets);
+    } catch (error) {
+      // The ledger's count stands in; the gateway's status says why it did not answer.
+      if (!(error instanceof GatewayError)) throw error;
+    }
+    return counts;
+  }
+
+  /** The org's [budget] lines; its spend only for a caller who sees every team of the org. */
+  async function orgBudgetLines(caller: Caller, org: string, at: Date): Promise<BudgetLine[]> {
+    const policy = org ? await orgs.getOrgPolicy(org) : undefined;
+    if (!policy) return [];
+    const parsed = parseConfig(policy.text);
+    const budget = parsed.ok ? parsed.config.budget : undefined;
+    const periods = BUDGET_PERIODS.filter((period) => budget?.[BUDGET_KEY[period]] !== undefined);
+    if (periods.length === 0) return [];
+    const all = await teams.listTeams(org);
+    const sees = (await ledTeams(caller, all)).length === all.length;
+    let costs: TeamCost[] = [];
+    if (sees) {
+      costs = await orgs.teamCosts(
+        org,
+        all.map((team) => team.id),
+        earliestStart(at).toISOString(),
+        at.toISOString(),
+      );
+    }
+    const events = all.flatMap((team) => costsOf(costs, team.id));
+    return periods.map((period) =>
+      budgetLine({
+        scope: "org",
+        owner: org,
+        period,
+        now: at,
+        limitUsd: budget?.[BUDGET_KEY[period]] ?? 0,
+        spentUsd: sees ? spentIn(events, period, at) : null,
+        enforcement: "alert",
+        raise: `The server's admin can raise it: [budget] ${BUDGET_KEY[period]} in org ${org}'s selfhost.toml.`,
+      }),
+    );
+  }
 
   router.on("GET", "/v1/orgs/:org/overview", async (c, caller) => {
     const org = c.req.param("org") ?? "";
@@ -299,6 +445,25 @@ export function orgRoutes(router: Router, ledger: Ledger, options: OrgRouteOptio
     const spent = led.reduce((sum, team) => sum + totalOf(costsOf(monthCosts, team.id)).usd, 0);
     return budgetResponse("month", now(), spent, monthly);
   }
+}
+
+/** The earliest start of this day, week and month: the month holds the rest, but a week may begin before it. */
+function earliestStart(at: Date): Date {
+  return new Date(
+    Math.min(periodRange("week", at).from.getTime(), periodRange("month", at).from.getTime()),
+  );
+}
+
+/** Spend in the period holding `at`, of one person or of everyone. */
+function spentIn(costs: LedgerEvent[], period: BudgetPeriod, at: Date, person?: string): number {
+  const start = periodRange(period, at).from.getTime();
+  return totalOf(
+    costs.filter(
+      (event) =>
+        Date.parse(event.ts) >= start &&
+        (person === undefined || dimensionValue(event, "person") === person),
+    ),
+  ).usd;
 }
 
 /** Teams of the org whose overview the caller sees: all with the admin token, else the ones it leads. */

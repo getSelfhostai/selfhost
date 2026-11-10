@@ -384,7 +384,10 @@ export type BudgetPeriod = (typeof BUDGET_PERIODS)[number];
 export const BudgetQuerySchema = Type.Object(
   {
     person: Type.Optional(
-      Type.String({ description: "Only this person's spend in the team. limit_usd is then null." }),
+      Type.String({
+        description:
+          "Only this person's spend in the team, against their [budget.person] limit. A person token's own budgets are in budgets either way.",
+      }),
     ),
     team: Type.Optional(
       Type.String({
@@ -395,7 +398,8 @@ export const BudgetQuerySchema = Type.Object(
     period: Type.Optional(
       StringEnum(BUDGET_PERIODS, {
         default: "month",
-        description: "The UTC day, the week from Monday, or the calendar month, now.",
+        description:
+          "The UTC day, the week from Monday, or the calendar month, now, for the top-level fields. budgets lists every period that has a budget.",
       }),
     ),
   },
@@ -405,15 +409,64 @@ export const BudgetQuerySchema = Type.Object(
 const NullableUsd = (description: string) =>
   Type.Union([Type.Number({ minimum: 0 }), Type.Null()], { description });
 
+export const BUDGET_SCOPES = ["person", "team", "org"] as const;
+export type BudgetScope = (typeof BUDGET_SCOPES)[number];
+
+/** Who or what stops spend at a budget: the AI gateway, or nothing (an alert only). */
+export const BUDGET_ENFORCEMENTS = ["gateway", "alert"] as const;
+export type BudgetEnforcement = (typeof BUDGET_ENFORCEMENTS)[number];
+
+export const BudgetLineSchema = Type.Object(
+  {
+    scope: StringEnum(BUDGET_SCOPES, {
+      description:
+        "person: [budget.person] of the team's selfhost.toml, each person's own. team: [budget] of the team's. org: [budget] of the org's, the total of every team.",
+    }),
+    owner: Type.String({ description: "The person, team or org id the budget is for." }),
+    period: StringEnum(BUDGET_PERIODS),
+    from: DateTime(),
+    to: DateTime({ description: "When the period ends and the budget starts again." }),
+    limit_usd: Type.Number({ minimum: 0 }),
+    spent_usd: NullableUsd(
+      "Spend in the period: the gateway's own count for a gateway budget when it answered, else the ledger's. null when the caller may not see it (the org's total needs every team).",
+    ),
+    remaining_usd: NullableUsd("limit_usd minus spent_usd, never below 0; null with spent_usd."),
+    enforcement: StringEnum(BUDGET_ENFORCEMENTS, {
+      description:
+        "gateway: [budget] mode = hard and the AI gateway holds this limit, so it refuses requests through it once spent. alert: spend is shown and alerts are raised; nothing is stopped.",
+    }),
+    cut_off: Type.Boolean({
+      description:
+        "true when the gateway refuses these requests now: a gateway budget whose spend reached its limit, until `to`.",
+    }),
+    raise: Type.String({
+      description: "Who can raise the budget and where: the selfhost.toml that sets it.",
+    }),
+  },
+  {
+    additionalProperties: false,
+    title: "BudgetLine",
+    description: "One budget that applies to the caller, with spend against it.",
+  },
+);
+
 export const BudgetResponseSchema = Type.Object(
   {
     period: StringEnum(BUDGET_PERIODS),
     from: DateTime(),
     to: DateTime(),
     spent_usd: Type.Number({ minimum: 0 }),
-    limit_usd: NullableUsd("Budget for the period, or null when none is set."),
+    limit_usd: NullableUsd(
+      "Budget for the period, or null when none is set: the person's with person, else the team's.",
+    ),
     remaining_usd: NullableUsd("limit_usd minus spent_usd, or null when no budget is set."),
     forecast_usd: NullableUsd("Projected spend for the whole period, or null without enough data."),
+    budgets: Type.Optional(
+      Type.Array(BudgetLineSchema, {
+        description:
+          "Every budget that applies to the caller, in every period that has one: the person's own (or the one asked about), the team's and the org's, each gateway-enforced or alert-only, cut-off ones first.",
+      }),
+    ),
   },
   { additionalProperties: false, title: "BudgetResponse" },
 );
@@ -578,6 +631,7 @@ export type PolicyCoverageQuery = Static<typeof PolicyCoverageQuerySchema>;
 export type PolicyCoverageResponse = Static<typeof PolicyCoverageResponseSchema>;
 export type BudgetQuery = Static<typeof BudgetQuerySchema>;
 export type BudgetResponse = Static<typeof BudgetResponseSchema>;
+export type BudgetLine = Static<typeof BudgetLineSchema>;
 export type DecisionQuery = Static<typeof DecisionQuerySchema>;
 export type DecisionsPage = Static<typeof DecisionsPageSchema>;
 export type RecordDecisionInput = Static<typeof RecordDecisionInputSchema>;

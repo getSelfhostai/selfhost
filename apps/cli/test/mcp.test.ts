@@ -6,13 +6,15 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { openLedger } from "@selfhost/ledger";
 import { uuidv7 } from "@selfhost/mcp";
-import { openReviewList } from "@selfhost/review";
-import type {
-  BudgetResponse,
-  CreateTeamResponse,
-  JoinResponse,
-  McpItemStatus,
-  PolicyResponse,
+import { openReviewList, refreshReviewList } from "@selfhost/review";
+import {
+  type BudgetResponse,
+  type CreateTeamResponse,
+  EVENT_SCHEMA,
+  type JoinResponse,
+  type McpItemStatus,
+  type PolicyResponse,
+  type ReviewItemsPage,
 } from "@selfhost/schema";
 import contract from "@selfhost/schema/mcp-tools.json" with { type: "json" };
 import { createApp } from "@selfhost/server/app";
@@ -20,7 +22,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { checkPreToolCall } from "../src/hooks/pretool.js";
 import { runHook } from "../src/hooks/receive.js";
 import { runImport } from "../src/import.js";
+import { inboxPaths, writeInboxCache } from "../src/inbox/store.js";
 import { mcpServer } from "../src/mcp/commands.js";
+import { spendSnapshotPath, writeSpendSnapshot } from "../src/mcp/spend.js";
 import { saveMembership } from "../src/team/config.js";
 import { run, tempDir } from "./run.js";
 
@@ -231,6 +235,100 @@ describe("selfhost mcp on stdio, solo", () => {
     expect((await call(client, "get_policy")).error).toBeUndefined();
     rmSync(cache);
     expect((await call(client, "search_events")).error).toBeUndefined();
+  }, 60_000);
+});
+
+describe("selfhost mcp while selfhost import --watch runs, solo", () => {
+  it("answers get_budget and list_review_items from what the watcher saves", async () => {
+    const m = machine();
+    const client = await stdio(m);
+    // What a running watcher keeps: the statusline cache with its pid, the spend and the inbox.
+    m.home.write(
+      ".selfhost/statusline.json",
+      JSON.stringify({
+        schema: "selfhost.statusline/v1",
+        written_at: new Date().toISOString(),
+        pid: process.pid,
+        person: PERSON,
+        today: { day: new Date().toISOString().slice(0, 10), usd: 0 },
+        warnings: [],
+        alarms: [],
+      }),
+    );
+    const watcher = await openLedger({ dataDir: "memory://" });
+    try {
+      const now = new Date();
+      await watcher.append([
+        {
+          id: uuidv7(now),
+          schema: EVENT_SCHEMA,
+          ts: now.toISOString(),
+          source: "local_log",
+          kind: "cost.recorded",
+          actor: { kind: "person", id: PERSON },
+          session_id: "sess-cost",
+          agent: { vendor: "claude_code" },
+          cost: {
+            input_tokens: 1,
+            output_tokens: 1,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
+            usd: 12.5,
+            estimated: true,
+          },
+        },
+        {
+          id: uuidv7(now),
+          schema: EVENT_SCHEMA,
+          ts: now.toISOString(),
+          source: "hook",
+          kind: "approval.requested",
+          actor: { kind: "person", id: PERSON },
+          session_id: "sess-wait",
+          agent: { vendor: "claude_code" },
+          data: { message: "Claude needs your permission to use Bash" },
+        },
+      ]);
+      await writeSpendSnapshot(watcher, PERSON, spendSnapshotPath({}, m.configPath), now);
+      const list = openReviewList(watcher, { now: () => now });
+      await refreshReviewList(watcher, list);
+      const { items } = await list.list({ state: "open" });
+      expect(items).toHaveLength(1);
+      writeInboxCache(inboxPaths(m.configPath).cache, {
+        schema: "selfhost.inbox_cache/v1",
+        written_at: now.toISOString(),
+        pid: process.pid,
+        server: null,
+        team: null,
+        person: PERSON,
+        all: false,
+        items,
+        snoozed: {},
+      });
+    } finally {
+      await watcher.close();
+    }
+
+    const budget = await call<BudgetResponse>(client, "get_budget");
+    expect(budget.error).toBeUndefined();
+    expect(budget.result).toMatchObject({ limit_usd: 50, spent_usd: 12.5, remaining_usd: 37.5 });
+    expect(budget.result.budgets).toEqual([
+      expect.objectContaining({
+        scope: "person",
+        period: "month",
+        enforcement: "alert",
+        cut_off: false,
+      }),
+    ]);
+    const open = await call<ReviewItemsPage>(client, "list_review_items");
+    expect(open.error).toBeUndefined();
+    expect(open.result.items.map((item) => item.title)).toEqual([
+      "Claude needs your permission to use Bash",
+    ]);
+    const answered = await call(client, "list_review_items", { state: "answered" });
+    expect(answered.error?.code).toBe("unavailable");
+    // Tools with nothing saved for them still say the watcher holds the ledger.
+    expect((await call(client, "search_events")).error?.code).toBe("unavailable");
   }, 60_000);
 });
 

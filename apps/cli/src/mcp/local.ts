@@ -7,12 +7,12 @@ import { ledgerData, type McpData, McpToolError } from "@selfhost/mcp";
 import { effectiveRules } from "@selfhost/policy";
 import { openReviewList } from "@selfhost/review";
 import {
-  type LedgerEvent,
   PAGE_LIMIT_MAX,
   type PolicyResponse,
   parseRemote,
+  type ReviewItem,
+  type ReviewItemsPage,
 } from "@selfhost/schema";
-import { BUDGET_KEY, budgetResponse, oneSourcePerSession, periodRange } from "@selfhost/spend";
 import { isAlive, readCache } from "../alerts/cache.js";
 import { localPerson } from "../alerts/person.js";
 import { statuslineCachePath } from "../alerts/settings.js";
@@ -21,6 +21,7 @@ import { exceptionsDir, isOwnException, issueGrants, readGrant } from "../hooks/
 import { loadPolicy } from "../hooks/pretool.js";
 import { spoolDir } from "../hooks/receive.js";
 import { inboxPaths, readInboxCache } from "../inbox/store.js";
+import { periodSpend, readSpendSnapshot, soloBudget, spendSnapshotPath } from "./spend.js";
 
 const run = promisify(execFile);
 
@@ -39,6 +40,38 @@ export interface LocalMcpOptions {
 
 const HELD =
   "selfhost import --watch holds the embedded ledger, which takes one process at a time. Stop it, or keep the ledger in Postgres (DATABASE_URL), to use this tool.";
+
+/**
+ * list_review_items while the watcher holds the ledger: from the copy of the person's open items
+ * it saves for selfhost inbox, ranked as the list returned them. Other states need the ledger.
+ */
+export function heldReviewItems(
+  items: ReviewItem[],
+  query: { state?: string; owner?: string; for?: string; limit?: number; cursor?: string },
+): ReviewItemsPage {
+  if (query.state !== undefined && query.state !== "open") {
+    throw new McpToolError(
+      "unavailable",
+      `While selfhost import --watch runs, only open items can be listed here (from the copy it saves). ${HELD}`,
+    );
+  }
+  const same = (a: string | undefined, b: string) => a?.toLowerCase() === b.toLowerCase();
+  const matching = items.filter(
+    (item) =>
+      (query.owner === undefined || item.owners.some((owner) => same(owner, query.owner ?? ""))) &&
+      // The copy holds the person's own items; on a laptop an item with no owner is theirs too.
+      (query.for === undefined ||
+        item.owners.length === 0 ||
+        item.owners.some((owner) => same(owner, query.for ?? "")) ||
+        same(item.requested_by, query.for)),
+  );
+  const start = Number(query.cursor ?? 0) || 0;
+  const end = start + (query.limit ?? PAGE_LIMIT_MAX);
+  return {
+    items: matching.slice(start, end),
+    next_cursor: end < matching.length ? String(end) : null,
+  };
+}
 
 /** owner/name of the repository at `cwd`, from its origin remote. */
 async function repoAt(cwd: string): Promise<string | undefined> {
@@ -90,6 +123,11 @@ export function localMcpData(
     return isAlive(inbox?.pid) || isAlive(readCache(statuslineCachePath(io))?.pid);
   }
 
+  /** The watcher's saved copy, when it is alive to keep it fresh. */
+  function heldCopy<T extends { pid: number | null }>(copy: T | undefined): T | undefined {
+    return copy && isAlive(copy.pid) ? copy : undefined;
+  }
+
   const shared = ledgerData({
     use,
     person,
@@ -110,6 +148,17 @@ export function localMcpData(
 
   return {
     ...shared,
+
+    async reviewItems(query) {
+      if (embedded && watcherHolds()) {
+        const inbox = heldCopy(
+          readInboxCache(inboxPaths(io.configPath).cache, { server: null, team: null }),
+        );
+        if (!inbox) throw new McpToolError("unavailable", HELD);
+        return heldReviewItems(inbox.items, query);
+      }
+      return shared.reviewItems(query);
+    },
 
     async policy(query) {
       const loaded = policyOf();
@@ -134,27 +183,23 @@ export function localMcpData(
       return response;
     },
 
-    budget: (query) =>
-      use(async (ledger) => {
-        const period = query.period ?? "month";
-        const at = now();
-        const costs: LedgerEvent[] = [];
-        let cursor: string | undefined;
-        do {
-          const page = await ledger.query({
-            kind: "cost.recorded",
-            from: periodRange(period, at).from.toISOString(),
-            limit: PAGE_LIMIT_MAX,
-            ...(query.person ? { person: query.person } : {}),
-            ...(cursor ? { cursor } : {}),
-          });
-          costs.push(...page.events);
-          cursor = page.nextCursor;
-        } while (cursor);
-        const spent = oneSourcePerSession(costs).reduce((sum, e) => sum + (e.cost?.usd ?? 0), 0);
-        const budget = query.person === undefined ? policyOf().config.budget : undefined;
-        return budgetResponse(period, at, spent, budget?.[BUDGET_KEY[period]]);
-      }),
+    async budget(query) {
+      const loaded = policyOf();
+      const where = loaded.source?.path ?? "selfhost.toml";
+      const answer = (spent: Awaited<ReturnType<typeof periodSpend>>) =>
+        soloBudget(query, spent, person, loaded.config.budget, now(), where);
+      if (embedded && watcherHolds()) {
+        const snapshot = heldCopy(readSpendSnapshot(spendSnapshotPath(io.env, io.configPath)));
+        const known =
+          query.person === undefined ||
+          query.person.toLowerCase() === snapshot?.person.toLowerCase();
+        if (!snapshot || !known) throw new McpToolError("unavailable", HELD);
+        return answer(snapshot.spent);
+      }
+      return use(async (ledger) =>
+        answer(await periodSpend(ledger, query.person ?? person, now())),
+      );
+    },
 
     async grant(item) {
       if (!isOwnException(exceptions, item.id)) return undefined;

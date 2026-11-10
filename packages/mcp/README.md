@@ -9,19 +9,19 @@ same tools answer on a laptop and on the team server, through the official
 
 ## Tools
 
-| Tool                  | Writes | What it answers                                                                                                                                                                                       |
-| --------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `get_policy`          | no     | The rules that apply to you in this repo, after team overrides. `text` and `config.rules` only with `full: true`.                                                                                     |
-| `get_budget`          | no     | Spend, the budget and `remaining_usd` for the day, week or month.                                                                                                                                     |
-| `list_review_items`   | no     | Your pending items: open items you own or your own sessions raised (`mine: false` for the team's). Briefs and all but 5 source event ids only with `full: true`.                                      |
-| `search_events`       | no     | The ledger by person, agent, model, session, kind and time.                                                                                                                                           |
-| `search_decisions`    | no     | Past human decisions and rule verdicts by path, topic, rule or person.                                                                                                                                |
-| `list_file_runs`      | no     | Past runs that touched a file or folder: who, which agent, when, which tools.                                                                                                                         |
-| `list_active_on_file` | no     | Sessions with calls on a file or folder in the last `within_minutes` (default 120), yours marked `you`.                                                                                               |
-| `ask_human`           | yes    | Opens a question on the review list and returns its `item_id` at once.                                                                                                                                |
-| `request_exception`   | yes    | Adds the agent's reason to the exception item a block named, and returns its `item_id`.                                                                                                               |
-| `get_answer`          | no     | The item's state and, once answered, the verdict, who and why; for an approved exception made on this machine, the one-time grant.                                                                    |
-| `record_decision`     | yes    | The person's own decision on an item they asked the agent to answer, such as a pull request. Items an agent waits on, proposals to add to the team's context, and budget and alert items are refused. |
+| Tool                  | Writes | What it answers                                                                                                                                                                                                |
+| --------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `get_policy`          | no     | The rules that apply to you in this repo, after team overrides. `text` and `config.rules` only with `full: true`.                                                                                              |
+| `get_budget`          | no     | Spend, the budget and `remaining_usd` for the day, week or month, and `budgets`: every budget that applies to the caller (person, team, org), gateway-enforced or alert-only, and which one cuts them off now. |
+| `list_review_items`   | no     | Your pending items: open items you own or your own sessions raised (`mine: false` for the team's). Briefs and all but 5 source event ids only with `full: true`.                                               |
+| `search_events`       | no     | The ledger by person, agent, model, session, kind and time.                                                                                                                                                    |
+| `search_decisions`    | no     | Past human decisions and rule verdicts by path, topic, rule or person.                                                                                                                                         |
+| `list_file_runs`      | no     | Past runs that touched a file or folder: who, which agent, when, which tools.                                                                                                                                  |
+| `list_active_on_file` | no     | Sessions with calls on a file or folder in the last `within_minutes` (default 120), yours marked `you`.                                                                                                        |
+| `ask_human`           | yes    | Opens a question on the review list and returns its `item_id` at once.                                                                                                                                         |
+| `request_exception`   | yes    | Adds the agent's reason to the exception item a block named, and returns its `item_id`.                                                                                                                        |
+| `get_answer`          | no     | The item's state and, once answered, the verdict, who and why; for an approved exception made on this machine, the one-time grant.                                                                             |
+| `record_decision`     | yes    | The person's own decision on an item they asked the agent to answer, such as a pull request. Items an agent waits on, proposals to add to the team's context, and budget and alert items are refused.          |
 
 List tools return 10 items by default (`MCP_LIMIT_DEFAULT`, at most 50). No answer goes over
 `MCP_RESPONSE_TOKEN_BUDGET` (6,000) tokens: a page that would comes back shorter, with
@@ -53,8 +53,10 @@ identical call again and it is allowed once.
 
 - **Solo**: `selfhost mcp` in `apps/cli` serves the tools on stdio from this machine's ledger
   and the selfhost.toml the hooks use for the repository it starts in. The embedded ledger is
-  opened for each call and closed after it; while `selfhost import --watch` holds it, the tools
-  that read it answer `unavailable`.
+  opened for each call and closed after it. While `selfhost import --watch` holds it,
+  `get_budget` answers from the spend the watcher saves (`~/.selfhost/feed/spend.json`, a few
+  times a minute) and `list_review_items` from the person's open items it saves for `selfhost
+  inbox`; other states and the other tools that read the ledger answer `unavailable`.
 - **Team**: the team server serves `POST /v1/mcp` for person tokens (`apps/server`). On a laptop
   in a team, `selfhost mcp` hands every call to that endpoint with the person token from
   `selfhost join`, so agents keep one local entry and no token is written into their configs; it

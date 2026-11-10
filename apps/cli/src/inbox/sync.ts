@@ -210,6 +210,11 @@ export interface InboxRefreshOptions {
 export interface InboxRefresh {
   /** Schedules a refresh: right away, or once the minimum interval has passed. */
   refresh(): void;
+  /**
+   * Refreshes now, after any refresh already running, and resolves when it is done: for work
+   * that reads the list right after, such as the pushes for items an agent waits on.
+   */
+  refreshNow(): Promise<void>;
   /** Waits for a running refresh and stops scheduling new ones. */
   close(): Promise<void>;
 }
@@ -277,6 +282,13 @@ export async function startInboxRefresh(opts: InboxRefreshOptions): Promise<Inbo
 
   return {
     refresh: schedule,
+    refreshNow() {
+      if (closed) return running;
+      if (timer) clearTimeout(timer);
+      timer = undefined;
+      running = running.then(run);
+      return running;
+    },
     async close() {
       closed = true;
       clearInterval(interval);

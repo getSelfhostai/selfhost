@@ -42,6 +42,8 @@ export interface IntegrationRouteOptions {
    * selfhost.toml), shown as the router of a team whose policy picks none.
    */
   gateway?: ServerGateway;
+  /** Called after a PUT changed a team's selfhost.toml, so the gateway gets it now. */
+  policyChanged?: () => void;
 }
 
 /** What the integrations list needs of the server's own gateway. */
@@ -210,6 +212,7 @@ export function integrationRoutes(
           );
         }
         await teams.setPolicy(team, text);
+        options.policyChanged?.();
       }
       // A PUT always checks again, also when it changed nothing, so a fix shows at once.
       return c.json(await respond(team, true));

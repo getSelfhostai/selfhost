@@ -3,7 +3,9 @@ import { join as pathJoin } from "node:path";
 import { bifrostClient } from "@selfhost/gateway";
 import { fakeBifrost } from "@selfhost/gateway/testing";
 import { type Ledger, openLedger } from "@selfhost/ledger";
+import { openReviewList, refreshReviewList } from "@selfhost/review";
 import {
+  type BudgetResponse,
   type CreateTeamResponse,
   type GatewayKeysResponse,
   type GatewayStatus,
@@ -15,7 +17,13 @@ import {
 import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
-import { type Gateway, gatewayFromEnv, readUsageNow, syncNow } from "../src/gateway.js";
+import {
+  type Gateway,
+  gatewayFromEnv,
+  readUsageNow,
+  startGatewayJob,
+  syncNow,
+} from "../src/gateway.js";
 import { caller, TOKEN } from "./helpers.js";
 
 const LOGS = JSON.parse(
@@ -218,6 +226,94 @@ describe("gateway sync and usage", () => {
       actor: { id: "ada@example.com" },
       data: { alert: "budget_exceeded", period: "day", limit_usd: 50, spent_usd: 51 },
     });
+  });
+});
+
+describe("budgets the gateway holds", () => {
+  withServer();
+
+  it("pushes a changed budget to the gateway at once, not at the next periodic sync", async () => {
+    const log: string[] = [];
+    const job = startGatewayJob(ledger, gateway, {
+      intervalMs: 60 * 60 * 1000,
+      log: (line) => log.push(line),
+    });
+    try {
+      await job.run();
+      const { ada } = await platform();
+      const budgetsOf = () => [...fake.teams.values()].map((team) => team.budgets);
+      await job.push();
+      expect(budgetsOf()).toEqual([[expect.objectContaining({ max_limit: 2000 })]]);
+      const raised = POLICY.replace("monthly_usd = 2000", "monthly_usd = 3000");
+      expect((await caller(app, ada)("/v1/policy", "PUT", { text: raised })).status).toBe(200);
+      // The PUT started the push; waiting on another one waits for it too.
+      await job.push();
+      expect(budgetsOf()).toEqual([[expect.objectContaining({ max_limit: 3000 })]]);
+      expect(log.filter((line) => line.includes("error"))).toEqual([]);
+    } finally {
+      job.stop();
+    }
+    expect(gateway.policyChanged).toBeUndefined();
+  });
+
+  it("reports every budget that applies to a person, and the one cutting them off", async () => {
+    const { ada } = await platform();
+    await caller(app, ada)("/v1/gateway/keys", "POST", {});
+    for (const key of fake.keys.values()) {
+      for (const budget of key.budgets as { current_usage: number }[]) budget.current_usage = 51;
+    }
+    const org = await admin()("/v1/orgs/default/policy", "PUT", {
+      text: "version = 1\n[budget]\nmonthly_usd = 10000\n",
+    });
+    expect(org.status).toBe(200);
+
+    const res = await caller(app, ada)("/v1/budget?period=day&person=ada%40example.com");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as BudgetResponse;
+    // The person's own daily budget, not null as before.
+    expect(body).toMatchObject({ period: "day", limit_usd: 50 });
+    expect(
+      body.budgets?.map((b) => [b.scope, b.owner, b.period, b.enforcement, b.cut_off]),
+    ).toEqual([
+      ["person", "ada@example.com", "day", "gateway", true],
+      ["team", "platform", "month", "gateway", false],
+      ["org", "default", "month", "alert", false],
+    ]);
+    const [person, , orgLine] = body.budgets ?? [];
+    expect(person).toMatchObject({ limit_usd: 50, spent_usd: 51, remaining_usd: 0 });
+    expect(person?.raise).toContain("[budget.person] daily_usd");
+    expect(orgLine?.raise).toContain("org default");
+
+    // Without person a person token still gets its own budget, next to the team's.
+    const mine = (await (await caller(app, ada)("/v1/budget")).json()) as BudgetResponse;
+    expect(mine).toMatchObject({ period: "month", limit_usd: 2000 });
+    expect(mine.budgets?.[0]).toMatchObject({ scope: "person", cut_off: true });
+
+    // An alert-only [budget] is said to be one: nothing stops requests.
+    const soft = POLICY.replace('mode = "hard"', 'mode = "alert"');
+    expect((await caller(app, ada)("/v1/policy", "PUT", { text: soft })).status).toBe(200);
+    const alertOnly = (await (await caller(app, ada)("/v1/budget")).json()) as BudgetResponse;
+    expect(alertOnly.budgets?.filter((b) => b.scope !== "org").map((b) => b.enforcement)).toEqual([
+      "alert",
+      "alert",
+    ]);
+    expect(alertOnly.budgets?.some((b) => b.cut_off)).toBe(false);
+  });
+
+  it("names the person whose gateway budget is spent in the item the owners read", async () => {
+    const { ada } = await platform();
+    await caller(app, ada)("/v1/gateway/keys", "POST", {});
+    for (const key of fake.keys.values()) {
+      for (const budget of key.budgets as { current_usage: number }[]) budget.current_usage = 51;
+    }
+    const now = () => new Date("2026-11-05T12:00:00Z");
+    expect((await syncNow(ledger, gateway, now)).alerts).toBe(1);
+    const list = openReviewList(ledger, { now });
+    await refreshReviewList(ledger, list);
+    const { items } = await list.list({});
+    expect(items.map((item) => item.title)).toEqual([
+      "ada@example.com spent the day's gateway budget of $50",
+    ]);
   });
 });
 
