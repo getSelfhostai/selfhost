@@ -90,7 +90,12 @@ describe("importAll", () => {
     const second = await importAll(writer, FIXTURE_OPTS);
     expect(first.accepted).toBeGreaterThan(0);
     expect(first.duplicates).toBe(0);
-    expect(second).toEqual({ files: first.files, accepted: 0, duplicates: first.accepted });
+    expect(second).toEqual({
+      files: first.files,
+      accepted: 0,
+      duplicates: first.accepted,
+      skipped: first.skipped,
+    });
   });
 
   it("adds only the new entries after a log grows", async () => {

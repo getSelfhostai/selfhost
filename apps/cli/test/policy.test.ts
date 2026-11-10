@@ -213,7 +213,10 @@ describe("selfhost policy test", () => {
     const team = await run(["policy", "test", "--tool", "Bash", "--team", "nope"], {
       cwd: dir.root,
     });
-    expect(team.err).toMatch(/--team: "nope" has no \[teams.nope\] table/);
+    expect(team.err).toContain(
+      `--team: looked for a [teams.nope] table in ${join(dir.root, "selfhost.toml")} and there is none. --team names a [teams.<name>] table of the policy, not a team on the server.`,
+    );
+    expect(team.err).toMatch(/It has no \[teams.<name>\] tables|Tables there: /);
   });
 
   it("refuses an invalid policy with its errors", async () => {

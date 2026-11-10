@@ -377,7 +377,7 @@ function write(path: string, content: string, mode = 0o644): void {
 export function policyPackage(options: PackageOptions, io: PolicyPackageIo): MdmBundle {
   const mdm = parseMdm(options.mdm);
   const { location, config } = loadPolicy(io.cwd, options.config, io);
-  checkTeam(config, options.team);
+  checkTeam(config, options.team, location.path);
   const result = compilePolicy(config, {
     team: options.team,
     ...(options.hookCommand ? { hookCommand: options.hookCommand } : {}),

@@ -199,6 +199,43 @@ describe("likely false positives", () => {
   });
 });
 
+describe("built-in checks and secret files", () => {
+  it("never calls a read of a secret file a likely false positive", () => {
+    const starter = parseConfig(`version = 1
+[[rules]]
+id = "no-env-files"
+mode = "observe"
+match = { path = "**/.env?(.!(example|sample|template))" }
+action = "block"
+message = "Agents do not read or write .env files."
+`);
+    if (!starter.ok) throw new Error(JSON.stringify(starter.errors));
+    const [, read] = observed(
+      "read-env-starter",
+      day(6),
+      "s5",
+      file("Read", ".env"),
+      "no-env-files",
+    );
+    expect(falsePositiveReason(read, starter.config.rules[0])).toBeNull();
+  });
+
+  it("says a built-in check's mode comes from its section, not that it left selfhost.toml", () => {
+    const [, hit] = observed(
+      "pkg",
+      day(4),
+      "s6",
+      bash("npm install left-padd"),
+      "packages.not_found",
+    );
+    const report = buildPolicyReport([hit], { ...window, now, rules });
+    expect(report.brief).toContain(
+      "A built-in check, not a [[rules]] entry: its mode is set by [packages].",
+    );
+    expect(report.brief).not.toContain("No longer in selfhost.toml");
+  });
+});
+
 describe("observedRules", () => {
   it("counts hits, sessions and likely false positives per rule", () => {
     const observedNow = observedRules(

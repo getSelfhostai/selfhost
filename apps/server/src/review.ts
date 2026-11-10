@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { Ledger } from "@selfhost/ledger";
+import { databaseOf, type Ledger } from "@selfhost/ledger";
 import {
   AlreadyAnsweredError,
   CODEOWNERS_PATHS,
@@ -69,6 +69,18 @@ export interface ReviewRouteOptions {
 }
 
 const apiError = (code: string, message: string): ApiError => ({ error: { code, message } });
+
+/**
+ * An event in one of these teams (any team for the admin token) that names the item and that
+ * the refresh has not read yet: a blocked call's exception, or an agent's request through MCP.
+ */
+const PENDING = `
+SELECT 1 AS found FROM events e
+WHERE e.ingested_at >= now() - interval '1 hour'
+  AND (lower(e.body#>>'{data,exception,id}') = $1 OR lower(e.body#>>'{links,item_id}') = $1)
+  AND ($2::text[] IS NULL OR coalesce(e.team, '') = ANY($2::text[]))
+  AND NOT EXISTS (SELECT 1 FROM review_signals s WHERE s.event_id = e.id)
+LIMIT 1`;
 
 const decisionBody = createValidator(DecisionRequestSchema);
 const snoozeBody = createValidator(SnoozeRequestSchema);
@@ -146,6 +158,28 @@ export function reviewRoutes<E extends Env>(
   };
   const listWith = async (c: Context, id: string): Promise<ReviewList> =>
     (await holder(c, id)).list;
+  /**
+   * The 404 for an item none of the caller's lists hold. An item the server has the event for
+   * but has not built yet (it builds new items every 15 seconds) says so, with a Retry-After.
+   */
+  const missing = async (c: Context, id: string) => {
+    const person = options.person?.(c);
+    const teams = person ? ((await options.teams?.(c)) ?? [person.team]) : null;
+    const rows = await databaseOf(ledger).query<{ found: number }>(PENDING, [
+      id.toLowerCase(),
+      teams,
+    ]);
+    if (rows.length === 0) return c.json(apiError("not_found", `No review item ${id}`), 404);
+    const seconds = Math.ceil(REVIEW_REFRESH_INTERVAL_MS / 1000);
+    c.header("Retry-After", String(seconds));
+    return c.json(
+      apiError(
+        "not_found",
+        `Review item ${id} is still being prepared: the server adds it to the list within ${seconds} seconds. Try again then.`,
+      ),
+      404,
+    );
+  };
   const configOf = teamConfig(ledger, options.config);
   /** Items with links to their run in the console and in the team's tracer. */
   const linked = async (c: Context, items: ReviewItem[], team: string | undefined) =>
@@ -220,7 +254,7 @@ export function reviewRoutes<E extends Env>(
   app.get("/v1/review-items/:id", async (c) => {
     const id = c.req.param("id");
     const item = await (await listWith(c, id)).get(id);
-    if (!item) return c.json(apiError("not_found", `No review item ${id}`), 404);
+    if (!item) return missing(c, id);
     const [withLinks] = await linked(c, [item], options.person?.(c)?.team);
     return c.json(withLinks ?? item);
   });
@@ -296,9 +330,7 @@ export function reviewRoutes<E extends Env>(
       return c.json(await (await listWith(c, id)).snooze(id, { by, until: body.until }));
     } catch (error) {
       if (error instanceof AlreadyAnsweredError) return conflict(c, error);
-      if (error instanceof ReviewItemNotFoundError) {
-        return c.json(apiError("not_found", error.message), 404);
-      }
+      if (error instanceof ReviewItemNotFoundError) return missing(c, id);
       if (error instanceof ReviewInputError) {
         return c.json(apiError("invalid_request", error.message), 400);
       }

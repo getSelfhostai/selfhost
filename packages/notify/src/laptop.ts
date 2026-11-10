@@ -10,10 +10,25 @@ const LAPTOP = "laptop";
 const CLI_ACTOR = { kind: "system" as const, id: "selfhost" };
 
 /**
+ * Of the alerts a period's spend raises, only the highest share crossed: spend that jumps past
+ * 50% and 80% between two checks raises the 80% alert alone, not both.
+ */
+export function highestShares(alerts: readonly LedgerEvent[]): LedgerEvent[] {
+  const top = new Map<string, LedgerEvent>();
+  const percent = (event: LedgerEvent) => Number(event.data?.percent ?? 0);
+  for (const alert of alerts) {
+    const period = String(alert.data?.period ?? "");
+    const held = top.get(period);
+    if (!held || percent(alert) > percent(held)) top.set(period, alert);
+  }
+  return [...top.values()];
+}
+
+/**
  * The 50%, 80% and 100% alerts a laptop's own spend raises against [budget] in its
  * selfhost.toml, built by the team server's threshold code and written as the CLI writes its
  * alerts, so a later `selfhost join` can send them up. Each id names the person, so two laptops
- * over the same budget raise two alerts.
+ * over the same budget raise two alerts. Only the highest share crossed is raised.
  */
 export function laptopBudgetAlerts(
   costs: readonly LedgerEvent[],
@@ -30,7 +45,7 @@ export function laptopBudgetAlerts(
       .filter((event) => Date.parse(event.ts) >= start && Date.parse(event.ts) <= now.getTime())
       .reduce((sum, event) => sum + (event.cost?.usd ?? 0), 0);
   };
-  return spendAlerts(LAPTOP, budget, spent, now).map((alert) => {
+  return highestShares(spendAlerts(LAPTOP, budget, spent, now)).map((alert) => {
     const { team: _team, ...rest } = alert;
     const data = alert.data ?? {};
     const window = typeof data.window === "string" ? data.window : alert.ts;

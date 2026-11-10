@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Empty, Failed, Loading, NoTeam, PageHeader } from "@/components/common";
+import { Empty, Failed, Loading, PageHeader } from "@/components/common";
+import { NoTeamYet, SoloIntegrations } from "@/components/solo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -124,12 +125,7 @@ export function IntegrationsScreen() {
   );
 
   if (!team) {
-    return (
-      <>
-        <PageHeader title="Integrations" />
-        <NoTeam />
-      </>
-    );
+    return <NoTeamYet title="Integrations" render={(solo) => <SoloIntegrations solo={solo} />} />;
   }
   const canWrite = can(me, team, "settings.write");
   const data = loaded.data;

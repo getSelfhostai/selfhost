@@ -273,7 +273,10 @@ COMPOSE_FILE=compose.yml:compose.tls.yml:compose.notify.yml
 - Each person adds their own targets as Apprise URLs with `selfhost notify add
   tgram://<bot token>/<chat id>` (or `-` to read the URL from stdin), or in the console's Team
   screen. The URLs hold secrets, so they are kept in the server's database only: the API, the
-  CLI, the console and the logs show a target's name and service, never its URL.
+  CLI, the console and the logs show a target's name and service, never its URL. Members add
+  hosted services (Telegram, Slack, Discord, Teams and the like, or `ntfys://<topic>` on
+  ntfy.sh); a URL with a host of its own (email through any SMTP host, a self-hosted ntfy,
+  `json://` or a webhook) needs a team owner or admin, since the server would connect to it.
 - Only the server reaches Apprise, on the compose network: no port is published, and Apprise
   runs stateless (`APPRISE_STATEFUL_MODE=disabled`), so it stores no URL either.
 - An agent waiting on a person is pushed to them at once; everything else goes into their

@@ -15,6 +15,10 @@ export interface FileState {
   path: string;
   offset: number;
   mapper: LineMapper;
+  /** Complete lines read, blank ones aside. */
+  lines: number;
+  /** Complete lines that are not a JSON object, skipped. */
+  skipped: number;
 }
 
 export function createFileState(vendor: Vendor, path: string, opts: ImportOptions): FileState {
@@ -25,13 +29,14 @@ export function createFileState(vendor: Vendor, path: string, opts: ImportOption
     logPrompts: opts.logPrompts === true,
   };
   const mapper = vendor === "claude_code" ? new ClaudeCodeMapper(ctx) : new CodexMapper(ctx);
-  return { vendor, path, offset: 0, mapper };
+  return { vendor, path, offset: 0, mapper, lines: 0, skipped: 0 };
 }
 
-function parseLine(bytes: Buffer): Record<string, unknown> | undefined {
+/** A line's JSON object; "blank" for an empty line, undefined for one that is not an object. */
+function parseLine(bytes: Buffer): Record<string, unknown> | "blank" | undefined {
   let text = bytes.toString("utf8");
   if (text.endsWith("\r")) text = text.slice(0, -1);
-  if (text.trim() === "") return undefined;
+  if (text.trim() === "") return "blank";
   try {
     const value: unknown = JSON.parse(text);
     return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -79,7 +84,11 @@ export async function readChunk(
         index = data.indexOf(NEWLINE, lineStart)
       ) {
         const json = parseLine(data.subarray(lineStart, index));
-        if (json) out.push(...state.mapper.line(json, carryStart + lineStart));
+        if (json !== "blank") {
+          state.lines += 1;
+          if (json) out.push(...state.mapper.line(json, carryStart + lineStart));
+          else state.skipped += 1;
+        }
         lineStart = index + 1;
       }
       carryStart += lineStart;
@@ -88,7 +97,8 @@ export async function readChunk(
     state.offset = carryStart;
     if (carry.length > 0) {
       const json = parseLine(carry);
-      if (json) {
+      if (json && json !== "blank") {
+        state.lines += 1;
         out.push(...state.mapper.line(json, carryStart));
         state.offset = carryStart + carry.length;
       }

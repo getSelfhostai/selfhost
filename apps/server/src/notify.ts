@@ -269,7 +269,7 @@ export function notifyRoutes(
     const name = body.name ?? freeName(serviceOf(url), taken);
     const badName = nameProblem(name);
     if (badName) return c.json(apiError("invalid_request", `name: ${badName}`), 400);
-    if (taken.has(name) || !(await store.addTarget(id, name, url))) {
+    if (taken.has(name) || !(await store.addTarget(id, name, url, now()))) {
       return c.json(apiError("target_exists", `You already have a target named ${name}.`), 409);
     }
     return c.json(await settings(id), 201);

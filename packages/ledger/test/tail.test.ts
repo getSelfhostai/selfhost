@@ -112,6 +112,51 @@ describe("tailEvents", () => {
     expect(rest.rows).toHaveLength(3);
   });
 
+  it("gives the person of a session to its policy and log events, and filters on it", async () => {
+    const start = await tailEvents(db(), { from: FROM });
+    await ledger.append([
+      event({
+        kind: "session.started",
+        session_id: "s-cy",
+        actor: { kind: "person", id: "cy@example.com" },
+      }),
+      event({
+        kind: "policy.evaluated",
+        session_id: "s-cy",
+        actor: { kind: "system", id: "selfhost-policy" },
+        decision: { verdict: "block", by: "selfhost-policy", rule_id: "r", mode: "enforce" },
+      }),
+      event({
+        kind: "tool.called",
+        session_id: "s-cy",
+        source: "local_log",
+        actor: { kind: "agent", id: "claude_code:session:s-cy" },
+        tool: { name: "Bash" },
+      }),
+      event({
+        kind: "policy.evaluated",
+        session_id: "s-other",
+        actor: { kind: "system", id: "selfhost-policy" },
+        decision: { verdict: "block", by: "selfhost-policy", rule_id: "r", mode: "enforce" },
+        data: { sent_by: "cy@example.com" },
+      }),
+    ]);
+    const page = await tailEvents(db(), { from: FROM, after: start.cursor });
+    expect(page.rows.map((row) => row.person)).toEqual([
+      "cy@example.com",
+      "cy@example.com",
+      "cy@example.com",
+      "cy@example.com",
+    ]);
+    const policy = await tailEvents(db(), {
+      from: FROM,
+      backfill: true,
+      person: "cy@example.com",
+      kinds: ["policy"],
+    });
+    expect(policy.rows.map((row) => row.event.session_id)).toEqual(["s-cy", "s-other"]);
+  });
+
   it("reads only the teams given", async () => {
     await ledger.append([event({ kind: "prompt.submitted", session_id: "s-web" })], {
       team: "web",

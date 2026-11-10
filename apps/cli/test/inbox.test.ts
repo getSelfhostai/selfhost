@@ -275,6 +275,30 @@ describe("selfhost inbox in team mode", () => {
     ]);
   });
 
+  it("review list reads the team server's list, the one inbox reads", async () => {
+    blockNetwork();
+    const list = new FakeList([
+      item(1),
+      item(2, { owners: [BOB] }),
+      item(3, { state: "dismissed" }),
+    ]);
+    const server = teamServer(list);
+    const { configPath } = joined();
+    const result = await run(["review", "list", "--json"], {
+      configPath,
+      fetch: server.fetch,
+      now: NOW,
+    });
+    expect(result.err).toBe("");
+    const report = parse(result.out);
+    expect(report).toMatchObject({ schema: "selfhost.review_list/v1", source: "server" });
+    expect(report.items.map((entry: ReviewItem) => entry.title).sort()).toEqual([
+      "Item 1",
+      "Item 2",
+    ]);
+    expect(server.calls).toEqual([`GET ${SERVER}/v1/review-items?state=open`]);
+  });
+
   it("approves and denies by id prefix; the server records each decision once", async () => {
     blockNetwork();
     const list = new FakeList([item(1), item(2)]);

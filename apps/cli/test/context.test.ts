@@ -127,6 +127,20 @@ describe("selfhost context compile", () => {
     expect(existsSync(dir.path("AGENTS.md"))).toBe(false);
   });
 
+  it("writes a first compile only for the agents found on this machine", async () => {
+    const dir = tempDir("context-detected");
+    mkdirSync(dir.path(".git"));
+    dir.write(".selfhost/context/rules/style.md", "Keep functions short.\n");
+    const home = tempDir("context-home");
+    home.write(".claude/settings.json", "{}\n");
+    const result = await run(["context", "compile", "--json"], { cwd: dir.root, home: home.root });
+    expect(report(result.out).agents).toEqual(["claude_code"]);
+    expect(existsSync(dir.path("CLAUDE.md"))).toBe(true);
+    for (const file of ["GEMINI.md", "opencode.json", ".cursor", ".gemini"]) {
+      expect(existsSync(dir.path(file)), file).toBe(false);
+    }
+  });
+
   it("rejects an unknown agent", async () => {
     const dir = repo();
     const result = await run(["context", "compile", "--agent", "vim", "--json"], { cwd: dir.root });

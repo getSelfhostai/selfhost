@@ -236,6 +236,19 @@ function payload(script: string, target: string): string | undefined {
 }
 
 describe("selfhost policy package --mdm", () => {
+  it("says which [teams.<name>] table --team looked for, and lists the ones there are", async () => {
+    const dir = tempDir("managed-teams");
+    mkdirSync(dir.path(".git"));
+    dir.write("selfhost.toml", `${POLICY}\n[teams.web]\nmembers = ["dev@example.com"]\n`);
+    const result = await run(["policy", "package", "--mdm", "jamf", "--team", "platform"], {
+      cwd: dir.root,
+    });
+    expect(result.code).toBe(1);
+    expect(result.err).toBe(
+      `--team: looked for a [teams.platform] table in ${dir.path("selfhost.toml")} and there is none. --team names a [teams.<name>] table of the policy, not a team on the server. Tables there: [teams.web].`,
+    );
+  });
+
   it("bundles a Jamf script that carries every macOS file, an extension attribute and a README", async () => {
     const dir = repo();
     const result = await run(["policy", "package", "--mdm", "jamf", "--json"], { cwd: dir.root });

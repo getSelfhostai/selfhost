@@ -1,5 +1,5 @@
-import { hostname } from "node:os";
-import { type Env, type Probes, systemProbes } from "@selfhost/agents";
+import { homedir, hostname } from "node:os";
+import { detectAgents, type Env, type Probes, systemProbes } from "@selfhost/agents";
 import { Command } from "commander";
 import pkg from "../package.json" with { type: "json" };
 import {
@@ -206,6 +206,9 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
           write: deps.write,
           json: options.json,
           configPath: deps.configPath ?? defaultConfigPath(),
+          platform: deps.platform,
+          ...(deps.systemRoot === undefined ? {} : { systemRoot: deps.systemRoot }),
+          ...(deps.home === undefined ? {} : { home: deps.home }),
         }),
       );
     });
@@ -379,6 +382,7 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       fetch: deps.fetch,
       retry: deps.retry,
       ask: deps.ask,
+      ...(deps.systemRoot === undefined ? {} : { systemRoot: deps.systemRoot }),
     }),
     fail,
   );
@@ -508,6 +512,15 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       setExitCode: deps.setExitCode,
       configPath: deps.configPath ?? defaultConfigPath(),
       fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
+      detect: () =>
+        detectAgents({
+          home: deps.home ?? homedir(),
+          env: deps.env,
+          platform: deps.platform,
+          ...deps.probes,
+        })
+          .filter((agent) => agent.installed || agent.configExists)
+          .map((agent) => agent.id),
     }),
     fail,
   );
@@ -598,6 +611,7 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       write: deps.write,
       now: deps.now,
       configPath: deps.configPath ?? defaultConfigPath(),
+      ...(deps.fetch ? { fetch: deps.fetch } : {}),
     }),
     fail,
   );
@@ -691,6 +705,7 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       platform: deps.platform,
       write: deps.write,
       version: VERSION,
+      cwd: deps.cwd,
       configPath: deps.configPath ?? defaultConfigPath(),
       ...(deps.openBrowser ? { openBrowser: deps.openBrowser } : {}),
       ...(deps.untilStopped ? { untilStopped: deps.untilStopped } : {}),

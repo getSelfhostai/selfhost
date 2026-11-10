@@ -1,5 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { relative } from "node:path";
+import { locate } from "@selfhost/agents";
 import type { EnforcementReport } from "@selfhost/credentials";
 import { guardrailChecks } from "@selfhost/policy";
 import {
@@ -9,6 +11,7 @@ import {
   validateConfig,
 } from "@selfhost/schema";
 import { type ConfigLocation, findConfig, policyText, type TeamPolicyFile } from "./find-config.js";
+import { type ManagedHooks, managedHooks, userHookIn } from "./hooks/managed-hooks.js";
 import { defaultTargets, enforcementReports, reportLines } from "./runtime-check.js";
 
 export interface DoctorOptions {
@@ -22,6 +25,12 @@ export interface DoctorOptions {
   configPath?: string;
   /** Finds a program on PATH, to check the hooks' `selfhost` is there. */
   which?: (name: string) => string | undefined;
+  /** Default: process.platform. */
+  platform?: string;
+  /** Read system paths (managed settings) under this folder instead; for images and tests. */
+  systemRoot?: string;
+  /** The home folder whose agent configs are checked. Default: the user's. */
+  home?: string;
 }
 
 /** `selfhost doctor --json`. */
@@ -46,8 +55,8 @@ export interface DoctorReport {
     warnings: string[];
   } | null;
   /**
-   * The built-in guardrails the hooks apply here, from selfhost.toml or the defaults: they
-   * block whatever the rules' modes are.
+   * The built-in guardrails the hooks apply here, from the policy in use (in a team, the team's
+   * policy with this file on top) or the defaults: they block whatever the rules' modes are.
    */
   guardrails: { mode: string; enforced: string[]; observed: string[] };
   /** Whether `selfhost` is on PATH, as the hooks call it; null when it was not looked up. */
@@ -57,6 +66,38 @@ export interface DoctorReport {
    * rules each cannot hold. Empty without those sections.
    */
   enforcement: EnforcementReport[];
+  /**
+   * Fields of the repository's selfhost.toml that would relax the team policy: the hooks use
+   * the team's value for each. Empty outside a team.
+   */
+  team_floor: { field: string; message: string }[];
+  /**
+   * Agents whose managed settings run selfhost's hooks, and whether the user's own config runs
+   * them too (twice per event; the import counts each event once).
+   */
+  managed_hooks: (ManagedHooks & { user_config: string | null })[];
+}
+
+const AGENT_LABELS: Record<ManagedHooks["agent"], string> = {
+  claude_code: "Claude Code",
+  codex: "Codex",
+};
+
+/** Managed hooks on this machine, with the user config that also runs them, if any. */
+function hookSources(options: DoctorOptions): DoctorReport["managed_hooks"] {
+  const platform = options.platform ?? process.platform;
+  const found = managedHooks(platform, options.systemRoot);
+  if (found.length === 0) return [];
+  const home = options.home ?? homedir();
+  const where = locate({ home, env: options.env, platform: platform as NodeJS.Platform });
+  const userConfigs: Record<ManagedHooks["agent"], string[]> = {
+    claude_code: [where.claude_code.settings],
+    codex: [where.codex.hooks, where.codex.config],
+  };
+  return found.map((entry) => ({
+    ...entry,
+    user_config: userConfigs[entry.agent].find((path) => userHookIn(path, entry.agent)) ?? null,
+  }));
 }
 
 /** Which guardrails enforce and which only record, under a config. */
@@ -75,14 +116,8 @@ function defaultGuardrails(): DoctorReport["guardrails"] {
   return guardrailModes(result.config);
 }
 
-export function doctorReport({
-  cwd,
-  config,
-  env,
-  version,
-  configPath,
-  which,
-}: DoctorOptions): DoctorReport {
+export function doctorReport(options: DoctorOptions): DoctorReport {
+  const { cwd, config, env, version, configPath, which } = options;
   const report: DoctorReport = {
     schema: "selfhost.doctor/v1",
     version,
@@ -96,6 +131,8 @@ export function doctorReport({
     guardrails: defaultGuardrails(),
     on_path: which ? which("selfhost") !== undefined : null,
     enforcement: [],
+    team_floor: [],
+    managed_hooks: hookSources(options),
   };
   const location = findConfig(cwd, config, env, configPath);
   if (!location) return report;
@@ -118,13 +155,16 @@ export function doctorReport({
   }
   const result = parseConfig(readFileSync(location.path, "utf8"));
   if (result.ok) {
-    // On a machine in a team, the rules in use are the team's with this file's added.
-    const used = parseConfig(policyText(location).text);
+    // On a machine in a team, the rules in use are the team's with this file's added, and a
+    // field that would relax the team's is held at the team's value, as in the hooks.
+    const layered = policyText(location);
+    const used = parseConfig(layered.text);
     const inUse = used.ok ? used.config : result.config;
     const { rules } = inUse;
     report.enforcement = enforcementReports(inUse, defaultTargets(inUse));
     const enforced = rules.filter((rule) => rule.mode === "enforce").length;
-    report.guardrails = guardrailModes(result.config);
+    report.guardrails = guardrailModes(inUse);
+    report.team_floor = layered.conflicts.map(({ field, message }) => ({ field, message }));
     report.config = {
       ...base,
       exists: true,
@@ -175,6 +215,15 @@ export function doctor(options: DoctorOptions): number {
       "selfhost is not on PATH: hooks written by selfhost init look for it each time they run, and compiled hooks need it. Install it with npm install -g selfhostai.",
     );
   }
+  for (const hooks of report.managed_hooks) {
+    const name = AGENT_LABELS[hooks.agent];
+    row(
+      "hooks",
+      hooks.user_config
+        ? `${name} runs selfhost's hooks twice: from the managed settings at ${hooks.path} and from ${hooks.user_config}. The import counts each event once; remove the selfhost hook from ${hooks.user_config} (selfhost init --undo puts back what init changed).`
+        : `${name}'s hooks come from the managed settings at ${hooks.path}; selfhost init adds no user hook for it.`,
+    );
+  }
   const guards = report.guardrails;
   const guardsRow = () =>
     row(
@@ -213,6 +262,13 @@ export function doctor(options: DoctorOptions): number {
     );
     for (const warning of config.warnings) row("warning", warning);
     guardsRow();
+    if (report.team_floor.length > 0) {
+      const fields = [...new Set(report.team_floor.map((conflict) => conflict.field))];
+      row(
+        "floor",
+        `the team policy holds ${fields.join(", ")}: this file would relax it, so the hooks use the team's value`,
+      );
+    }
     const [first, ...rest] = reportLines(report.enforcement);
     if (first !== undefined) {
       row("sandbox", first);

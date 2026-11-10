@@ -424,7 +424,7 @@ export async function policyCompile(
   io: PolicyCompileIo,
 ): Promise<PolicyCompileReport> {
   const { location, config } = loadPolicy(io.cwd, options.config, io);
-  checkTeam(config, options.team);
+  checkTeam(config, options.team, location.path);
   const vendors = options.vendor?.length
     ? [...new Set(options.vendor.map(parseVendor))]
     : undefined;

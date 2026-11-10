@@ -38,7 +38,7 @@ afterEach(async () => {
 });
 
 describe("budget alerts from ledger spend", () => {
-  it("raises 50%, 80% and 100% once each, as review items that say how far over", async () => {
+  it("raises the highest share crossed once, as review items for the budget owners", async () => {
     const ledger = await openLedger({ dataDir: "memory://" });
     ledgers.push(ledger);
     const app = createApp({ version: "1.2.3", ledger, token: TOKEN, now: () => NOW });
@@ -55,8 +55,9 @@ describe("budget alerts from ledger spend", () => {
     expect((await dev("/v1/events", "POST", { events: [cost(0.6)] })).status).toBe(200);
 
     expect(await raiseBudgetAlerts(ledger, NOW)).toBe(1);
+    // Spend that jumps past 80% and 100% between two checks raises the 100% alert alone.
     expect((await dev("/v1/events", "POST", { events: [cost(0.49)] })).status).toBe(200);
-    expect(await raiseBudgetAlerts(ledger, NOW)).toBe(2);
+    expect(await raiseBudgetAlerts(ledger, NOW)).toBe(1);
     // Each share of each window is raised once.
     expect(await raiseBudgetAlerts(ledger, NOW)).toBe(0);
 
@@ -65,20 +66,23 @@ describe("budget alerts from ledger spend", () => {
     );
     expect(alerts.map((event) => [event.team, event.data?.alert, event.data?.percent])).toEqual([
       ["web", "budget", 50],
-      ["web", "budget", 80],
       ["web", "budget_exceeded", 100],
     ]);
-    expect(alerts[2]?.data?.message).toBe(
+    expect(alerts[1]?.data?.message).toBe(
       "Team web went over the month's budget of $1: $1.09 spent, $0.09 over",
     );
 
     const list = openReviewList(ledger, { now: () => NOW });
     await refreshReviewList(ledger, list);
     const { items } = await list.list({});
-    expect(items.map((item) => [item.kind, item.title]).sort()).toEqual([
-      ["budget", "Team web spent 50% of the month's budget of $1"],
-      ["budget", "Team web spent 80% of the month's budget of $1"],
-      ["budget", "Team web went over the month's budget of $1: $1.09 spent, $0.09 over"],
+    expect(items.map((item) => [item.kind, item.title, item.owners]).sort()).toEqual([
+      ["budget", "Team web spent 50% of the month's budget of $1", ["dev@example.com"]],
+      [
+        "budget",
+        "Team web went over the month's budget of $1: $1.09 spent, $0.09 over",
+        ["dev@example.com"],
+      ],
     ]);
+    expect(items[0]?.route?.from).toBe("the team's owners");
   });
 });

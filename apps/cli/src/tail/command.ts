@@ -4,6 +4,7 @@ import {
   type Database,
   isPostgresUrl,
   resolveDataDir,
+  type TailRow,
   tailEvents,
 } from "@selfhost/ledger";
 import {
@@ -76,6 +77,8 @@ const SERVER_WAIT_SECONDS = 20;
 const RETRY_MS = 5000;
 /** Ids remembered to drop an event seen twice (a backfill, then the feed). */
 const SEEN_MAX = 20_000;
+/** Events per page while reading back --since. */
+const BACKFILL_PAGE = 1000;
 
 const AGENT_ALIASES: Record<string, string> = {
   claude: "claude_code",
@@ -140,6 +143,8 @@ function untilSignal(): AbortSignal {
 class Printer {
   private readonly cache = new SessionCache();
   private readonly seen = new Set<string>();
+  /** The person of each session, from its events with a person actor. */
+  private readonly sessions = new Map<string, string>();
 
   constructor(
     private readonly filter: TailFilter,
@@ -149,12 +154,34 @@ class Printer {
     private readonly since: Date | undefined,
   ) {}
 
-  event(event: LedgerEvent, repo?: string | null): void {
+  event(event: LedgerEvent, repo?: string | null, person?: string | null): void {
     if (this.seen.has(event.id)) return;
     this.remember(event.id);
     const rate = this.cache.add(event);
+    const session = event.session_id;
+    if (session && event.actor.kind === "person" && this.sessions.size < SEEN_MAX) {
+      this.sessions.set(session, event.actor.id);
+    }
     if (this.since && Date.parse(event.ts) < this.since.getTime()) return;
-    this.print(lineOf(event, { console: this.console, repo: repo ?? null, cacheHitRate: rate }));
+    const sentBy = typeof event.data?.sent_by === "string" ? event.data.sent_by : undefined;
+    const owner = person ?? sentBy ?? (session ? this.sessions.get(session) : undefined);
+    this.print(
+      lineOf(event, {
+        console: this.console,
+        repo: repo ?? null,
+        cacheHitRate: rate,
+        ...(owner ? { person: owner } : {}),
+      }),
+    );
+  }
+
+  /** Events read back from before the tail started, printed in the order they happened. */
+  backfill(rows: { event: LedgerEvent; repo?: string | null; person?: string | null }[]): void {
+    const sorted = [...rows].sort(
+      (a, b) =>
+        Date.parse(a.event.ts) - Date.parse(b.event.ts) || (a.event.id < b.event.id ? -1 : 1),
+    );
+    for (const row of sorted) this.event(row.event, row.repo, row.person);
   }
 
   review(item: ReviewItem): void {
@@ -234,6 +261,9 @@ async function followServer(ctx: Context, membership: Membership): Promise<void>
   };
   let after: string | undefined;
   let down = false;
+  // With --since, the pages that read back what already happened are printed in time order.
+  let backfilling = ctx.since !== undefined;
+  const held: { event: LedgerEvent; person?: string | null }[] = [];
   const wait = ctx.io.serverWaitSeconds ?? SERVER_WAIT_SECONDS;
   const events = async () => {
     while (!ctx.signal.aborted) {
@@ -241,12 +271,21 @@ async function followServer(ctx: Context, membership: Membership): Promise<void>
         const page = await client.tailEvents({
           ...base,
           ...(after ? { after } : ctx.since ? { since: ctx.since.toISOString() } : {}),
-          ...(after && wait > 0 ? { wait } : {}),
+          ...(after && wait > 0 && !backfilling ? { wait } : {}),
+          ...(backfilling ? { limit: BACKFILL_PAGE } : {}),
         });
         if (down) ctx.io.note(`Back in touch with ${membership.server}.`);
         down = false;
         after = page.cursor;
-        for (const event of page.events) ctx.printer.event(event);
+        const people = page.people ?? {};
+        if (backfilling) {
+          held.push(...page.events.map((event) => ({ event, person: people[event.id] ?? null })));
+          if (page.events.length >= BACKFILL_PAGE) continue;
+          backfilling = false;
+          ctx.printer.backfill(held.splice(0));
+          continue;
+        }
+        for (const event of page.events) ctx.printer.event(event, null, people[event.id] ?? null);
         // The server held the request; without a wait, pause like a poll.
         if (wait === 0 && page.events.length === 0) await ctx.sleep(DB_POLL_MS);
       } catch (error) {
@@ -284,6 +323,8 @@ async function followDatabase(ctx: Context, url: string): Promise<void> {
   try {
     const kinds = eventKinds(ctx.filter.kinds);
     let after: string | undefined;
+    let backfilling = ctx.since !== undefined;
+    const held: TailRow[] = [];
     while (!ctx.signal.aborted) {
       const from = ctx.since ?? new Date(ctx.now().getTime() - TAIL_WINDOW_HOURS * 3_600_000);
       const page = await tailEvents(db, {
@@ -295,12 +336,20 @@ async function followDatabase(ctx: Context, url: string): Promise<void> {
         ...(ctx.filter.repo ? { repo: ctx.filter.repo } : {}),
         ...(ctx.filter.session ? { session: ctx.filter.session } : {}),
         ...(ctx.filter.run ? { run: ctx.filter.run } : {}),
-        limit: 1000,
+        limit: BACKFILL_PAGE,
         settleMs: 1000,
       });
       after = page.cursor;
-      for (const row of page.rows) ctx.printer.event(row.event, row.repo);
-      if (page.rows.length < 1000) await ctx.sleep(DB_POLL_MS);
+      if (backfilling) {
+        held.push(...page.rows);
+        if (page.rows.length >= BACKFILL_PAGE) continue;
+        backfilling = false;
+        ctx.printer.backfill(held.splice(0));
+        await ctx.sleep(DB_POLL_MS);
+        continue;
+      }
+      for (const row of page.rows) ctx.printer.event(row.event, row.repo, row.person);
+      if (page.rows.length < BACKFILL_PAGE) await ctx.sleep(DB_POLL_MS);
     }
   } finally {
     await db.close();
@@ -311,10 +360,14 @@ async function followDatabase(ctx: Context, url: string): Promise<void> {
  * Reads what the embedded ledger already has since --since: open, read, close at once, without
  * migrating it, so nothing is written.
  */
-async function backfillEmbedded(ctx: Context, dataDir: string | undefined): Promise<void> {
-  if (!ctx.since) return;
+async function backfillEmbedded(
+  ctx: Context,
+  dataDir: string | undefined,
+): Promise<{ event: LedgerEvent; person?: string | null }[]> {
+  if (!ctx.since) return [];
   const dir = resolveDataDir(dataDir, ctx.io.env);
-  if (!existsSync(dir)) return;
+  if (!existsSync(dir)) return [];
+  const rows: TailRow[] = [];
   let db: Database | undefined;
   try {
     db = await connect({ dataDir: dir });
@@ -323,10 +376,10 @@ async function backfillEmbedded(ctx: Context, dataDir: string | undefined): Prom
       const page = await tailEvents(db, {
         from: ctx.since.toISOString(),
         ...(after ? { after } : { backfill: true }),
-        limit: 1000,
+        limit: BACKFILL_PAGE,
       });
-      for (const row of page.rows) ctx.printer.event(feedEvent(row.event, row.repo ?? undefined));
-      if (page.rows.length < 1000) break;
+      rows.push(...page.rows);
+      if (page.rows.length < BACKFILL_PAGE) break;
       after = page.cursor;
     }
   } catch (error) {
@@ -334,6 +387,10 @@ async function backfillEmbedded(ctx: Context, dataDir: string | undefined): Prom
   } finally {
     await db?.close();
   }
+  return rows.map((row) => ({
+    event: feedEvent(row.event, row.repo ?? undefined),
+    person: row.person,
+  }));
 }
 
 /**
@@ -347,23 +404,27 @@ async function followEmbedded(ctx: Context, options: TailCommandOptions): Promis
   const dir = feedDir(ctx.io.env, ctx.io.configPath);
   const reader = new FeedReader(dir);
   const live = watcherAlive(dir);
+  // What --since reads back from the ledger and the spool, printed together in time order.
+  const earlier: { event: LedgerEvent; person?: string | null }[] = [];
   if (live) {
     if (!ctx.since) reader.skipToEnd();
   } else {
-    await backfillEmbedded(ctx, options.dataDir);
+    earlier.push(...(await backfillEmbedded(ctx, options.dataDir)));
     reader.skipToEnd();
   }
   const spool = spoolDir(ctx.io.env);
   const offsets = new Map<string, number>();
   // The person selfhost import gives these events, so the lines match what the ledger gets.
   const person = readMembership(ctx.io.configPath)?.person ?? defaultPerson(ctx.io.env);
-  const capture = (print: boolean) => ({
+  const capture = (print: boolean | "hold") => ({
     async append(events: LedgerEvent[]) {
-      if (print) for (const event of events) ctx.printer.event(feedEvent(event, undefined));
+      if (print === "hold")
+        earlier.push(...events.map((event) => ({ event: feedEvent(event, undefined) })));
+      else if (print) for (const event of events) ctx.printer.event(feedEvent(event, undefined));
       return { accepted: events.map((event) => event.id), duplicates: [] };
     },
   });
-  const readSpool = (print: boolean) =>
+  const readSpool = (print: boolean | "hold") =>
     drainSpool(capture(print), spool, {
       person,
       logPrompts: false,
@@ -374,11 +435,12 @@ async function followEmbedded(ctx: Context, options: TailCommandOptions): Promis
   let watching = live;
   if (!live) {
     // Skip what the spool already held, unless --since asked for it.
-    await readSpool(ctx.since !== undefined);
+    await readSpool(ctx.since !== undefined ? "hold" : false);
     ctx.io.note(
       "No selfhost import --watch is running: showing hook events from the spool. Start it to see model costs too.",
     );
   }
+  ctx.printer.backfill(earlier.splice(0));
   const events = async () => {
     while (!ctx.signal.aborted) {
       const alive = watcherAlive(dir);

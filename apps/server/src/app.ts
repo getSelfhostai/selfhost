@@ -23,6 +23,7 @@ import type { GitClones } from "./provenance.js";
 import { type ReceiptRouteOptions, receiptReadRoutes, receiptRoutes } from "./receipts.js";
 import { reviewRoutes } from "./review.js";
 import type { SigninOptions } from "./signin.js";
+import { type SoloOptions, soloRoutes } from "./solo.js";
 import { type PersonEnv, teamRoutes } from "./teams.js";
 
 export interface AppOptions {
@@ -64,6 +65,8 @@ export interface AppOptions {
    * routes answer 503 and GitHub run triggers are not acted on.
    */
   background?: Background;
+  /** On the server `selfhost console` runs on a solo laptop: GET /v1/solo (see solo.ts). */
+  solo?: SoloOptions;
 }
 
 export function createApp({
@@ -81,6 +84,7 @@ export function createApp({
   gateway,
   notify = {},
   background,
+  solo,
 }: AppOptions): Hono {
   const app = new Hono();
   const review = {
@@ -153,6 +157,7 @@ export function createApp({
   adminMcpRoute(app);
   receiptReadRoutes(app, ledger);
   gatewayAdminRoutes(app, ledger, gateway);
+  if (solo) soloRoutes(app, solo);
 
   app.notFound((c) =>
     c.json(

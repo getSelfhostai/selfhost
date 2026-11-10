@@ -71,9 +71,21 @@ const waiting = (person: string): LedgerEvent => ({
   data: { message: "Claude needs your permission to use Bash" },
 });
 
+/**
+ * The server's clock: from before anything the tests raise, a second further on each read, so
+ * targets are added in order and before the events and digest windows the job sends.
+ */
+const ADDED = new Date("2026-11-20T08:00:00.000Z");
+let clock = ADDED;
+const tick = () => {
+  clock = new Date(clock.getTime() + 1000);
+  return clock;
+};
+
 let ledger: Ledger;
 beforeEach(async () => {
   ledger = await openLedger({ dataDir: "memory://" });
+  clock = ADDED;
 });
 afterEach(async () => {
   await ledger.close();
@@ -84,7 +96,7 @@ async function team(apprise = fakeApprise()) {
     version: "1.2.3",
     ledger,
     token: TOKEN,
-    now: () => NOW,
+    now: tick,
     notify: { deliver: apprise.deliver },
   });
   const admin = caller(app, TOKEN);
@@ -159,6 +171,13 @@ describe("notification settings", () => {
     expect(
       (await lead("/v1/notify/targets", "POST", { url: "json://10.0.0.5:8080/hook" })).status,
     ).toBe(201);
+    // ntfy with a topic alone goes to ntfy.sh; with a host it is self-hosted.
+    expect((await dev("/v1/notify/targets", "POST", { url: "ntfys://dev-alerts" })).status).toBe(
+      201,
+    );
+    for (const url of ["ntfys://ntfy.internal/dev", "ntfy://10.0.0.5:80/dev", "ntfys://a@b/c"]) {
+      expect((await dev("/v1/notify/targets", "POST", { url })).status, url).toBe(403);
+    }
   });
 
   it("keeps each person's targets to themselves", async () => {
@@ -239,12 +258,9 @@ describe("the notification job on a team server", () => {
     const byUrl = (url: string) =>
       apprise.received.filter((r) => r.urls === url).map((r) => r.title);
     expect(byUrl(PHONE)).toContain("selfhost: Approval, an agent waits");
-    expect(byUrl("ntfys://lead-alerts")).toEqual(
-      expect.arrayContaining([
-        "selfhost: 50% of a budget spent",
-        "selfhost: 80% of a budget spent",
-      ]),
-    );
+    // Spend went straight to 80%: only that share is raised.
+    expect(byUrl("ntfys://lead-alerts")).toContain("selfhost: 80% of a budget spent");
+    expect(byUrl("ntfys://lead-alerts")).not.toContain("selfhost: 50% of a budget spent");
     for (const message of apprise.received) {
       expect(message.body).not.toMatch(/curl|sk-proj|Authorization/);
     }

@@ -169,6 +169,8 @@ describe("spool drain", () => {
         accepted: 3,
         duplicates: 0,
         malformed: 3,
+        // The copied first line is the same tool call again.
+        repeated: 1,
         removed: 1,
       });
       expect(existsSync(old)).toBe(false);
@@ -189,6 +191,35 @@ describe("spool drain", () => {
         ["hook", "2026-10-09T09:00:00.000Z", person],
       ]);
       expect((await ledger.query({ kind: "cost.recorded" })).events).toHaveLength(1);
+    } finally {
+      await ledger.close();
+    }
+  });
+
+  it("counts a call two hook entries both wrote once, by its tool call id", async () => {
+    const home = tempDir("spool-twice");
+    const dir = spoolDir({ HOME: home.root }) ?? "";
+    // The managed settings' hook and the user's hook both ran for one call, ms apart.
+    const at = new Date("2026-10-10T11:00:00.000Z");
+    const later = new Date("2026-10-10T11:00:00.040Z");
+    for (const name of ["PreToolUse", "PostToolUse", "UserPromptSubmit"]) {
+      appendToSpool(dir, "claude", payload("claude-code", name), at);
+      appendToSpool(dir, "claude", payload("claude-code", name), later);
+    }
+    // The same prompt typed again a minute later is a new event.
+    appendToSpool(
+      dir,
+      "claude",
+      payload("claude-code", "UserPromptSubmit"),
+      new Date("2026-10-10T11:01:00.000Z"),
+    );
+    const ledger = await openLedger({ dataDir: "memory://" });
+    try {
+      const report = await drainSpool(ledger, dir, { person, now });
+      expect(report).toMatchObject({ lines: 7, repeated: 3, malformed: 0 });
+      expect((await ledger.query({ kind: "tool.called" })).events).toHaveLength(1);
+      expect((await ledger.query({ kind: "tool.result" })).events).toHaveLength(1);
+      expect((await ledger.query({ kind: "prompt.submitted" })).events).toHaveLength(2);
     } finally {
       await ledger.close();
     }
@@ -220,7 +251,7 @@ describe("spool drain", () => {
       const first = await runImport(options, io, ledger);
       expect(first.hooks).toMatchObject({ accepted: 3, malformed: 3, removed: 1 });
       expect(lines).toContain(
-        "Imported 3 new hook events from the spool (0 already in the ledger, 3 malformed lines skipped).",
+        "Imported 3 new hook events from the spool (0 already in the ledger, 3 malformed lines skipped, 1 line from a second hook entry for the same call skipped).",
       );
       const second = await runImport(options, io, ledger);
       expect(second.hooks).toMatchObject({ accepted: 0, duplicates: 1 });

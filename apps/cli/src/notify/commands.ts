@@ -99,7 +99,10 @@ async function laptopBackend(io: NotifyIo, options: NotifyOptions): Promise<Back
       }
       const taken = new Set(targets.map((t) => t.name));
       const chosen = name ?? freeName(serviceOf(url), taken);
-      if (taken.has(chosen) || !(await store.addTarget(person, chosen, url))) {
+      if (
+        taken.has(chosen) ||
+        !(await store.addTarget(person, chosen, url, io.now ?? new Date()))
+      ) {
         throw new Error(`You already have a target named ${chosen}.`);
       }
       return settings();
@@ -197,7 +200,7 @@ export function registerNotify(
   }
 
   const show = (io: NotifyIo, backend: Backend, settings: NotifySettings, json?: boolean) => {
-    if (json) io.write(JSON.stringify(settings, null, 2));
+    if (json) io.write(JSON.stringify({ schema: "selfhost.notify/v1", ...settings }, null, 2));
     else for (const line of settingsText(settings, backend.where)) io.write(line);
   };
 
@@ -255,7 +258,8 @@ export function registerNotify(
     run(options, async (backend, io) => {
       checkName(options.name);
       const sends = await backend.test(options.name);
-      if (options.json) io.write(JSON.stringify({ sends }, null, 2));
+      if (options.json)
+        io.write(JSON.stringify({ schema: "selfhost.notify_test/v1", sends }, null, 2));
       else if (sends.length === 0)
         io.write("No targets yet. Add one with selfhost notify add <apprise-url>.");
       else {

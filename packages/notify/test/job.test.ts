@@ -7,6 +7,8 @@ import { notifyStore } from "../src/store.js";
 import { FORBIDDEN, fakeDeliver, insertItem, item } from "./fixtures.js";
 
 const NOW = new Date("2026-11-09T10:05:00.000Z");
+/** When the targets were added, before anything the tests raise. */
+const ADDED = new Date("2026-11-01T00:00:00.000Z");
 const PHONE = "tgram://123456:BOTSECRET/987";
 const MAIL = "mailtos://dev:MAILPASS@smtp.example.com";
 
@@ -31,8 +33,8 @@ const store = () => notifyStore(databaseOf(ledger));
 
 describe("runNotify", () => {
   it("pushes an item an agent waits on to its owner's targets once, and records each send without the URL", async () => {
-    await store().addTarget("dev@example.com", "phone", PHONE);
-    await store().addTarget("dev@example.com", "email", MAIL);
+    await store().addTarget("dev@example.com", "phone", PHONE, ADDED);
+    await store().addTarget("dev@example.com", "email", MAIL, ADDED);
     await insertItem(ledger, item());
     await insertItem(ledger, item({ blocking: false, kind: "pr" }));
     const { deliver, sent } = fakeDeliver();
@@ -60,7 +62,7 @@ describe("runNotify", () => {
   });
 
   it("leaves items older than an hour to the digest, and skips people with no target", async () => {
-    await store().addTarget("dev@example.com", "phone", PHONE);
+    await store().addTarget("dev@example.com", "phone", PHONE, ADDED);
     await insertItem(ledger, item({ created_at: "2026-11-09T08:00:00.000Z" }));
     await insertItem(ledger, item({ owners: ["other@example.com"] }));
     const { deliver, sent } = fakeDeliver();
@@ -69,7 +71,7 @@ describe("runNotify", () => {
   });
 
   it("pushes an item nobody owns to the people the directory names", async () => {
-    await store().addTarget("Lead@Example.com", "phone", PHONE);
+    await store().addTarget("Lead@Example.com", "phone", PHONE, ADDED);
     await insertItem(ledger, item({ owners: [] }), "web");
     const seen: (string | null)[] = [];
     const { deliver, sent } = fakeDeliver();
@@ -88,7 +90,7 @@ describe("runNotify", () => {
   });
 
   it("tries a failed send again on later passes, three times at most, with the error masked", async () => {
-    await store().addTarget("dev@example.com", "phone", PHONE);
+    await store().addTarget("dev@example.com", "phone", PHONE, ADDED);
     await insertItem(ledger, item());
     const { deliver, sent } = fakeDeliver(new Set([PHONE]));
     for (let pass = 0; pass < 5; pass++) {
@@ -100,7 +102,7 @@ describe("runNotify", () => {
   });
 
   it("sends the digest once per window, with the person's own cadence over the team's", async () => {
-    await store().addTarget("dev@example.com", "phone", PHONE);
+    await store().addTarget("dev@example.com", "phone", PHONE, ADDED);
     await insertItem(ledger, item({ blocking: false, created_at: "2026-11-08T10:00:00.000Z" }));
     const daily = directory({
       settingsFor: async () => ({ ...NOTIFY_DEFAULTS, spend_digest: false }),
@@ -118,7 +120,7 @@ describe("runNotify", () => {
   });
 
   it("sends no digest when the person has nothing open", async () => {
-    await store().addTarget("dev@example.com", "phone", PHONE);
+    await store().addTarget("dev@example.com", "phone", PHONE, ADDED);
     const { deliver, sent } = fakeDeliver();
     await runNotify(ledger, {
       deliver,
@@ -129,7 +131,7 @@ describe("runNotify", () => {
   });
 
   it("pushes budget alerts to the budget owners, but leaves a run's cap to the spend digest", async () => {
-    await store().addTarget("lead@example.com", "phone", PHONE);
+    await store().addTarget("lead@example.com", "phone", PHONE, ADDED);
     const alert = (n: number, data: Record<string, unknown>): LedgerEvent => ({
       id: `01930c4e-2f1a-7b2c-8d3e-0000000a000${n}`,
       schema: "selfhost.event/v1",
@@ -162,7 +164,7 @@ describe("runNotify", () => {
   });
 
   it("sends the budget owner a daily spend digest when there is spend to report", async () => {
-    await store().addTarget("lead@example.com", "phone", PHONE);
+    await store().addTarget("lead@example.com", "phone", PHONE, ADDED);
     const { deliver, sent } = fakeDeliver();
     const spend = directory({
       settingsFor: async () => ({ ...NOTIFY_DEFAULTS, digest: "off" }),
@@ -181,9 +183,64 @@ describe("runNotify", () => {
     expect(sent.map((s) => s.message.title)).toEqual(["selfhost: daily spend digest"]);
   });
 
+  it("sends a new target nothing raised before it was added, and the rest oldest first", async () => {
+    const alert = (n: number, ts: string, percent: number): LedgerEvent => ({
+      id: `01930c4e-2f1a-7b2c-8d3e-0000000b000${n}`,
+      schema: "selfhost.event/v1",
+      ts,
+      source: "server",
+      kind: "alert.raised",
+      actor: { kind: "system", id: `selfhost:team:web:${percent}` },
+      team: "web",
+      data: {
+        alert: "budget",
+        percent,
+        scope: "team",
+        limit_usd: 100,
+        spent_usd: percent,
+        message: `Team web spent ${percent}%`,
+      },
+    });
+    await ledger.append([
+      alert(3, "2026-11-09T09:30:00.000Z", 80),
+      alert(1, "2026-11-09T08:00:00.000Z", 20),
+      alert(2, "2026-11-09T09:00:00.000Z", 50),
+    ]);
+    await insertItem(
+      ledger,
+      item({ created_at: "2026-11-09T09:45:00.000Z", owners: ["lead@example.com"] }),
+    );
+    await store().addTarget("lead@example.com", "phone", PHONE, new Date("2026-11-09T08:30:00Z"));
+    const { deliver, sent } = fakeDeliver();
+    await runNotify(ledger, { deliver, directory: directory(), now: NOW });
+    const titles = sent.map((s) => s.message.title);
+    expect(titles.slice(0, 2)).toEqual([
+      "selfhost: 50% of a budget spent",
+      "selfhost: 80% of a budget spent",
+    ]);
+    expect(titles).toHaveLength(3);
+    expect(titles[2]).not.toMatch(/budget/);
+  });
+
+  it("sends a new target's first digest when the next window opens, not at once", async () => {
+    await insertItem(ledger, item({ blocking: false, created_at: "2026-11-08T10:00:00.000Z" }));
+    const weekly = directory({
+      settingsFor: async () => ({ ...NOTIFY_DEFAULTS, digest: "weekly", spend_digest: false }),
+    });
+    // Added on a Tuesday at 15:00 UTC.
+    await store().addTarget("dev@example.com", "phone", PHONE, new Date("2026-11-10T15:00:00Z"));
+    const { deliver, sent } = fakeDeliver();
+    for (const at of ["2026-11-10T15:01:00Z", "2026-11-11T09:30:00Z", "2026-11-15T23:00:00Z"]) {
+      await runNotify(ledger, { deliver, directory: weekly, now: new Date(at) });
+    }
+    expect(sent).toEqual([]);
+    await runNotify(ledger, { deliver, directory: weekly, now: new Date("2026-11-16T09:01:00Z") });
+    expect(sent.map((s) => s.message.title)).toEqual(["selfhost: 1 item on your review list"]);
+  });
+
   it("sends a test to each target and records it", async () => {
-    await store().addTarget("dev@example.com", "phone", PHONE);
-    await store().addTarget("dev@example.com", "email", MAIL);
+    await store().addTarget("dev@example.com", "phone", PHONE, ADDED);
+    await store().addTarget("dev@example.com", "email", MAIL, ADDED);
     const { deliver } = fakeDeliver(new Set([MAIL]));
     const sends = await sendTest(ledger, "dev@example.com", deliver, testMessage("dev"), NOW);
     expect(sends.map((s) => [s.target, s.ok]).sort()).toEqual([

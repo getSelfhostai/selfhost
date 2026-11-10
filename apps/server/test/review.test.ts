@@ -482,5 +482,48 @@ describe.each(BACKENDS)("review items API on $name", (backend) => {
       const item = (await (await send(`/v1/review-items/${id}`, {}, dev)).json()) as ReviewItem;
       expect(item).toMatchObject({ state: "answered", answer: { by: "lead@example.com" } });
     });
+
+    it("says an item a blocked call named is still being prepared until the refresh builds it", async () => {
+      const { send, post, refresh } = await setup();
+      const created = (await (await post("/v1/teams", { name: "Red" })).json()) as {
+        invite: string;
+      };
+      const dev = (
+        (await (
+          await post("/v1/join", { invite: created.invite, person: "dev@example.com" })
+        ).json()) as JoinResponse
+      ).token;
+      const id = "019a7000-0000-7000-8000-00000000abcd";
+      const event: LedgerEvent = {
+        id: "019a7000-0000-7000-9000-00000000abcd",
+        schema: "selfhost.event/v1",
+        ts: NOW,
+        source: "hook",
+        kind: "policy.evaluated",
+        actor: { kind: "system", id: "selfhost-policy" },
+        session_id: "push-pending",
+        tool: { name: "Bash", input_summary: "git push -f" },
+        decision: {
+          verdict: "block",
+          by: "selfhost-policy",
+          rule_id: "guard.force_push",
+          mode: "enforce",
+        },
+        data: { exception: { id, fingerprint: "f-pending" } },
+      };
+      expect((await post("/v1/events", { events: [event] }, dev)).status).toBe(200);
+
+      const early = await send(`/v1/review-items/${id}`, {}, dev);
+      expect(early.status).toBe(404);
+      expect(early.headers.get("retry-after")).toBe("15");
+      expect(((await early.json()) as ApiError).error.message).toMatch(
+        /is still being prepared: the server adds it to the list within 15 seconds/,
+      );
+      const unknown = await send("/v1/review-items/019a7000-0000-7000-8000-00000000ffff", {}, dev);
+      expect(((await unknown.json()) as ApiError).error.message).toMatch(/^No review item /);
+
+      await refresh();
+      expect((await send(`/v1/review-items/${id}`, {}, dev)).status).toBe(200);
+    });
   });
 });

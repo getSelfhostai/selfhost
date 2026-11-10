@@ -37,6 +37,32 @@ describe("selfhost review routes", () => {
     expect(report.escalation).toEqual(["[review] fallback"]);
   });
 
+  it("says when there is no CODEOWNERS file, and which route a team server would use", async () => {
+    const dir = tempDir("routes-none");
+    dir.write(".git/HEAD", "ref: refs/heads/main\n");
+    dir.write(
+      "selfhost.toml",
+      [
+        "version = 1",
+        "[[review.routes]]",
+        'id = "owners"',
+        'to = ["codeowners"]',
+        "[[review.routes]]",
+        'id = "high-risk"',
+        "min_risk = 80",
+        'to = ["role:admin"]',
+        "",
+      ].join("\n"),
+    );
+    const result = await run(["review", "routes", "--risk", "80"], { cwd: dir.root });
+    expect(result.out).toContain(
+      "1. owners: matches (every item) but names nobody here: No CODEOWNERS file in the repository (.github/CODEOWNERS, CODEOWNERS, docs/CODEOWNERS)",
+    );
+    expect(result.out).toContain(
+      'On the team server, which knows each person\'s role, [[review.routes]] "high-risk" takes it.',
+    );
+  });
+
   it("prints why each route matched or not, who gets it and where it escalates", async () => {
     const dir = tempDir("routes");
     const result = await run(

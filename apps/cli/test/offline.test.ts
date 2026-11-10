@@ -81,6 +81,7 @@ describe("every command works with --json and no network", () => {
       "files",
       "accepted",
       "duplicates",
+      "skipped",
       "ledger",
       "hooks",
     ]);

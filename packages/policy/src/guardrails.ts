@@ -486,17 +486,33 @@ function fileOf(call: ToolCall): string | undefined {
   return base === undefined ? call.path : join(base, call.path);
 }
 
+/** selfhost's own credentials: the team token in config.json and the exception key. */
+const selfhostFile = picomatch(["**/.selfhost/config.json", "**/.selfhost/exceptions/key"], {
+  dot: true,
+});
+
+const SELFHOST_FILE_ALTERNATIVE =
+  "Nothing in it is needed for the task. To get a blocked call allowed, call request_exception on the selfhost MCP server with the exception id from the block, or ask the user.";
+
+/** The block for reading a secret file; selfhost's own files get their own message. */
+function secretBlock(path: string): Finding {
+  const normalized = path.split(sep).join("/");
+  if (selfhostFile(normalized)) {
+    return block(
+      `selfhost's own files (its team token and the exception key) are not read by agents (${short(basename(path), 60)})`,
+      SELFHOST_FILE_ALTERNATIVE,
+    );
+  }
+  return block(`${GUARDRAILS["guard.secret_read"].message} (${short(basename(path), 60)})`);
+}
+
 function secretRead(call: ToolCall, commands: ShellCommand[]): Finding {
   const file = fileOf(call);
-  if (file !== undefined && call.access === "read" && isSecretPath(file)) {
-    return block(`${GUARDRAILS["guard.secret_read"].message} (${short(basename(file), 60)})`);
-  }
+  if (file !== undefined && call.access === "read" && isSecretPath(file)) return secretBlock(file);
   for (const command of commands) {
     for (const value of readsOf(command)) {
       const path = pathOf(value, command);
-      if (isSecretPath(path)) {
-        return block(`${GUARDRAILS["guard.secret_read"].message} (${short(basename(path), 60)})`);
-      }
+      if (isSecretPath(path)) return secretBlock(path);
     }
   }
   return undefined;

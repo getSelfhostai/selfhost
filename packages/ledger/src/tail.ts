@@ -12,7 +12,10 @@ import { LedgerQueryError } from "./errors.js";
 export interface TailFilter {
   /** Event kinds, or their first part: tool matches tool.called and tool.result. */
   kinds?: readonly string[];
-  /** actor.id */
+  /**
+   * The person an event belongs to: its actor when that is a person, else the person who sent it
+   * (data.sent_by, on a team server), else the person of its session.
+   */
   person?: string;
   /** agent.vendor */
   agent?: string;
@@ -48,6 +51,11 @@ export interface TailRow {
   team: string | null;
   /** The event's repo, else its run's, lower case; null when neither is known. */
   repo: string | null;
+  /**
+   * The person the event belongs to: its actor when that is a person, else data.sent_by, else
+   * the person of its session's first person event; null when none is known.
+   */
+  person: string | null;
 }
 
 export interface TailPage {
@@ -62,6 +70,14 @@ const KEY = (column: string) =>
 const ZERO_ID = "00000000-0000-0000-0000-000000000000";
 const EPOCH_KEY = "1970-01-01T00:00:00.000000Z";
 const GROUPS = new Set(EVENT_KINDS.map((kind) => kind.split(".")[0]));
+
+/** The person an event belongs to, for the person filter and TailRow.person. */
+const PERSON = `coalesce(
+  CASE WHEN e.actor_kind = 'person' THEN e.actor_id END,
+  e.body#>>'{data,sent_by}',
+  (SELECT s.actor_id FROM events s
+   WHERE e.session_id IS NOT NULL AND s.session_id = e.session_id AND s.actor_kind = 'person'
+   ORDER BY s.ts, s.id LIMIT 1))`;
 
 export async function tailEvents(db: Queryable, options: TailOptions): Promise<TailPage> {
   const limit = options.limit ?? 200;
@@ -104,7 +120,7 @@ export async function tailEvents(db: Queryable, options: TailOptions): Promise<T
         OR split_part(e.kind, '.', 1) IN (SELECT jsonb_array_elements_text(${kinds})))`,
     );
   }
-  if (options.person !== undefined) conditions.push(`e.actor_id = ${param(options.person)}`);
+  if (options.person !== undefined) conditions.push(`${PERSON} = ${param(options.person)}`);
   if (options.agent !== undefined) conditions.push(`e.agent = ${param(options.agent)}`);
   if (options.session !== undefined) conditions.push(`e.session_id = ${param(options.session)}`);
   if (options.run !== undefined) conditions.push(`e.body->>'run_id' = ${param(options.run)}`);
@@ -120,11 +136,12 @@ export async function tailEvents(db: Queryable, options: TailOptions): Promise<T
     body: unknown;
     team: string | null;
     repo: string | null;
+    person: string | null;
     key: string;
     id: string;
   }>(
     `SELECT e.body, e.team, coalesce(lower(e.body->>'repo'), rr.repo) AS repo,
-       ${KEY("e.ingested_at")} AS key, e.id::text AS id
+       ${PERSON} AS person, ${KEY("e.ingested_at")} AS key, e.id::text AS id
      FROM events e LEFT JOIN run_repos rr ON rr.session_id = e.session_id
      WHERE ${conditions.join(" AND ")}
      ORDER BY e.ingested_at, e.id
@@ -138,6 +155,7 @@ export async function tailEvents(db: Queryable, options: TailOptions): Promise<T
       event: (typeof row.body === "string" ? JSON.parse(row.body) : row.body) as LedgerEvent,
       team: row.team,
       repo: row.repo,
+      person: row.person,
     })),
     cursor: after
       ? encodeCursor(after.ts, after.id)
