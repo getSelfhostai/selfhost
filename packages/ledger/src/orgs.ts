@@ -80,7 +80,8 @@ export interface OrgStore {
    * the team of the person token that wrote it. With a writer only teams of its org count;
    * without one (the admin token) a repo counts when exactly one org maps it. With `person`,
    * the person who wrote the batch, an event moves to the repo's team only when that person is
-   * in it: naming another team's repo must not write into that team.
+   * an active member of it (not revoked): naming another team's repo must not write into that
+   * team.
    */
   assignTeams(
     tx: Queryable,
@@ -91,11 +92,13 @@ export interface OrgStore {
   /** Remembers the repo of each run (session) the events name one for. */
   recordRuns(tx: Queryable, events: LedgerEvent[]): Promise<void>;
   /**
-   * cost.recorded events from `from` (inclusive) to `to` of runs assigned to these teams of the
-   * org. A run's team is read now, so spend moves to a repo's team once the run's repo is known.
+   * cost.recorded events from `from` (inclusive) to `to` stored with these teams of the org. An
+   * event stored with no team (the admin token) goes to the team that owns its repo, or its run's
+   * repo, read now; a stored team is never moved by repo ownership, so naming another team's or
+   * org's repo cannot charge spend to it.
    */
   teamCosts(org: string, teams: string[], from: string, to: string): Promise<TeamCost[]>;
-  /** People in each of these teams. */
+  /** People in each of these teams, not counting those revoked from it. */
   peopleCounts(teams: string[]): Promise<Map<string, number>>;
   /** Open review items of each of these teams. */
   reviewCounts(teams: string[]): Promise<Map<string, ReviewCounts>>;
@@ -341,7 +344,7 @@ export function createOrgStore(db: Database): OrgStore {
       if (writer !== undefined && person !== undefined) {
         const rows = await tx.query<{ team_id: string }>(
           `SELECT p.team_id FROM people p JOIN teams t ON t.id = p.team_id
-           WHERE t.org_id = $1 AND lower(p.id) = lower($2::text)`,
+           WHERE t.org_id = $1 AND lower(p.id) = lower($2::text) AND p.revoked_at IS NULL`,
           [org ?? null, person],
         );
         member = new Set([writer, ...rows.map((row) => row.team_id)]);
@@ -375,13 +378,13 @@ export function createOrgStore(db: Database): OrgStore {
     async teamCosts(org, teams, from, to) {
       if (teams.length === 0) return [];
       const rows = await db.query<{ team: string; body: unknown }>(
-        `SELECT coalesce(tr.team_id, e.team) AS team, e.body
+        `SELECT coalesce(e.team, tr.team_id) AS team, e.body
          FROM events e
          LEFT JOIN run_repos rr ON rr.session_id = e.session_id
          LEFT JOIN team_repos tr
            ON tr.org_id = $2 AND tr.repo = coalesce(lower(e.body->>'repo'), rr.repo)
          WHERE e.kind = 'cost.recorded' AND e.ts >= $3::timestamptz AND e.ts < $4::timestamptz
-           AND coalesce(tr.team_id, e.team) ${IN_LIST}
+           AND coalesce(e.team, tr.team_id) ${IN_LIST}
          ORDER BY e.ts, e.id`,
         [JSON.stringify(teams), org, from, to],
       );
@@ -390,7 +393,8 @@ export function createOrgStore(db: Database): OrgStore {
 
     async peopleCounts(teams) {
       const rows = await db.query<{ team_id: string; people: number }>(
-        `SELECT team_id, count(*)::int AS people FROM people WHERE team_id ${IN_LIST}
+        `SELECT team_id, count(*)::int AS people FROM people
+         WHERE team_id ${IN_LIST} AND revoked_at IS NULL
          GROUP BY team_id`,
         [JSON.stringify(teams)],
       );

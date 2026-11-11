@@ -13,7 +13,7 @@ import { consoleRoutes } from "./console.js";
 import { refuseContextDecision } from "./context.js";
 import { decisionRoutes } from "./decisions.js";
 import { eventRoutes } from "./events.js";
-import { type Gateway, gatewayAdminRoutes } from "./gateway.js";
+import { type Gateway, gatewayAdminRoutes, gatewayProxyRoutes } from "./gateway.js";
 import { type GitHubRouteOptions, githubRoutes } from "./github.js";
 import { githubRepos, type IntegrationRouteOptions } from "./integrations.js";
 import { adminMcpRoute, mcpRoutes } from "./mcp.js";
@@ -67,6 +67,11 @@ export interface AppOptions {
   background?: Background;
   /** On the server `selfhost console` runs on a solo laptop: GET /v1/solo (see solo.ts). */
   solo?: SoloOptions;
+  /**
+   * Called with the kinds of each batch of new events POST /v1/events stores, with either kind of
+   * token: the server wakes its review refresh when an agent starts to wait.
+   */
+  eventsStored?: (kinds: readonly string[]) => void;
 }
 
 export function createApp({
@@ -85,6 +90,7 @@ export function createApp({
   notify = {},
   background,
   solo,
+  eventsStored,
 }: AppOptions): Hono {
   const app = new Hono();
   const review = {
@@ -92,6 +98,9 @@ export function createApp({
     ...(now ? { now } : {}),
     ...(github.publicUrl ? { publicUrl: github.publicUrl } : {}),
   };
+
+  // Agents' model traffic with a gateway key, not a selfhost token: before both token checks.
+  gatewayProxyRoutes(app, gateway);
 
   // Signed by GitHub instead of a bearer token, so they go before both token checks.
   const pulls = githubRoutes(app, ledger, {
@@ -121,6 +130,7 @@ export function createApp({
     },
     ...(gateway ? { gateway } : {}),
     ...(background ? { background } : {}),
+    ...(eventsStored ? { eventsStored } : {}),
     handoffs: {
       ...(config ? { config } : {}),
       ...(github.publicUrl ? { publicUrl: github.publicUrl } : {}),
@@ -155,7 +165,7 @@ export function createApp({
     c.json({ ok: true, version, event_schemas: acceptedEventSchemas() } satisfies HealthResponse),
   );
 
-  eventRoutes(app, ledger);
+  eventRoutes(app, ledger, eventsStored ? { stored: eventsStored } : {});
   decisionRoutes(app, ledger);
   reviewRoutes(app, ledger, review);
   otlpRoutes(app, ledger);

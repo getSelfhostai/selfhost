@@ -97,9 +97,9 @@ describe("[egress] and [secrets] in selfhost.toml", () => {
   it("refuses a header without a host and a format without {value}", () => {
     const parsed = parseConfig(`version = 1
 [secrets.env]
-A = { from = "env:SELFHOST_RUN_SECRET_A", header = "X-Key" }
-B = { from = "env:SELFHOST_RUN_SECRET_B", host = "api.acme.test", format = "Token" }
-SELFHOST_X = "env:SELFHOST_RUN_SECRET_X"
+A = { from = "env:SELFHOST_RUN_SECRET_WEB__A", header = "X-Key" }
+B = { from = "env:SELFHOST_RUN_SECRET_WEB__B", host = "api.acme.test", format = "Token" }
+SELFHOST_X = "env:SELFHOST_RUN_SECRET_WEB__X"
 `);
     expect(parsed.ok ? [] : parsed.errors.map((e) => e.field)).toEqual([
       "secrets.env.A.host",
@@ -113,7 +113,7 @@ SELFHOST_X = "env:SELFHOST_RUN_SECRET_X"
 [secrets.env]
 ADMIN = "env:SELFHOST_TOKEN"
 APP_KEY = { from = "env:SELFHOST_GITHUB_PRIVATE_KEY", host = "api.acme.test" }
-OK = "env:SELFHOST_RUN_SECRET_OK"
+OK = "env:SELFHOST_RUN_SECRET_WEB__OK"
 `);
     expect(parsed.ok ? [] : parsed.errors).toEqual([
       expect.objectContaining({

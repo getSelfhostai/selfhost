@@ -18,6 +18,7 @@ import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import {
+  checkAgentUrl,
   type Gateway,
   gatewayFromEnv,
   readUsageNow,
@@ -165,6 +166,29 @@ describe("gateway keys", () => {
       expect(run.status).toBe(403);
     }
     expect([...fake.keys.values()].some((k) => String(k.name).includes(":run:"))).toBe(false);
+  });
+
+  it("gives no key for a team someone was revoked from, whatever team their token is for", async () => {
+    const { ada } = await platform();
+    const other = (await (
+      await admin()("/v1/teams", "POST", { name: "Data" })
+    ).json()) as CreateTeamResponse;
+    await joinTeam(other.invite, "dora@example.com");
+    const invite = await admin()("/v1/teams/data/invites", "POST", { email: "ada@example.com" });
+    const adaData = caller(
+      app,
+      await joinTeam(((await invite.json()) as { invite: string }).invite, "ada@example.com"),
+    );
+    // In both teams, her data token reaches platform.
+    expect((await adaData("/v1/gateway?team=platform")).status).toBe(200);
+    expect(
+      (await caller(app, ada)("/v1/teams/platform/people/ada%40example.com/tokens", "DELETE"))
+        .status,
+    ).toBe(200);
+    expect((await adaData("/v1/gateway?team=platform")).status).toBe(403);
+    expect((await adaData("/v1/gateway/keys", "POST", { team: "platform" })).status).toBe(403);
+    expect((await adaData("/v1/gateway/keys", "POST", { team: "data" })).status).toBe(201);
+    expect([...fake.keys.values()].map((k) => k.name)).toEqual([expect.stringContaining(":data:")]);
   });
 
   it("answers 404 without a gateway and 502 when the gateway refuses", async () => {
@@ -351,6 +375,17 @@ describe("gatewayFromEnv", () => {
     const found = gatewayFromEnv(config(), { ...env, SELFHOST_GATEWAY_ADMIN_KEY: "k" });
     expect(found?.client.tool).toBe("bifrost");
     expect(found?.baseUrl).toBe("https://s.example.com/llm");
+    // Without Caddy in front, this server answers that /llm itself, from the gateway's address.
+    expect(found?.proxyTo).toBe("http://bifrost:8080");
+    expect(found?.agentHealth).toBeDefined();
+    const direct = gatewayFromEnv(config(), {
+      SELFHOST_GATEWAY_TOOL: "bifrost",
+      SELFHOST_GATEWAY_URL: "http://127.0.0.1:8080",
+      SELFHOST_GATEWAY_ADMIN_KEY: "k",
+    });
+    expect(direct?.baseUrl).toBe("http://127.0.0.1:8080");
+    expect(direct?.proxyTo).toBeUndefined();
+    expect(direct?.agentHealth).toBeUndefined();
   });
 
   it("points at a team's own LiteLLM from the config, with its master key env", () => {
@@ -364,5 +399,99 @@ admin_key_env = "LITELLM_MASTER_KEY"
     const found = gatewayFromEnv(config(text), { LITELLM_MASTER_KEY: "sk-x" });
     expect(found?.client.tool).toBe("litellm");
     expect(found?.baseUrl).toBe("https://litellm.internal.example.com");
+  });
+});
+
+describe("the gateway without a proxy in front", () => {
+  const bifrostAt = (fake: ReturnType<typeof fakeBifrost>) =>
+    bifrostClient({
+      url: "http://bifrost:8080",
+      username: "selfhost",
+      password: fake.password,
+      fetch: fake.fetch,
+      minIntervalMs: 0,
+    });
+
+  it("forwards /llm/ model routes to the gateway, and nothing else", async () => {
+    const ledger = await openLedger({ dataDir: "memory://" });
+    try {
+      const seen: { url: string; method: string; headers: Headers; body: string }[] = [];
+      const upstream = (async (url: string | URL | Request, init?: RequestInit) => {
+        seen.push({
+          url: String(url),
+          method: init?.method ?? "GET",
+          headers: new Headers(init?.headers),
+          body: init?.body ? await new Response(init.body).text() : "",
+        });
+        return Response.json({ id: "msg_1", type: "message" }, { status: 200 });
+      }) as typeof fetch;
+      const fake = fakeBifrost();
+      const proxied: Gateway = {
+        client: bifrostAt(fake),
+        baseUrl: "http://127.0.0.1:4400/llm",
+        proxyTo: "http://bifrost:8080/",
+        fetch: upstream,
+        state: { sync: null, usage: null },
+      };
+      const app = createApp({ version: "1.2.3", ledger, token: TOKEN, gateway: proxied });
+      // An agent sends its gateway key, not a selfhost token.
+      const res = await app.request("/llm/anthropic/v1/messages?beta=true", {
+        method: "POST",
+        headers: {
+          "x-api-key": "sk-bf-virtual",
+          "content-type": "application/json",
+          cookie: "selfhost_session=abc",
+        },
+        body: JSON.stringify({ model: "claude-opus-4", messages: [] }),
+      });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ id: "msg_1", type: "message" });
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.url).toBe("http://bifrost:8080/anthropic/v1/messages?beta=true");
+      expect(seen[0]?.method).toBe("POST");
+      expect(seen[0]?.headers.get("x-api-key")).toBe("sk-bf-virtual");
+      expect(seen[0]?.headers.get("cookie")).toBeNull();
+      expect(JSON.parse(seen[0]?.body ?? "")).toMatchObject({ model: "claude-opus-4" });
+      // Bifrost's management API and web UI are not served.
+      for (const path of ["/llm/api/governance/virtual-keys", "/llm/", "/llm/workspace"]) {
+        expect((await app.request(path)).status).toBe(404);
+      }
+      expect(seen).toHaveLength(1);
+    } finally {
+      await ledger.close();
+    }
+  });
+
+  it("reports the gateway unhealthy when the address agents get answers as something else", async () => {
+    const ledger = await openLedger({ dataDir: "memory://" });
+    try {
+      const fake = fakeBifrost();
+      // The selfhost server's own 401, as an address with no /llm/ behind it answers.
+      const selfhost401 = (async () =>
+        Response.json(
+          { error: { code: "unauthorized", message: "Missing bearer token" } },
+          { status: 401 },
+        )) as unknown as typeof fetch;
+      const broken: Gateway = {
+        client: bifrostAt(fake),
+        baseUrl: "https://s.example.com/llm",
+        agentHealth: () => checkAgentUrl("bifrost", "https://s.example.com/llm", selfhost401),
+        state: { sync: null, usage: null },
+      };
+      const app = createApp({ version: "1.2.3", ledger, token: TOKEN, gateway: broken });
+      const status = (await (
+        await caller(app, TOKEN)("/v1/gateway?team=any")
+      ).json()) as GatewayStatus;
+      expect(status.healthy).toBe(false);
+      expect(status.detail).toContain("https://s.example.com/llm/health answered 401");
+
+      const bifrostHealth = (async () =>
+        Response.json({ status: "ok" }, { status: 200 })) as unknown as typeof fetch;
+      expect(await checkAgentUrl("bifrost", "https://s.example.com/llm", bifrostHealth)).toEqual({
+        ok: true,
+      });
+    } finally {
+      await ledger.close();
+    }
   });
 });

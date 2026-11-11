@@ -49,6 +49,12 @@ export interface Directory {
    * unique within an org only. Default: every team is in the default org, as on a laptop.
    */
   orgOf?(team: string | null): Promise<string>;
+  /**
+   * The teams of an org a person is still in (not revoked from), on a team server: they get
+   * pushes and digests of those teams' items and alerts only, whatever the item's owners say.
+   * Default: no such limit, as on a laptop.
+   */
+  teamsOf?(person: string, org: string): Promise<string[]>;
 }
 
 export interface NotifyOptions {
@@ -185,13 +191,33 @@ async function notifyOrg(
   }
   if (people.length === 0) return;
   const byLower = new Map(people.map(({ person }) => [person.toLowerCase(), person]));
-  const withTargets = (names: Iterable<string>) => [
-    ...new Set(
-      [...names]
-        .map((name) => byLower.get(name.toLowerCase()))
-        .filter((person) => person !== undefined),
-    ),
-  ];
+  const memberOf = new Map<string, Promise<string[]>>();
+  const teamsOf = (person: string) => {
+    const lookup = directory.teamsOf;
+    if (!lookup) return undefined;
+    let found = memberOf.get(person);
+    if (!found) {
+      found = lookup(person, org);
+      memberOf.set(person, found);
+    }
+    return found;
+  };
+  /** Whether a person may get what a team raised: an item with no team is a laptop's own. */
+  const reaches = async (person: string, team: string | null) => {
+    const teams = teamsOf(person);
+    return team === null || teams === undefined || (await teams).includes(team);
+  };
+  const withTargets = (names: Iterable<string>, team: string | null) =>
+    filterAsync(
+      [
+        ...new Set(
+          [...names]
+            .map((name) => byLower.get(name.toLowerCase()))
+            .filter((person) => person !== undefined),
+        ),
+      ],
+      (person) => reaches(person, team),
+    );
   const send = (
     person: string,
     kind: NotifyKind,
@@ -209,7 +235,8 @@ async function notifyOrg(
       at: item.created_at,
       order: item.id,
       push: async () => {
-        for (const person of withTargets(await recipientsOf(item, row.team, directory))) {
+        const recipients = await recipientsOf(item, row.team, directory);
+        for (const person of await withTargets(recipients, row.team)) {
           await send(person, "item", item.id, () => itemMessage(item, consoleUrl), item.created_at);
         }
       },
@@ -227,7 +254,7 @@ async function notifyOrg(
       push: async () => {
         const owner = typeof event.data?.owner === "string" ? [event.data.owner] : [];
         const owners = [...(await directory.budgetOwners(event.team ?? null)), ...owner];
-        for (const person of withTargets(owners)) {
+        for (const person of await withTargets(owners, event.team ?? null)) {
           const build = () => spendAlertMessage(event, consoleUrl);
           await send(person, "spend", event.id, build, event.ts);
         }
@@ -240,11 +267,13 @@ async function notifyOrg(
   );
   for (const { push } of pushes) await push();
 
-  const list = openReviewList(ledger, {
-    now: () => now,
-    ...(directory.orgOf ? { org } : {}),
-  });
   for (const { person, settings } of people) {
+    const teams = await teamsOf(person);
+    const list = openReviewList(ledger, {
+      now: () => now,
+      ...(directory.orgOf ? { org } : {}),
+      ...(teams ? { teams } : {}),
+    });
     const cadence: NotifyCadence = (await store.digest(person)) ?? settings.digest;
     const window = digestWindow(cadence, now, settings.digest_hour);
     if (window && cadence !== "off") {

@@ -95,6 +95,11 @@ export interface ReviewListOptions {
   team?: string;
   /** Only items of this org's teams, for what goes to one org's people. Default: every org. */
   org?: string;
+  /**
+   * Only items of these teams, such as the teams a person is still in for their digest.
+   * Default: every team.
+   */
+  teams?: readonly string[];
 }
 
 /** What refreshReviewList needs from a list it did not open. */
@@ -163,6 +168,7 @@ export function openReviewList(ledger: Ledger, options: ReviewListOptions = {}):
   const scope: Scope = {
     ...(options.team === undefined ? {} : { team: options.team }),
     ...(options.org === undefined ? {} : { org: options.org }),
+    ...(options.teams === undefined ? {} : { teams: options.teams }),
   };
 
   /** Claims the item, waiting briefly while another answer is in flight. */

@@ -2,10 +2,11 @@ import { type Ledger, openLedger } from "@selfhost/ledger";
 import { appriseApi, runNotify } from "@selfhost/notify";
 import { openReviewList, refreshReviewList } from "@selfhost/review";
 import type { JoinResponse, LedgerEvent, NotifySettings } from "@selfhost/schema";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
 import { raiseBudgetAlerts } from "../src/budget-alerts.js";
-import { serverDirectory } from "../src/notify.js";
+import { serverDirectory, startNotifyJob } from "../src/notify.js";
+import { startReviewRefreshJob, WAITING_EVENT_KINDS } from "../src/review.js";
 import { caller, TOKEN } from "./helpers.js";
 
 const NOW = new Date("2026-11-20T12:00:00.000Z");
@@ -91,13 +92,14 @@ afterEach(async () => {
   await ledger.close();
 });
 
-async function team(apprise = fakeApprise()) {
+async function team(apprise = fakeApprise(), eventsStored?: (kinds: readonly string[]) => void) {
   const app = createApp({
     version: "1.2.3",
     ledger,
     token: TOKEN,
     now: tick,
     notify: { deliver: apprise.deliver },
+    ...(eventsStored ? { eventsStored } : {}),
   });
   const admin = caller(app, TOKEN);
   const created = (await (await admin("/v1/teams", "POST", { name: "Web" })).json()) as {
@@ -231,6 +233,53 @@ describe("notification settings", () => {
 });
 
 describe("the notification job on a team server", () => {
+  it("pushes a waiting agent within seconds, without waiting for the periodic passes", async () => {
+    const HOUR = 60 * 60 * 1000;
+    const wakeups: { refresh?: () => void; notify?: () => void } = {};
+    const apprise = fakeApprise();
+    const { dev } = await team(apprise, (kinds) => {
+      if (kinds.some((kind) => WAITING_EVENT_KINDS.has(kind))) wakeups.refresh?.();
+    });
+    await dev("/v1/notify/targets", "POST", { url: PHONE, name: "phone" });
+    const log = () => {};
+    const reviews = startReviewRefreshJob(ledger, {
+      intervalMs: HOUR,
+      now: () => NOW,
+      log,
+      changed: () => wakeups.notify?.(),
+    });
+    const notify = startNotifyJob(ledger, {
+      deliver: apprise.deliver,
+      intervalMs: HOUR,
+      wakeMs: 50,
+      now: () => NOW,
+      log,
+    });
+    wakeups.refresh = reviews.wake;
+    wakeups.notify = notify.wake;
+    try {
+      // Both jobs' first passes, with nothing waiting yet.
+      await reviews.run();
+      await notify.run();
+      expect(apprise.received).toEqual([]);
+      const posted = Date.now();
+      expect(
+        (await dev("/v1/events", "POST", { events: [waiting("dev@example.com")] })).status,
+      ).toBe(200);
+      await vi.waitFor(
+        () =>
+          expect(apprise.received.map((r) => r.title)).toContain(
+            "selfhost: Approval, an agent waits",
+          ),
+        { timeout: 5000, interval: 25 },
+      );
+      expect(Date.now() - posted).toBeLessThan(5000);
+    } finally {
+      reviews.stop();
+      notify.stop();
+    }
+  });
+
   it("pushes a waiting agent to its owner and budget alerts to the team owner, with summaries only", async () => {
     const { dev, lead, apprise } = await team();
     await dev("/v1/notify/targets", "POST", { url: PHONE, name: "phone" });
@@ -306,6 +355,38 @@ describe("the notification job on a team server", () => {
       directory: serverDirectory(ledger, undefined),
       now: NOW,
     });
+    expect(apprise.received).toEqual([]);
+  });
+
+  it("sends nothing of a team to someone revoked from it who is still in another team", async () => {
+    const { app, dev, lead, admin, apprise } = await team();
+    const data = (await (await admin("/v1/teams", "POST", { name: "Data" })).json()) as {
+      invite: string;
+    };
+    await admin("/v1/join", "POST", { invite: data.invite, person: "dora@example.com" });
+    const invite = (await (
+      await admin("/v1/teams/data/invites", "POST", { email: "dev@example.com" })
+    ).json()) as { invite: string };
+    const joined = (await (
+      await admin("/v1/join", "POST", { invite: invite.invite, person: "dev@example.com" })
+    ).json()) as JoinResponse;
+    const devData = caller(app, joined.token);
+    await dev("/v1/notify/targets", "POST", { url: PHONE, name: "phone" });
+    // Her waiting agent in web, and an item lead's route names her for.
+    await dev("/v1/events", "POST", { events: [waiting("dev@example.com")] });
+    const text = 'version = 1\n[[review.routes]]\nid = "all"\nto = ["dev@example.com"]\n';
+    expect((await lead("/v1/policy", "PUT", { text })).status).toBe(200);
+    await lead("/v1/events", "POST", { events: [waiting("lead@example.com")] });
+    await refreshReviewList(ledger, openReviewList(ledger, { now: () => NOW }));
+    expect((await lead("/v1/teams/web/people/dev@example.com/tokens", "DELETE")).status).toBe(200);
+    expect(
+      ((await (await devData("/v1/me")).json()) as { memberships: unknown[] }).memberships,
+    ).toEqual([{ team: "data", role: "member" }]);
+
+    const directory = serverDirectory(ledger, undefined);
+    expect(await directory.settingsFor("dev@example.com", "default")).toBeDefined();
+    expect(await directory.teamsOf?.("dev@example.com", "default")).toEqual(["data"]);
+    await runNotify(ledger, { deliver: apprise.deliver, directory, now: NOW });
     expect(apprise.received).toEqual([]);
   });
 });

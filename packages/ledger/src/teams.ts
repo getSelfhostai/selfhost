@@ -67,17 +67,23 @@ export interface TeamStore {
   renameTeam(id: string, name: string): Promise<TeamInfo | undefined>;
   /** The teams of an org, by id. */
   listTeams(org: string): Promise<TeamInfo[]>;
-  /** Everyone in a team, owners first, then admins, then members, each by when they joined. */
+  /**
+   * Everyone in a team, owners first, then admins, then members, each by when they joined.
+   * People revoked from it are not in it.
+   */
   listPeople(team: string): Promise<Person[]>;
+  /** A person in a team; undefined when they are not in it or were revoked from it. */
   getPerson(team: string, person: string): Promise<Person | undefined>;
   /**
    * Every team of `org` this person is in (ids compared ignoring case), with their role in
-   * each, by team id.
+   * each, by team id. Teams they were revoked from are not in it: a person's token acts only
+   * in teams where their membership is active.
    */
   memberships(org: string, person: string): Promise<Membership[]>;
   /**
    * Changes a person's role in a team, recording who changed it. Refused when it would leave
-   * the team with no owner. Changes to the same team run one at a time.
+   * the team with no owner, or the person was revoked from it. Changes to the same team run one
+   * at a time.
    */
   setRole(
     team: string,
@@ -88,6 +94,7 @@ export interface TeamStore {
   /**
    * Adds someone already in another team of the same org, under the id and name they have
    * there. They keep the tokens they hold; with one they can read and act in this team too.
+   * Someone revoked from this team comes back with the given role.
    */
   addPerson(
     team: string,
@@ -116,20 +123,27 @@ export interface TeamStore {
     invite: string,
     person: { id: string; name?: string },
   ): Promise<JoinResult | { refused: JoinRefusal }>;
-  /** The person a person token belongs to, or undefined for an unknown or revoked token. */
+  /**
+   * The person a person token belongs to, or undefined for an unknown or revoked token, or one
+   * whose person was revoked from its team.
+   */
   personForToken(token: string): Promise<Person | undefined>;
   /**
    * The person with this id (compared ignoring case) in each team where they still hold a
    * person token, with that team's org, oldest first: who a sign-in proxy's email stands for.
-   * Someone whose tokens were all revoked is not in it.
+   * Someone whose tokens were all revoked, or who was revoked from the team, is not in it.
    */
   peopleWithAccess(person: string): Promise<{ person: Person; org: string }[]>;
   /**
-   * Revokes every token a person holds, and the open invites for their email, so they cannot
-   * join again with one. undefined when the team has no such person.
+   * Revokes a person's membership of a team, every token they hold for it, and the open invites
+   * for their email, so they cannot join again with one. Their tokens from other teams of the org
+   * no longer reach this team. undefined when the team has no such person.
    */
   revokePerson(team: string, person: string): Promise<RevokeTokensResponse | undefined>;
-  /** Revokes one person token, as leaving a team does. undefined for an unknown or revoked token. */
+  /**
+   * Revokes one person token, as leaving a team does. When it was the person's last live token
+   * for that team, their membership there ends too. undefined for an unknown or revoked token.
+   */
   revokeToken(token: string): Promise<RevokeTokensResponse | undefined>;
   getPolicy(team: string): Promise<TeamPolicy | undefined>;
   setPolicy(team: string, text: string): Promise<TeamPolicy>;
@@ -199,6 +213,8 @@ const toInvite = (row: InviteRow): Invite => ({
 });
 
 const PERSON_COLUMNS = "p.team_id, p.id, p.name, p.role, p.created_at";
+/** A membership that was not revoked: the only kind that gives access to a team. */
+const ACTIVE = "p.revoked_at IS NULL";
 const ROLE_ORDER = "CASE p.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END";
 const INVITE_COLUMNS = "hash, team_id, email, created_at, expires_at, revoked_at";
 
@@ -271,7 +287,7 @@ export function createTeamStore(db: Database): TeamStore {
 
     async listPeople(team) {
       const rows = await db.query<PersonRow>(
-        `SELECT ${PERSON_COLUMNS} FROM people p WHERE p.team_id = $1
+        `SELECT ${PERSON_COLUMNS} FROM people p WHERE p.team_id = $1 AND ${ACTIVE}
          ORDER BY ${ROLE_ORDER}, p.created_at, p.id`,
         [team],
       );
@@ -280,7 +296,7 @@ export function createTeamStore(db: Database): TeamStore {
 
     async getPerson(team, person) {
       const [row] = await db.query<PersonRow>(
-        `SELECT ${PERSON_COLUMNS} FROM people p WHERE p.team_id = $1 AND p.id = $2`,
+        `SELECT ${PERSON_COLUMNS} FROM people p WHERE p.team_id = $1 AND p.id = $2 AND ${ACTIVE}`,
         [team, person],
       );
       return row ? toPerson(row) : undefined;
@@ -289,7 +305,7 @@ export function createTeamStore(db: Database): TeamStore {
     async memberships(org, person) {
       return db.query<Membership>(
         `SELECT p.team_id AS team, p.role FROM people p JOIN teams t ON t.id = p.team_id
-         WHERE t.org_id = $1 AND lower(p.id) = lower($2::text)
+         WHERE t.org_id = $1 AND lower(p.id) = lower($2::text) AND ${ACTIVE}
          ORDER BY p.team_id`,
         [org, person],
       );
@@ -301,13 +317,13 @@ export function createTeamStore(db: Database): TeamStore {
         // the same time cannot leave the team with none.
         await tx.query("SELECT id FROM teams WHERE id = $1 FOR UPDATE", [team]);
         const [current] = await tx.query<PersonRow>(
-          `SELECT ${PERSON_COLUMNS} FROM people p WHERE p.team_id = $1 AND p.id = $2`,
+          `SELECT ${PERSON_COLUMNS} FROM people p WHERE p.team_id = $1 AND p.id = $2 AND ${ACTIVE}`,
           [team, person],
         );
         if (!current) return { refused: "not_found" as const };
         if (current.role === "owner" && role !== "owner") {
           const owners = await tx.query(
-            "SELECT 1 FROM people WHERE team_id = $1 AND role = 'owner'",
+            `SELECT 1 FROM people p WHERE p.team_id = $1 AND p.role = 'owner' AND ${ACTIVE}`,
             [team],
           );
           if (owners.length <= 1) return { refused: "last_owner" as const };
@@ -331,18 +347,31 @@ export function createTeamStore(db: Database): TeamStore {
           [team],
         );
         if (!found) return { refused: "no_team" as const };
-        const [existing] = await tx.query(
-          "SELECT 1 FROM people WHERE team_id = $1 AND lower(id) = lower($2::text)",
+        const [existing] = await tx.query<{ id: string; active: boolean }>(
+          `SELECT p.id, ${ACTIVE} AS active FROM people p
+           WHERE p.team_id = $1 AND lower(p.id) = lower($2::text)`,
           [team, person],
         );
-        if (existing) return { refused: "existing_person" as const };
+        if (existing?.active) return { refused: "existing_person" as const };
         const [elsewhere] = await tx.query<{ id: string; name: string | null }>(
           `SELECT p.id, p.name FROM people p JOIN teams t ON t.id = p.team_id
-           WHERE t.org_id = $1 AND lower(p.id) = lower($2::text)
+           WHERE t.org_id = $1 AND lower(p.id) = lower($2::text) AND p.team_id <> $3 AND ${ACTIVE}
            ORDER BY p.created_at LIMIT 1`,
-          [found.org_id, person],
+          [found.org_id, person, team],
         );
         if (!elsewhere) return { refused: "not_in_org" as const };
+        if (existing) {
+          // Revoked from this team before: the membership comes back with the role given now.
+          const [row] = await tx.query<PersonRow>(
+            `UPDATE people p SET revoked_at = NULL, role = $3, role_changed_at = now(),
+               role_changed_by = $4
+             WHERE p.team_id = $1 AND p.id = $2
+             RETURNING ${PERSON_COLUMNS}`,
+            [team, existing.id, role, by],
+          );
+          if (!row) throw new Error(`person ${person} missing right after the check`);
+          return { person: toPerson(row) };
+        }
         const [row] = await tx.query<PersonRow>(
           `INSERT INTO people AS p (team_id, id, name, role, role_changed_at, role_changed_by)
            VALUES ($1, $2, $3, $4, now(), $5)
@@ -415,16 +444,18 @@ export function createTeamStore(db: Database): TeamStore {
           );
           if (existing) return { refused: "existing_person" };
         }
-        // Someone revoked from the team (no token left there) comes back with the role an
-        // invite gives, not the one they had: re-inviting a removed owner by email must not make
-        // them an owner again. A team needs an owner, so the last one keeps the role.
+        // Someone revoked from the team comes back with the role an invite gives, not the one
+        // they had: re-inviting a removed owner by email must not make them an owner again. A
+        // team needs an owner, so the last one keeps the role.
         await tx.query(
           `UPDATE people p SET role = 'member', role_changed_at = now(), role_changed_by = 'invite'
-           WHERE p.team_id = $1 AND p.id = $2 AND p.role <> 'member'
-             AND NOT EXISTS (SELECT 1 FROM tokens k WHERE k.team_id = $1 AND k.person_id = $2
-               AND k.kind = 'person' AND k.revoked_at IS NULL)
+           WHERE p.team_id = $1 AND p.id = $2 AND p.role <> 'member' AND p.revoked_at IS NOT NULL
              AND EXISTS (SELECT 1 FROM people o WHERE o.team_id = $1 AND o.id <> $2
-               AND o.role = 'owner')`,
+               AND o.role = 'owner' AND o.revoked_at IS NULL)`,
+          [team.id, person.id],
+        );
+        await tx.query(
+          "UPDATE people SET revoked_at = NULL WHERE team_id = $1 AND id = $2 AND revoked_at IS NOT NULL",
           [team.id, person.id],
         );
         await tx.query(
@@ -455,6 +486,11 @@ export function createTeamStore(db: Database): TeamStore {
           person,
         ]);
         if (!found) return undefined;
+        await tx.query(
+          `UPDATE people SET revoked_at = coalesce(revoked_at, now())
+           WHERE team_id = $1 AND id = $2`,
+          [team, person],
+        );
         const tokens = await tx.query(
           `UPDATE tokens SET revoked_at = now()
            WHERE team_id = $1 AND revoked_at IS NULL
@@ -467,19 +503,30 @@ export function createTeamStore(db: Database): TeamStore {
     },
 
     async revokeToken(token) {
-      const [row] = await db.query<{ team_id: string; person_id: string }>(
-        `UPDATE tokens SET revoked_at = now()
-         WHERE hash = $1 AND kind = 'person' AND revoked_at IS NULL
-         RETURNING team_id, person_id`,
-        [hashToken(token)],
-      );
-      return row ? { team: row.team_id, person: row.person_id, revoked: 1 } : undefined;
+      return db.transaction(async (tx) => {
+        const [row] = await tx.query<{ team_id: string; person_id: string }>(
+          `UPDATE tokens SET revoked_at = now()
+           WHERE hash = $1 AND kind = 'person' AND revoked_at IS NULL
+           RETURNING team_id, person_id`,
+          [hashToken(token)],
+        );
+        if (!row) return undefined;
+        // Their last token for the team: they left it, so other teams' tokens no longer reach it.
+        await tx.query(
+          `UPDATE people p SET revoked_at = now()
+           WHERE p.team_id = $1 AND p.id = $2 AND p.revoked_at IS NULL
+             AND NOT EXISTS (SELECT 1 FROM tokens k WHERE k.team_id = $1 AND k.person_id = $2
+               AND k.kind = 'person' AND k.revoked_at IS NULL)`,
+          [row.team_id, row.person_id],
+        );
+        return { team: row.team_id, person: row.person_id, revoked: 1 };
+      });
     },
 
     async peopleWithAccess(person) {
       const rows = await db.query<PersonRow & { org_id: string }>(
         `SELECT ${PERSON_COLUMNS}, t.org_id FROM people p JOIN teams t ON t.id = p.team_id
-         WHERE lower(p.id) = lower($1::text) AND EXISTS (
+         WHERE lower(p.id) = lower($1::text) AND ${ACTIVE} AND EXISTS (
            SELECT 1 FROM tokens k
            WHERE k.team_id = p.team_id AND k.person_id = p.id AND k.kind = 'person'
              AND k.revoked_at IS NULL)
@@ -493,7 +540,7 @@ export function createTeamStore(db: Database): TeamStore {
       const [row] = await db.query<PersonRow>(
         `SELECT ${PERSON_COLUMNS} FROM tokens k
          JOIN people p ON p.team_id = k.team_id AND p.id = k.person_id
-         WHERE k.hash = $1 AND k.kind = 'person' AND k.revoked_at IS NULL`,
+         WHERE k.hash = $1 AND k.kind = 'person' AND k.revoked_at IS NULL AND ${ACTIVE}`,
         [hashToken(token)],
       );
       return row ? toPerson(row) : undefined;

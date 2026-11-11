@@ -9,9 +9,15 @@ import { costsOf, totalOf } from "./orgs.js";
  * an alert at 50%, 80% and 100% of each period's budget, once per window, as the gateway raises
  * its own; when spend crosses several shares between two checks only the highest is raised.
  * They become budget items on the review list, for the budget owners. Requests are never stopped
- * here; only a gateway with [budget] mode = "hard" does that.
+ * here; only a gateway with [budget] mode = "hard" does that, and each alert's suggestion says
+ * which of the two is in force.
  */
-export async function raiseBudgetAlerts(ledger: Ledger, now: Date): Promise<number> {
+export async function raiseBudgetAlerts(
+  ledger: Ledger,
+  now: Date,
+  /** Whether this server runs a gateway, so an alert says what holds a hard budget. */
+  options: { gateway?: boolean } = {},
+): Promise<number> {
   const db = databaseOf(ledger);
   const orgs = await db.query<{ id: string }>("SELECT id FROM orgs ORDER BY id");
   let raised = 0;
@@ -37,7 +43,7 @@ export async function raiseBudgetAlerts(ledger: Ledger, now: Date): Promise<numb
         const start = periodRange(period, now).from.getTime();
         return totalOf(costs.filter((event) => Date.parse(event.ts) >= start)).usd;
       };
-      const alerts = highestShares(spendAlerts(team.id, limits, spent, now));
+      const alerts = highestShares(spendAlerts(team.id, limits, spent, now, options));
       if (alerts.length === 0) continue;
       try {
         raised += (await ledger.append(alerts, { team: team.id })).accepted.length;

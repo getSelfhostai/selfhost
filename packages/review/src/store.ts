@@ -36,6 +36,8 @@ export interface Scope {
   team?: string;
   /** Items of this org's teams only; an item with no team counts as the default org's. */
   org?: string;
+  /** Items of these teams only (not items with no team). */
+  teams?: readonly string[];
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -101,6 +103,10 @@ function scoped(scope: Scope, params: unknown[]): string {
   if (scope.org !== undefined) {
     params.push(scope.org);
     sql += ` AND coalesce((SELECT t.org_id FROM teams t WHERE t.id = review_items.team), '${DEFAULT_ORG_ID}') = $${params.length}`;
+  }
+  if (scope.teams !== undefined) {
+    params.push(JSON.stringify(scope.teams));
+    sql += ` AND team IN (SELECT jsonb_array_elements_text($${params.length}::text::jsonb))`;
   }
   return sql;
 }

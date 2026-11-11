@@ -27,6 +27,7 @@ import {
   newItem,
   routeContext,
   routeInput,
+  withoutRevoked,
 } from "./build.js";
 import { type CodeOwners, parseCodeOwners } from "./codeowners.js";
 import { handedOverItem } from "./handoff.js";
@@ -109,6 +110,7 @@ interface Run {
   result: RefreshResult;
   persons: Map<string, string | undefined>;
   roles: Map<string, Roles>;
+  revoked: Map<string, string[]>;
   codeowners: (repo: string | undefined) => Promise<CodeOwners | undefined>;
 }
 
@@ -166,18 +168,32 @@ async function teamConfigs(
   return (team) => (team === null ? defaults : (configs.get(team) ?? defaults));
 }
 
-/** A team's people by role: owners and admins approve its exceptions; routes name roles. */
+/**
+ * A team's people by role: owners and admins approve its exceptions; routes name roles. People
+ * revoked from the team have no role in it.
+ */
 async function teamRoles(tx: Queryable, team: string, run: Run): Promise<Roles> {
   const cached = run.roles.get(team);
   if (cached) return cached;
-  const rows = await tx.query<{ id: string; role: string }>(
-    "SELECT id, role FROM people WHERE team_id = $1 ORDER BY id",
+  const rows = await tx.query<{ id: string; role: string; revoked: boolean }>(
+    "SELECT id, role, revoked_at IS NOT NULL AS revoked FROM people WHERE team_id = $1 ORDER BY id",
     [team],
   );
   const roles = Object.fromEntries(PERSON_ROLES.map((role) => [role, [] as string[]])) as Roles;
-  for (const row of rows) roles[row.role as PersonRole]?.push(row.id);
+  const revoked: string[] = [];
+  for (const row of rows) {
+    if (row.revoked) revoked.push(row.id);
+    else roles[row.role as PersonRole]?.push(row.id);
+  }
   run.roles.set(team, roles);
+  run.revoked.set(team, revoked);
   return roles;
+}
+
+/** The people revoked from a team: routing never names them. */
+async function teamRevoked(tx: Queryable, team: string, run: Run): Promise<string[]> {
+  await teamRoles(tx, team, run);
+  return run.revoked.get(team) ?? [];
 }
 
 /**
@@ -188,14 +204,16 @@ async function teamRouting(
   tx: Queryable,
   team: string | null,
   run: Run,
-): Promise<Pick<BuildContext, "roles" | "approvers" | "budgetOwners">> {
+): Promise<Pick<BuildContext, "roles" | "approvers" | "budgetOwners" | "revoked">> {
   if (team === null) return {};
   const roles = await teamRoles(tx, team, run);
+  const revoked = await teamRevoked(tx, team, run);
   const named = run.configFor(team).notify.budget_owners;
   return {
     roles,
     approvers: [...roles.owner, ...roles.admin].sort(),
-    budgetOwners: named.length > 0 ? [...named] : [...roles.owner],
+    budgetOwners: withoutRevoked(named.length > 0 ? [...named] : [...roles.owner], revoked),
+    revoked,
   };
 }
 
@@ -605,7 +623,7 @@ async function escalate(tx: Queryable, run: Run): Promise<void> {
     );
     const next: ReviewItem = {
       ...item,
-      owners: routing.owners,
+      owners: withoutRevoked(routing.owners, ctx.revoked),
       route: routing.route,
       updated_at: run.now.toISOString(),
     };
@@ -654,7 +672,7 @@ async function weeklyReports(tx: Queryable, run: Run): Promise<void> {
     const item: ReviewItem = {
       ...report,
       id: stableEventId(since.toISOString(), `review_item\n${scope}\n${key}`),
-      owners,
+      owners: team === null ? owners : withoutRevoked(owners, await teamRevoked(tx, team, run)),
       why: {
         signal: "policy.evaluated",
         text: "Rules in observe mode record what they would have blocked; this is last week's.",
@@ -744,6 +762,7 @@ export async function refreshReviewList(
     result: { created: 0, updated: 0 },
     persons: new Map(),
     roles: new Map(),
+    revoked: new Map(),
     codeowners: codeownersReader(options.codeowners),
   };
   await db.transaction(async (tx) => {

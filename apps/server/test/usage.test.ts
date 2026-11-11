@@ -20,7 +20,7 @@ import { BACKENDS, caller, TOKEN } from "./helpers.js";
 /**
  * A seeded ledger for the usage views: org Acme with teams Web (repo acme/site) and Data (repo
  * acme/etl), spend from OpenTelemetry, local logs and the gateway, one session that two sources
- * report, a run whose repo moves it to another team, pull requests opened and merged, events
+ * report, a run in another team's repo that stays in its writer's team, pull requests opened and merged, events
  * with no team written with the admin token, and one event outside the range. Every view is
  * checked against SQL written directly on the events table.
  */
@@ -172,7 +172,7 @@ const WRITES: Record<string, LedgerEvent[]> = {
       ts: "2026-11-13T00:30:00.000Z",
       model: "claude-sonnet-4",
     }),
-    // Dan works in Web's repo: the run is Web's.
+    // Dan works in Web's repo: the run stays Data's, the team Dan wrote it from.
     cost(DAN, 0.3, 300, {
       session_id: "s-d2",
       repo: "acme/site",
@@ -208,7 +208,7 @@ const ADMIN_WRITES: LedgerEvent[] = [
   }),
 ];
 
-const TEAM_SQL = "coalesce(tr.team_id, e.team)";
+const TEAM_SQL = "coalesce(e.team, tr.team_id)";
 const DIRECT_DIMENSION: Record<UsageDimension, string> = {
   team: `coalesce(${TEAM_SQL}, 'unknown')`,
   person: "CASE WHEN e.actor_kind = 'person' THEN e.actor_id ELSE 'unknown' END",
@@ -507,13 +507,13 @@ describe.each(BACKENDS)("usage views on a seeded ledger on $name", (backend) => 
     expect(body.total).toMatchObject({ usd: 1.75, requests: 2, sessions: 1 });
   });
 
-  it.skipIf(backend.skip)("puts a run in the team that owns its repo", async () => {
-    const body = await usage(admin, `${RANGE}&org=acme&person=${DAN}&group_by=team`);
-    expect(body.rows.map((row) => [row.group.team, row.usd])).toEqual([
-      ["data", 1.2],
-      ["web", 0.3],
-    ]);
-  });
+  it.skipIf(backend.skip)(
+    "keeps a run naming another team's repo in its writer's team",
+    async () => {
+      const body = await usage(admin, `${RANGE}&org=acme&person=${DAN}&group_by=team`);
+      expect(body.rows.map((row) => [row.group.team, row.usd])).toEqual([["data", 1.5]]);
+    },
+  );
 
   it.skipIf(backend.skip)("counts a pull request once however many events report it", async () => {
     const body = await usage(admin, `${RANGE}&org=acme&group_by=person`);
@@ -523,7 +523,10 @@ describe.each(BACKENDS)("usage views on a seeded ledger on $name", (backend) => 
   });
 
   it.skipIf(backend.skip)("counts a session in every day it ran", async () => {
-    const body = await usage(admin, `${RANGE}&org=acme&person=${DAN}&team=data&group_by=day`);
+    const body = await usage(
+      admin,
+      `${RANGE}&org=acme&person=${DAN}&team=data&agent=claude_code&group_by=day`,
+    );
     expect(body.rows.map((row) => [row.group.day, row.sessions, row.usd])).toEqual([
       ["2026-11-12", 1, 0.6],
       ["2026-11-13", 1, 0.6],
@@ -615,7 +618,7 @@ describe.each(BACKENDS)("usage views on a seeded ledger on $name", (backend) => 
       expect(metricsOf(body.total)).toEqual(expected.get(""));
       // Everyone's usage in their team, as the team overview shows it.
       const people = await usage(wendy, `${RANGE}&group_by=person`);
-      expect(people.rows.map((row) => row.group.person).sort()).toEqual([DAN, LEAD, WENDY]);
+      expect(people.rows.map((row) => row.group.person).sort()).toEqual([LEAD, WENDY]);
     });
 
     it.skipIf(backend.skip)("refuse a team the caller is not in, and another org", async () => {
@@ -624,9 +627,9 @@ describe.each(BACKENDS)("usage views on a seeded ledger on $name", (backend) => 
       expect(refused.status).toBe(403);
       expect((await dan(`/v1/usage.csv?${RANGE}&team=web`)).status).toBe(403);
       expect((await dan(`/v1/usage?${RANGE}&org=default`)).status).toBe(403);
-      // The run Dan did in Web's repo is Web's, so Dan does not see it.
+      // The run Dan did in Web's repo stays in Dan's own team.
       const own = await usage(dan, `${RANGE}&person=${DAN}`);
-      expect(own.total.usd).toBe(1.2);
+      expect(own.total.usd).toBe(1.5);
     });
 
     it.skipIf(backend.skip)("give a lead in both teams the cross-team view", async () => {

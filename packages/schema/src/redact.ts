@@ -153,9 +153,10 @@ function childPath(path: string, key: string): string {
 
 /**
  * The person ids an event stores in the clear: its actor, who decided, and the ids under `data`
- * such as `owner`. Lowercase.
+ * such as `owner`. Lowercase. Text about the event may name them (a budget alert's message names
+ * its person); any other email is masked.
  */
-function identitiesOf(event: LedgerEvent): Set<string> {
+export function eventIdentities(event: LedgerEvent): Set<string> {
   const ids = new Set<string>();
   const add = (value: unknown) => {
     if (typeof value === "string" && value.length > 0) ids.add(value.toLowerCase());
@@ -182,7 +183,7 @@ export function redactEvent(
   settings: RedactionSettings = DEFAULT_REDACTION,
 ): LedgerEvent {
   const paths: string[] = [];
-  const people = identitiesOf(event);
+  const people = eventIdentities(event);
   const mask = (text: string, path: string, keep?: ReadonlySet<string>): string => {
     const known = maskLiterals(text, settings.literals ?? []);
     const result = maskSecrets(known.text, settings.patterns, keep);

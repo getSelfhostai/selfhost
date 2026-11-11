@@ -71,6 +71,8 @@ export interface TeamRouteOptions {
   background?: Background;
   /** Run handoffs and share links: default config, public URL and the GitHub App. */
   handoffs?: Omit<HandoffRouteOptions, "now">;
+  /** Called with the kinds of each batch of new events a person token writes. */
+  eventsStored?: (kinds: readonly string[]) => void;
 }
 
 export type PersonEnv = { Bindings: { person: Person; caller: PersonCaller } };
@@ -123,6 +125,7 @@ export function teamRoutes(
     gateway,
     background,
     handoffs,
+    eventsStored,
   }: TeamRouteOptions,
 ): void {
   const { teams } = ledger;
@@ -135,6 +138,7 @@ export function teamRoutes(
   eventRoutes(events, ledger, {
     team: (c) => (c.env as EventsEnv).team,
     person: (c) => (c.env as EventsEnv).person,
+    ...(eventsStored ? { stored: eventsStored } : {}),
   });
   events.onError(rethrow);
 
@@ -316,7 +320,7 @@ function sharedRoutes(
   background: Background | undefined,
   handoffs: TeamRouteOptions["handoffs"],
 ): void {
-  policyRoutes(router, ledger, gateway);
+  policyRoutes(router, ledger, gateway, background?.env);
   contextRoutes(router, ledger, { ...(now ? { now } : {}), ...runs });
   integrationRoutes(router, ledger, {
     ...integrations,

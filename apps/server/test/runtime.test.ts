@@ -102,7 +102,7 @@ describe("the server's runtime seam", () => {
     }
   });
 
-  it("sends a team's tracer only SELFHOST_RUN_SECRET_* variables as headers", () => {
+  it("sends a team's tracer only the team's own SELFHOST_RUN_SECRET_<TEAM>__* variables as headers", () => {
     const tracer = (variable: string) => {
       const parsed = parseConfig(
         `version = 1\n[integrations.tracer]\ntool = "otlp"\nendpoint = "https://attacker.example"\nheaders_env = { Authorization = "${variable}" }\n`,
@@ -110,7 +110,17 @@ describe("the server's runtime seam", () => {
       if (!parsed.ok) throw new Error(JSON.stringify(parsed.errors));
       return parsed.config;
     };
-    expect(unsafeTracerHeaders(tracer("SELFHOST_TOKEN"))).toEqual(["SELFHOST_TOKEN"]);
-    expect(unsafeTracerHeaders(tracer("SELFHOST_RUN_SECRET_TRACER"))).toEqual([]);
+    const scope = { pathPrefix: "selfhost/{team}/", sharedTeams: ["web"] };
+    const unsafe = (variable: string, team = "web") =>
+      unsafeTracerHeaders(tracer(variable), team, scope);
+    expect(unsafe("SELFHOST_TOKEN")).toEqual(["SELFHOST_TOKEN"]);
+    expect(unsafe("SELFHOST_RUN_SECRET_WEB__TRACER")).toEqual([]);
+    expect(unsafe("SELFHOST_RUN_SECRET_SHARED__TRACER")).toEqual([]);
+    // Another team's variable, the old single prefix, and shared ones the team is not allowed.
+    expect(unsafe("SELFHOST_RUN_SECRET_API__TRACER")).toEqual(["SELFHOST_RUN_SECRET_API__TRACER"]);
+    expect(unsafe("SELFHOST_RUN_SECRET_TRACER")).toEqual(["SELFHOST_RUN_SECRET_TRACER"]);
+    expect(unsafe("SELFHOST_RUN_SECRET_SHARED__TRACER", "api")).toEqual([
+      "SELFHOST_RUN_SECRET_SHARED__TRACER",
+    ]);
   });
 });

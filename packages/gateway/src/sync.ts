@@ -163,12 +163,29 @@ interface BudgetAlertInput {
   percent?: number;
   /** true when a gateway refuses the requests until the window resets. */
   enforced: boolean;
+  /**
+   * For an alert from ledger spend: the [budget] mode in force, and whether a gateway is known to
+   * be there (undefined: not known here), so the suggestion matches what holds the budget.
+   */
+  mode?: "alert" | "hard";
+  gateway?: boolean;
   person?: string;
   key_alias?: string;
   run_id?: string;
 }
 
 const round = (usd: number) => Math.round(usd * 100) / 100;
+
+/** What happens next, for an alert selfhost raises from spend that no gateway enforces here. */
+function notEnforced(input: BudgetAlertInput): string {
+  if (input.mode !== "hard") {
+    return 'Requests go on: raise [budget] in selfhost.toml, or set [budget] mode = "hard" with a gateway to stop them.';
+  }
+  if (input.gateway === false) {
+    return '[budget] mode is "hard", but no gateway runs on this server, so requests go on: start it with a gateway (selfhost up --gateway), or raise [budget] in selfhost.toml.';
+  }
+  return '[budget] mode is "hard": the gateway refuses requests sent with its keys once a budget is spent; traffic that does not go through it, such as subscription logins, goes on. Raise [budget] in selfhost.toml to allow more.';
+}
 
 /**
  * The alert.raised event for a budget: spent (budget_exceeded), or a share of it spent (budget).
@@ -215,7 +232,7 @@ function budgetAlert(input: BudgetAlertInput, now: Date): LedgerEvent {
           ? `${who} went over ${budget}: $${round(input.spent_usd ?? 0)} spent, $${round(over)} over`
           : `${who} spent ${budget}`,
       suggestion: !input.enforced
-        ? 'Requests go on: raise [budget] in selfhost.toml, or set [budget] mode = "hard" with a gateway to stop them.'
+        ? notEnforced(input)
         : period === "run"
           ? "The gateway refuses this run's requests from now on."
           : "The gateway refuses these requests until the budget resets, or until [budget] in selfhost.toml is raised.",
@@ -300,9 +317,13 @@ export const BUDGET_ALERT_PERCENTS = [50, 80, 100] as const;
  */
 export function spendAlerts(
   team: string,
-  budget: { daily_usd?: number; weekly_usd?: number; monthly_usd?: number } | undefined,
+  budget:
+    | { daily_usd?: number; weekly_usd?: number; monthly_usd?: number; mode?: "alert" | "hard" }
+    | undefined,
   spentUsd: (period: "day" | "week" | "month") => number,
   now: Date,
+  /** Whether this server runs a gateway; leave it out where that is not known (a laptop). */
+  options: { gateway?: boolean } = {},
 ): LedgerEvent[] {
   if (!budget) return [];
   const limits = [
@@ -328,6 +349,8 @@ export function spendAlerts(
             scope: "team",
             percent,
             enforced: false,
+            mode: budget.mode ?? "alert",
+            ...(options.gateway !== undefined ? { gateway: options.gateway } : {}),
           },
           now,
         ),

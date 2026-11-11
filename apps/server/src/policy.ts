@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { compilePolicy } from "@selfhost/compile";
+import { type SecretScope, secretScopeErrors, secretScopeFromEnv } from "@selfhost/credentials";
 import type { EffectivePolicy, Ledger } from "@selfhost/ledger";
 import { effectiveRules } from "@selfhost/policy";
 import {
@@ -16,6 +17,7 @@ import {
   PolicyQuerySchema,
   type PolicyResponse,
   parseConfig,
+  type ResolvedSelfhostConfig,
   SetPolicyRequestSchema,
 } from "@selfhost/schema";
 import type { Context } from "hono";
@@ -76,6 +78,22 @@ export function policyCoverageResponse(
   return { hash: policy.hash, team: policy.team, coverage };
 }
 
+/**
+ * [secrets.env] entries of a policy layer that `team` may not read: env: variables outside its
+ * own SELFHOST_RUN_SECRET_<TEAM>__* (or the shared ones the server allows it), and Vault or
+ * Infisical paths outside its prefix. Runs refuse them too; this says so when the file is set.
+ */
+export function secretErrors(
+  config: Pick<ResolvedSelfhostConfig, "secrets">,
+  team: string,
+  scope: SecretScope,
+): InvalidPolicyError["errors"] {
+  return secretScopeErrors(config, team, scope).map(({ name, message }) => ({
+    field: `secrets.env.${name}`,
+    message,
+  }));
+}
+
 export function invalidPolicy(c: Context, errors: InvalidPolicyError["errors"], relaxes: boolean) {
   const body: InvalidPolicyError = {
     error: {
@@ -115,8 +133,14 @@ async function conflictsWith(ledger: Ledger, org: string, text: string): Promise
  * both kinds of token. A person token reads the policy of any team it is in and changes it
  * when its role there has policy.write; the admin token names the team.
  */
-export function policyRoutes(router: Router, ledger: Ledger, gateway?: Gateway): void {
+export function policyRoutes(
+  router: Router,
+  ledger: Ledger,
+  gateway?: Gateway,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
   const { teams, orgs } = ledger;
+  const scope = secretScopeFromEnv(env);
   // Budgets and providers in the policy go to the gateway now, not at its next periodic sync.
   const changed = () => gateway?.policyChanged?.();
 
@@ -204,6 +228,8 @@ export function policyRoutes(router: Router, ledger: Ledger, gateway?: Gateway):
           checked.errors.some((e) => e.org_rule),
         );
       }
+      const secrets = secretErrors(checked.config, team, scope);
+      if (secrets.length > 0) return invalidPolicy(c, secrets, false);
       if (repo !== undefined) await orgs.setRepoPolicy(org, repo, body.text);
       else await teams.setPolicy(team, body.text);
       changed();
@@ -251,6 +277,11 @@ export function policyRoutes(router: Router, ledger: Ledger, gateway?: Gateway):
       if (body instanceof Response) return body;
       const parsed = parseConfig(body.text);
       if (!parsed.ok) return invalidPolicy(c, parsed.errors, false);
+      // The org's [secrets.env] reaches every team of it, so each must be allowed to read them.
+      const secrets = (await teams.listTeams(org)).flatMap(({ id }) =>
+        secretErrors(parsed.config, id, scope),
+      );
+      if (secrets.length > 0) return invalidPolicy(c, secrets, false);
       const stored = await orgs.setOrgPolicy(org, body.text);
       changed();
       return c.json(await orgPolicyResponse(org, stored.text, stored.updatedAt));

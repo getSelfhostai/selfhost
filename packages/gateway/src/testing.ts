@@ -17,9 +17,13 @@ const json = (status: number, body: unknown) =>
 /**
  * Bifrost's management API as its v2.4 reference describes it, in memory: teams and virtual keys
  * with budgets, rotate, paged key lists, /api/logs answering a recorded page, and /health.
- * Calls without the admin's basic auth answer 401, as Bifrost does with auth_config on.
+ * Calls without the admin's basic auth answer 401, as Bifrost does with auth_config on. An update
+ * that sends budgets replaces them: a budget sent with the id of one it has changes in place and
+ * keeps its usage and last reset; one sent without an id is new, at zero usage, reset now. An
+ * update without budgets leaves them as they are.
  */
-export function fakeBifrost(options: { password?: string; logs?: unknown } = {}) {
+export function fakeBifrost(options: { password?: string; logs?: unknown; now?: () => Date } = {}) {
+  const now = options.now ?? (() => new Date());
   const password = options.password ?? "test-admin-password";
   const expected = `Basic ${Buffer.from(`selfhost:${password}`).toString("base64")}`;
   const teams = new Map<string, Json>();
@@ -27,12 +31,20 @@ export function fakeBifrost(options: { password?: string; logs?: unknown } = {})
   const calls: Call[] = [];
   let next = 1;
   let healthy = true;
-  const budgets = (list: unknown) =>
-    ((list as Json[] | undefined) ?? []).map((b) => ({
-      id: `budget-${next++}`,
-      current_usage: 0,
-      ...b,
-    }));
+  const budgets = (list: unknown, current: unknown = []) =>
+    ((list as Json[] | undefined) ?? []).map((b) => {
+      const found = (current as Json[]).find((c) => b.id !== undefined && c.id === b.id);
+      if (found) {
+        return { ...found, max_limit: b.max_limit, reset_duration: b.reset_duration };
+      }
+      const { id: _id, current_usage: _usage, ...rest } = b;
+      return {
+        id: `budget-${next++}`,
+        current_usage: 0,
+        last_reset: now().toISOString(),
+        ...rest,
+      };
+    });
 
   async function fetch(url: string, init: RequestInit): Promise<Response> {
     const { pathname, searchParams } = new URL(url);
@@ -67,7 +79,10 @@ export function fakeBifrost(options: { password?: string; logs?: unknown } = {})
     if (teamMatch && method === "PUT") {
       const team = teams.get(decodeURIComponent(teamMatch[1] ?? ""));
       if (!team) return json(404, { type: "not_found", error: { message: "team not found" } });
-      Object.assign(team, { name: body?.name, budgets: budgets(body?.budgets) });
+      Object.assign(team, {
+        name: body?.name,
+        ...(body?.budgets !== undefined ? { budgets: budgets(body.budgets, team.budgets) } : {}),
+      });
       return json(200, { message: "Team updated successfully", team });
     }
     if (pathname === "/api/governance/virtual-keys" && method === "GET") {
@@ -113,7 +128,10 @@ export function fakeBifrost(options: { password?: string; logs?: unknown } = {})
       const key = keys.get(decodeURIComponent(keyMatch[1] ?? ""));
       if (!key)
         return json(404, { type: "not_found", error: { message: "virtual key not found" } });
-      Object.assign(key, { ...body, budgets: budgets(body?.budgets) });
+      Object.assign(key, {
+        ...body,
+        ...(body?.budgets !== undefined ? { budgets: budgets(body.budgets, key.budgets) } : {}),
+      });
       return json(200, { message: "Virtual key updated successfully", virtual_key: key });
     }
     if (pathname === "/api/logs" && method === "GET") {

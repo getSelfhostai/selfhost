@@ -1,9 +1,6 @@
 import type { SecretRef } from "@selfhost/runtime";
-import {
-  type CredentialSource,
-  type ResolvedSelfhostConfig,
-  RUN_SECRET_ENV_PREFIX,
-} from "@selfhost/schema";
+import type { CredentialSource, ResolvedSelfhostConfig } from "@selfhost/schema";
+import { type SecretScope, secretRefusal, secretScopeFromEnv } from "./scope.js";
 import type { CredentialTarget, EnforcementGap, SecretPlan } from "./translate.js";
 
 /** A secret declared in [secrets.env], parsed. */
@@ -125,10 +122,17 @@ export class SecretResolveError extends Error {
 }
 
 export interface ResolveDeps {
-  /** The server's environment: env: sources (SELFHOST_RUN_SECRET_* only) and, by default, the stores. */
+  /**
+   * The server's environment: env: sources (the team's own SELFHOST_RUN_SECRET_<TEAM>__*, or
+   * shared ones it is allowed) and, by default, the stores and the secret scope.
+   */
   env: NodeJS.ProcessEnv;
+  /** The team the value is read for: it reads only its own variables and paths. */
+  team: string;
   /** Default: storesFromEnv(env). */
   stores?: SecretStores;
+  /** Default: secretScopeFromEnv(env). */
+  scope?: SecretScope;
   fetch?: typeof fetch;
 }
 
@@ -211,9 +215,11 @@ async function fromInfisical(
 }
 
 /**
- * Reads one declared secret's value from the server's environment (SELFHOST_RUN_SECRET_*
- * only), Vault or Infisical, each as the server is set up to reach it. github-app: and gateway:
- * values are issued per run, not read, so they are not resolved here.
+ * Reads one declared secret's value for a team from the server's environment (the team's own
+ * SELFHOST_RUN_SECRET_<TEAM>__* variables, or SELFHOST_RUN_SECRET_SHARED__* ones the server
+ * allows it), Vault or Infisical (paths under the team's prefix), each as the server is set up
+ * to reach it. github-app: and gateway: values are issued per run, not read, so they are not
+ * resolved here.
  */
 export async function resolveSecret(
   secret: Pick<DeclaredSecret, "from">,
@@ -222,14 +228,14 @@ export async function resolveSecret(
   const colon = secret.from.indexOf(":");
   const scheme = secret.from.slice(0, colon);
   const ref = secret.from.slice(colon + 1);
+  // Checked here too: the policy may have been stored before the server's scope changed, or
+  // never gone through the push check.
+  const refused = secretRefusal(secret.from, deps.team, deps.scope ?? secretScopeFromEnv(deps.env));
+  if (refused !== undefined) {
+    throw new SecretResolveError(scheme === "env" ? `env:${ref}: ${refused}` : refused);
+  }
   switch (scheme) {
     case "env": {
-      // Checked here too: a config that did not go through parseConfig never saw the schema.
-      if (!ref.startsWith(RUN_SECRET_ENV_PREFIX)) {
-        throw new SecretResolveError(
-          `env:${ref}: env: secrets read only server variables named ${RUN_SECRET_ENV_PREFIX}*`,
-        );
-      }
       const value = deps.env[ref];
       if (value === undefined || value === "") {
         throw new SecretResolveError(`env:${ref}: not set on the server`);

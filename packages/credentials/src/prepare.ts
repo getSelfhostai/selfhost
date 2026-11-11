@@ -15,6 +15,7 @@ import {
 } from "@selfhost/schema";
 import { credentialIssuedEvent, credentialRevokedEvent, type EventRun } from "./events.js";
 import { type Leak, type SecretMasker, scanForLeaks, secretMasker } from "./mask.js";
+import type { SecretScope } from "./scope.js";
 import {
   declaredSecrets,
   PROVIDER_KEY_NAMES,
@@ -48,12 +49,15 @@ export interface CredentialRun {
 
 export interface CredentialDeps {
   /**
-   * The server's environment: env: sources (SELFHOST_RUN_SECRET_* only) and, unless `stores` is
-   * given, where Vault and Infisical are and their tokens.
+   * The server's environment: env: sources (the run's team's SELFHOST_RUN_SECRET_<TEAM>__*, and
+   * SELFHOST_RUN_SECRET_SHARED__* when the server allows the team) and, unless `stores` and
+   * `scope` are given, where Vault and Infisical are, their tokens and each team's path prefix.
    */
   env: NodeJS.ProcessEnv;
   /** Default: storesFromEnv(env). Never from a policy. */
   stores?: SecretStores;
+  /** Which secrets each team reads. Default: secretScopeFromEnv(env). Never from a policy. */
+  scope?: SecretScope;
   /** For Vault and Infisical. Default: the global fetch. */
   fetch?: typeof fetch;
   /** The GitHub App, to mint the run's repository token. Without it, no GitHub token. */
@@ -286,7 +290,7 @@ export async function prepareCredentials(
       if (taken.has(secret.name)) continue;
       if (deps.gateway && (PROVIDER_KEY_NAMES as readonly string[]).includes(secret.name)) continue;
       if (secret.source === "github-app" || secret.source === "gateway") continue;
-      const value = await resolveSecret(secret, deps);
+      const value = await resolveSecret(secret, { ...deps, team: run.team });
       held.push({
         name: secret.name,
         value,

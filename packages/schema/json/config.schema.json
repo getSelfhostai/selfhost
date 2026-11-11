@@ -1325,7 +1325,7 @@
               "anyOf": [
                 {
                   "pattern": "^(?:env:SELFHOST_RUN_SECRET_[A-Za-z0-9_]+|vault:[^#\\s]+#[^#\\s]+|infisical:(?:[^#\\s]+#)?[^#\\s/]+|github-app:repo)$",
-                  "description": "Where the value comes from: env:SELFHOST_RUN_SECRET_<NAME> (a variable of the server's environment with that prefix), vault:<path>#<key> (HashiCorp Vault KV v2, at the server's VAULT_ADDR), infisical:<path>#<key> or infisical:<key> (Infisical, in the server's INFISICAL_PROJECT_ID and INFISICAL_ENVIRONMENT), or github-app:repo (the run's repository token). Store addresses and tokens are set on the server only, never in selfhost.toml.",
+                  "description": "Where the value comes from: env:SELFHOST_RUN_SECRET_<TEAM>__<NAME> (a variable of the server's environment; TEAM is the team id in upper snake case, so team web-platform reads SELFHOST_RUN_SECRET_WEB_PLATFORM__*), env:SELFHOST_RUN_SECRET_SHARED__<NAME> (only for teams the server lists in SELFHOST_RUN_SECRET_SHARED_TEAMS), vault:<path>#<key> (HashiCorp Vault KV v2, at the server's VAULT_ADDR), infisical:<path>#<key> (Infisical, in the server's INFISICAL_PROJECT_ID and INFISICAL_ENVIRONMENT), or github-app:repo (the run's repository token). Vault and Infisical paths sit under the team's prefix, selfhost/<team>/ unless the server sets SELFHOST_SECRET_PATH_PREFIX. Store addresses and tokens are set on the server only, never in selfhost.toml.",
                   "type": "string"
                 },
                 {
@@ -1337,7 +1337,7 @@
                   "properties": {
                     "from": {
                       "pattern": "^(?:env:SELFHOST_RUN_SECRET_[A-Za-z0-9_]+|vault:[^#\\s]+#[^#\\s]+|infisical:(?:[^#\\s]+#)?[^#\\s/]+|github-app:repo)$",
-                      "description": "Where the value comes from: env:SELFHOST_RUN_SECRET_<NAME> (a variable of the server's environment with that prefix), vault:<path>#<key> (HashiCorp Vault KV v2, at the server's VAULT_ADDR), infisical:<path>#<key> or infisical:<key> (Infisical, in the server's INFISICAL_PROJECT_ID and INFISICAL_ENVIRONMENT), or github-app:repo (the run's repository token). Store addresses and tokens are set on the server only, never in selfhost.toml.",
+                      "description": "Where the value comes from: env:SELFHOST_RUN_SECRET_<TEAM>__<NAME> (a variable of the server's environment; TEAM is the team id in upper snake case, so team web-platform reads SELFHOST_RUN_SECRET_WEB_PLATFORM__*), env:SELFHOST_RUN_SECRET_SHARED__<NAME> (only for teams the server lists in SELFHOST_RUN_SECRET_SHARED_TEAMS), vault:<path>#<key> (HashiCorp Vault KV v2, at the server's VAULT_ADDR), infisical:<path>#<key> (Infisical, in the server's INFISICAL_PROJECT_ID and INFISICAL_ENVIRONMENT), or github-app:repo (the run's repository token). Vault and Infisical paths sit under the team's prefix, selfhost/<team>/ unless the server sets SELFHOST_SECRET_PATH_PREFIX. Store addresses and tokens are set on the server only, never in selfhost.toml.",
                       "type": "string"
                     },
                     "host": {
@@ -1533,7 +1533,7 @@
               "type": "string"
             },
             "headers_env": {
-              "description": "Headers to send, by name, each read from an environment variable on the server (for API keys). A team server sends only variables named SELFHOST_RUN_SECRET_*, since a team's policy also names the endpoint.",
+              "description": "Headers to send, by name, each read from an environment variable on the server (for API keys). A team server sends only the team's own variables, SELFHOST_RUN_SECRET_<TEAM>__<NAME> (the team id in upper snake case), or SELFHOST_RUN_SECRET_SHARED__<NAME> when the server lists the team in SELFHOST_RUN_SECRET_SHARED_TEAMS, since a team's policy also names the endpoint.",
               "type": "object",
               "patternProperties": {
                 "^(.*)$": {
@@ -1685,7 +1685,7 @@
         "allowed": {
           "default": [],
           "uniqueItems": true,
-          "description": "Person ids who may start runs from GitHub, webhooks and the API. Empty lets every person in the team. GitHub senders are mapped to people through [review] github_logins.",
+          "description": "Person ids who may start runs from GitHub, webhooks and the API. Empty lets every person in the team. Only people in the team count: someone listed who was revoked from it, or never joined, is refused. GitHub senders are mapped to people through [review] github_logins.",
           "type": "array",
           "items": {
             "minLength": 1,

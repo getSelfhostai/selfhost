@@ -39,6 +39,19 @@ export interface Gateway {
   client: GatewayClient;
   /** Where agents send model traffic, for the keys and settings it hands out. */
   baseUrl: string;
+  /**
+   * The gateway's own address, when this server answers baseUrl's /llm/ itself: agents are
+   * pointed at <SELFHOST_PUBLIC_URL>/llm, which Caddy serves in the Docker install and this
+   * server forwards when no proxy in front does (see gatewayProxyRoutes).
+   */
+  proxyTo?: string;
+  /**
+   * Checks baseUrl, the address agents use, when it is not the one the client manages: an
+   * answer other than the gateway's own health makes GET /v1/gateway report it unhealthy.
+   */
+  agentHealth?: () => Promise<{ ok: boolean; detail?: string }>;
+  /** For the /llm/ proxy. Default: the global fetch. */
+  fetch?: typeof fetch;
   /** [integrations.router] providers of the server's own config, for teams that set none. */
   fallbackProviders?: string[];
   /** The last sync and usage read, for GET /v1/gateway. */
@@ -105,16 +118,118 @@ export function gatewayFromEnv(
         })
       : litellmClient({ url, masterKey: key });
   const publicUrl = env.SELFHOST_PUBLIC_URL?.trim().replace(/\/+$/, "");
-  const baseUrl =
-    router?.public_url ??
-    (env.SELFHOST_GATEWAY_PUBLIC_URL?.trim() || undefined) ??
-    (tool === "bifrost" && publicUrl ? `${publicUrl}/llm` : url);
-  return {
+  const given = router?.public_url ?? (env.SELFHOST_GATEWAY_PUBLIC_URL?.trim() || undefined);
+  // Bifrost behind the public URL: Caddy serves /llm/ in the Docker install; without Caddy this
+  // server forwards it, so the address agents get answers either way.
+  const proxied = given === undefined && tool === "bifrost" && publicUrl !== undefined;
+  const baseUrl = (given ?? (proxied ? `${publicUrl}/llm` : url)).replace(/\/+$/, "");
+  const gateway: Gateway = {
     client,
-    baseUrl: baseUrl.replace(/\/+$/, ""),
+    baseUrl,
+    ...(proxied ? { proxyTo: url } : {}),
     ...(router?.providers ? { fallbackProviders: router.providers } : {}),
     state: { sync: null, usage: null },
   };
+  if (baseUrl !== url.replace(/\/+$/, "")) {
+    gateway.agentHealth = () => checkAgentUrl(tool, baseUrl, fetch);
+  }
+  return gateway;
+}
+
+/** Bifrost's and LiteLLM's unauthenticated health routes, under the address agents use. */
+const HEALTH_PATH: Record<RouterTool, string> = {
+  bifrost: "/health",
+  litellm: "/health/liveliness",
+};
+
+/**
+ * Asks the gateway's health route at the address agents use. Anything but the gateway's own
+ * healthy answer (another server's 401, a 404 from a proxy without /llm/, no answer) says so.
+ */
+export async function checkAgentUrl(
+  tool: RouterTool,
+  baseUrl: string,
+  send: typeof fetch = fetch,
+): Promise<{ ok: boolean; detail?: string }> {
+  const url = `${baseUrl}${HEALTH_PATH[tool]}`;
+  const wrong = (what: string) => ({
+    ok: false,
+    detail: `Agents are given ${baseUrl}, and ${url} ${what}, so their model requests will fail. Serve /llm/ there (Caddy in the Docker install, or this server with SELFHOST_PUBLIC_URL), or set SELFHOST_GATEWAY_PUBLIC_URL to an address agents can reach.`,
+  });
+  try {
+    const res = await send(url, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return wrong(`answered ${res.status}`);
+    if (tool === "bifrost") {
+      const body = (await res.json().catch(() => undefined)) as { status?: string } | undefined;
+      if (body?.status !== "ok") return wrong("did not answer as Bifrost's health route");
+    }
+    return { ok: true };
+  } catch (error) {
+    return wrong(
+      `could not be reached from this server (${error instanceof Error ? error.message : String(error)})`,
+    );
+  }
+}
+
+/** Bifrost's model routes and health, the only paths /llm/ serves, as the Caddyfile does. */
+const MODEL_PATH = /^\/(?:anthropic|openai|v1)\/|^\/health$/;
+/** Headers that belong to one connection, plus what must not reach the gateway. */
+const DROPPED_REQUEST = [
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+  "host",
+  "cookie",
+  "content-length",
+];
+const DROPPED_RESPONSE = [
+  "connection",
+  "keep-alive",
+  "transfer-encoding",
+  "upgrade",
+  "content-encoding",
+  "content-length",
+];
+
+/**
+ * /llm/* forwarded to the gateway when this server hands agents <SELFHOST_PUBLIC_URL>/llm and no
+ * proxy in front serves it (Gateway.proxyTo): only the model routes and /health, as the
+ * Caddyfile allows, and before the bearer token check, since agents send a gateway key instead.
+ * Responses stream through, so a streamed answer arrives as it is written.
+ */
+export function gatewayProxyRoutes(app: Hono, gateway: Gateway | undefined): void {
+  const upstream = gateway?.proxyTo?.replace(/\/+$/, "");
+  if (!gateway || !upstream) return;
+  const send = gateway.fetch ?? fetch;
+  app.all("/llm/*", async (c) => {
+    const path = c.req.path.slice("/llm".length);
+    if (!MODEL_PATH.test(path)) {
+      return c.json(apiError("not_found", `No gateway route ${path}`), 404);
+    }
+    const headers = new Headers(c.req.raw.headers);
+    for (const name of DROPPED_REQUEST) headers.delete(name);
+    headers.set("accept-encoding", "identity");
+    const method = c.req.method;
+    const init: RequestInit & { duplex?: "half" } = { method, headers, redirect: "manual" };
+    if (method !== "GET" && method !== "HEAD" && c.req.raw.body) {
+      init.body = c.req.raw.body;
+      init.duplex = "half";
+    }
+    let answer: Response;
+    try {
+      answer = await send(`${upstream}${path}${new URL(c.req.url).search}`, init);
+    } catch {
+      return c.json(apiError("gateway_unreachable", "The AI gateway did not answer"), 502);
+    }
+    const out = new Headers(answer.headers);
+    for (const name of DROPPED_RESPONSE) out.delete(name);
+    return new Response(answer.body, { status: answer.status, headers: out });
+  });
 }
 
 const issueBody = createValidator(IssueGatewayKeyRequestSchema);
@@ -163,7 +278,11 @@ export function gatewayRoutes(router: Router, ledger: Ledger, gateway: Gateway |
     if (refused) return refused;
     const { client } = gateway;
     const config = await configOf(ledger, team);
-    const health = await client.health();
+    const [managed, reach] = await Promise.all([
+      client.health(),
+      gateway.agentHealth?.() ?? Promise.resolve<{ ok: boolean; detail?: string }>({ ok: true }),
+    ]);
+    const health = managed.ok && !reach.ok ? reach : managed;
     let key: GatewayKey | null = null;
     let teamBudgets: GatewayStatus["team_budgets"] = [];
     let detail = health.detail;
@@ -282,8 +401,8 @@ export function gatewayAdminRoutes(app: Hono, ledger: Ledger, gateway: Gateway |
 
 /**
  * Every team on the server with its policy in use and the people who can still sign in to it:
- * in the team with a person token that is not revoked. Revoking someone (selfhost team revoke)
- * turns their gateway key off at the next sync.
+ * an active member of the team (not revoked) with a person token for it that is not revoked.
+ * Revoking someone (selfhost team revoke) turns their gateway key off at the next sync.
  */
 async function teamInputs(ledger: Ledger): Promise<TeamInput[]> {
   const db = databaseOf(ledger);
@@ -294,7 +413,8 @@ async function teamInputs(ledger: Ledger): Promise<TeamInput[]> {
       const people = await db.query<{ person_id: string }>(
         `SELECT DISTINCT p.id AS person_id FROM people p
            JOIN tokens t ON t.team_id = p.team_id AND t.person_id = p.id
-          WHERE p.team_id = $1 AND t.kind = 'person' AND t.revoked_at IS NULL`,
+          WHERE p.team_id = $1 AND p.revoked_at IS NULL AND t.kind = 'person'
+            AND t.revoked_at IS NULL`,
         [team.id],
       );
       inputs.push({

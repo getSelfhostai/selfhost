@@ -213,7 +213,10 @@ export interface TeamSettings {
   /** The team's policy text, written into the sandbox so its hooks apply the same rules. */
   policyText?: string;
   org?: string;
-  /** People in the team, for the allowed list when [background] allowed is empty. */
+  /**
+   * People in the team, not those revoked from it. Only they start runs; [background] allowed
+   * narrows it further.
+   */
   people?: readonly string[];
 }
 

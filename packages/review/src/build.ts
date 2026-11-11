@@ -42,9 +42,21 @@ export interface BuildContext {
   roles?: RouteContext["roles"];
   /** The CODEOWNERS of the item's repository, when the server or laptop can read it. */
   codeowners?: CodeOwners;
+  /**
+   * People revoked from the team, on a team server. Routing never names them, whatever
+   * selfhost.toml or the session says: they no longer have access to the team's items.
+   */
+  revoked?: readonly string[];
 }
 
 const iso = (ts: string) => new Date(ts).toISOString();
+
+/** `owners` without the people revoked from the team. */
+export function withoutRevoked(owners: string[], revoked: readonly string[] | undefined): string[] {
+  if (!revoked || revoked.length === 0) return owners;
+  const gone = new Set(revoked.map((person) => person.toLowerCase()));
+  return owners.filter((person) => !gone.has(person.toLowerCase()));
+}
 
 export function itemId(team: string | null, dedupeKey: string, event: LedgerEvent): string {
   return stableEventId(event.ts, `review_item\n${team ?? ""}\n${dedupeKey}\n${event.id}`);
@@ -221,7 +233,7 @@ function routed(
     route.id !== undefined && route.id === previous?.id && previous.escalates_at
       ? { ...route, escalates_at: previous.escalates_at }
       : route;
-  return { ...item, owners, route: kept, risk, delivery };
+  return { ...item, owners: withoutRevoked(owners, ctx.revoked), route: kept, risk, delivery };
 }
 
 /** A new open item from its first signal. */

@@ -59,6 +59,8 @@ curl http://localhost:4400/v1/health
 ```
 
 [`deploy/docker`](./deploy/docker/README.md) covers HTTPS, sign-in, upgrades, backups and restores.
+To run the server from a build without Docker, with or without an AI gateway, see
+[`apps/server`](./apps/server/README.md#without-docker).
 
 ### Verify a download
 

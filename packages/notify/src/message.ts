@@ -1,5 +1,6 @@
 import {
   type AgentVendor,
+  eventIdentities,
   type LedgerEvent,
   maskSecrets,
   type NotifyCadence,
@@ -45,15 +46,16 @@ const PLAIN_ID = /^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,99}$/;
 
 /**
  * Text selfhost composed (budget and spike alerts) made safe to send: no code spans or fences,
- * secrets and emails masked, one line, clipped.
+ * secrets and emails masked, one line, clipped. `keep` holds the person ids the text may name: the
+ * people its event stores in the clear, such as the person a budget alert is about.
  */
-export function clean(text: string): string {
+export function clean(text: string, keep?: ReadonlySet<string>): string {
   const stripped = text
     .replace(/```[\s\S]*?(```|$)/g, " ")
     .replace(/`[^`]*`/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  const masked = maskSecrets(stripped).text;
+  const masked = maskSecrets(stripped, [], keep).text;
   return masked.length > MAX_LINE ? `${masked.slice(0, MAX_LINE - 3)}...` : masked;
 }
 
@@ -193,7 +195,10 @@ export function digestMessage(
 export function spendAlertMessage(event: LedgerEvent, consoleUrl: string | undefined): Message {
   const data = event.data ?? {};
   const percent = typeof data.percent === "number" ? data.percent : 100;
-  const message = typeof data.message === "string" ? clean(data.message) : "A budget was spent";
+  // The alert's own person (its actor or owner) may be named; any other email stays masked.
+  const subject = eventIdentities(event);
+  const message =
+    typeof data.message === "string" ? clean(data.message, subject) : "A budget was spent";
   const suggestion = typeof data.suggestion === "string" ? clean(data.suggestion) : undefined;
   const link = listLink(consoleUrl, "spend");
   return {

@@ -341,7 +341,7 @@ export const BackgroundConfigSchema = Type.Object(
         default: [],
         uniqueItems: true,
         description:
-          "Person ids who may start runs from GitHub, webhooks and the API. Empty lets every person in the team. GitHub senders are mapped to people through [review] github_logins.",
+          "Person ids who may start runs from GitHub, webhooks and the API. Empty lets every person in the team. Only people in the team count: someone listed who was revoked from it, or never joined, is refused. GitHub senders are mapped to people through [review] github_logins.",
       }),
     ),
     rate_limit_per_hour: Type.Optional(

@@ -51,6 +51,12 @@ describe.each(BACKENDS)("orgs, roles and repos on $name", (backend) => {
     return tokens;
   }
 
+  /** A token for someone already in the org, from an invite for their email. */
+  async function invited(team: string, person: string) {
+    const invite = await teams.createInvite(team, { email: person });
+    return joined(await teams.join(invite?.invite ?? "", { id: person })).token;
+  }
+
   it.skipIf(backend.skip)("puts teams in the default org unless told otherwise", async () => {
     await teamWith("solo", undefined, []);
     expect(await teams.getTeam("solo")).toMatchObject({ id: "solo", org: "default" });
@@ -131,6 +137,107 @@ describe.each(BACKENDS)("orgs, roles and repos on $name", (backend) => {
     ]);
     expect(await teams.memberships("default", "lead@example.com")).toEqual([]);
     expect(await teams.getPerson("multi-b", "lead@example.com")).toMatchObject({ role: "admin" });
+  });
+
+  it.skipIf(backend.skip)(
+    "ends a revoked membership, so a token from another team of the org no longer reaches it",
+    async () => {
+      await store.ledger.orgs.createOrg({ id: "gone", name: "Gone" });
+      const a = await teamWith("gone-a", "gone", ["owner-a@example.com", "eve@example.com"]);
+      const b = await teamWith("gone-b", "gone", ["owner-b@example.com"]);
+      b["eve@example.com"] = await invited("gone-b", "eve@example.com");
+      await teams.setRole("gone-a", "eve@example.com", "admin", "owner-a@example.com");
+      expect(await teams.memberships("gone", "eve@example.com")).toEqual([
+        { team: "gone-a", role: "admin" },
+        { team: "gone-b", role: "member" },
+      ]);
+
+      expect(await teams.revokePerson("gone-a", "eve@example.com")).toMatchObject({ revoked: 1 });
+      // Her token for gone-b still works, for gone-b only.
+      expect(await teams.personForToken(b["eve@example.com"] ?? "")).toMatchObject({
+        team: "gone-b",
+      });
+      expect(await teams.personForToken(a["eve@example.com"] ?? "")).toBeUndefined();
+      expect(await teams.memberships("gone", "eve@example.com")).toEqual([
+        { team: "gone-b", role: "member" },
+      ]);
+      expect(await teams.getPerson("gone-a", "eve@example.com")).toBeUndefined();
+      expect((await teams.listPeople("gone-a")).map((p) => p.id)).toEqual(["owner-a@example.com"]);
+      expect((await store.ledger.orgs.peopleCounts(["gone-a"])).get("gone-a")).toBe(1);
+      expect((await teams.peopleWithAccess("eve@example.com")).map((a) => a.person.team)).toEqual([
+        "gone-b",
+      ]);
+      expect(await teams.setRole("gone-a", "eve@example.com", "member", "x")).toEqual({
+        refused: "not_found",
+      });
+      // Revoking again finds her, and changes nothing.
+      expect(await teams.revokePerson("gone-a", "eve@example.com")).toMatchObject({ revoked: 0 });
+
+      // Added back from her other team: a member again, with the role given now.
+      expect(await teams.addPerson("gone-a", "eve@example.com", "member", "x")).toMatchObject({
+        person: { team: "gone-a", role: "member" },
+      });
+      expect(await teams.memberships("gone", "eve@example.com")).toEqual([
+        { team: "gone-a", role: "member" },
+        { team: "gone-b", role: "member" },
+      ]);
+      // Someone revoked from every team of the org is in no other team to be added from.
+      await teams.revokePerson("gone-a", "eve@example.com");
+      await teams.revokePerson("gone-b", "eve@example.com");
+      expect(await teams.addPerson("gone-a", "eve@example.com", "member", "x")).toEqual({
+        refused: "not_in_org",
+      });
+    },
+  );
+
+  it.skipIf(backend.skip)(
+    "ends the membership of someone added from another team when they are revoked",
+    async () => {
+      await store.ledger.orgs.createOrg({ id: "added", name: "Added" });
+      await teamWith("added-a", "added", ["owner-a@example.com"]);
+      const b = await teamWith("added-b", "added", ["fay@example.com"]);
+      await teams.addPerson("added-a", "fay@example.com", "admin", "owner-a@example.com");
+      expect(await teams.memberships("added", "fay@example.com")).toHaveLength(2);
+      // She holds no token for added-a: before, revoking her there changed nothing.
+      expect(await teams.revokePerson("added-a", "fay@example.com")).toMatchObject({ revoked: 0 });
+      expect(await teams.memberships("added", "fay@example.com")).toEqual([
+        { team: "added-b", role: "owner" },
+      ]);
+      expect(await teams.personForToken(b["fay@example.com"] ?? "")).toMatchObject({
+        team: "added-b",
+      });
+    },
+  );
+
+  it.skipIf(backend.skip)("ends a membership when its last token leaves the team", async () => {
+    await store.ledger.orgs.createOrg({ id: "leave", name: "Leave" });
+    const a = await teamWith("leave-a", "leave", ["owner@example.com", "gus@example.com"]);
+    const b = await teamWith("leave-b", "leave", ["owner-b@example.com"]);
+    b["gus@example.com"] = await invited("leave-b", "gus@example.com");
+    const laptop = await teams.createInvite("leave-a", { email: "gus@example.com" });
+    const second = joined(await teams.join(laptop?.invite ?? "", { id: "gus@example.com" }));
+    // One machine leaves: the other still holds a token, so gus stays in leave-a.
+    await teams.revokeToken(second.token);
+    expect((await teams.memberships("leave", "gus@example.com")).map((m) => m.team)).toEqual([
+      "leave-a",
+      "leave-b",
+    ]);
+    await teams.revokeToken(a["gus@example.com"] ?? "");
+    expect((await teams.memberships("leave", "gus@example.com")).map((m) => m.team)).toEqual([
+      "leave-b",
+    ]);
+    expect(await teams.personForToken(b["gus@example.com"] ?? "")).toMatchObject({
+      team: "leave-b",
+    });
+    // An invite for him brings him back, as a member.
+    const back = await teams.createInvite("leave-a", { email: "gus@example.com" });
+    expect(
+      joined(await teams.join(back?.invite ?? "", { id: "gus@example.com" })).person,
+    ).toMatchObject({ team: "leave-a", role: "member" });
+    expect((await teams.memberships("leave", "gus@example.com")).map((m) => m.team)).toEqual([
+      "leave-a",
+      "leave-b",
+    ]);
   });
 
   it.skipIf(backend.skip)("gives each repo to one team per org", async () => {
@@ -239,6 +346,11 @@ describe.each(BACKENDS)("orgs, roles and repos on $name", (backend) => {
         const member = makeEvent(7153, { repo: "acme/web" });
         await ledger.append([member], { team: "move-data", person: "Dora@example.com" });
         expect(await teamsOf([member.id])).toEqual([["move-web", "move-web"]]);
+        // Revoked from move-web, her move-data token no longer writes into it.
+        await teams.revokePerson("move-web", "dora@example.com");
+        const revoked = makeEvent(7154, { repo: "acme/web" });
+        await ledger.append([revoked], { team: "move-data", person: "dora@example.com" });
+        expect(await teamsOf([revoked.id])).toEqual([["move-data", "move-data"]]);
       },
     );
 
@@ -265,7 +377,7 @@ describe.each(BACKENDS)("orgs, roles and repos on $name", (backend) => {
     );
 
     it.skipIf(backend.skip)(
-      "moves a run's spend to its repo's team once the repo is known",
+      "keeps a run's spend in the team that wrote it once the repo is known",
       async () => {
         const { ledger, db } = store;
         const from = "2026-11-01T00:00:00.000Z";
@@ -290,11 +402,13 @@ describe.each(BACKENDS)("orgs, roles and repos on $name", (backend) => {
           }),
         ]);
         const after = await ledger.orgs.teamCosts("runs", ["runs-web", "runs-data"], from, to);
+        // Repo ownership labels the run but never moves spend another team wrote.
         expect(after.map((c) => [c.event.id.slice(-4), c.team])).toEqual([
-          ["1c21", "runs-data"],
-          ["1c22", "runs-data"],
+          ["1c21", "runs-web"],
+          ["1c22", "runs-web"],
           ["1c23", "runs-web"],
         ]);
+        expect(await ledger.orgs.teamCosts("runs", ["runs-data"], from, to)).toEqual([]);
         expect(
           await ledger.orgs.teamCosts("runs", ["runs-data"], to, "2027-01-01T00:00:00Z"),
         ).toEqual([]);
@@ -367,4 +481,34 @@ describe.each(BACKENDS)("orgs, roles and repos on $name", (backend) => {
       await upgrade.close();
     }
   });
+
+  it.skipIf(backend.skip)(
+    "ends the memberships of people with no live token left on upgrade, and keeps added people",
+    async () => {
+      const upgrade = await backend.open(MIGRATIONS.filter((m) => m.version < "0015"));
+      try {
+        await upgrade.db.exec(`
+          INSERT INTO teams (id, name) VALUES ('up-a', 'A'), ('up-b', 'B');
+          INSERT INTO people (team_id, id, role) VALUES ('up-a', 'owner@example.com', 'owner'),
+            ('up-a', 'gone@example.com', 'member'), ('up-b', 'gone@example.com', 'owner'),
+            ('up-a', 'added@example.com', 'member');
+          INSERT INTO tokens (hash, kind, team_id, person_id, revoked_at) VALUES
+            ('h1', 'person', 'up-a', 'owner@example.com', NULL),
+            ('h2', 'person', 'up-a', 'gone@example.com', now()),
+            ('h3', 'person', 'up-b', 'gone@example.com', NULL);
+        `);
+        expect(await migrate(upgrade.db)).toEqual(["0015_membership_revocation"]);
+        const { teams: upgraded } = upgrade.ledger;
+        expect((await upgraded.listPeople("up-a")).map((p) => p.id)).toEqual([
+          "owner@example.com",
+          "added@example.com",
+        ]);
+        expect(await upgraded.memberships("default", "gone@example.com")).toEqual([
+          { team: "up-b", role: "owner" },
+        ]);
+      } finally {
+        await upgrade.close();
+      }
+    },
+  );
 });

@@ -1,6 +1,8 @@
 import { REVIEW_ITEM_SCHEMA, type ReviewItem } from "@selfhost/schema";
 import { describe, expect, it } from "vitest";
+import { decisionRefusal, waitingRefusal } from "../src/authorize.js";
 import { handedOverItem, handoffRefusal, takeoverRefusal } from "../src/handoff.js";
+import { defaultConfig } from "../src/list.js";
 
 const RUN = { team: "web", owner: "ana@example.com" };
 const BEN = { id: "ben@example.com", role: "member" as const };
@@ -27,6 +29,37 @@ describe("who may hand a run over", () => {
     expect(handoffRefusal(RUN, { id: "ANA@example.com", role: "member" }, owner)?.message).toBe(
       "ANA@example.com already holds this run.",
     );
+  });
+});
+
+describe("answers from someone no longer in the item's team", () => {
+  const approval = { kind: "approval" as const, owners: ["eve@example.com"] };
+
+  it("refuses them even for an item routed to them, and lets members and the admin token answer", () => {
+    const config = defaultConfig();
+    expect(waitingRefusal(approval, "web", { by: "eve@example.com" })).toBe(
+      "You are not in team web.",
+    );
+    expect(decisionRefusal(approval, "web", "approve", { by: "eve@example.com" }, config)).toBe(
+      "You are not in team web.",
+    );
+    // Denying an exception needs the team too.
+    const exception = { kind: "exception" as const, requested_by: "ana@example.com" };
+    expect(decisionRefusal(exception, "web", "deny", { by: "eve@example.com" }, config)).toBe(
+      "You are not in team web.",
+    );
+    expect(
+      decisionRefusal(
+        approval,
+        "web",
+        "approve",
+        { by: "eve@example.com", role: "member" },
+        config,
+      ),
+    ).toBeUndefined();
+    expect(
+      decisionRefusal(approval, "web", "approve", { by: "admin", trusted: true }, config),
+    ).toBeUndefined();
   });
 });
 

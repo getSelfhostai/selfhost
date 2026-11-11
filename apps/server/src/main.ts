@@ -11,7 +11,7 @@ import { githubAppFromEnv, githubConfig } from "./github.js";
 import { notifyFromEnv, startNotifyJob } from "./notify.js";
 import { clonesUnder } from "./provenance.js";
 import { serverConfig, startRetentionJob } from "./retention.js";
-import { clonesCodeowners, startReviewRefreshJob } from "./review.js";
+import { clonesCodeowners, startReviewRefreshJob, WAITING_EVENT_KINDS } from "./review.js";
 import { startTraceExportJob } from "./runs.js";
 import { serverRuntime } from "./runtime.js";
 import { signinFromEnv } from "./signin.js";
@@ -88,6 +88,14 @@ if (background && process.env.SELFHOST_BACKGROUND_RECOVER !== "off") {
     console.log(`background runs: ${recovered.length} left from the last start marked failed`);
 }
 
+// Set once the jobs below start: an agent that starts to wait wakes the review refresh, and a
+// refresh that files an item or a budget alert wakes the notify pass, so its push goes out in
+// seconds instead of at the next periodic pass.
+const wakeups: { refresh?: () => void; notify?: () => void } = {};
+const eventsStored = (kinds: readonly string[]) => {
+  if (kinds.some((kind) => WAITING_EVENT_KINDS.has(kind))) wakeups.refresh?.();
+};
+
 const server = serve(
   {
     fetch: createApp({
@@ -102,6 +110,7 @@ const server = serve(
       ...(gateway ? { gateway } : {}),
       ...(deliver ? { notify: { deliver } } : {}),
       ...(background ? { background } : {}),
+      eventsStored,
     }).fetch,
     port,
     hostname,
@@ -135,6 +144,8 @@ const reviews =
     ? undefined
     : startReviewRefreshJob(ledger, {
         config,
+        gateway: gateway !== undefined,
+        changed: () => wakeups.notify?.(),
         ...(clones ? { codeowners: clonesCodeowners(clones) } : {}),
       });
 
@@ -156,6 +167,8 @@ const notifications =
   deliver && process.env.SELFHOST_NOTIFY !== "off"
     ? startNotifyJob(ledger, { deliver, config, ...(publicUrl ? { publicUrl } : {}) })
     : undefined;
+if (reviews) wakeups.refresh = reviews.wake;
+if (notifications) wakeups.notify = notifications.wake;
 
 // SELFHOST_CACHE_ALERTS=off stops raising prompt cache alerts for sessions whose hit rate
 // collapsed, for installs where another server raises them from the same database.

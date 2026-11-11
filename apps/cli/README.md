@@ -71,7 +71,7 @@ tool input only as the run view shows it.
 - In a team it follows the team server (`GET /v1/events/tail`, a long poll), which shows the
   person only the teams they are in; `--local` follows this machine instead.
 
-`selfhost console [--port 4400] [--host 127.0.0.1] [--no-open] [--json]` serves the web console
+`selfhost console [--port 4400] [--host 127.0.0.1] [--no-open] [--json [--show-token]]` serves the web console
 ([`apps/console`](../console/README.md)) and the API on this machine's ledger (the one `selfhost
 import` writes, or `--database` / `--data-dir`) and opens it in the browser, signed in: it prints
 the URL, the link with the API token in its fragment, and the token (kept in `<data dir>/token`).
@@ -80,7 +80,9 @@ It listens on 127.0.0.1 unless `--host` says otherwise and stops on Ctrl-C. The 
 is one process at a time, so stop `selfhost import --watch` first, or use Postgres. On a laptop
 that joined a team it opens the team server's console instead, signed in as this person
 (`<server>/#token=<person token>`, the same fragment sign-in); `--local` serves this machine's
-own ledger.
+own ledger. `--json` prints one line with the console's URL and where the token is kept, but
+not the token or the signed-in link, since JSON output tends to end up in logs; add
+`--show-token` for both (`token`, `signed_in_url`).
 
 `selfhost ledger prune [--days <n>] [--config <path>] [--json]` deletes events older than the
 retention from the ledger (the one `selfhost import` writes, or `--database` / `--data-dir`):
@@ -972,8 +974,9 @@ selfhost team leave
   otherwise. A team-wide invite only adds new people: joining with it as someone already in the
   team, the owner included, is refused, so a second machine for the same person needs
   `selfhost team invite --email <person>`. `selfhost team revoke <invite>` revokes an invite code; `selfhost team revoke
-  <person>` revokes every token the person holds (all their machines) and the open invites for
-  their email. Their events stay. Both take `--server` and `--team`, which default to the team
+  <person>` ends the person's membership of the team and revokes every token they hold for it
+  (all their machines) and the open invites for their email: tokens they hold for other teams of
+  the org no longer reach it. Their events stay. Both take `--server` and `--team`, which default to the team
   this machine joined, and the admin token like `team init` does, else this machine's person
   token, whose role in the team the server checks.
 - `selfhost team role <person> <owner|admin|member>` changes a person's role (owners only; a
@@ -1027,7 +1030,8 @@ selfhost team leave
   inside an agent session); `selfhost team policy show` prints it and `selfhost team policy pull
   [file] [--force]` writes it to a file. `selfhost status` points at push when no team policy
   was pulled yet.
-- `selfhost team leave` revokes this machine's person token on the server, then removes the
+- `selfhost team leave` revokes this machine's person token on the server (with the last one,
+  the membership there ends too), then removes the
   membership, the pulled team policy and the pulled context layers (your personal layer stays)
   and goes back to solo mode. When the server cannot be
   reached, the membership is still removed and the output says the token keeps working there
@@ -1082,7 +1086,7 @@ gate and one pull request. `--wait` follows it and exits 1 unless it succeeded.
 agent = "claude"
 timeout_minutes = 60
 max_retries = 1              # runtime errors only
-allowed = []                 # person ids; empty: everyone in the team
+allowed = []                 # person ids in the team; empty: everyone in the team
 rate_limit_per_hour = 20
 max_concurrent = 5
 tests_first = "observe"      # off, observe or enforce
@@ -1299,7 +1303,7 @@ agent session (`disconnect --dry-run` excepted), and the hooks block an agent th
 - Every five minutes the server writes teams, budgets, providers and on or off to the gateway
   (only what differs) and reads its request logs into the ledger as `cost.recorded` events with
   `source = "gateway"`, attributed to the key's person, team and run, so spend views and the
-  forecast include them. A person whose tokens are revoked has their key turned off. A policy
+  forecast include them. A person revoked from the team has their key turned off. A policy
   change (`selfhost team policy push`, the console) reaches the gateway within seconds, not at
   the next sync.
 - A spent hard budget makes the gateway answer HTTP 402 with its own message, which selfhost

@@ -35,6 +35,7 @@ import { bodyLimit } from "hono/body-limit";
 import { raiseBudgetAlerts } from "./budget-alerts.js";
 import type { GitClones } from "./provenance.js";
 import { teamConfig, withRunLinks } from "./runs.js";
+import { wakeAfter } from "./wake.js";
 
 /** A decision or snooze is a few fields; anything this big is not one. */
 const MAX_ACTION_BYTES = 64 * 1024;
@@ -372,6 +373,13 @@ export interface ReviewRefreshJobOptions {
   config?: ResolvedSelfhostConfig;
   /** CODEOWNERS of a repository, for [[review.routes]] `codeowners`. Default: none. */
   codeowners?: RefreshOptions["codeowners"];
+  /** Whether this server runs a gateway, for what budget alerts suggest. */
+  gateway?: boolean;
+  /**
+   * Called after a refresh that opened items or raised budget alerts, so notifications for them
+   * go out now instead of at the next notify pass.
+   */
+  changed?: () => void;
   /** Default: every 15 seconds. */
   intervalMs?: number;
   /** Where the job reports. Default: console.log. */
@@ -382,8 +390,18 @@ export interface ReviewRefreshJobOptions {
 export interface ReviewRefreshJob {
   /** One refresh now. undefined when it failed; the failure is logged. */
   run(): Promise<RefreshResult | undefined>;
+  /** A refresh within WAKE_REFRESH_MS, for events that may open an item an agent waits on. */
+  wake(): void;
   stop(): void;
 }
+
+/** Event kinds that can open an item an agent waits on (see draftFor in @selfhost/review). */
+export const WAITING_EVENT_KINDS: ReadonlySet<string> = new Set([
+  "approval.requested",
+  "policy.evaluated",
+]);
+/** How soon a refresh follows such an event; a burst of them shares one refresh. */
+export const WAKE_REFRESH_MS = 1000;
 
 /**
  * Raises budget alerts from each team's spend (once a minute), then builds review items from
@@ -400,21 +418,29 @@ export function startReviewRefreshJob(
     ...(options.now ? { now: options.now } : {}),
   });
   let running: Promise<RefreshResult | undefined> | undefined;
+  let again = false;
   let budgetsAt = 0;
+  let raised = 0;
   /** Budget alerts from ledger spend, at most once a minute, so the refresh files them. */
   const budgets = async () => {
     const at = options.now?.() ?? new Date();
     if (at.getTime() - budgetsAt < BUDGET_CHECK_MS) return;
     budgetsAt = at.getTime();
     try {
-      const raised = await raiseBudgetAlerts(ledger, at);
+      raised = await raiseBudgetAlerts(
+        ledger,
+        at,
+        options.gateway !== undefined ? { gateway: options.gateway } : {},
+      );
       if (raised > 0) log(`budget alerts: ${raised} raised from spend`);
     } catch (error) {
       log(`budget alerts: failed: ${error instanceof Error ? error.message : error}`);
     }
   };
-  const run = () => {
-    running ??= budgets()
+  const run = (): Promise<RefreshResult | undefined> => {
+    if (running) return running;
+    raised = 0;
+    running = budgets()
       .then(() =>
         refreshReviewList(ledger, list, {
           log,
@@ -426,6 +452,7 @@ export function startReviewRefreshJob(
           if (result.created > 0 || result.updated > 0) {
             log(`review list: ${result.created} new, ${result.updated} changed`);
           }
+          if (result.created > 0 || raised > 0) options.changed?.();
           return result;
         },
         (error: unknown) => {
@@ -435,11 +462,27 @@ export function startReviewRefreshJob(
       )
       .finally(() => {
         running = undefined;
+        if (again) {
+          again = false;
+          void run();
+        }
       });
     return running;
   };
   const timer = setInterval(run, intervalMs);
   timer.unref();
+  // Events stored while a refresh runs may have been read before they were: refresh again after.
+  const wake = wakeAfter(() => {
+    if (running) again = true;
+    else void run();
+  }, WAKE_REFRESH_MS);
   void run();
-  return { run, stop: () => clearInterval(timer) };
+  return {
+    run,
+    wake,
+    stop: () => {
+      clearInterval(timer);
+      wake.cancel();
+    },
+  };
 }

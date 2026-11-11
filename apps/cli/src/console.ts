@@ -10,22 +10,32 @@ export interface ConsoleOptions {
   dataDir?: string;
   open?: boolean;
   json?: boolean;
+  /** With --json, also print the token and the signed-in link that holds it. */
+  showToken?: boolean;
   /** In a team, serve this machine's own ledger instead of opening the team's console. */
   local?: boolean;
 }
 
-/** `selfhost console --json`: one line once the server listens. */
+/**
+ * `selfhost console --json`: one line once the server listens. JSON output ends up in logs and
+ * scripts, so it holds no token unless --show-token asks for it; the token file says where it is.
+ */
 export interface ConsoleReport {
   schema: "selfhost.console/v1";
   /** solo: a server on this machine's ledger; team: the team server's console. */
   mode: "solo" | "team";
-  /** The console, signed in: the token is in the fragment, which never leaves the browser. */
+  /** The console, not signed in. */
   url: string;
-  token: string;
+  /** --show-token only: the token, and the console signed in with it in the fragment. */
+  token?: string;
+  signed_in_url?: string;
   /** Where the token is kept, or null when it came from SELFHOST_TOKEN or lives in memory. */
   token_file: string | null;
   console_built: boolean;
 }
+
+const withToken = (options: ConsoleOptions, token: string, signedIn: string) =>
+  options.showToken ? { token, signed_in_url: signedIn } : {};
 
 export interface ConsoleIo {
   env: NodeJS.ProcessEnv;
@@ -90,8 +100,8 @@ export async function runConsole(options: ConsoleOptions, io: ConsoleIo): Promis
       const report: ConsoleReport = {
         schema: "selfhost.console/v1",
         mode: "team",
-        url: signedIn,
-        token: membership.token,
+        url: base,
+        ...withToken(options, membership.token, signedIn),
         token_file: io.configPath ?? null,
         console_built: true,
       };
@@ -133,8 +143,8 @@ export async function runConsole(options: ConsoleOptions, io: ConsoleIo): Promis
       const report: ConsoleReport = {
         schema: "selfhost.console/v1",
         mode: "solo",
-        url: signedIn,
-        token: server.token,
+        url: `${server.url.replace(/\/+$/, "")}/`,
+        ...withToken(options, server.token, signedIn),
         token_file: server.tokenPath ?? null,
         console_built: server.consoleBuilt,
       };
@@ -180,7 +190,8 @@ export function registerConsole(
     .option("--database <url>", "Postgres url (default: DATABASE_URL, else the embedded ledger)")
     .option("--data-dir <path>", "embedded ledger folder (default: ~/.selfhost/data)")
     .option("--no-open", "print the link without opening a browser")
-    .option("--json", "print one JSON line once it listens")
+    .option("--json", "print one JSON line once it listens, without the token")
+    .option("--show-token", "with --json, also print the token and the signed-in link")
     .action(async (options: ConsoleOptions) => {
       try {
         await runConsole(options, io());

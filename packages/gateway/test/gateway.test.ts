@@ -179,6 +179,77 @@ describe("Bifrost keys and budgets", () => {
     expect(fake.calls.filter((c) => c.method !== "GET").length).toBe(writes);
   });
 
+  it("keeps what was spent when a policy change updates budgets", async () => {
+    const fake = fakeBifrost({ now: () => new Date("2026-11-05T09:00:00Z") });
+    const { client } = bifrost(fake);
+    await issueKey(client, { kind: "person", team: "platform", person: "ada@example.com" }, HARD);
+    const team = [...fake.teams.values()][0] as { budgets: Record<string, unknown>[] };
+    const key = [...fake.keys.values()][0] as { budgets: Record<string, unknown>[] };
+    // Ada hit her daily cap; the team spent part of its day and month.
+    for (const budget of team.budgets) budget.current_usage = 70;
+    for (const budget of key.budgets) budget.current_usage = 50;
+    const before = {
+      team: team.budgets.map((b) => [b.id, b.last_reset]),
+      key: key.budgets.map((b) => [b.id, b.last_reset]),
+    };
+    const pushedAt = fake.calls.length;
+
+    // A push that raises the team's monthly budget and drops a fallback provider.
+    const changed = policy(`
+[budget]
+mode = "hard"
+daily_usd = 100
+monthly_usd = 3000
+
+[budget.person]
+daily_usd = 50
+
+[integrations.router]
+tool = "bifrost"
+providers = ["anthropic"]
+`);
+    const inputs = [{ team: "platform", config: changed, people: ["ada@example.com"] }];
+    const sync = await syncGateway(client, inputs, { now: () => NOW });
+    expect(sync.report).toMatchObject({ updated: 2, errors: [] });
+
+    const puts = fake.calls.slice(pushedAt).filter((c) => c.method === "PUT");
+    const teamPut = puts.find((c) => c.path.startsWith("/api/governance/teams/"));
+    const teamBody = teamPut?.body as { budgets: { id?: string }[] } | undefined;
+    expect(teamBody?.budgets.map((b) => b.id)).toEqual(before.team.map(([id]) => id));
+    // The key's budgets did not change, so its update does not send them.
+    const keyPut = puts.find((c) => c.path.startsWith("/api/governance/virtual-keys/"));
+    expect(keyPut?.body).not.toHaveProperty("budgets");
+
+    expect(team.budgets.map((b) => [b.id, b.last_reset])).toEqual(before.team);
+    expect(team.budgets.map((b) => [b.reset_duration, b.max_limit, b.current_usage])).toEqual([
+      ["1d", 100, 70],
+      ["1M", 3000, 70],
+    ]);
+    expect(key.budgets.map((b) => [b.id, b.last_reset])).toEqual(before.key);
+    expect(key.budgets.map((b) => b.current_usage)).toEqual([50]);
+
+    // A new person cap keeps the existing day's spend under the same budget.
+    const tighter = policy(`
+[budget]
+mode = "hard"
+daily_usd = 100
+monthly_usd = 3000
+
+[budget.person]
+daily_usd = 40
+`);
+    await syncGateway(
+      client,
+      [{ team: "platform", config: tighter, people: ["ada@example.com"] }],
+      {
+        now: () => NOW,
+      },
+    );
+    expect(key.budgets.map((b) => [b.id, b.max_limit, b.current_usage, b.last_reset])).toEqual([
+      [before.key[0]?.[0], 40, 50, before.key[0]?.[1]],
+    ]);
+  });
+
   it("leaves keys it did not make alone", async () => {
     const { fake, client } = bifrost();
     fake.keys.set("vk-hand", { id: "vk-hand", name: "ci-bot", is_active: true, metadata: {} });

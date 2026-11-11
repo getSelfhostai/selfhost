@@ -158,11 +158,12 @@ export function costPerMergedPr(input: RoiInput): RoiReport {
     sessionsOf.set(pr, (sessionsOf.get(pr) ?? new Set()).add(session));
   }
 
-  // Each session's spend by agent and model, whenever it was spent.
+  // Each session's spend by agent and model, whenever it was spent. Only the scope's own spend:
+  // another team's session linked to one of its pull requests does not charge it.
   const costs = oneSource(input.costs);
   const spendOf = new Map<string, Map<string, number>>();
   for (const cost of costs) {
-    if (!cost.session || !prsOf.has(cost.session)) continue;
+    if (!cost.session || !prsOf.has(cost.session) || !ours(cost.team)) continue;
     const spend = spendOf.get(cost.session) ?? new Map<string, number>();
     const key = `${cost.agent ?? ""}\n${cost.model ?? ""}`;
     spend.set(key, (spend.get(key) ?? 0) + cost.usd);

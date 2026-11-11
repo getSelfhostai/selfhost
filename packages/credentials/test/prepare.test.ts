@@ -40,9 +40,9 @@ describe("prepareCredentials", () => {
       { name: "GITHUB_TOKEN", from: "github-app:repo" },
       { name: "ANTHROPIC_AUTH_TOKEN", from: "gateway:run" },
       { name: "OPENAI_API_KEY", from: "gateway:run" },
-      { name: "DATABASE_URL", from: "vault:acme-api/ci#database_url" },
-      { name: "SENTRY_DSN", from: "env:SELFHOST_RUN_SECRET_SENTRY_DSN" },
-      { name: "STRIPE_KEY", from: "infisical:/payments#STRIPE_KEY" },
+      { name: "DATABASE_URL", from: "vault:selfhost/platform/acme-api/ci#database_url" },
+      { name: "SENTRY_DSN", from: "env:SELFHOST_RUN_SECRET_PLATFORM__SENTRY_DSN" },
+      { name: "STRIPE_KEY", from: "infisical:/selfhost/platform/payments#STRIPE_KEY" },
     ]);
     // The provider key the repository declared never reaches the sandbox: the gateway key does.
     expect(Object.keys(prepared.env)).not.toContain("ANTHROPIC_API_KEY");
@@ -50,7 +50,10 @@ describe("prepareCredentials", () => {
     expect(prepared.env.DATABASE_URL).toBe(VALUES.database);
     expect(prepared.env.STRIPE_KEY).toBe(VALUES.stripe);
     expect(
-      prepared.resolve({ name: "SENTRY_DSN", from: "env:SELFHOST_RUN_SECRET_SENTRY_DSN" }),
+      prepared.resolve({
+        name: "SENTRY_DSN",
+        from: "env:SELFHOST_RUN_SECRET_PLATFORM__SENTRY_DSN",
+      }),
     ).toBe(VALUES.sentry);
 
     const minted = gh.fake.requests.find((r) => r.path === "/app/installations/42/access_tokens");
@@ -75,11 +78,13 @@ describe("prepareCredentials", () => {
     const { stores, deps } = setup();
     await prepareCredentials(RUN, POLICY, deps);
     const vault = stores.calls.find((c) => c.url.includes("vault.acme.test"));
-    expect(vault?.url).toBe("https://vault.acme.test:8200/v1/secret/data/acme-api/ci");
+    expect(vault?.url).toBe(
+      "https://vault.acme.test:8200/v1/secret/data/selfhost/platform/acme-api/ci",
+    );
     expect(vault?.headers["x-vault-namespace"]).toBe("eng");
     const infisical = stores.calls.find((c) => c.url.includes("infisical.acme.test"));
     expect(infisical?.url).toBe(
-      "https://infisical.acme.test/api/v4/secrets/STRIPE_KEY?projectId=proj-acme&environment=ci&secretPath=%2Fpayments",
+      "https://infisical.acme.test/api/v4/secrets/STRIPE_KEY?projectId=proj-acme&environment=ci&secretPath=%2Fselfhost%2Fplatform%2Fpayments",
     );
   });
 
@@ -96,7 +101,13 @@ describe("prepareCredentials", () => {
       "api.github.com",
       "selfhost.acme.test",
     ]);
-    const payments = await prepareCredentials({ ...RUN, team: "payments" }, POLICY, setup().deps);
+    // Team payments may not read platform's secrets, so its run declares none here.
+    const { secrets: _platformOnly, ...noSecrets } = POLICY;
+    const payments = await prepareCredentials(
+      { ...RUN, team: "payments" },
+      noSecrets,
+      setup().deps,
+    );
     expect(payments.egress?.allow).toEqual([
       "registry.npmjs.org",
       "api.stripe.com",
@@ -249,7 +260,7 @@ describe("revoke", () => {
     const error = await prepareCredentials(RUN, POLICY, deps).catch((e: Error) => e);
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toBe(
-      "Credentials for run run-7: vault:acme-api/ci#database_url: HTTP 503",
+      "Credentials for run run-7: vault:selfhost/platform/acme-api/ci#database_url: HTTP 503",
     );
     expect(gh.fake.requests.at(-1)).toMatchObject({
       method: "DELETE",
@@ -312,7 +323,7 @@ describe("without a gateway or a GitHub App", () => {
     const stores = fakeStores();
     const config = policy(`version = 1
 [secrets.env]
-ANTHROPIC_API_KEY = "env:SELFHOST_RUN_SECRET_ANTHROPIC_API_KEY"
+ANTHROPIC_API_KEY = "env:SELFHOST_RUN_SECRET_SHARED__ANTHROPIC_API_KEY"
 `);
     const prepared = await prepareCredentials({ id: "r", team: "t", target: "daytona" }, config, {
       env: SERVER_ENV,
@@ -331,12 +342,12 @@ ANTHROPIC_API_KEY = "env:SELFHOST_RUN_SECRET_ANTHROPIC_API_KEY"
   it("fails on an env source the server does not have", async () => {
     const config = policy(`version = 1
 [secrets.env]
-TOKEN = "env:SELFHOST_RUN_SECRET_NOT_SET"
+TOKEN = "env:SELFHOST_RUN_SECRET_T__NOT_SET"
 `);
     await expect(
       prepareCredentials({ id: "r", team: "t", target: "e2b" }, config, { env: {} }),
     ).rejects.toThrow(
-      "Credentials for run r: env:SELFHOST_RUN_SECRET_NOT_SET: not set on the server",
+      "Credentials for run r: env:SELFHOST_RUN_SECRET_T__NOT_SET: not set on the server",
     );
   });
 });
@@ -344,7 +355,7 @@ TOKEN = "env:SELFHOST_RUN_SECRET_NOT_SET"
 describe("what a policy can make the server read", () => {
   const ADMIN = ["admin", "token", "0123"].join("-");
 
-  it("refuses an env: source outside SELFHOST_RUN_SECRET_*, even past the schema", async () => {
+  it("refuses an env: source outside the team's SELFHOST_RUN_SECRET_<TEAM>__*, even past the schema", async () => {
     // As a stored config object that skipped parseConfig would carry it.
     const config = {
       ...policy("version = 1\n"),
@@ -355,8 +366,95 @@ describe("what a policy can make the server read", () => {
         env: { SELFHOST_TOKEN: ADMIN },
       }),
     ).rejects.toThrow(
-      "env:SELFHOST_TOKEN: env: secrets read only server variables named SELFHOST_RUN_SECRET_*",
+      "env:SELFHOST_TOKEN: team t reads only server variables named SELFHOST_RUN_SECRET_T__<NAME>",
     );
+  });
+
+  it("gives a team only its own env: variables, and shared ones only when the server allows it", async () => {
+    const env = {
+      SELFHOST_RUN_SECRET_WEB__DB: "web-db",
+      SELFHOST_RUN_SECRET_WEB_PLATFORM__DB: "web-platform-db",
+      SELFHOST_RUN_SECRET_DB: "old-style",
+      SELFHOST_RUN_SECRET_SHARED__NPM: "npm",
+      SELFHOST_RUN_SECRET_SHARED_TEAMS: "web-platform",
+    };
+    const run = (team: string, from: string) =>
+      prepareCredentials(
+        { id: "r", team, target: "e2b" },
+        policy(`version = 1\n[secrets.env]\nV = "${from}"\n`),
+        { env },
+      ).then((prepared) => prepared.env.V);
+
+    expect(await run("web", "env:SELFHOST_RUN_SECRET_WEB__DB")).toBe("web-db");
+    expect(await run("web-platform", "env:SELFHOST_RUN_SECRET_WEB_PLATFORM__DB")).toBe(
+      "web-platform-db",
+    );
+    // Another team's variable, even one whose name starts with this team's id.
+    await expect(run("web", "env:SELFHOST_RUN_SECRET_WEB_PLATFORM__DB")).rejects.toThrow(
+      "team web reads only server variables named SELFHOST_RUN_SECRET_WEB__<NAME>",
+    );
+    await expect(run("web-platform", "env:SELFHOST_RUN_SECRET_WEB__DB")).rejects.toThrow(
+      /team web-platform reads only/,
+    );
+    // The single prefix every team shared before.
+    await expect(run("web", "env:SELFHOST_RUN_SECRET_DB")).rejects.toThrow(/team web reads only/);
+    expect(await run("web-platform", "env:SELFHOST_RUN_SECRET_SHARED__NPM")).toBe("npm");
+    await expect(run("web", "env:SELFHOST_RUN_SECRET_SHARED__NPM")).rejects.toThrow(
+      "SELFHOST_RUN_SECRET_SHARED__NPM is a shared run secret and SELFHOST_RUN_SECRET_SHARED_TEAMS on the server does not list team web",
+    );
+  });
+
+  it("reads Vault and Infisical only under the team's path prefix", async () => {
+    const calls: string[] = [];
+    const fetch: typeof globalThis.fetch = async (input) => {
+      calls.push(String(input));
+      return String(input).includes("vault")
+        ? Response.json({ data: { data: { k: "v" } } })
+        : Response.json({ secret: { secretValue: "i" } });
+    };
+    const env = {
+      VAULT_ADDR: "https://vault.acme.test",
+      VAULT_TOKEN: "vt",
+      INFISICAL_URL: "https://infisical.acme.test",
+      INFISICAL_PROJECT_ID: "p",
+      INFISICAL_ENVIRONMENT: "ci",
+      INFISICAL_TOKEN: "it",
+    };
+    const run = (team: string, from: string, more: NodeJS.ProcessEnv = {}) =>
+      prepareCredentials(
+        { id: "r", team, target: "e2b" },
+        policy(`version = 1\n[secrets.env]\nV = "${from}"\n`),
+        { env: { ...env, ...more }, fetch },
+      ).then((prepared) => prepared.env.V);
+
+    expect(await run("web", "vault:selfhost/web/db#k")).toBe("v");
+    expect(await run("web", "infisical:/selfhost/web#K")).toBe("i");
+    for (const from of [
+      "vault:selfhost/web-platform/db#k",
+      "vault:selfhost/web/../web-platform/db#k",
+      "vault:selfhost/web/%2e%2e/web-platform/db#k",
+      "vault:selfhost/web/db?version=1#k",
+      "vault:other/db#k",
+      "infisical:K",
+      "infisical:/selfhost/webx#K",
+    ]) {
+      await expect(run("web", from), from).rejects.toThrow(
+        /team web reads only (vault|infisical) paths under \/?selfhost\/web\//,
+      );
+    }
+    expect(calls).toHaveLength(2);
+    // The server's own prefix, with {team} for the team id.
+    expect(
+      await run("web", "vault:kv/teams/web/db#k", {
+        SELFHOST_SECRET_PATH_PREFIX: "kv/teams/{team}",
+      }),
+    ).toBe("v");
+    await expect(
+      run("web", "vault:selfhost/web/db#k", { SELFHOST_SECRET_PATH_PREFIX: "kv/teams/{team}" }),
+    ).rejects.toThrow("team web reads only vault paths under kv/teams/web/");
+    await expect(
+      run("web", "vault:shared/db#k", { SELFHOST_SECRET_PATH_PREFIX: "shared/" }),
+    ).rejects.toThrow("SELFHOST_SECRET_PATH_PREFIX on the server must contain {team}");
   });
 
   it("reaches Vault and Infisical only where the server's environment says, never a policy's url or token variable", async () => {
@@ -369,9 +467,9 @@ describe("what a policy can make the server read", () => {
     };
     // A policy object carrying the old connection tables, as one stored before they were removed.
     const config = {
-      ...policy('version = 1\n[secrets.env]\nV = "vault:any#k"\n'),
+      ...policy('version = 1\n[secrets.env]\nV = "vault:selfhost/t/any#k"\n'),
       secrets: {
-        env: { V: "vault:any#k" },
+        env: { V: "vault:selfhost/t/any#k" },
         vault: { url: "https://attacker.example", token_env: "SELFHOST_TOKEN" },
       },
     } as unknown as ReturnType<typeof policy>;
@@ -380,7 +478,7 @@ describe("what a policy can make the server read", () => {
         env: { SELFHOST_TOKEN: ADMIN },
         fetch,
       }),
-    ).rejects.toThrow("vault:any#k: VAULT_ADDR is not set on the server");
+    ).rejects.toThrow("vault:selfhost/t/any#k: VAULT_ADDR is not set on the server");
     expect(calls).toEqual([]);
 
     const prepared = await prepareCredentials({ id: "r", team: "t", target: "e2b" }, config, {
@@ -389,7 +487,7 @@ describe("what a policy can make the server read", () => {
     });
     expect(prepared.env.V).toBe("v");
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toContain("https://vault.acme.test/v1/secret/data/any");
+    expect(calls[0]).toContain("https://vault.acme.test/v1/secret/data/selfhost/t/any");
     expect(calls[0]).not.toContain("attacker.example");
     expect(calls[0]).not.toContain(ADMIN);
   });

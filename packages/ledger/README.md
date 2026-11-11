@@ -174,6 +174,14 @@ each other at once leave one. `teams.listPeople`, `getPerson`, `renameTeam`, `ge
 `addPerson` (someone already in another team of the org, under the id and name they have there)
 serve the role and people routes of the server.
 
+`0015_membership_revocation.sql` adds `people.revoked_at`. `teams.revokePerson` sets it, and so
+does `teams.revokeToken` when it revokes the person's last live token for the team; joining with
+an invite for their email or `addPerson` clears it. Only active memberships count:
+`memberships`, `listPeople`, `getPerson`, `personForToken`, `peopleWithAccess`, `setRole`,
+`orgs.peopleCounts` and `orgs.assignTeams` skip revoked rows, so a person's token from one team
+never reaches a team of the org they were revoked from. The migration sets it for people who hold
+person tokens for a team and none still live, and leaves people added from another team active.
+
 ## Orgs
 
 `ledger.orgs` holds the org, team and repo hierarchy, from `0007_orgs.sql`:
@@ -197,9 +205,13 @@ the event's `repo`, else the team owning the repo its session named earlier (`ru
 the writer's team, considering only teams of the writer's org. With a writer team the event's
 `team` field is set to the same. Without one (the admin token) a repo counts when exactly one
 org maps it, and the body is kept. `orgs.teamCosts(org, teams, from, to)` reads `cost.recorded`
-events by the same rule at read time, so a Claude Code run whose cost events carried no repo
-moves to the repo's team once a later event of the session (a commit from `selfhost scan`)
-names the repo. `orgs.effectivePolicy(team, repo?)` composes the org floor, the team's file and
+events by their stored team: repo ownership never moves spend a team wrote to another team or
+org. Only an event stored with no team goes to the team owning its repo, or its run's repo, at
+read time. `append(events, { oneCopyPerFact: true })`, which `POST /v1/events` uses, keeps the
+first copy of each tool call (by team, agent, session and `data.tool_use_id`) and session start
+(by team, agent and session): a hook's copy, the session log's and another ledger's of the same
+person all arrive under different ids, and later copies count as duplicates. A decision in the
+same batch that links to a skipped copy (`data.tool_event_id`) is linked to the one kept. `orgs.effectivePolicy(team, repo?)` composes the org floor, the team's file and
 the repo's (`composePolicy` in [`@selfhost/schema`](../schema/README.md#org-team-and-repo-policy)).
 
 ## Review list
