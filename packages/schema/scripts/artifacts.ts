@@ -33,6 +33,11 @@ import {
   DecisionsPageSchema,
   EventQuerySchema,
   EventsPageSchema,
+  ExceptionGrantSchema,
+  ExceptionGrantStatusSchema,
+  ExceptionGrantUseRequestSchema,
+  ExceptionKeySchema,
+  ExceptionKeysResponseSchema,
   eventVersionsFile,
   GatewayKeysResponseSchema,
   GatewayStatusSchema,
@@ -254,6 +259,11 @@ const COMPONENT_SCHEMAS: ReadonlyArray<readonly [name: string, schema: TSchema]>
   ["Person", PersonSchema],
   ["UpdateTeamRequest", UpdateTeamRequestSchema],
   ["TeamPeopleResponse", TeamPeopleResponseSchema],
+  ["ExceptionGrant", ExceptionGrantSchema],
+  ["ExceptionGrantStatus", ExceptionGrantStatusSchema],
+  ["ExceptionGrantUseRequest", ExceptionGrantUseRequestSchema],
+  ["ExceptionKey", ExceptionKeySchema],
+  ["ExceptionKeysResponse", ExceptionKeysResponseSchema],
   ["LaptopHeartbeat", LaptopHeartbeatSchema],
   ["LaptopManaged", LaptopManagedSchema],
   ["LaptopRow", LaptopRowSchema],
@@ -530,6 +540,64 @@ function openApiDocument(): Json {
               description: "The item is no longer open.",
               content: jsonContent("ReviewItemConflict"),
             },
+          },
+        },
+      },
+      "/v1/exception-keys": {
+        get: {
+          operationId: "getExceptionKeys",
+          summary: "List the public keys one-time exception grants are signed with.",
+          description:
+            "Either token. The server makes an Ed25519 key on first start and keeps it next to its API token; the private key never leaves the server. Laptops pin these keys at join and on every sync (and in the root-owned managed settings when those are installed) and accept only grants that verify with one of them.",
+          responses: {
+            "200": { description: "The keys.", content: jsonContent("ExceptionKeysResponse") },
+            ...authErrors,
+          },
+        },
+      },
+      "/v1/exception-keys/rotate": {
+        post: {
+          operationId: "rotateExceptionKey",
+          summary: "Add a signing key and sign new grants with it.",
+          description:
+            "Admin token only. The older keys stay listed, so grants they signed still verify until they expire. Laptops pin the new key on their next sync; where the managed settings hold the pin, the admin command the sync prints installs it there.",
+          responses: {
+            "200": { description: "The keys now.", content: jsonContent("ExceptionKeysResponse") },
+            ...authErrors,
+          },
+        },
+      },
+      "/v1/exception-grants/{id}": {
+        get: {
+          operationId: "getExceptionGrant",
+          summary: "Fetch the signed grant for one of your exceptions.",
+          description:
+            "Person token of the person whose agent was blocked. Once a person the team allows approved the exception, the server signs a grant binding the exception id, a nonce, the call's fingerprint and rules, the session, the repository, the requester, the approver and the expiry, keeps it, and returns the same grant on every fetch until a laptop reports it used.",
+          parameters: [pathParameter("id", "Exception id: the review item the block named.")],
+          responses: {
+            "200": {
+              description: "Where the exception stands, with the grant once approved.",
+              content: jsonContent("ExceptionGrantStatus"),
+            },
+            ...authErrors,
+            "404": errorResponse("No such exception on the list yet."),
+          },
+        },
+      },
+      "/v1/exception-grants/{id}/use": {
+        post: {
+          operationId: "reportExceptionGrantUse",
+          summary: "Report that a grant was used.",
+          description:
+            "Person token of the requester. Marks the grant used, so the server hands it out no more. Laptops send it on the sync after the hook used the grant; best effort, since the hook checks grants offline.",
+          parameters: [pathParameter("id", "Exception id.")],
+          requestBody: { required: true, content: jsonContent("ExceptionGrantUseRequest") },
+          responses: {
+            "200": { description: "Marked used.", content: jsonContent("ExceptionGrantStatus") },
+            "400": errorResponse("Invalid request."),
+            ...authErrors,
+            "404": errorResponse("No grant was issued for this exception."),
+            "409": errorResponse("The nonce is not this grant's."),
           },
         },
       },

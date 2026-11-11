@@ -17,7 +17,10 @@ import {
   type RuleCoverage,
 } from "@selfhost/schema";
 import type { Command } from "commander";
+import { readConfigFile } from "../config-file.js";
 import { plural, table } from "../format.js";
+import { managedHookCommand } from "../hooks/hook-binary.js";
+import { configPin } from "../hooks/trust.js";
 import { repoDir } from "../scan/index.js";
 import type { Fetch } from "../team/client.js";
 import { checkTeam, loadPolicy, type PolicyIo } from "./commands.js";
@@ -25,8 +28,10 @@ import {
   describeManaged,
   installManaged,
   knownPath,
+  type ManagedFile,
   type ManagedReport,
   managedFiles,
+  trustManagedFile,
 } from "./managed.js";
 
 export interface PolicyCompileIo extends PolicyIo {
@@ -428,11 +433,17 @@ export async function policyCompile(
   const vendors = options.vendor?.length
     ? [...new Set(options.vendor.map(parseVendor))]
     : undefined;
+  // Root-owned managed settings run selfhost by the absolute path it has now, not through PATH,
+  // which the person (and so an agent running as them) can change.
+  const binary =
+    options.managed && options.hookCommand === undefined
+      ? managedHookCommand(io.which, io.platform)
+      : undefined;
   const result = compilePolicy(config, {
     vendors,
     versions: parseTargets(options.target ?? []),
     team: options.team,
-    hookCommand: options.hookCommand,
+    hookCommand: options.hookCommand ?? binary?.command,
   });
   const root = repoDir(undefined, io.cwd);
   const out = resolve(io.cwd, options.out ?? join(root ?? io.cwd, ".selfhost", "compiled"));
@@ -488,7 +499,13 @@ export async function policyCompile(
   };
 
   if (options.managed) {
-    const files = managedFiles(result, io.platform);
+    const compiled = managedFiles(result, io.platform);
+    // On a laptop in a team, the server's grant-signing keys pinned in config.json go into the
+    // root-owned trust file with the rest, so an agent cannot swap them. Staged in the output
+    // folder like the others.
+    const pin = io.configPath ? configPin(readConfigFile(io.configPath)) : undefined;
+    const trust = pin && trustManagedFile(io.platform, pin.server, pin.keys);
+    const files: ManagedFile[] = trust ? [...compiled, trust] : compiled;
     report.managed = installManaged(files, {
       platform: io.platform,
       ...(options.root === undefined ? {} : { root: resolve(io.cwd, options.root) }),
@@ -496,7 +513,7 @@ export async function policyCompile(
       known: io.configPath ? knownPath(io.configPath) : join(out, "managed-known.json"),
       write: true,
       force: options.force === true,
-      sources: new Map(files.map((file) => [file, join(out, file.vendor, file.name)])),
+      sources: new Map(compiled.map((file) => [file, join(out, file.vendor, file.name)])),
     });
   }
 

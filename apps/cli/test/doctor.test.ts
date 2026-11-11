@@ -144,6 +144,7 @@ describe("selfhost doctor", () => {
       "enforcement",
       "team_floor",
       "managed_hooks",
+      "exceptions",
     ]);
     expect(report.enforcement).toEqual([]);
     expect(report.guardrails).toMatchObject({ mode: "enforce", observed: [] });

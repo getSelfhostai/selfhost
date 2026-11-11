@@ -16,21 +16,27 @@ import {
   validateConfig,
 } from "@selfhost/schema";
 import { findConfig, type PolicySource, policyText } from "../find-config.js";
+import { gitRepoAt } from "../git-repo.js";
 import { extraCheckers } from "./checkers.js";
 import {
+  type AnyGrant,
   callFingerprint,
   claimGrant,
-  type ExceptionGrant,
+  claimServerGrant,
   type ExceptionRequest,
   exceptionKey,
   exceptionsDir,
   findGrant,
+  findServerGrant,
   REQUEST_SCHEMA,
   requestId,
+  setAsideLaptopGrants,
+  setAsideNote,
   writeRequest,
 } from "./exceptions.js";
 import { explain, grantUsedText, ruleLink } from "./explain.js";
 import type { CheckPreTool, GuardHit, GuardRecord } from "./receive.js";
+import { exceptionTrust } from "./trust.js";
 import {
   AGENT_LABELS,
   type Answer,
@@ -60,7 +66,8 @@ import {
  * the rule (explain.ts), and a review item id that allows this exact call once when a person
  * approves it (exceptions.ts). The hook writes the request and later finds the grant in
  * ~/.selfhost/exceptions; the item itself is made from the spool line on import. A failure in
- * the exception files only drops the exception part: the block still holds.
+ * the exception files only drops the exception part: the block still holds. In team mode
+ * (trust.ts) only a grant the team server signed counts, checked against the pinned keys.
  */
 
 export interface PreToolOptions {
@@ -69,6 +76,10 @@ export interface PreToolOptions {
   budgetMs?: number;
   /** ~/.selfhost/config.json, for the team policy fallback. Default: from HOME. */
   configPath?: string;
+  /** Default: process.platform. Picks where the root-owned exception trust file is. */
+  platform?: string;
+  /** Read system paths (the exception trust file) under this folder instead; for tests. */
+  systemRoot?: string;
 }
 
 /** The repository root above `dir`: the nearest folder with a .git entry. */
@@ -185,24 +196,36 @@ const errorText = (error: unknown) => (error instanceof Error ? error.message : 
 
 /** What the exception files say about a blocked call. */
 type ExceptionOutcome =
-  | { grant: ExceptionGrant }
+  | { grant: AnyGrant }
   | { request: ExceptionRequest }
   | { failure: string }
   | Record<string, never>;
 
+/** Where the exception files are and which grants count on this laptop. */
+interface ExceptionPlace {
+  dir: string;
+  configPath: string | undefined;
+  platform: string;
+  systemRoot: string | undefined;
+  writeError: (line: string) => void;
+}
+
 /**
  * For a call about to be denied: an approved grant for it, claimed (only looked at for a call
  * Cursor's own hook decides next, which claims it), else a new request for a person to approve.
+ * In team mode the grant must be one the team server signed with a pinned key, for this call's
+ * session, repository and person; grants signed on this laptop are set aside with a note.
  */
 function exceptionFor(
-  dir: string | undefined,
+  place: ExceptionPlace | undefined,
   call: PreToolCall,
   toolCall: ToolCall,
   rules: string[],
   expiryMinutes: number,
   now: Date,
 ): ExceptionOutcome {
-  if (dir === undefined) return {};
+  if (place === undefined) return {};
+  const { dir } = place;
   try {
     const key = exceptionKey(dir, true);
     if (!key) return {};
@@ -211,8 +234,28 @@ function exceptionFor(
       agent: call.vendor,
       ...(call.sessionId !== undefined ? { session: call.sessionId } : {}),
     });
-    const grant = findGrant(dir, key, fingerprint, rules, now);
-    if (grant && (call.deferred || claimGrant(dir, grant))) return { grant };
+    const trust = exceptionTrust(place.configPath, place.platform, place.systemRoot);
+    if (trust.mode === "team") {
+      const setAside = setAsideLaptopGrants(dir);
+      if (setAside > 0) place.writeError(`selfhost hook: ${setAsideNote(setAside)}`);
+      const where = call.cwd ?? toolCall.root;
+      const grant = findServerGrant(
+        dir,
+        trust.keys,
+        {
+          fingerprint,
+          rules,
+          ...(call.sessionId !== undefined ? { session: call.sessionId } : {}),
+          repo: () => (where === undefined ? undefined : gitRepoAt(where)),
+          ...(trust.person !== undefined ? { person: trust.person } : {}),
+        },
+        now,
+      );
+      if (grant && (call.deferred || claimServerGrant(dir, grant))) return { grant };
+    } else {
+      const grant = findGrant(dir, key, fingerprint, rules, now);
+      if (grant && (call.deferred || claimGrant(dir, grant))) return { grant };
+    }
     const request: ExceptionRequest = {
       schema: REQUEST_SCHEMA,
       id: requestId(now),
@@ -298,7 +341,15 @@ export async function checkPreToolCall(
   const exception =
     answer === "deny" && decision.hit && !rules.includes(SELFHOST_DECISION_RULE_ID)
       ? exceptionFor(
-          home ? exceptionsDir(join(home, ".selfhost")) : undefined,
+          home
+            ? {
+                dir: exceptionsDir(join(home, ".selfhost")),
+                configPath,
+                platform: options.platform ?? process.platform,
+                systemRoot: options.systemRoot,
+                writeError: io.writeError,
+              }
+            : undefined,
           call,
           toolCall,
           rules,

@@ -218,7 +218,15 @@ decisions synced from a laptop, the MCP server):
   `selfhost.toml` sets `[review] self_approve_exceptions = true`. Answering a proposal to the
   team's context needs the owner or admin role. Denying an exception is always allowed.
 - A decision the server refuses is logged and leaves the item open. A laptop in team mode gets a
-  grant only from the server's answer, so a refused decision allows nothing.
+  grant only from the server, signed with an Ed25519 key that never leaves it, so a refused
+  decision allows nothing and an agent cannot write a grant itself. The laptop checks grants with
+  the server's public key, pinned in the root-owned managed settings when they are installed
+  (else in `~/.selfhost/config.json`, which `selfhost doctor` warns an agent could rewrite), and
+  the managed hooks run selfhost by its absolute path. See
+  [one-time exceptions](apps/cli/README.md#one-time-exceptions).
+- In solo mode there is no server: the local key in `~/.selfhost/exceptions/key` signs grants,
+  so exceptions hold against agents that follow the rules, not against an agent determined to
+  forge them. Use team mode with managed settings for a real boundary.
 - Agents never answer approvals, questions, exceptions, blocked actions, context proposals or
   budget and alert items through the MCP `record_decision` tool.
 

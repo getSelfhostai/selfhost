@@ -16,6 +16,7 @@ import { deploymentToken } from "../up/record.js";
 import { type Fetch, serverUrl, TeamApiError, TeamClient } from "./client.js";
 import {
   clearMembership,
+  pinExceptionKeys,
   readMembership,
   readSyncState,
   saveMembership,
@@ -128,6 +129,8 @@ export interface JoinReport {
   context: { hash: string; layers: { kind: "org" | "team"; name: string; files: number }[] } | null;
   /** Why the context layers were not pulled; the next sync pulls them. */
   context_error?: string;
+  /** Why the server's exception keys were not pinned; the next sync pins them. */
+  exception_keys_error?: string;
   /** sha256 of the team policy pulled on joining, null when the team has none yet. */
   policy_hash?: string | null;
   /** Why the team policy was not pulled; the next sync pulls it. */
@@ -508,6 +511,14 @@ export async function joinTeam(
     team: joined.team.id,
   };
   saveMembership(io.configPath, membership);
+  // The keys one-time exception grants are signed with, pinned before anything else here, so
+  // the managed settings below pin them in their root-owned trust file too.
+  let keysError: string | undefined;
+  try {
+    await pinExceptionKeys(new TeamClient(server, joined.token, io.fetch), io.configPath);
+  } catch (failure) {
+    keysError = failure instanceof Error ? failure.message : String(failure);
+  }
   let context: JoinReport["context"] = null;
   let contextError: string | undefined;
   try {
@@ -532,6 +543,7 @@ export async function joinTeam(
     config: io.configPath,
     context,
     ...(contextError === undefined ? {} : { context_error: contextError }),
+    ...(keysError === undefined ? {} : { exception_keys_error: keysError }),
     ...(laptop ?? {}),
   };
   const layers = context?.layers ?? [];

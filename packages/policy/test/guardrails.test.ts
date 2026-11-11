@@ -343,6 +343,31 @@ describe("secret files", () => {
     expect(env?.alternative).toContain(".env.example");
   });
 
+  // Defense in depth for one-time exceptions (H4): the boundary is the team server's key.
+  it.each([
+    "cat ~/.selfhost/exceptions/key",
+    "cat ~/.self*/exceptions/k*",
+    "head -c 64 /home/dev/.selfhost/exceptions/ke?",
+    "cat ~/.selfhost/exceptions/grants/019a5b01-0000-7000-8000-000000000001.json",
+    "cp -r ~/.selfhost/exceptions /tmp/x",
+    "cp ~/.sel*/conf*.json /tmp/c.json",
+    "tar czf /tmp/e.tgz ~/.selfhost/exceptions",
+    `python3 -c "print(open('/home/dev/.selfhost/exceptions/key').read())"`,
+    `python3 -c "import os; print(open(os.path.expanduser('~/.selfhost/config.json')).read())"`,
+    `node -e "console.log(require('fs').readFileSync(process.env.HOME + '/.selfhost/exceptions/key', 'utf8'))"`,
+  ])("blocks reading selfhost's own files: %s", (command) => {
+    const hits = guardrailHits(policy, bash(command), { env: ENV });
+    expect(hits.map((hit) => [hit.rule_id, hit.verdict])).toContainEqual([
+      "guard.secret_read",
+      "block",
+    ]);
+  });
+
+  it("does not take a glob that cannot reach selfhost's files for one", () => {
+    expect(guardrailHits(policy, bash("cat src/*.ts"), { env: ENV })).toEqual([]);
+    expect(guardrailHits(policy, bash("ls ~/.selfhost"), { env: ENV })).toEqual([]);
+  });
+
   it("does not block a write to a secret file or a mention of one", () => {
     const write: ToolCall = { tool: "Write", path: ".env", access: "write", root: WORKSPACE };
     expect(guardrailHits(policy, write, { env: ENV })).toEqual([]);

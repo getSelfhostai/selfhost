@@ -6,6 +6,7 @@ import { createApp } from "./app.js";
 import { allTeams, createBackground, startScheduleJob } from "./background.js";
 import { startCacheAlertJob } from "./cache-alerts.js";
 import { findConsoleDir } from "./console.js";
+import { loadExceptionKeys } from "./exception-keys.js";
 import { gatewayFromEnv, startGatewayJob } from "./gateway.js";
 import { githubAppFromEnv, githubConfig } from "./github.js";
 import { notifyFromEnv, startNotifyJob } from "./notify.js";
@@ -38,6 +39,16 @@ const { token, path, created } = loadApiToken(dataDir);
 if (created) {
   const where = path ? `saved to ${path}` : "not saved, the data dir is in memory";
   console.log(`API token (${where}): ${token}`);
+}
+
+// The Ed25519 keys one-time exception grants are signed with: made on the first start, kept
+// next to the token (or in SELFHOST_EXCEPTION_KEYS_FILE), never sent anywhere.
+const exceptionKeys = loadExceptionKeys(dataDir);
+if (exceptionKeys.created) {
+  const where = exceptionKeys.path
+    ? `saved to ${exceptionKeys.path}`
+    : "not saved, the data dir is in memory";
+  console.log(`exception signing key made (${where})`);
 }
 
 const githubTeam = process.env.SELFHOST_GITHUB_TEAM?.trim() || undefined;
@@ -103,6 +114,7 @@ const server = serve(
       ledger,
       token,
       config,
+      exceptionKeys,
       github,
       ...(web ? { console: web } : {}),
       ...(signin ? { signin } : {}),

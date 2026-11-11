@@ -348,7 +348,8 @@ const SECRET_PATHS = [
   "**/opencode/auth.json",
   "**/.config/goose/secrets.yaml",
   "**/.selfhost/config.json",
-  "**/.selfhost/exceptions/key",
+  "**/.selfhost/exceptions",
+  "**/.selfhost/exceptions/**",
 ];
 
 const nameMatcher = picomatch(SECRET_NAMES, { dot: true, nocase: true });
@@ -486,10 +487,56 @@ function fileOf(call: ToolCall): string | undefined {
   return base === undefined ? call.path : join(base, call.path);
 }
 
-/** selfhost's own credentials: the team token in config.json and the exception key. */
-const selfhostFile = picomatch(["**/.selfhost/config.json", "**/.selfhost/exceptions/key"], {
-  dot: true,
-});
+/**
+ * selfhost's own files: the team token and pinned keys in config.json, and the exception files
+ * (the local key, requests and grants). Blocking reads of them is defense in depth, not the
+ * boundary: in team mode the team server signs grants with a key no laptop holds.
+ */
+const SELFHOST_FILES = [
+  "**/.selfhost/config.json",
+  "**/.selfhost/exceptions",
+  "**/.selfhost/exceptions/**",
+];
+const selfhostFile = picomatch(SELFHOST_FILES, { dot: true });
+
+/** Files under HOME a glob in a read could reach: selfhost's own, by their usual paths. */
+const SELFHOST_TARGETS = [
+  ".selfhost/config.json",
+  ".selfhost/exceptions",
+  ".selfhost/exceptions/key",
+  ".selfhost/exceptions/grants",
+  ".selfhost/exceptions/requests",
+];
+
+const GLOB = /[*?[{]/;
+
+/**
+ * The selfhost file a glob such as ~/.sel?host/exceptions/ke? would match under HOME, if any.
+ * Only selfhost's own files by their usual paths: the shell expands the glob, so the word as
+ * written never names them.
+ */
+function globReachesSelfhost(pattern: string, home: string | undefined): string | undefined {
+  if (!GLOB.test(pattern) || home === undefined || home === "") return undefined;
+  let matches: (path: string) => boolean;
+  try {
+    matches = picomatch(pattern.split(sep).join("/"), { dot: true });
+  } catch {
+    return undefined;
+  }
+  const base = home.split(sep).join("/").replace(/\/+$/, "");
+  return SELFHOST_TARGETS.map((target) => `${base}/${target}`).find((path) => matches(path));
+}
+
+/** Inline code (python -c, node -e, ...) that names selfhost's config or exception files. */
+function inlineReadsSelfhost(command: ShellCommand): boolean {
+  const [path = "", ...args] = command.argv;
+  const flags = INLINE_CODE[basename(path)];
+  if (!flags) return false;
+  return args.some((arg, i) => {
+    if (!flags.includes(args[i - 1] ?? "")) return false;
+    return /\.selfhost\b/.test(arg) && /config\.json|exceptions/.test(arg);
+  });
+}
 
 const SELFHOST_FILE_ALTERNATIVE =
   "Nothing in it is needed for the task. To get a blocked call allowed, call request_exception on the selfhost MCP server with the exception id from the block, or ask the user.";
@@ -513,7 +560,10 @@ function secretRead(call: ToolCall, commands: ShellCommand[]): Finding {
     for (const value of readsOf(command)) {
       const path = pathOf(value, command);
       if (isSecretPath(path)) return secretBlock(path);
+      const reached = globReachesSelfhost(path, command.vars.HOME);
+      if (reached) return secretBlock(reached);
     }
+    if (inlineReadsSelfhost(command)) return secretBlock(".selfhost/exceptions");
   }
   return undefined;
 }

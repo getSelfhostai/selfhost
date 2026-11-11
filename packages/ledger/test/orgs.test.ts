@@ -497,7 +497,8 @@ describe.each(BACKENDS)("orgs, roles and repos on $name", (backend) => {
             ('h2', 'person', 'up-a', 'gone@example.com', now()),
             ('h3', 'person', 'up-b', 'gone@example.com', NULL);
         `);
-        expect(await migrate(upgrade.db)).toEqual(["0015_membership_revocation"]);
+        // 0015 first, then any later migration.
+        expect((await migrate(upgrade.db))[0]).toBe("0015_membership_revocation");
         const { teams: upgraded } = upgrade.ledger;
         expect((await upgraded.listPeople("up-a")).map((p) => p.id)).toEqual([
           "owner@example.com",

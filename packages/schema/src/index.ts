@@ -9,6 +9,7 @@ export * from "./cron.js";
 export * from "./egress.js";
 export * from "./event.js";
 export * from "./event-versions.js";
+export * from "./exception-grant.js";
 export * from "./gateway.js";
 export * from "./handoff.js";
 export * from "./hooks/claude-code.js";

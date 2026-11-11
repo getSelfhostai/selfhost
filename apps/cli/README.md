@@ -927,25 +927,60 @@ A person can allow one blocked call, once. Nothing here opens the ledger in the 
    item is there right after the block.
 3. A person approves or denies it: `selfhost inbox approve <id>`, `selfhost review approve <id>`,
    `selfhost decide <id> approve`, or the server's API. The answer is a `decision.recorded` event.
-4. The machine that asked turns the approval into a grant, `~/.selfhost/exceptions/grants/<id>.json`:
-   right away when the person approves there, else on its next `selfhost inbox`, `selfhost
-   import` (team mode: the sync reads each of its waiting requests with `GET
-   /v1/review-items/{id}`) or `import --watch` refresh. Only this machine's own requests turn into
-   grants. A grant is signed and expires `[review] exception_expiry_minutes` (default 30) after
-   the approval.
+4. The machine that asked gets a grant, `~/.selfhost/exceptions/grants/<id>.json`: right away
+   when the person approves there, else on its next `selfhost inbox`, `selfhost import` or
+   `import --watch` refresh. Only this machine's own requests turn into grants. A grant expires
+   `[review] exception_expiry_minutes` (default 30) after the approval. Who signs it depends on
+   the mode (below).
 5. The next identical call (same agent, tool, command with white space evened out, file and
    access, URL, MCP server, repository root and agent session), stopped only by rules the exception covers,
-   uses the grant: the hook moves it to `used/`, which only one hook can do, so two calls at once
+   uses the grant: the hook claims it, which only one hook can do, so two calls at once
    cannot both get through. It answers allow (Claude Code and Codex also show the person a
    `systemMessage`) and records the use: a `policy.evaluated` allow under the rule, with
    `data.exception.used` and the decision's id. The call after that is blocked again.
 
 So the ledger holds the request, the approval and the use. The fingerprint is an HMAC-SHA256
-with a per-machine key (`~/.selfhost/exceptions/key`, mode 0600), which also signs grants, so
-neither says anything about the command and a grant cannot be written by hand; reading the key
-is blocked by `guard.secret_read`. An agent that can run any code as you can still read it, as
-with the guardrails' other known bypasses. A failure in these files never loosens a block: the
-call stays blocked, without the exception part.
+with a per-machine key (`~/.selfhost/exceptions/key`, mode 0600), so it says nothing about the
+command. A failure in these files never loosens a block: the call stays blocked, without the
+exception part.
+
+**Team mode: the server signs grants.** The team server signs each grant with an Ed25519 key it
+makes on first start and keeps next to its API token (`<data dir>/exception-keys.json`, mode
+0600, or the file `SELFHOST_EXCEPTION_KEYS_FILE` names, for several servers sharing one
+database). The private key never leaves the server. It signs only for an exception item a person
+the team allows approved (owner or admin, never the requester unless `[review]
+self_approve_exceptions = true`), checked when the answer is recorded and again when the grant is
+signed. A grant (`selfhost.exception_grant/v2`) names the exception id, a random nonce, the
+call's fingerprint and rules as the blocked call's event reported them, the session, the
+repository, the requester, the approver, the team, the expiry and the signing key's id. The
+laptop fetches it with `GET /v1/exception-grants/{id}` and keeps it only if the signature
+verifies with a key it pinned; the hook checks it again, with the session, repository and person
+of the call. A nonce used on the laptop is recorded in `exceptions/nonces/`, so a grant copied
+back is refused, and the next sync reports the use (`POST /v1/exception-grants/{id}/use`), after
+which the server hands the grant out no more. That report is best effort: the hook checks offline,
+so a laptop that never syncs again never reports it.
+
+The server's public keys (`GET /v1/exception-keys`) are pinned at join and on every sync in
+`~/.selfhost/config.json` (`exception_keys`), and, when the managed settings are installed, in a
+root-owned trust file next to them (`/Library/Application Support/selfhost/exception-trust.json`,
+`/etc/selfhost/exception-trust.json`, `C:\Program Files\selfhost\exception-trust.json`). With
+the trust file, the hook uses its keys and stays in team mode whatever config.json says. Without
+it, a coding agent running as you can rewrite config.json, so `selfhost doctor` warns that the pin
+holds only as long as that file does. The managed hooks also run selfhost by the absolute path
+it had at install, not through PATH, and `selfhost doctor` warns when you can write that file or
+a folder above it. Rotating the key (`POST /v1/exception-keys/rotate`, admin token) adds a key
+and signs with it; the old ones stay listed, laptops pin the new one on their next sync, and
+where the trust file holds the pin, the admin command the sync prints installs it there.
+
+Grants a laptop signed with its local key are not accepted in team mode: the hook moves any it
+finds to `exceptions/ignored/` and says so in one line. Ask for the exception again.
+
+**Solo mode: the local key signs grants.** With no team, `~/.selfhost/exceptions/key` signs
+grants too. Reading it, the config and the other exception files by their usual paths and globs
+(`cat`, `head`, `cp`, `python -c "open(...)"`) is blocked by `guard.secret_read`, but that is
+defense in depth: an agent running as you can still read the key by other means and sign a grant
+itself. **In solo mode, exceptions hold against agents that follow the rules, not against an
+agent determined to forge them. For a real boundary, use team mode with managed settings.**
 
 ## Solo and team modes
 

@@ -4,16 +4,24 @@ import type { LedgerWriter } from "@selfhost/importers";
 import type { Ledger } from "@selfhost/ledger";
 import { PAGE_LIMIT_MAX } from "@selfhost/schema";
 import { compileRepos, pullContext, type RepoCompile } from "../context/layers.js";
-import { exceptionsDir, hasRequests, issueGrants } from "../hooks/exceptions.js";
+import {
+  exceptionsDir,
+  hasRequests,
+  hasUnreportedUses,
+  pullServerGrants,
+} from "../hooks/exceptions.js";
+import { exceptionTrust } from "../hooks/trust.js";
+import { serverGrants } from "../inbox/grants.js";
 import { type Fetch, TeamClient } from "./client.js";
 import {
   type Membership,
+  pinExceptionKeys,
   readSyncState,
   type SyncState,
   teamPolicyPath,
   writeSyncState,
 } from "./config.js";
-import { type LaptopIo, type LaptopReport, reportLaptop } from "./laptop.js";
+import { type LaptopIo, type LaptopReport, machineId, reportLaptop } from "./laptop.js";
 import { RemoteWriter, type RemoteWriterOptions } from "./remote-writer.js";
 
 /** The `sync` part of `selfhost import --json` in team mode. */
@@ -103,7 +111,7 @@ export async function syncLedger(
   try {
     await pushLedger(ledger, remote, history ? undefined : since);
     markSynced(configPath, state, history);
-    const grants = await pullGrants(client, configPath);
+    const grants = await pullGrants(client, configPath, new Date(), sync.laptop);
     if (grants !== undefined) report.grants = grants;
     const pulled = await pullTeam(sync, state);
     report.policy_hash = pulled.policy_hash;
@@ -125,6 +133,8 @@ export interface PullReport {
   context_hash: string;
   context_repos?: RepoCompile[];
   laptop?: LaptopReport;
+  /** Why the server's exception keys could not be pinned. */
+  exception_keys_error?: string;
 }
 
 /**
@@ -138,10 +148,19 @@ export async function pullTeam(sync: TeamSync, state?: SyncState): Promise<PullR
   const before = current.policy_hash;
   const policyHash = await pullPolicy(client, configPath, current);
   const context = await pullContext(client, configPath, current);
+  // Before the managed settings install, which writes the pinned keys to the trust file. A
+  // server that lists none keeps the pin as it was; grants then wait for the next sync.
+  let keysError: string | undefined;
+  try {
+    await pinExceptionKeys(client, configPath);
+  } catch (error) {
+    keysError = error instanceof Error ? error.message : String(error);
+  }
   const report: PullReport = {
     policy_hash: policyHash,
     policy_changed: before !== undefined && before !== policyHash,
     context_hash: context.hash,
+    ...(keysError === undefined ? {} : { exception_keys_error: keysError }),
   };
   if (context.changed && current.context_repos?.length) {
     report.context_repos = await compileRepos(configPath, current.context_repos);
@@ -226,18 +245,28 @@ export async function pullPolicy(
 
 /**
  * Asks the server about the exceptions this machine's hooks requested (the review item ids they
- * named) and writes a grant for each one a person approved. Only this machine's own requests are
- * asked about, so the sync pulls this person's grants and nobody else's. Undefined when there was
- * nothing to ask; a failed read leaves the rest for the next sync.
+ * named) and writes each grant it signed for one a person approved, once its signature verifies
+ * with a key this laptop pinned; then reports the grants hooks used. Only this machine's own
+ * requests are asked about, so the sync pulls this person's grants and nobody else's. Undefined
+ * when there was nothing to ask; a failed read leaves the rest for the next sync. A laptop that
+ * pinned no key yet (it joined before the server signed grants) pins the server's keys first.
  */
 export async function pullGrants(
   client: TeamClient,
   configPath: string,
   now = new Date(),
+  where: Pick<LaptopIo, "platform" | "systemRoot"> = { platform: process.platform },
 ): Promise<number | undefined> {
   const dir = exceptionsDir(dirname(configPath));
-  if (!hasRequests(dir)) return undefined;
-  const report = await issueGrants(dir, (id) => client.reviewItem(id), now);
+  if (!hasRequests(dir) && !hasUnreportedUses(dir)) return undefined;
+  const trustHere = () => exceptionTrust(configPath, where.platform, where.systemRoot);
+  let trust = trustHere();
+  if (trust.source === "none") {
+    await pinExceptionKeys(client, configPath);
+    trust = trustHere();
+  }
+  const server = serverGrants(client, machineId(configPath));
+  const report = await pullServerGrants(dir, server, trust.keys, now);
   return report.issued.length;
 }
 

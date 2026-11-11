@@ -13,6 +13,7 @@ import type { Env, Which } from "@selfhost/agents";
 import { type CompileResult, PLATFORMS, type Platform, VENDOR_NAMES } from "@selfhost/compile";
 import type { CompileVendor, LaptopManaged, ManagedState } from "@selfhost/schema";
 import { plural } from "../format.js";
+import { TRUST_PATHS, type TrustedKey, trustFileText } from "../hooks/trust.js";
 
 /**
  * Installing the compiled managed settings at the system paths each vendor reads: Claude Code's
@@ -22,9 +23,15 @@ import { plural } from "../format.js";
  * for elevation itself.
  */
 
+/**
+ * Whose file it is: an agent vendor's, or selfhost's own exception trust file, which pins the
+ * team server's grant-signing keys where an agent running as the person cannot change them.
+ */
+export type ManagedVendor = CompileVendor | "selfhost";
+
 /** One file the policy compiles to, with the system path its vendor reads on a platform. */
 export interface ManagedFile {
-  vendor: CompileVendor;
+  vendor: ManagedVendor;
   /** Path inside the vendor's folder of the compile output. */
   name: string;
   content: string;
@@ -50,7 +57,7 @@ export const MANAGED_FILE_STATUSES = [
 export type ManagedFileStatus = (typeof MANAGED_FILE_STATUSES)[number];
 
 export interface ManagedFileReport {
-  vendor: CompileVendor;
+  vendor: ManagedVendor;
   /** The path the vendor reads. */
   target: string;
   /** Where it is on this machine: the target, or under --root. */
@@ -158,10 +165,13 @@ const isPlatform = (platform: string): platform is Platform =>
  * The files of a compile that go to system paths on a platform. Per-user files (device
  * management delivers them to each home folder) and dashboard text are not among them.
  */
-export function managedFiles(result: CompileResult, platform: string): ManagedFile[] {
+export function managedFiles(
+  result: CompileResult,
+  platform: string,
+): (ManagedFile & { vendor: CompileVendor })[] {
   if (!isPlatform(platform)) return [];
   return result.vendors.flatMap((vendor) =>
-    vendor.files.flatMap((file): ManagedFile[] => {
+    vendor.files.flatMap((file): (ManagedFile & { vendor: CompileVendor })[] => {
       if (file.install.kind !== "system") return [];
       const target = file.install.paths[platform];
       if (target === undefined) return [];
@@ -176,6 +186,26 @@ export function managedFiles(result: CompileResult, platform: string): ManagedFi
       ];
     }),
   );
+}
+
+/**
+ * The exception trust file pinning the team server's url and grant-signing keys, installed with
+ * the vendors' managed files; undefined on platforms selfhost has no path for, or with no keys.
+ */
+export function trustManagedFile(
+  platform: string,
+  server: string,
+  keys: readonly TrustedKey[],
+): ManagedFile | undefined {
+  const target = TRUST_PATHS[platform as keyof typeof TRUST_PATHS];
+  if (target === undefined || keys.length === 0) return undefined;
+  return {
+    vendor: "selfhost",
+    name: "exception-trust.json",
+    content: trustFileText(server, keys),
+    mode: "0644",
+    target,
+  };
 }
 
 /**

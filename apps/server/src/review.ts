@@ -33,6 +33,8 @@ import {
 import type { Context, Env, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { raiseBudgetAlerts } from "./budget-alerts.js";
+import { exceptionGrantRoutes } from "./exception-grants.js";
+import type { ExceptionKeyring } from "./exception-keys.js";
 import type { GitClones } from "./provenance.js";
 import { teamConfig, withRunLinks } from "./runs.js";
 import { wakeAfter } from "./wake.js";
@@ -68,6 +70,8 @@ export interface ReviewRouteOptions {
    * item only some roles may answer, or undefined to go on.
    */
   beforeDecision?: (c: Context, id: string) => Promise<Response | undefined>;
+  /** The keys one-time exception grants are signed with (see exception-grants.ts). */
+  exceptionKeys?: ExceptionKeyring;
 }
 
 const apiError = (code: string, message: string): ApiError => ({ error: { code, message } });
@@ -347,6 +351,15 @@ export function reviewRoutes<E extends Env>(
       }
       throw error;
     }
+  });
+
+  exceptionGrantRoutes(app, ledger, {
+    ...(options.exceptionKeys ? { keys: options.exceptionKeys } : {}),
+    ...(options.now ? { now: options.now } : {}),
+    ...(options.person ? { person: options.person } : {}),
+    holder,
+    missing,
+    configOf,
   });
 }
 

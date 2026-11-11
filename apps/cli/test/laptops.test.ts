@@ -149,7 +149,8 @@ describe("laptop rollout through selfhost join", () => {
         platform: "linux",
         selfhost_version: expect.any(String),
         policy_hash: hash,
-        managed: { state: "current", files: 3, pending: 0 },
+        // Claude Code's and Codex's files, and the trust file pinning the server's grant key.
+        managed: { state: "current", files: 4, pending: 0 },
         last_heartbeat: expect.any(String),
         flags: [],
         status: "current",
@@ -163,7 +164,7 @@ describe("laptop rollout through selfhost join", () => {
       bob.deps,
     );
     expect(bobJoined.code).toBe(0);
-    expect(bobJoined.out).toContain("Managed settings install is off here: 3 of 3 files differ");
+    expect(bobJoined.out).toContain("Managed settings install is off here: 4 of 4 files differ");
     expect(existsSync(bob.root.path("etc"))).toBe(false);
 
     // Cy joins from somewhere without the CLI, so no laptop of hers ever reports.
@@ -261,7 +262,12 @@ describe("laptop rollout through selfhost join", () => {
         const staged = ada.home.path(".selfhost", "managed", "codex", "requirements.toml");
         // Only for the agents on this laptop: no sudo line for Cursor's or Copilot's files.
         expect(joined.out).toContain(
-          "3 files need an admin. Run (selfhost never runs sudo itself):",
+          "4 files need an admin. Run (selfhost never runs sudo itself):",
+        );
+        // The server's grant-signing key, pinned where only root writes.
+        const trust = ada.home.path(".selfhost", "managed", "selfhost", "exception-trust.json");
+        expect(joined.out).toContain(
+          `  sudo mkdir -p '${ada.root.path("etc", "selfhost")}' && sudo install -o root -m 0644 '${trust}' '${ada.root.path("etc", "selfhost", "exception-trust.json")}'`,
         );
         expect(joined.out).toContain(
           "Left out the managed settings of Cursor, Copilot: not on this laptop. A later sync installs them once one is.",
@@ -276,7 +282,7 @@ describe("laptop rollout through selfhost join", () => {
         const coverage = await laptops(ada.deps);
         expect(coverage.laptops[0]).toMatchObject({
           status: "not_installed",
-          managed: { state: "pending", files: 3, pending: 3 },
+          managed: { state: "pending", files: 4, pending: 4 },
         });
 
         // A sync on the same policy says it in one line rather than printing the sudo lines again.
@@ -285,7 +291,7 @@ describe("laptop rollout through selfhost join", () => {
         expect(again.code).toBe(0);
         expect(again.out).not.toContain("sudo ");
         expect(again.out).toContain(
-          "Managed settings: 3 admin commands from an earlier sync still to run once. selfhost status prints them again.",
+          "Managed settings: 4 admin commands from an earlier sync still to run once. selfhost status prints them again.",
         );
         const status = await run(["status"], ada.deps);
         expect(status.out).toContain(

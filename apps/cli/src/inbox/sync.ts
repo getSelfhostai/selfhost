@@ -1,9 +1,8 @@
 import type { Ledger } from "@selfhost/ledger";
 import { PAGE_LIMIT_MAX, type ReviewItem } from "@selfhost/schema";
-import type { LookupItem } from "../hooks/exceptions.js";
 import { type Fetch, TeamApiError, TeamClient } from "../team/client.js";
 import type { Membership } from "../team/config.js";
-import { grantLine, refreshGrants } from "./grants.js";
+import { type GrantSource, grantLine, refreshGrants, serverGrants } from "./grants.js";
 import { closedItem, httpReviewList } from "./http.js";
 import type { ReviewList } from "./review-list.js";
 import {
@@ -212,10 +211,11 @@ export interface InboxRefreshOptions {
   minIntervalMs?: number;
   now?: () => Date;
   /**
-   * Reads one item for the exception grants: each refresh writes a grant for every request of
-   * this machine's hooks a person approved. Without it no grants are written.
+   * Where the exception grants come from (the local list, or the team server's signed grants):
+   * each refresh writes a grant for every request of this machine's hooks a person approved.
+   * Without it no grants are written.
    */
-  lookup?: LookupItem;
+  lookup?: GrantSource;
 }
 
 export interface InboxRefresh {
@@ -329,7 +329,7 @@ export async function watchInbox(
     : await options.localReviewList?.(ledger);
   if (!list) return undefined;
   const client = membership && new TeamClient(membership.server, membership.token, options.fetch);
-  const lookup: LookupItem = client ? (id) => client.reviewItem(id) : (id) => list.get(id);
+  const lookup: GrantSource = client ? serverGrants(client) : (id) => list.get(id);
   return startInboxRefresh({
     list,
     scope: {

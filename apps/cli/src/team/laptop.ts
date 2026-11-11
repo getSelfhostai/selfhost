@@ -13,14 +13,19 @@ import {
   type LedgerEvent,
   parseConfig,
 } from "@selfhost/schema";
+import { readConfigFile } from "../config-file.js";
+import { managedHookCommand } from "../hooks/hook-binary.js";
+import { configPin } from "../hooks/trust.js";
 import {
   installManaged,
   knownPath,
   type LaptopAgentsScope,
+  type ManagedFile,
   type ManagedReport,
   managedDir,
   managedFiles,
   managedSummary,
+  trustManagedFile,
   vendorsHere,
 } from "../policy/managed.js";
 import type { TeamClient } from "./client.js";
@@ -98,13 +103,22 @@ export function installTeamManaged(
   }
   const config = parsed.config;
   const team = Object.hasOwn(config.teams, membership.team) ? membership.team : undefined;
-  const result = compilePolicy(config, team ? { team } : {});
+  // Root-owned settings run selfhost by the absolute path it has now, not through PATH.
+  const binary = managedHookCommand(laptop.agents?.which, laptop.platform);
+  const result = compilePolicy(config, {
+    ...(team ? { team } : {}),
+    ...(binary ? { hookCommand: binary.command } : {}),
+  });
   const all = managedFiles(result, laptop.platform);
   const here = laptop.agents ? vendorsHere(laptop.agents) : undefined;
-  const files = here ? all.filter((file) => here.has(file.vendor)) : all;
+  const files: ManagedFile[] = here ? all.filter((file) => here.has(file.vendor)) : all;
   const notHere = [...new Set(all.map((file) => file.vendor))].filter(
     (vendor) => here !== undefined && !here.has(vendor),
   );
+  // The server's grant-signing keys as pinned at join and on sync, in a file only root writes.
+  const pin = configPin(readConfigFile(configPath));
+  const trust = pin && trustManagedFile(laptop.platform, pin.server, pin.keys);
+  if (trust) files.push(trust);
   const report = installManaged(files, {
     platform: laptop.platform,
     ...(laptop.systemRoot === undefined ? {} : { root: laptop.systemRoot }),

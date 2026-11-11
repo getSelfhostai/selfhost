@@ -13,8 +13,6 @@ import { type AnswerText, answerText, type HookAgent } from "../src/hooks/vendor
 import { agentSessionVariable } from "../src/human.js";
 import { type InboxIo, runInboxDecide } from "../src/inbox/commands.js";
 import { localReviewList } from "../src/review-list.js";
-import { TeamClient } from "../src/team/client.js";
-import { pullGrants } from "../src/team/sync.js";
 import { run, tempDir } from "./run.js";
 
 /**
@@ -589,51 +587,8 @@ describe("a one-time exception, end to end", () => {
   });
 });
 
-describe("grants in team mode", () => {
-  it("pulls this machine's approved exceptions from the server on sync", async () => {
-    const m = machine();
-    const out = claudeOut(await hook(m, "claude", bash(m.workspace.root, "git reset --hard"), T0));
-    const id = ID.exec(out.hookSpecificOutput?.permissionDecisionReason ?? "")?.[1] ?? "";
-    const answered: ReviewItem = {
-      id,
-      schema: "selfhost.review_item/v1",
-      kind: "exception",
-      title: "Allow once: Bash: git reset --hard",
-      created_at: T0.toISOString(),
-      updated_at: minutes(2).toISOString(),
-      state: "answered",
-      blocking: true,
-      risk: { score: 80, reasons: [] },
-      owners: ["lead@example.com"],
-      source_event_ids: [id],
-      answer: {
-        by: "lead@example.com",
-        verdict: "approve",
-        at: minutes(2).toISOString(),
-        decision_event_id: "019a5b02-0000-7000-8000-000000000002",
-      },
-    };
-    const requested: string[] = [];
-    const fetch = async (url: string) => {
-      requested.push(url);
-      return url.endsWith(`/v1/review-items/${id}`)
-        ? new Response(JSON.stringify(answered), { status: 200 })
-        : new Response(JSON.stringify({ error: { code: "not_found", message: "no" } }), {
-            status: 404,
-          });
-    };
-    const client = new TeamClient("http://team.test", "token", fetch);
-    expect(await pullGrants(client, m.configPath, minutes(3))).toBe(1);
-    expect(requested).toEqual([`http://team.test/v1/review-items/${id}`]);
-    // Nothing waits any more, so the next sync asks the server nothing.
-    expect(await pullGrants(client, m.configPath, minutes(4))).toBeUndefined();
-
-    const allowed = claudeOut(
-      await hook(m, "claude", bash(m.workspace.root, "git reset --hard"), minutes(5)),
-    );
-    expect(allowed.systemMessage).toContain("lead@example.com approved exception");
-  });
-
+// Team mode, where the server signs grants, is in exception-grants.test.ts.
+describe("solo grant requests", () => {
   it("keeps a request while the server is unreachable or its item is still open", async () => {
     const m = machine();
     await hook(m, "claude", bash(m.workspace.root, "git reset --hard"), T0);

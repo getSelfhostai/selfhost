@@ -11,7 +11,9 @@ import {
   validateConfig,
 } from "@selfhost/schema";
 import { type ConfigLocation, findConfig, policyText, type TeamPolicyFile } from "./find-config.js";
+import { hookCommandPaths, userWritable } from "./hooks/hook-binary.js";
 import { type ManagedHooks, managedHooks, userHookIn } from "./hooks/managed-hooks.js";
+import { exceptionTrust } from "./hooks/trust.js";
 import { defaultTargets, enforcementReports, reportLines } from "./runtime-check.js";
 
 export interface DoctorOptions {
@@ -75,7 +77,24 @@ export interface DoctorReport {
    * Agents whose managed settings run selfhost's hooks, and whether the user's own config runs
    * them too (twice per event; the import counts each event once).
    */
-  managed_hooks: (ManagedHooks & { user_config: string | null })[];
+  managed_hooks: (ManagedHooks & {
+    user_config: string | null;
+    /** The absolute files the managed hook command runs; empty when it goes through PATH. */
+    binaries: string[];
+    /** The first of those files (or a folder above one) you can write, which lets you swap it. */
+    writable: string | null;
+  })[];
+  /**
+   * How one-time exception grants are checked on this laptop: solo (the local key signs them),
+   * or team with the server's keys pinned in the root-owned managed settings or in config.json.
+   */
+  exceptions: {
+    mode: "solo" | "team";
+    pinned: "managed" | "config" | "none";
+    path: string | null;
+    keys: number;
+    warnings: string[];
+  };
 }
 
 const AGENT_LABELS: Record<ManagedHooks["agent"], string> = {
@@ -94,10 +113,72 @@ function hookSources(options: DoctorOptions): DoctorReport["managed_hooks"] {
     claude_code: [where.claude_code.settings],
     codex: [where.codex.hooks, where.codex.config],
   };
-  return found.map((entry) => ({
-    ...entry,
-    user_config: userConfigs[entry.agent].find((path) => userHookIn(path, entry.agent)) ?? null,
-  }));
+  return found.map((entry) => {
+    const binaries = managedBinaries(entry.path);
+    const writable = binaries.map((path) => userWritable(path)).find((path) => path !== undefined);
+    return {
+      ...entry,
+      user_config: userConfigs[entry.agent].find((path) => userHookIn(path, entry.agent)) ?? null,
+      binaries,
+      writable: isRoot() ? null : (writable ?? null),
+    };
+  });
+}
+
+const isRoot = () => process.getuid?.() === 0;
+
+/**
+ * The absolute files a managed settings file runs for selfhost's hook: from Claude Code's
+ * "command" and Codex's command_windows, which hold the hook command as written at install.
+ */
+function managedBinaries(path: string): string[] {
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    return [];
+  }
+  const commands = [...text.matchAll(/"?command(?:_windows)?"?\s*[:=]\s*("(?:[^"\\]|\\.)*")/g)]
+    .map((match) => {
+      try {
+        return JSON.parse(match[1] ?? "") as string;
+      } catch {
+        return "";
+      }
+    })
+    .filter((command) => / hook /.test(` ${command} `));
+  return [...new Set(commands.flatMap((command) => hookCommandPaths(command)))];
+}
+
+/** How exception grants are checked here, and what weakens it. */
+function exceptionsReport(options: DoctorOptions): DoctorReport["exceptions"] {
+  const platform = options.platform ?? process.platform;
+  const trust = exceptionTrust(options.configPath, platform, options.systemRoot);
+  const warnings: string[] = [];
+  if (trust.mode === "team" && trust.source === "config") {
+    warnings.push(
+      `Exception grants are checked against the team server's key pinned in ${trust.path}. A coding agent running as you can write that file and pin a key of its own; install the managed settings (the admin command selfhost join or sync printed, or selfhost policy compile --managed) to pin it in a root-owned file.`,
+    );
+  } else if (trust.mode === "team" && trust.source === "none") {
+    warnings.push(
+      "No team server key is pinned yet, so no exception grant is accepted here. The next selfhost import pins it.",
+    );
+  }
+  if (trust.source === "managed" && trust.path && !isRoot()) {
+    const writable = userWritable(trust.path);
+    if (writable) {
+      warnings.push(
+        `${trust.path} pins the team server's key, but you can write ${writable}, and so can a coding agent running as you. Install it as root with mode 0644.`,
+      );
+    }
+  }
+  return {
+    mode: trust.mode,
+    pinned: trust.source,
+    path: trust.path ?? null,
+    keys: trust.keys.length,
+    warnings,
+  };
 }
 
 /** Which guardrails enforce and which only record, under a config. */
@@ -133,6 +214,7 @@ export function doctorReport(options: DoctorOptions): DoctorReport {
     enforcement: [],
     team_floor: [],
     managed_hooks: hookSources(options),
+    exceptions: exceptionsReport(options),
   };
   const location = findConfig(cwd, config, env, configPath);
   if (!location) return report;
@@ -223,7 +305,26 @@ export function doctor(options: DoctorOptions): number {
         ? `${name} runs selfhost's hooks twice: from the managed settings at ${hooks.path} and from ${hooks.user_config}. The import counts each event once; remove the selfhost hook from ${hooks.user_config} (selfhost init --undo puts back what init changed).`
         : `${name}'s hooks come from the managed settings at ${hooks.path}; selfhost init adds no user hook for it.`,
     );
+    if (hooks.binaries.length === 0) {
+      row(
+        "warning",
+        `${hooks.path} runs selfhost through PATH, which you (and a coding agent running as you) can change. Install the managed settings again with selfhost on PATH, so they name its absolute path.`,
+      );
+    } else if (hooks.writable) {
+      row(
+        "warning",
+        `${name}'s managed hook runs ${hooks.binaries.join(" ")}, and you can write ${hooks.writable}, so a coding agent running as you could replace what the hook runs. Install selfhost where only root writes (such as a root-owned /usr/local), then install the managed settings again.`,
+      );
+    }
   }
+  const { exceptions } = report;
+  row(
+    "grants",
+    exceptions.mode === "solo"
+      ? "solo mode: one-time exceptions are signed with the local key, which holds against agents that follow the rules, not against one set on forging a grant. Team mode with managed settings is the boundary."
+      : `team mode: only grants the team server signed count, checked with ${exceptions.keys} pinned key${exceptions.keys === 1 ? "" : "s"}${exceptions.pinned === "managed" ? ` from ${exceptions.path} (root-owned managed settings)` : exceptions.pinned === "config" ? ` from ${exceptions.path}` : ""}`,
+  );
+  for (const warning of exceptions.warnings) row("warning", warning);
   const guards = report.guardrails;
   const guardsRow = () =>
     row(

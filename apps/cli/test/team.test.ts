@@ -166,9 +166,21 @@ describe("team init and join", () => {
       laptop: { managed: null, heartbeat: { sent: true, machine: expect.any(String) } },
     });
 
-    // Only the membership is stored: no vendor login, API key or anything else.
+    // Only the membership and the server's public grant keys: no vendor login, API key or
+    // anything else.
     const config = JSON.parse(readFileSync(configPath, "utf8"));
-    expect(Object.keys(config).sort()).toEqual(["person", "server", "team", "token"]);
+    expect(Object.keys(config).sort()).toEqual([
+      "exception_keys",
+      "person",
+      "server",
+      "team",
+      "token",
+    ]);
+    expect(config.exception_keys).toMatchObject({
+      schema: "selfhost.exception_trust/v1",
+      server: SERVER,
+      keys: [{ id: expect.stringMatching(/^[0-9a-f]{16}$/) }],
+    });
     expect(config).toMatchObject({ server: SERVER, person: PERSON, team: "platform" });
     expect(config.token).toMatch(/^selfhost_pt_/);
     expect(joined.out).not.toContain(config.token);
@@ -215,6 +227,7 @@ describe("team init and join", () => {
     const { invite } = parse((await run(["team", "init", "--server", SERVER, "--json"], deps)).out);
     await run(["join", SERVER, invite, "--person", PERSON], deps);
     expect(Object.keys(JSON.parse(readFileSync(configPath, "utf8"))).sort()).toEqual([
+      "exception_keys",
       "person",
       "server",
       "team",

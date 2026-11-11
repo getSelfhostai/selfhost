@@ -10,12 +10,12 @@ import { clock, duration } from "../alerts/text.js";
 import { plural } from "../format.js";
 import { oneCopyPerFact } from "../hooks/dedupe.js";
 import { drainSpool } from "../hooks/drain.js";
-import type { ExceptionGrant, GrantsReport, LookupItem } from "../hooks/exceptions.js";
+import type { AnyGrant, GrantsReport } from "../hooks/exceptions.js";
 import { spoolDir } from "../hooks/receive.js";
 import { requireHuman } from "../human.js";
 import { type Fetch, TeamApiError, TeamClient } from "../team/client.js";
 import { readMembership } from "../team/config.js";
-import { grantLine, refreshGrants } from "./grants.js";
+import { type GrantSource, grantLine, refreshGrants, serverGrants } from "./grants.js";
 import { closedItem, httpReviewList } from "./http.js";
 import type { ReviewList } from "./review-list.js";
 import {
@@ -138,7 +138,7 @@ export interface InboxActionReport {
    * the blocked call once. Null otherwise, also when the request came from another machine,
    * which writes its grant on its next import or inbox command.
    */
-  grant: ExceptionGrant | null;
+  grant: AnyGrant | null;
   sync: ReplayReport;
 }
 
@@ -166,8 +166,8 @@ interface Session {
   /** Why the live list cannot be reached. */
   offline?: string;
   sync: ReplayReport;
-  /** Reads one item, for the exception grants: the server's single-item read in team mode. */
-  lookup?: LookupItem;
+  /** Where the exception grants come from: the local list, or the team server's grants. */
+  lookup?: GrantSource;
   /** The grants this session wrote, once looked for. */
   grants?: Promise<GrantsReport | undefined>;
   configPath: string;
@@ -250,7 +250,7 @@ async function openSession(options: CommonOptions, io: InboxIo, ledger?: Ledger)
           mode: "team",
           scope: { server: membership.server, team: membership.team, person: membership.person },
           list: httpReviewList(membership.server, membership.token, io.fetch),
-          lookup: (id) => client.reviewItem(id),
+          lookup: serverGrants(client),
           close: async () => {},
         }
       : await openSolo(options, io, base, ledger);

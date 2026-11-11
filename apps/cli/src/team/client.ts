@@ -13,6 +13,9 @@ import type {
   CreateTeamResponse,
   DecisionRequest,
   DecisionResponse,
+  ExceptionGrantStatus,
+  ExceptionGrantUseRequest,
+  ExceptionKeysResponse,
   GatewayKeysResponse,
   GatewayStatus,
   Handoff,
@@ -259,6 +262,32 @@ export class TeamClient {
       if (error instanceof TeamApiError && error.status === 404) return undefined;
       throw error;
     }
+  }
+
+  /** The public keys the server signs one-time exception grants with. */
+  exceptionKeys(): Promise<ExceptionKeysResponse> {
+    return this.call("GET", "/v1/exception-keys");
+  }
+
+  /**
+   * The server's answer about one of this person's exceptions, with the signed grant once it is
+   * approved; undefined while the item is not on the server's list (404).
+   */
+  async exceptionGrant(id: string): Promise<ExceptionGrantStatus | undefined> {
+    try {
+      return await this.call<ExceptionGrantStatus>(
+        "GET",
+        `/v1/exception-grants/${encodeURIComponent(id)}`,
+      );
+    } catch (error) {
+      if (error instanceof TeamApiError && error.status === 404) return undefined;
+      throw error;
+    }
+  }
+
+  /** Tells the server a grant was used, so it is handed out no more. */
+  reportGrantUse(id: string, request: ExceptionGrantUseRequest): Promise<ExceptionGrantStatus> {
+    return this.call("POST", `/v1/exception-grants/${encodeURIComponent(id)}/use`, request);
   }
 
   /** Answers a review item; 409 when it is no longer open. */

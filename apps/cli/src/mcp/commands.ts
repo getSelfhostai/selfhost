@@ -24,7 +24,9 @@ import {
   tilde,
 } from "../agents.js";
 import { table } from "../format.js";
-import { exceptionsDir, hasRequests, issueGrants, readGrant } from "../hooks/exceptions.js";
+import { exceptionsDir, readGrant } from "../hooks/exceptions.js";
+import { exceptionTrust } from "../hooks/trust.js";
+import { refreshGrants, serverGrants } from "../inbox/grants.js";
 import { type Fetch, serverUrl, TeamClient } from "../team/client.js";
 import { type Membership, readMembership } from "../team/config.js";
 import { type LocalMcpOptions, localMcpData } from "./local.js";
@@ -64,8 +66,9 @@ const asResult = (status: McpItemStatus): CallToolResult => ({
 });
 
 /**
- * In team mode: after the server says an exception this machine asked for was approved, writes
- * its grant here (as `selfhost import` would on its next sync) and tells the agent it may go.
+ * In team mode: after the server says an exception this machine asked for was approved, fetches
+ * the grant it signed (as `selfhost import` would on its next sync), keeps it when it verifies
+ * with a pinned key, and tells the agent it may go.
  */
 export function grantsOnResult(membership: Membership, configPath: string, fetch: Fetch) {
   const dir = exceptionsDir(dirname(configPath));
@@ -75,8 +78,9 @@ export function grantsOnResult(membership: Membership, configPath: string, fetch
     const status = result.structuredContent as McpItemStatus | undefined;
     if (status?.kind !== "exception" || status.state !== "answered") return result;
     const now = new Date();
-    if (hasRequests(dir)) await issueGrants(dir, (id) => client.reviewItem(id), now);
-    const grant = readGrant(dir, status.item_id, now);
+    const trust = exceptionTrust(configPath, process.platform);
+    await refreshGrants(configPath, serverGrants(client), now, trust);
+    const grant = readGrant(dir, status.item_id, now, trust.keys);
     if (!grant) return result;
     return asResult({
       ...status,

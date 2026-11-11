@@ -75,6 +75,18 @@ and hook events go into the local ledger only, which keeps no prompt text. Raw h
 in `~/.selfhost/spool` (readable by this user only) until the next import. With `--team`, each
 `selfhost import` also sends the ledger to the team's server.
 
+## Security
+
+A one-time exception lets one blocked call through once after a person approves it. In solo
+mode the grant is signed with a key in `~/.selfhost/exceptions/key`, readable by this user, so
+solo exceptions hold against agents that follow the rules, not against an agent determined to
+forge them. The guardrails block reading that key and `~/.selfhost/config.json` by their usual
+paths, which is not a boundary. In team mode only the team server signs grants, with a key that
+never leaves it, and the laptop checks them with the server's public key. Install the managed
+settings (the admin command `selfhost join` prints) so that key is pinned in a root-owned file
+and the hooks run selfhost by its absolute path; `selfhost doctor` says when either is missing.
+That is the setup for a real boundary.
+
 ## Afterwards
 
 - Hook events wait in `~/.selfhost/spool` until the next `selfhost import`; keep

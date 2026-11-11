@@ -13,6 +13,7 @@ import { consoleRoutes } from "./console.js";
 import { refuseContextDecision } from "./context.js";
 import { decisionRoutes } from "./decisions.js";
 import { eventRoutes } from "./events.js";
+import { type ExceptionKeyring, loadExceptionKeys } from "./exception-keys.js";
 import { type Gateway, gatewayAdminRoutes, gatewayProxyRoutes } from "./gateway.js";
 import { type GitHubRouteOptions, githubRoutes } from "./github.js";
 import { githubRepos, type IntegrationRouteOptions } from "./integrations.js";
@@ -72,6 +73,11 @@ export interface AppOptions {
    * token: the server wakes its review refresh when an agent starts to wait.
    */
   eventsStored?: (kinds: readonly string[]) => void;
+  /**
+   * The Ed25519 keys one-time exception grants are signed with (exception-keys.ts). Default: a
+   * key for this process only, as for an in-memory data dir.
+   */
+  exceptionKeys?: ExceptionKeyring;
 }
 
 export function createApp({
@@ -91,9 +97,11 @@ export function createApp({
   background,
   solo,
   eventsStored,
+  exceptionKeys = loadExceptionKeys("memory://"),
 }: AppOptions): Hono {
   const app = new Hono();
   const review = {
+    exceptionKeys,
     ...(config ? { config } : {}),
     ...(now ? { now } : {}),
     ...(github.publicUrl ? { publicUrl: github.publicUrl } : {}),

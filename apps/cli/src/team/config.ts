@@ -1,6 +1,8 @@
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { readConfigFile, writeConfigFile } from "../config-file.js";
+import { configPin, TRUST_SCHEMA, type TrustedKey } from "../hooks/trust.js";
+import type { TeamClient } from "./client.js";
 
 /**
  * What `selfhost join` keeps in the config file, and all it keeps: the server, the person token
@@ -39,16 +41,38 @@ export function saveMembership(configPath: string, membership: Membership): void
 export function clearMembership(configPath: string): Membership | undefined {
   const membership = readMembership(configPath);
   const config = writableConfig(configPath);
-  if (MEMBERSHIP_KEYS.some((key) => key in config)) {
-    const rest = Object.fromEntries(
-      Object.entries(config).filter(
-        ([key]) => !(MEMBERSHIP_KEYS as readonly string[]).includes(key),
-      ),
-    );
+  const keys: readonly string[] = [...MEMBERSHIP_KEYS, PIN_KEY];
+  if (keys.some((key) => key in config)) {
+    const rest = Object.fromEntries(Object.entries(config).filter(([key]) => !keys.includes(key)));
     writeConfigFile(configPath, rest);
   }
   clearSyncFiles(configPath);
   return membership;
+}
+
+/** Where config.json pins the team server's exception keys. */
+const PIN_KEY = "exception_keys";
+
+/**
+ * Pins the public keys the team server signs exception grants with in config.json, as the
+ * server lists them now: at join and on every sync, so a rotated key is pinned before the server
+ * signs with it. Returns the keys pinned. Where managed settings are installed, the root-owned
+ * trust file holds the pin the hook uses and this one is only what the next install writes there.
+ */
+export async function pinExceptionKeys(
+  client: Pick<TeamClient, "exceptionKeys">,
+  configPath: string,
+): Promise<TrustedKey[]> {
+  const listed = await client.exceptionKeys();
+  const config = writableConfig(configPath);
+  const server = config.server;
+  if (typeof server !== "string") throw new Error(`${configPath} names no team server`);
+  const keys = listed.keys.map(({ id, public_key }) => ({ id, public_key }));
+  const before = configPin(config);
+  if (JSON.stringify(before?.keys) !== JSON.stringify(keys)) {
+    writeConfigFile(configPath, { ...config, [PIN_KEY]: { schema: TRUST_SCHEMA, server, keys } });
+  }
+  return keys;
 }
 
 /** The config file contents, refusing to go on when they would be lost by a write. */

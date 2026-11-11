@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHmac, createPublicKey, randomBytes, timingSafeEqual, verify } from "node:crypto";
 import {
   existsSync,
   linkSync,
@@ -10,7 +10,16 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import type { ReviewItem } from "@selfhost/schema";
+import {
+  EXCEPTION_GRANT_SCHEMA,
+  type ExceptionGrantStatus,
+  exceptionGrantPayload,
+  type ReviewItem,
+  type ExceptionGrant as ServerGrant,
+} from "@selfhost/schema";
+import type { TrustedKey } from "./trust.js";
+
+export type { ServerGrant };
 
 /**
  * One-time exceptions: a person allows one blocked tool call, once. Everything the hook needs
@@ -25,7 +34,19 @@ import type { ReviewItem } from "@selfhost/schema";
  * - `used/<id>.json`: a grant after the hook allowed the call with it. The move is the claim, so
  *   two hooks cannot both use one grant, and it stops the grant from being issued again.
  *
- * This module imports no workspace package at run time: `selfhost hook` loads it on blocks.
+ * Who signs a grant depends on the mode (trust.ts):
+ *
+ * - Solo mode: the CLI signs it with `key` once the item is approved on the local list. Anyone
+ *   who can read `key` can sign one, an agent running as the person included, so a solo
+ *   exception holds against agents that follow the rules, not against one set on forging it.
+ * - Team mode: the team server signs it with its Ed25519 key, which never leaves the server
+ *   (selfhost.exception_grant/v2). The laptop fetches it, and the hook accepts it only when the
+ *   signature verifies with a pinned public key and the grant names this call's fingerprint,
+ *   session, repository and person. Grants signed with the local key are set aside unused.
+ *   `nonces/<nonce>.json` records each nonce used, so a grant copied back is refused; the use is
+ *   reported to the server on the next sync, which then hands the grant out no more.
+ *
+ * Of the workspace packages this module uses only @selfhost/schema, which the hook loads anyway.
  */
 
 export const REQUEST_SCHEMA = "selfhost.exception_request/v1";
@@ -78,9 +99,12 @@ export interface CallIdentity {
 /** Reads a review item, from the local list or the team server. */
 export type LookupItem = (id: string) => Promise<ReviewItem | undefined>;
 
+/** A grant of either mode: signed with the local key (solo) or by the team server. */
+export type AnyGrant = ExceptionGrant | ServerGrant;
+
 export interface GrantsReport {
   /** Grants written by this pass: the agent can now make each call once. */
-  issued: ExceptionGrant[];
+  issued: AnyGrant[];
   /** Requests still waiting on a person, or on their item to reach the list. */
   waiting: number;
   /** Why the pass stopped early; the rest stay for the next pass. */
@@ -94,6 +118,8 @@ const REQUEST_TTL_MS = 24 * 60 * MINUTE_MS;
 const USED_KEEP_MS = 7 * 24 * 60 * MINUTE_MS;
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const KEY_HEX = /^[0-9a-f]{64}$/;
+const NONCE = /^[0-9a-f]{32}$/;
+const NONCE_FILE = /^[0-9a-f]{32}\.json$/;
 
 const code = (error: unknown) => (error as NodeJS.ErrnoException | null)?.code;
 
@@ -103,6 +129,8 @@ export const exceptionsDir = (selfhostDir: string) => join(selfhostDir, "excepti
 const requestsDir = (dir: string) => join(dir, "requests");
 const grantsDir = (dir: string) => join(dir, "grants");
 const usedDir = (dir: string) => join(dir, "used");
+const noncesDir = (dir: string) => join(dir, "nonces");
+const ignoredDir = (dir: string) => join(dir, "ignored");
 const fileOf = (folder: string, id: string) => join(folder, `${id}.json`);
 
 function readKey(path: string): Buffer {
@@ -188,18 +216,22 @@ function readJson<T>(path: string): T | undefined {
   }
 }
 
-/** The ids of the `.json` files in a folder, oldest id first; none when it does not exist. */
-function idsIn(folder: string): string[] {
-  let names: string[];
+/** The names in a folder that match `pattern`, sorted; none when it does not exist. */
+function namesIn(folder: string, pattern: RegExp): string[] {
   try {
-    names = readdirSync(folder);
+    return readdirSync(folder)
+      .filter((name) => pattern.test(name))
+      .sort();
   } catch {
     return [];
   }
-  return names
-    .filter((name) => name.endsWith(".json") && ID.test(name.slice(0, -5)))
+}
+
+/** The ids of the `.json` files in a folder, oldest id first; none when it does not exist. */
+function idsIn(folder: string): string[] {
+  return namesIn(folder, /\.json$/)
     .map((name) => name.slice(0, -5))
-    .sort();
+    .filter((id) => ID.test(id));
 }
 
 export function writeRequest(dir: string, request: ExceptionRequest): void {
@@ -280,18 +312,25 @@ export function claimGrant(dir: string, grant: ExceptionGrant): boolean {
 
 const APPROVALS = new Set(["approve", "override"]);
 
-/** Removes expired grants and used/ markers well past their expiry. */
+/** Removes expired grants, and used/ and nonce markers well past their expiry. */
 function prune(dir: string, now: Date): void {
   for (const [folder, keep] of [
     [grantsDir(dir), 0],
     [usedDir(dir), USED_KEEP_MS],
   ] as const) {
     for (const id of idsIn(folder)) {
-      const grant = readJson<ExceptionGrant>(fileOf(folder, id));
+      const grant = readJson<AnyGrant>(fileOf(folder, id));
       const expires = Date.parse(grant?.expires_at ?? "");
       if (Number.isFinite(expires) && expires + keep <= now.getTime()) {
         rmSync(fileOf(folder, id), { force: true });
       }
+    }
+  }
+  for (const name of namesIn(noncesDir(dir), NONCE_FILE)) {
+    const marker = readJson<{ expires_at?: string }>(join(noncesDir(dir), name));
+    const expires = Date.parse(marker?.expires_at ?? "");
+    if (Number.isFinite(expires) && expires + USED_KEEP_MS <= now.getTime()) {
+      rmSync(join(noncesDir(dir), name), { force: true });
     }
   }
 }
@@ -379,8 +418,23 @@ export const isOwnException = (dir: string, id: string) =>
   ID.test(id) &&
   [requestsDir(dir), grantsDir(dir), usedDir(dir)].some((folder) => existsSync(fileOf(folder, id)));
 
-/** The unused grant for exception `id`, signed with the key and not expired. */
-export function readGrant(dir: string, id: string, now: Date): ExceptionGrant | undefined {
+/**
+ * The unused grant for exception `id`, not expired: in team mode (`keys` given) one the server
+ * signed with a pinned key whose nonce was not used; in solo mode one signed with the local key.
+ */
+export function readGrant(
+  dir: string,
+  id: string,
+  now: Date,
+  keys?: readonly TrustedKey[],
+): AnyGrant | undefined {
+  if (keys) {
+    const grant = ID.test(id) ? readJson<unknown>(fileOf(grantsDir(dir), id)) : undefined;
+    if (!verifyServerGrant(grant, keys) || grant.id !== id || nonceUsed(dir, grant.nonce)) {
+      return undefined;
+    }
+    return Date.parse(grant.expires_at) > now.getTime() ? grant : undefined;
+  }
   const key = exceptionKey(dir, false);
   const grant = ID.test(id) ? readJson<ExceptionGrant>(fileOf(grantsDir(dir), id)) : undefined;
   if (!key || grant?.schema !== GRANT_SCHEMA || grant.id !== id || !signed(key, grant)) {
@@ -388,3 +442,228 @@ export function readGrant(dir: string, id: string, now: Date): ExceptionGrant | 
   }
   return Date.parse(grant.expires_at) > now.getTime() ? grant : undefined;
 }
+
+/**
+ * true when `grant` is a server grant signed by one of `keys`: the key it names is pinned, and
+ * the Ed25519 signature over every other field verifies with it.
+ */
+export function verifyServerGrant(
+  grant: unknown,
+  keys: readonly TrustedKey[],
+): grant is ServerGrant {
+  if (typeof grant !== "object" || grant === null) return false;
+  const { signature, ...rest } = grant as ServerGrant;
+  if (rest.schema !== EXCEPTION_GRANT_SCHEMA || typeof signature !== "string") return false;
+  if (!Array.isArray(rest.rules) || typeof rest.expires_at !== "string") return false;
+  if (typeof rest.nonce !== "string" || !NONCE.test(rest.nonce)) return false;
+  const key = keys.find((candidate) => candidate.id === rest.key_id);
+  if (!key) return false;
+  try {
+    const publicKey = createPublicKey({
+      key: { kty: "OKP", crv: "Ed25519", x: key.public_key },
+      format: "jwk",
+    });
+    return verify(
+      null,
+      exceptionGrantPayload(rest),
+      publicKey,
+      Buffer.from(signature, "base64url"),
+    );
+  } catch {
+    return false;
+  }
+}
+
+const nonceFile = (dir: string, nonce: string) => join(noncesDir(dir), `${nonce}.json`);
+
+/** true when a hook on this machine already allowed a call with this nonce. */
+const nonceUsed = (dir: string, nonce: string) => existsSync(nonceFile(dir, nonce));
+
+/** The call a server grant must name, as the hook sees it. */
+export interface GrantedCall {
+  fingerprint: string;
+  rules: readonly string[];
+  session?: string;
+  /** owner/name of the call's repository, read only for a grant that names one. */
+  repo: () => string | undefined;
+  /** The team membership's person on this laptop, when known. */
+  person?: string;
+}
+
+/**
+ * A server grant for this call: signed with a pinned key, not expired, its nonce not used here,
+ * for the same fingerprint, session, repository and person, and covering every rule that stops
+ * the call now. Expired grants found on the way are removed.
+ */
+export function findServerGrant(
+  dir: string,
+  keys: readonly TrustedKey[],
+  call: GrantedCall,
+  now: Date,
+): ServerGrant | undefined {
+  let repo: { value: string | undefined } | undefined;
+  for (const id of idsIn(grantsDir(dir))) {
+    const path = fileOf(grantsDir(dir), id);
+    const grant = readJson<unknown>(path);
+    if (!verifyServerGrant(grant, keys) || grant.id !== id) continue;
+    if (Date.parse(grant.expires_at) <= now.getTime()) {
+      rmSync(path, { force: true });
+      continue;
+    }
+    if (grant.fingerprint !== call.fingerprint) continue;
+    if (grant.session_id !== null && grant.session_id !== call.session) continue;
+    if (!call.rules.every((rule) => grant.rules.includes(rule))) continue;
+    if (call.person !== undefined && grant.requested_by.toLowerCase() !== call.person.toLowerCase())
+      continue;
+    if (nonceUsed(dir, grant.nonce)) continue;
+    if (grant.repo !== null) {
+      repo ??= { value: call.repo() };
+      if (grant.repo !== repo.value) continue;
+    }
+    return grant;
+  }
+  return undefined;
+}
+
+/**
+ * Uses a server grant up: records its nonce (the claim: of two hooks at once, only one creates
+ * the file) and moves the grant to used/, where the next sync finds it to report the use.
+ */
+export function claimServerGrant(dir: string, grant: ServerGrant): boolean {
+  mkdirSync(noncesDir(dir), { recursive: true, mode: 0o700 });
+  try {
+    writeFileSync(
+      nonceFile(dir, grant.nonce),
+      `${JSON.stringify({ id: grant.id, expires_at: grant.expires_at })}\n`,
+      { mode: 0o600, flag: "wx" },
+    );
+  } catch (error) {
+    if (code(error) === "EEXIST") return false;
+    throw error;
+  }
+  mkdirSync(usedDir(dir), { recursive: true, mode: 0o700 });
+  try {
+    renameSync(fileOf(grantsDir(dir), grant.id), fileOf(usedDir(dir), grant.id));
+  } catch (error) {
+    if (code(error) !== "ENOENT") throw error;
+  }
+  return true;
+}
+
+/**
+ * In team mode: moves grants signed with the local key to ignored/, where nothing reads them,
+ * and returns how many. Grants written before this laptop was in team mode, or by anyone who can
+ * read the local key, are not accepted there.
+ */
+export function setAsideLaptopGrants(dir: string): number {
+  let moved = 0;
+  for (const id of idsIn(grantsDir(dir))) {
+    const grant = readJson<{ schema?: unknown }>(fileOf(grantsDir(dir), id));
+    if (grant?.schema === EXCEPTION_GRANT_SCHEMA) continue;
+    mkdirSync(ignoredDir(dir), { recursive: true, mode: 0o700 });
+    try {
+      renameSync(fileOf(grantsDir(dir), id), fileOf(ignoredDir(dir), id));
+      moved += 1;
+    } catch (error) {
+      if (code(error) !== "ENOENT") throw error;
+    }
+  }
+  return moved;
+}
+
+/** The one-line note for grants set aside in team mode. */
+export const setAsideNote = (count: number) =>
+  `ignored ${count} one-time exception grant${count === 1 ? "" : "s"} signed on this laptop: in team mode only the team server signs grants. Ask for the exception again.`;
+
+/** The team server's side of the grants, in team mode. */
+export interface ServerGrants {
+  /** The server's answer about one exception; undefined while the item is not on its list. */
+  grant(id: string): Promise<ExceptionGrantStatus | undefined>;
+  /** Tells the server a grant was used, so it hands it out no more. */
+  used(id: string, nonce: string): Promise<void>;
+}
+
+/**
+ * Team mode's issueGrants: for each request the hook wrote, asks the server. A grant it signed
+ * with a key this laptop pinned is written to grants/; one it refused, that expired or was used
+ * drops the request; one still waiting keeps it (a request whose item never reaches the list is
+ * dropped after a day). A grant signed with a key this laptop has not pinned keeps the request,
+ * with an error that says to pin it. Then it reports the grants hooks used since the last pass.
+ */
+export async function pullServerGrants(
+  dir: string,
+  server: ServerGrants,
+  keys: readonly TrustedKey[],
+  now: Date,
+): Promise<GrantsReport> {
+  const report: GrantsReport = { issued: [], waiting: 0 };
+  const requests = readRequests(dir);
+  const drop = (request: ExceptionRequest) =>
+    rmSync(fileOf(requestsDir(dir), request.id), { force: true });
+  for (const [index, request] of requests.entries()) {
+    if (
+      existsSync(fileOf(grantsDir(dir), request.id)) ||
+      existsSync(fileOf(usedDir(dir), request.id))
+    ) {
+      drop(request);
+      continue;
+    }
+    let answer: ExceptionGrantStatus | undefined;
+    try {
+      answer = await server.grant(request.id);
+    } catch (error) {
+      report.waiting += requests.length - index;
+      report.error = error instanceof Error ? error.message : String(error);
+      break;
+    }
+    if (!answer) {
+      if (now.getTime() - Date.parse(request.requested_at) > REQUEST_TTL_MS) drop(request);
+      else report.waiting += 1;
+      continue;
+    }
+    if (answer.state === "waiting") {
+      report.waiting += 1;
+      continue;
+    }
+    const grant = answer.grant;
+    if (answer.state === "granted" && grant) {
+      if (!verifyServerGrant(grant, keys) || grant.id !== request.id) {
+        report.waiting += 1;
+        report.error = `the server's grant for ${request.id} is signed with key ${grant.key_id}, which this laptop has not pinned. Run selfhost import to pin the server's keys${keys.length > 0 ? ", and the admin command for the managed settings if they pin them" : ""}.`;
+        continue;
+      }
+      if (grant.fingerprint === request.fingerprint) {
+        mkdirSync(grantsDir(dir), { recursive: true, mode: 0o700 });
+        writeAtomically(fileOf(grantsDir(dir), grant.id), grant);
+        report.issued.push(grant);
+      }
+    }
+    drop(request);
+  }
+  await reportUses(dir, server, report);
+  prune(dir, now);
+  return report;
+}
+
+/** Tells the server about the server grants hooks used that it has not heard of yet. */
+async function reportUses(dir: string, server: ServerGrants, report: GrantsReport) {
+  for (const id of idsIn(usedDir(dir))) {
+    const path = fileOf(usedDir(dir), id);
+    const used = readJson<ServerGrant & { reported_at?: string }>(path);
+    if (used?.schema !== EXCEPTION_GRANT_SCHEMA || used.reported_at !== undefined) continue;
+    try {
+      await server.used(id, used.nonce);
+    } catch (error) {
+      report.error ??= error instanceof Error ? error.message : String(error);
+      return;
+    }
+    writeAtomically(path, { ...used, reported_at: new Date().toISOString() });
+  }
+}
+
+/** true when grants used here wait to be reported to the server. */
+export const hasUnreportedUses = (dir: string) =>
+  idsIn(usedDir(dir)).some((id) => {
+    const used = readJson<{ schema?: unknown; reported_at?: unknown }>(fileOf(usedDir(dir), id));
+    return used?.schema === EXCEPTION_GRANT_SCHEMA && used.reported_at === undefined;
+  });
