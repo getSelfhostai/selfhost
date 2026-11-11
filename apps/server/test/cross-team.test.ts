@@ -1,9 +1,13 @@
 import { type Ledger, openLedger } from "@selfhost/ledger";
 import { openReviewList, refreshReviewList } from "@selfhost/review";
 import {
+  type CreateInviteResponse,
   type CreateTeamResponse,
   EVENT_SCHEMA,
+  type Handoff,
   type JoinResponse,
+  type LedgerEvent,
+  type MeResponse,
   type NotifySettings,
   type ReviewItemsPage,
 } from "@selfhost/schema";
@@ -218,5 +222,150 @@ describe("another person's waiting agent", () => {
     expect((await mia(`${path}/snooze`, "POST", { until })).status).toBe(403);
     expect((await lead(`${path}/snooze`, "POST", { until })).status).toBe(200);
     expect((await ana(`${path}/decision`, "POST", { verdict: "deny" })).status).toBe(200);
+  });
+});
+
+describe("someone revoked from a team who still holds a token for another team of the org", () => {
+  const RUN = "6a1d3c2e-8e5b-4d9f-8b62-4f3e2d1c0b98";
+  const runEvent = (kind: LedgerEvent["kind"], minute: number): LedgerEvent => ({
+    id: id(),
+    schema: EVENT_SCHEMA,
+    ts: ts(minute),
+    source: "hook",
+    kind,
+    actor: { kind: "person", id: "eve@example.com" },
+    agent: { vendor: "claude_code" },
+    session_id: RUN,
+    repo: "acme/web",
+    ...(kind === "tool.called" ? { tool: { name: "Edit", input_summary: "src/a.ts" } } : {}),
+  });
+  const waiting = (person: string, minute: number) => ({
+    id: id(),
+    schema: EVENT_SCHEMA,
+    ts: ts(minute),
+    source: "hook",
+    kind: "approval.requested",
+    actor: { kind: "person", id: person },
+    session_id: `wait-${minute}`,
+    agent: { vendor: "claude_code" },
+    tool: { name: "Bash", input_summary: "make deploy" },
+    data: { message: "Claude needs your permission to use Bash" },
+  });
+
+  /** web (lead, eve as admin) and data (dora, eve), eve's run in web, then eve revoked from web. */
+  async function revoked() {
+    const h = await setup();
+    const web = await h.team("web");
+    const data = await h.team("data");
+    const lead = caller(h.app, await h.join(web.invite, "lead@example.com"));
+    const eveWebToken = await h.join(web.invite, "eve@example.com");
+    const eveWeb = caller(h.app, eveWebToken);
+    const dora = caller(h.app, await h.join(data.invite, "dora@example.com"));
+    const invite = (await (
+      await dora("/v1/teams/data/invites", "POST", { email: "eve@example.com" })
+    ).json()) as CreateInviteResponse;
+    const eve = caller(h.app, await h.join(invite.invite, "eve@example.com"));
+    expect((await lead("/v1/teams/web/repos", "POST", { remote: "acme/web" })).status).toBe(201);
+    expect(
+      (await lead("/v1/teams/web/people/eve%40example.com/role", "PUT", { role: "admin" })).status,
+    ).toBe(200);
+    const routes =
+      'version = 1\n[[review.routes]]\nid = "all"\nto = ["eve@example.com", "lead@example.com"]\n';
+    expect((await lead("/v1/policy?team=web", "PUT", { text: routes })).status).toBe(200);
+
+    // While in web: her data token reaches it, her run is web's, and web's items name her.
+    expect((await eve("/v1/review-items?team=web")).status).toBe(200);
+    const started = [runEvent("session.started", 1), runEvent("tool.called", 2)];
+    expect((await eveWeb("/v1/events", "POST", { events: started })).status).toBe(200);
+    expect(
+      (await lead("/v1/events", "POST", { events: [waiting("lead@example.com", 3)] })).status,
+    ).toBe(200);
+    await h.refresh();
+    const [before] = ((await (await lead("/v1/review-items")).json()) as ReviewItemsPage).items;
+    expect(before?.owners).toEqual(["eve@example.com", "lead@example.com"]);
+    // A handoff of lead's choosing to eve, which she has not taken yet.
+    const handoff = (await (
+      await lead(`/v1/runs/${RUN}/handoffs`, "POST", { to: "lead@example.com" })
+    ).json()) as Handoff;
+    expect(handoff.to).toBe("lead@example.com");
+    const back = await lead(`/v1/runs/${RUN}/handoffs`, "POST", { to: "eve@example.com" });
+    expect(back.status, await back.clone().text()).toBe(201);
+    const toEve = (await back.json()) as Handoff;
+
+    expect((await lead("/v1/teams/web/people/eve%40example.com/tokens", "DELETE")).status).toBe(
+      200,
+    );
+    return { ...h, lead, dora, eve, eveWeb, before, toEve };
+  }
+
+  it("cannot read or write the team", async () => {
+    const h = await revoked();
+    expect((await h.eveWeb("/v1/me")).status).toBe(401);
+    const me = (await (await h.eve("/v1/me")).json()) as MeResponse & {
+      memberships: { team: string }[];
+    };
+    expect(me.memberships).toEqual([{ team: "data", role: "member" }]);
+    for (const path of [
+      "/v1/review-items?team=web",
+      "/v1/events?team=web",
+      "/v1/teams/web/people",
+      "/v1/policy?team=web",
+      `/v1/review-items/${h.before?.id}`,
+    ]) {
+      expect((await h.eve(path)).status, path).not.toBe(200);
+    }
+    expect((await h.eve("/v1/policy?team=web", "PUT", { text: "version = 1\n" })).status).toBe(403);
+    expect((await h.eve("/v1/teams/web/invites", "POST", {})).status).toBe(403);
+    // Events naming web's repo stay in her own team.
+    const named = { ...waiting("eve@example.com", 20), repo: "acme/web" };
+    expect((await h.eve("/v1/events", "POST", { events: [named] })).status).toBe(200);
+    const stored = (await h.ledger.query({ kind: "approval.requested" })).events.find(
+      (e) => e.id === named.id,
+    );
+    expect(stored?.team).toBe("data");
+    const people = (await (await h.lead("/v1/teams/web/people")).json()) as {
+      people: { id: string }[];
+    };
+    expect(people.people.map((p) => p.id)).toEqual(["lead@example.com"]);
+  });
+
+  it("is not routed the team's items and cannot answer the ones routed to them before", async () => {
+    const h = await revoked();
+    expect(
+      (await h.lead("/v1/events", "POST", { events: [waiting("lead@example.com", 30)] })).status,
+    ).toBe(200);
+    await h.refresh();
+    const items = ((await (await h.lead("/v1/review-items")).json()) as ReviewItemsPage).items;
+    const fresh = items.find((i) => i.id !== h.before?.id);
+    expect(fresh?.owners).toEqual(["lead@example.com"]);
+
+    const path = `/v1/review-items/${h.before?.id}`;
+    expect((await h.eve(`${path}/decision`, "POST", { verdict: "approve" })).status).not.toBe(200);
+    // Nor through a synced decision event.
+    const decision = {
+      id: id(),
+      schema: EVENT_SCHEMA,
+      ts: ts(31),
+      source: "cli",
+      kind: "decision.recorded",
+      links: { item_id: h.before?.id },
+      decision: { verdict: "approve", by: "eve@example.com" },
+    };
+    expect((await h.eve("/v1/events", "POST", { events: [decision] })).status).toBe(200);
+    await h.refresh();
+    const still = (await (await h.lead(path)).json()) as { state: string };
+    expect(still.state).toBe("open");
+  });
+
+  it("cannot hand off the team's runs, be handed them, or take one over", async () => {
+    const h = await revoked();
+    expect(
+      (await h.eve(`/v1/runs/${RUN}/handoffs`, "POST", { to: "lead@example.com" })).status,
+    ).not.toBe(201);
+    const toEve = await h.lead(`/v1/runs/${RUN}/handoffs`, "POST", { to: "eve@example.com" });
+    expect(toEve.status).toBe(400);
+    expect(await toEve.text()).toContain("is not in team web");
+    expect((await h.eve(`/v1/handoffs/${h.toEve.id}/takeover`, "POST")).status).not.toBe(200);
+    expect((await h.eve(`/v1/handoffs/${h.toEve.id}`)).status).not.toBe(200);
   });
 });

@@ -114,7 +114,9 @@ export const RUNTIME_VARIABLE_PREFIX = "SELFHOST_";
 /**
  * The only server variables an env: secret may read. Anyone who can write a team's policy picks
  * the names, so a prefix keeps the server's own settings (its admin token, the GitHub App key,
- * store tokens) out of every sandbox.
+ * store tokens) out of every sandbox. On a team server each team reads only its own
+ * SELFHOST_RUN_SECRET_<TEAM>__<NAME> variables, and SELFHOST_RUN_SECRET_SHARED__<NAME> ones when
+ * the server lists the team in SELFHOST_RUN_SECRET_SHARED_TEAMS (see @selfhost/credentials).
  */
 export const RUN_SECRET_ENV_PREFIX = "SELFHOST_RUN_SECRET_";
 
@@ -958,7 +960,7 @@ export const IntegrationsSchema = Type.Object(
               EnvName("Environment variable that holds the header value."),
               {
                 description:
-                  "Headers to send, by name, each read from an environment variable on the server (for API keys). A team server sends only variables named SELFHOST_RUN_SECRET_*, since a team's policy also names the endpoint.",
+                  "Headers to send, by name, each read from an environment variable on the server (for API keys). A team server sends only the team's own variables, SELFHOST_RUN_SECRET_<TEAM>__<NAME> (the team id in upper snake case), or SELFHOST_RUN_SECRET_SHARED__<NAME> when the server lists the team in SELFHOST_RUN_SECRET_SHARED_TEAMS, since a team's policy also names the endpoint.",
               },
             ),
           ),
@@ -1058,7 +1060,7 @@ export const SECRET_FORMAT_PLACEHOLDER = "{value}";
 const SecretSource = Type.String({
   pattern: SECRET_SOURCE_PATTERN,
   description:
-    "Where the value comes from: env:SELFHOST_RUN_SECRET_<NAME> (a variable of the server's environment with that prefix), vault:<path>#<key> (HashiCorp Vault KV v2, at the server's VAULT_ADDR), infisical:<path>#<key> or infisical:<key> (Infisical, in the server's INFISICAL_PROJECT_ID and INFISICAL_ENVIRONMENT), or github-app:repo (the run's repository token). Store addresses and tokens are set on the server only, never in selfhost.toml.",
+    "Where the value comes from: env:SELFHOST_RUN_SECRET_<TEAM>__<NAME> (a variable of the server's environment; TEAM is the team id in upper snake case, so team web-platform reads SELFHOST_RUN_SECRET_WEB_PLATFORM__*), env:SELFHOST_RUN_SECRET_SHARED__<NAME> (only for teams the server lists in SELFHOST_RUN_SECRET_SHARED_TEAMS), vault:<path>#<key> (HashiCorp Vault KV v2, at the server's VAULT_ADDR), infisical:<path>#<key> (Infisical, in the server's INFISICAL_PROJECT_ID and INFISICAL_ENVIRONMENT), or github-app:repo (the run's repository token). Vault and Infisical paths sit under the team's prefix, selfhost/<team>/ unless the server sets SELFHOST_SECRET_PATH_PREFIX. Store addresses and tokens are set on the server only, never in selfhost.toml.",
 });
 
 export const SecretDeclarationSchema = Type.Union(
@@ -1914,7 +1916,8 @@ function secretsErrors(secrets: Secrets): SegmentError[] {
 /**
  * What a policy may not make the server read, said plainly before the schema's pattern errors:
  * [secrets.vault] and [secrets.infisical] (the server's own settings now), and env: secrets
- * outside SELFHOST_RUN_SECRET_*.
+ * outside SELFHOST_RUN_SECRET_*. Which team reads which of those the team server checks when
+ * the policy is set and when a run starts.
  */
 function secretSourceErrors(value: unknown): SegmentError[] {
   const secrets =
@@ -1944,7 +1947,7 @@ function secretSourceErrors(value: unknown): SegmentError[] {
     if (variable.startsWith(RUN_SECRET_ENV_PREFIX)) continue;
     errors.push({
       segments: ["secrets", "env", name],
-      message: `env: secrets read only server variables named ${RUN_SECRET_ENV_PREFIX}*: set ${RUN_SECRET_ENV_PREFIX}${variable} on the server and write env:${RUN_SECRET_ENV_PREFIX}${variable}`,
+      message: `env: secrets read only server variables named ${RUN_SECRET_ENV_PREFIX}*: set ${RUN_SECRET_ENV_PREFIX}<TEAM>__${variable} on the server (the team id in upper snake case) and write env:${RUN_SECRET_ENV_PREFIX}<TEAM>__${variable}`,
     });
   }
   return errors;

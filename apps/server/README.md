@@ -93,11 +93,14 @@ bootstrap admin; everything else is a token the server issues and keeps only as 
   their email, which adds another token for them. An unknown, expired or revoked invite, one
   for another email, or a team-wide invite for an existing person answers 401 `invalid_invite`.
 - `DELETE /v1/teams/{team}/people/{person}/tokens` (owner or admin; an owner's tokens need an
-  owner; anyone for themselves): revokes every token the person holds and the open invites for
-  their email. Their events stay.
+  owner; anyone for themselves): revokes the person's membership of the team, every token they
+  hold for it and the open invites for their email. Their events stay.
 - `GET /v1/teams/{team}/people` (anyone in the team): everyone and their role, owners first.
-  `POST` (owner or admin) adds `{ person, role? }`, someone already in another team of the org;
-  adding an admin or owner needs an owner. Their tokens work in this team from then on.
+  `POST` (owner or admin) adds `{ person, role? }`, someone in another team of the org (and not
+  revoked there); adding an admin or owner needs an owner. Their tokens work in this team from
+  then on. Someone revoked from the team comes back this way, or with an invite for their email,
+  with the role given then.
+
 - `GET /v1/teams/{team}/laptops[?silent_days=7]` (anyone in the team): laptop coverage from the
   ledger's heartbeats (`config.reported` events a laptop sends on join and sync). For each
   laptop, its newest heartbeat: person, host name, platform, CLI version, the policy hash it runs
@@ -109,7 +112,8 @@ bootstrap admin; everything else is a token the server issues and keeps only as 
   `last_owner`.
 - `PATCH /v1/teams/{team}` (owner or admin): renames the team.
 - `DELETE /v1/me/token` (person token): revokes the token making the request. `selfhost team
-  leave` calls it.
+  leave` calls it. When it was the person's last token for the team, their membership there
+  ends too.
 - `GET /v1/me`: `{ kind: "admin", allowed }`, or the person and team the token belongs to with
   their `role`, the `allowed` actions of that role and their `memberships` in the org.
 - `GET /v1/policy` (anyone in the team): the policy in use, the parsed config and the rules
@@ -203,9 +207,18 @@ same rule when asked, so a run whose repo became known later (a commit found by
 `selfhost scan`) moves to the repo's team. The admin token reads everything and can filter with
 `?team=`; its events go to a repo's team when exactly one org maps the repo, else no team.
 
+A person token acts only in the teams where its person's membership is active. Revoking someone
+from a team (or `selfhost team leave` with their last token for it) ends that membership: the
+tokens they hold for other teams of the org no longer read or write it, their events naming its
+repos stay in their own team, routing and notifications stop naming them for its items, they
+cannot answer, hand off, be handed or take over its runs, start its background runs (also from
+GitHub comments and webhooks, whatever `[background] allowed` lists) or get a gateway key for
+it. Upgrading to this release ends the membership of anyone who joined a team and holds no live
+token for it any more; people added from another team keep theirs.
+
 Tables `orgs`, `teams`, `people`, `tokens`, `team_repos` and `run_repos` come from the ledger
-package's migrations `0002_teams.sql`, `0003_team_access.sql`, `0006_roles.sql` and
-`0007_orgs.sql` and context layers and proposals from `0010_context_layers.sql`, in the same database as the events, and are reached through `ledger.teams` and
+package's migrations `0002_teams.sql`, `0003_team_access.sql`, `0006_roles.sql`,
+`0007_orgs.sql` and `0015_membership_revocation.sql` and context layers and proposals from `0010_context_layers.sql`, in the same database as the events, and are reached through `ledger.teams` and
 `ledger.orgs`.
 
 No model traffic passes through this server. It has no route that forwards requests to Anthropic,
@@ -609,7 +622,7 @@ turns into a `stuck_run` item for the run's owner; the owner's notification targ
 
 - `POST /v1/background-runs` (person token, role work): `{ task, repo, agent?, runtime?, base?,
   timeout_minutes?, team?, source? }`, 202 with the run. Refused (and recorded) when the person
-  is not on `[background] allowed` (or not in the team), a kill switch is on (409), the team is
+  is not in the team (revoked people included) or not on `[background] allowed`, a kill switch is on (409), the team is
   over `rate_limit_per_hour` or `max_concurrent` (429), or no runtime is set up (503).
 - `GET /v1/background-runs?team&state&limit` and `GET /v1/background-runs/{id}`: runs with their
   health line and live cost (sandbox time plus the run's `cost.recorded` events).
@@ -637,7 +650,18 @@ default (`brokeredCredentials`): a GitHub App token for the run's one repository
 gateway key in place of any provider key when `[integrations.router]` is set, the team's declared
 secrets, and the team's egress list plus github.com, api.github.com and the gateway host, all by
 reference in the sandbox spec, masked in the run's output and revoked with how the run ended.
-`createBackground({ credentials })` replaces it. On start the server marks runs a previous process left going as
+`createBackground({ credentials })` replaces it.
+
+Each team reads only its own run secrets. An `env:` secret names
+`SELFHOST_RUN_SECRET_<TEAM>__<NAME>`, where TEAM is the team id in upper snake case and two
+underscores end it (team `web-platform` reads `SELFHOST_RUN_SECRET_WEB_PLATFORM__DB_PASSWORD`, and
+team `web` cannot), or a shared `SELFHOST_RUN_SECRET_SHARED__<NAME>` when the server lists the
+team in `SELFHOST_RUN_SECRET_SHARED_TEAMS`. A `vault:` or `infisical:` path sits under the team's
+prefix, `selfhost/<team>/` unless `SELFHOST_SECRET_PATH_PREFIX` says otherwise (it must contain
+`{team}`). Both are server settings only. `PUT /v1/policy` (and the org's policy, for every team
+of the org) answers 400 `invalid_policy` naming the allowed prefix for anything else, and a run
+whose stored policy names one anyway fails before its sandbox starts. A team's
+`[integrations.tracer] headers_env` is held to the same `env:` names. On start the server marks runs a previous process left going as
 failed and stops their sandboxes (`SELFHOST_BACKGROUND_RECOVER=off` on all but one server sharing
 a database); `SELFHOST_BACKGROUND=off` turns background runs off.
 
@@ -701,7 +725,10 @@ Environment:
 | `SELFHOST_CONSOLE_DIR`             | unset              | The built console to serve at `/`. Unset uses the one built into the server.                                                    |
 | `SELFHOST_SIGNIN_PROXY_SECRET`     | unset              | Turns on console sign-in through a proxy that sends it with the signed-in email. See [Console](#console).                       |
 | `SELFHOST_SIGNIN_ORG`              | unset              | The org console sign-in is for, when an email is in teams of several orgs. Unset: the org it joined first.                      |
-| `SELFHOST_RUN_SECRET_*`            | unset              | Values `env:` secrets in a team's `[secrets.env]` may read for background runs; no other server variable can be.                |
+| `SELFHOST_RUN_SECRET_<TEAM>__*`    | unset              | Values a team's `env:` secrets may read for background runs (TEAM: the team id in upper snake case); no other server variable.  |
+| `SELFHOST_RUN_SECRET_SHARED__*`    | unset              | Values every team in `SELFHOST_RUN_SECRET_SHARED_TEAMS` may read as `env:` secrets.                                             |
+| `SELFHOST_RUN_SECRET_SHARED_TEAMS` | unset              | Team ids, separated by commas or spaces, that may read the shared run secrets. Unset: none.                                     |
+| `SELFHOST_SECRET_PATH_PREFIX`      | `selfhost/{team}/` | Where each team's `vault:` and `infisical:` paths sit; `{team}` is the team id and must be in it.                               |
 | `VAULT_ADDR`, `VAULT_TOKEN`        | unset              | Vault for `vault:` secrets, with `VAULT_NAMESPACE` and `SELFHOST_VAULT_MOUNT` (default `secret`). Never set by a policy.        |
 | `INFISICAL_PROJECT_ID`             | unset              | Infisical for `infisical:` secrets, with `INFISICAL_ENVIRONMENT`, `INFISICAL_TOKEN` and `INFISICAL_URL`. Never set by a policy. |
 | `SELFHOST_GIT_CLONES`              | unset              | Folder of clones at `<owner>/<name>` (lower case), read for provenance and module revert rates.                                 |

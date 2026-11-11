@@ -15,6 +15,7 @@ import {
   type CreateTeamResponse,
   type CredentialIssuedData,
   EVENT_SCHEMA,
+  type InvalidPolicyError,
   type JoinResponse,
   parseConfig,
 } from "@selfhost/schema";
@@ -27,6 +28,7 @@ import {
   createBackground,
   runModelCost,
   startScheduleJob,
+  teamSettings,
 } from "../src/background.js";
 import { GITHUB_WEBHOOK_PATH } from "../src/github.js";
 import { backgroundRunTests } from "../src/github-risk.js";
@@ -64,6 +66,12 @@ cron = "0 2 * * *"
 repo = "acme/acme-api"
 task = "Update the lockfile"
 `;
+
+function parseDefaults() {
+  const parsed = parseConfig("version = 1\n");
+  if (!parsed.ok) throw new Error("bad defaults");
+  return parsed.config;
+}
 
 /** A sandbox where every step works: the agent changes a file and a test, which fails on the base. */
 function answer(command: string, sandbox: FakeSandbox, options: ExecOptions) {
@@ -464,12 +472,14 @@ describe("what a run, its policy and its callers cannot reach", () => {
   const SECRET_VALUE = ["Tr0ub4dor", "horse", "77"].join("-");
   const ADMIN = ["server", "admin", "token"].join("-");
   const withSecret = (extra = "") => `${POLICY}[secrets.env]
-DB_PASSWORD = "env:SELFHOST_RUN_SECRET_DB_PASSWORD"
+DB_PASSWORD = "env:SELFHOST_RUN_SECRET_WEB__DB_PASSWORD"
 ${extra}`;
   const env = {
     RUNS_SECRET: "runs-secret",
     SELFHOST_TOKEN: ADMIN,
-    SELFHOST_RUN_SECRET_DB_PASSWORD: SECRET_VALUE,
+    SELFHOST_RUN_SECRET_WEB__DB_PASSWORD: SECRET_VALUE,
+    SELFHOST_RUN_SECRET_DATA__DB_PASSWORD: "data-team-password",
+    SELFHOST_RUN_SECRET_SHARED__NPM_TOKEN: "shared-npm-token",
   };
 
   it("refuses a policy that reads a server variable or points a store at another host", async () => {
@@ -487,8 +497,106 @@ ${extra}`;
     const [sandbox] = [...h.runtime.sandboxes.values()];
     expect(sandbox?.spec.secrets).toEqual([
       { name: "GITHUB_TOKEN", from: "github-app:repo" },
-      { name: "DB_PASSWORD", from: "env:SELFHOST_RUN_SECRET_DB_PASSWORD" },
+      { name: "DB_PASSWORD", from: "env:SELFHOST_RUN_SECRET_WEB__DB_PASSWORD" },
     ]);
+  });
+
+  it("keeps each team to its own run secrets, when the policy is set and when a run starts", async () => {
+    const h = await harness(env);
+    const refusal = async (text: string) => {
+      const put = await h.lead("/v1/policy?team=web", "PUT", { text });
+      expect(put.status).toBe(400);
+      return ((await put.json()) as InvalidPolicyError).errors;
+    };
+    const one = (from: string) => `${POLICY}[secrets.env]\nV = "${from}"\n`;
+    // Another team's variable, the old single prefix every team shared, and a shared variable
+    // the server does not allow team web.
+    expect(await refusal(one("env:SELFHOST_RUN_SECRET_DATA__DB_PASSWORD"))).toEqual([
+      {
+        field: "secrets.env.V",
+        message: expect.stringContaining(
+          "team web reads only server variables named SELFHOST_RUN_SECRET_WEB__<NAME>",
+        ),
+      },
+    ]);
+    await refusal(one("env:SELFHOST_RUN_SECRET_DB_PASSWORD"));
+    expect((await refusal(one("env:SELFHOST_RUN_SECRET_SHARED__NPM_TOKEN")))[0]?.message).toContain(
+      "SELFHOST_RUN_SECRET_SHARED_TEAMS on the server does not list team web",
+    );
+    // Store paths outside the team's prefix.
+    expect((await refusal(one("vault:selfhost/data/db#password")))[0]?.message).toBe(
+      "vault:selfhost/data/db#password: team web reads only vault paths under selfhost/web/ (SELFHOST_SECRET_PATH_PREFIX on the server)",
+    );
+    await refusal(one("infisical:/selfhost/data#DB"));
+    expect(
+      (await h.lead("/v1/policy?team=web", "PUT", { text: one("vault:selfhost/web/db#password") }))
+        .status,
+    ).toBe(200);
+    // The org floor reaches every team of the org, so each must be allowed what it names.
+    const floor = await h.admin("/v1/orgs/default/policy", "PUT", {
+      text: 'version = 1\n[secrets.env]\nV = "env:SELFHOST_RUN_SECRET_WEB__DB_PASSWORD"\n',
+    });
+    expect(floor.status).toBe(400);
+    expect(((await floor.json()) as InvalidPolicyError).errors).toEqual([
+      expect.objectContaining({ message: expect.stringContaining("team data reads only") }),
+    ]);
+
+    // A policy stored before the check (or under another server scope) is refused at run time.
+    await h.ledger.teams.setPolicy("web", one("env:SELFHOST_RUN_SECRET_DATA__DB_PASSWORD"));
+    const started = (await (
+      await h.lead("/v1/background-runs", "POST", { task: "x", repo: "acme/acme-api" })
+    ).json()) as BackgroundRun;
+    await h.background.runner.idle();
+    const run = (await (await h.lead(`/v1/background-runs/${started.id}`)).json()) as BackgroundRun;
+    expect(run.state).toBe("failed");
+    expect(run.reason).toContain(
+      "team web reads only server variables named SELFHOST_RUN_SECRET_WEB__",
+    );
+    expect(h.runtime.sandboxes.size).toBe(0);
+    expect(JSON.stringify(await h.ledger.query({ limit: 1000 }))).not.toContain(
+      "data-team-password",
+    );
+  });
+
+  it("gives shared run secrets to the teams SELFHOST_RUN_SECRET_SHARED_TEAMS lists", async () => {
+    const h = await harness({ ...env, SELFHOST_RUN_SECRET_SHARED_TEAMS: "web" });
+    const text = `${POLICY}[secrets.env]\nNPM_TOKEN = "env:SELFHOST_RUN_SECRET_SHARED__NPM_TOKEN"\n`;
+    expect((await h.lead("/v1/policy?team=web", "PUT", { text })).status).toBe(200);
+    expect((await h.outsider("/v1/policy?team=data", "PUT", { text })).status).toBe(400);
+    await h.lead("/v1/background-runs", "POST", { task: "x", repo: "acme/acme-api" });
+    await h.background.runner.idle();
+    const [sandbox] = [...h.runtime.sandboxes.values()];
+    expect(sandbox?.spec.secrets).toContainEqual({
+      name: "NPM_TOKEN",
+      from: "env:SELFHOST_RUN_SECRET_SHARED__NPM_TOKEN",
+    });
+  });
+
+  it("lets nobody revoked from a team start its runs, with a token for another team or a GitHub comment", async () => {
+    const h = await harness();
+    expect(
+      (await h.lead("/v1/teams/web/people", "POST", { person: "dora@example.com" })).status,
+    ).toBe(201);
+    expect((await h.outsider("/v1/background-runs?team=web")).status).toBe(200);
+    expect((await teamSettings(h.ledger, parseDefaults())("web")).people).toContain(
+      "dora@example.com",
+    );
+    expect((await h.lead("/v1/teams/web/people/dora%40example.com/tokens", "DELETE")).status).toBe(
+      200,
+    );
+    // Her token is for team data; it no longer reaches web.
+    const start = await h.outsider("/v1/background-runs", "POST", {
+      team: "web",
+      task: "x",
+      repo: "acme/acme-api",
+    });
+    expect(start.status).toBe(403);
+    expect((await h.outsider("/v1/background-runs?team=web")).status).toBe(403);
+    // Triggers that name a person (GitHub comments, webhooks) check the team's people.
+    expect((await teamSettings(h.ledger, parseDefaults())("web")).people).toEqual([
+      "lead@example.com",
+    ]);
+    expect(await h.ledger.query({ kind: "credential.issued" })).toMatchObject({ events: [] });
   });
 
   it("refuses a run on another team's repo, and on an unclaimed one when the org has several teams", async () => {

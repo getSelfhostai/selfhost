@@ -282,8 +282,8 @@ export function gatewayAdminRoutes(app: Hono, ledger: Ledger, gateway: Gateway |
 
 /**
  * Every team on the server with its policy in use and the people who can still sign in to it:
- * in the team with a person token that is not revoked. Revoking someone (selfhost team revoke)
- * turns their gateway key off at the next sync.
+ * an active member of the team (not revoked) with a person token for it that is not revoked.
+ * Revoking someone (selfhost team revoke) turns their gateway key off at the next sync.
  */
 async function teamInputs(ledger: Ledger): Promise<TeamInput[]> {
   const db = databaseOf(ledger);
@@ -294,7 +294,8 @@ async function teamInputs(ledger: Ledger): Promise<TeamInput[]> {
       const people = await db.query<{ person_id: string }>(
         `SELECT DISTINCT p.id AS person_id FROM people p
            JOIN tokens t ON t.team_id = p.team_id AND t.person_id = p.id
-          WHERE p.team_id = $1 AND t.kind = 'person' AND t.revoked_at IS NULL`,
+          WHERE p.team_id = $1 AND p.revoked_at IS NULL AND t.kind = 'person'
+            AND t.revoked_at IS NULL`,
         [team.id],
       );
       inputs.push({

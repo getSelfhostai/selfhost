@@ -863,15 +863,18 @@ export function createRunner(options: RunnerOptions): Runner {
             org,
           );
         }
-        const allowed = background.allowed.length > 0 ? background.allowed : settings.people;
-        if (allowed && !allowed.includes(person)) {
+        // Only people in the team start its runs, also when [background] allowed names someone
+        // who was revoked from it (or never joined).
+        const id = person.toLowerCase();
+        const inTeam = settings.people?.some((p) => p.toLowerCase() === id) ?? true;
+        const listed = background.allowed.length === 0 || background.allowed.includes(person);
+        if (!inTeam || !listed) {
           return refuse(
             request,
             {
-              refused:
-                background.allowed.length > 0
-                  ? `${person} is not on [background] allowed for team ${request.team}`
-                  : `${person} is not in team ${request.team}`,
+              refused: !inTeam
+                ? `${person} is not in team ${request.team}`
+                : `${person} is not on [background] allowed for team ${request.team}`,
               status: 403,
               code: "not_allowed",
             },

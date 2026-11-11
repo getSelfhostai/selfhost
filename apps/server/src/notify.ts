@@ -59,8 +59,9 @@ const sameId = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 /**
  * Who gets what on a team server. A person's [notify] comes from the policy of the first team
- * they joined; people whose every token is revoked get nothing. Items nobody owns go to the
- * team's owners and admins; budget alerts to [notify] budget_owners, else the team's owners.
+ * they joined; people whose every token is revoked get nothing, and people revoked from a team
+ * get nothing of that team's. Items nobody owns go to the team's owners and admins; budget
+ * alerts to [notify] budget_owners, else the team's owners.
  */
 export function serverDirectory(
   ledger: Ledger,
@@ -86,6 +87,10 @@ export function serverDirectory(
     async orgOf(team) {
       if (team === null) return DEFAULT_ORG_ID;
       return (await teams.getTeam(team))?.org ?? DEFAULT_ORG_ID;
+    },
+
+    async teamsOf(person, org) {
+      return (await teams.memberships(org, person)).map((m) => m.team);
     },
 
     async unowned(team) {

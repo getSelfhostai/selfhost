@@ -11,7 +11,8 @@ export interface Decider {
   /** The person the answer is recorded for. */
   by: string;
   /**
-   * Their role in the item's team; undefined when they are not in it. Ignored when `trusted`.
+   * Their role in the item's team; undefined when they are not in it, or were revoked from it.
+   * Ignored when `trusted`.
    */
   role?: PersonRole;
   /**
@@ -27,8 +28,8 @@ const WAITING_KINDS: ReadonlySet<string> = new Set(["approval", "question"]);
 /**
  * Why `decider` may not answer or snooze an approval or question item on a team server, or
  * undefined when they may: the item's owners (the session's person unless routing named others),
- * the person it was asked for, and the team's owners and admins. A teammate cannot let another
- * person's agent go ahead, or hold it off.
+ * the person it was asked for, and the team's owners and admins, each while still in the team. A
+ * teammate cannot let another person's agent go ahead, or hold it off.
  */
 export function waitingRefusal(
   item: Pick<ReviewItem, "kind" | "owners" | "requested_by">,
@@ -38,6 +39,7 @@ export function waitingRefusal(
   if (!WAITING_KINDS.has(item.kind)) return undefined;
   const { by, role, trusted = false } = decider;
   if (trusted || (role !== undefined && roleAllows(role, "policy.write"))) return undefined;
+  if (role === undefined) return `You are not in team ${team}.`;
   const id = by.toLowerCase();
   const theirs = [...item.owners, ...(item.requested_by ? [item.requested_by] : [])];
   if (theirs.some((person) => person.toLowerCase() === id)) return undefined;
@@ -56,6 +58,7 @@ export function waitingRefusal(
  * - An approval or question (any answer) is for its owners, its person and the team's owners
  *   and admins (waitingRefusal).
  *
+ * Nobody answers for a team they are not in (or were revoked from), except the trusted callers.
  * Items on one machine's own ledger (no team) are that person's to answer and never come here.
  */
 export function decisionRefusal(
@@ -66,6 +69,7 @@ export function decisionRefusal(
   config: Pick<ResolvedSelfhostConfig, "review">,
 ): string | undefined {
   const { by, role, trusted = false } = decider;
+  if (!trusted && role === undefined) return `You are not in team ${team}.`;
   const manages = trusted || (role !== undefined && roleAllows(role, "policy.write"));
   const yourRole = role === undefined ? `you are not in team ${team}` : `you are a ${role} there`;
   if (item.kind === "context_promotion") {

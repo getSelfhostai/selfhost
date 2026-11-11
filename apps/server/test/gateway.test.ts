@@ -167,6 +167,29 @@ describe("gateway keys", () => {
     expect([...fake.keys.values()].some((k) => String(k.name).includes(":run:"))).toBe(false);
   });
 
+  it("gives no key for a team someone was revoked from, whatever team their token is for", async () => {
+    const { ada } = await platform();
+    const other = (await (
+      await admin()("/v1/teams", "POST", { name: "Data" })
+    ).json()) as CreateTeamResponse;
+    await joinTeam(other.invite, "dora@example.com");
+    const invite = await admin()("/v1/teams/data/invites", "POST", { email: "ada@example.com" });
+    const adaData = caller(
+      app,
+      await joinTeam(((await invite.json()) as { invite: string }).invite, "ada@example.com"),
+    );
+    // In both teams, her data token reaches platform.
+    expect((await adaData("/v1/gateway?team=platform")).status).toBe(200);
+    expect(
+      (await caller(app, ada)("/v1/teams/platform/people/ada%40example.com/tokens", "DELETE"))
+        .status,
+    ).toBe(200);
+    expect((await adaData("/v1/gateway?team=platform")).status).toBe(403);
+    expect((await adaData("/v1/gateway/keys", "POST", { team: "platform" })).status).toBe(403);
+    expect((await adaData("/v1/gateway/keys", "POST", { team: "data" })).status).toBe(201);
+    expect([...fake.keys.values()].map((k) => k.name)).toEqual([expect.stringContaining(":data:")]);
+  });
+
   it("answers 404 without a gateway and 502 when the gateway refuses", async () => {
     const plain = createApp({ version: "1.2.3", ledger, token: TOKEN });
     expect((await caller(plain, TOKEN)("/v1/gateway?team=x")).status).toBe(404);

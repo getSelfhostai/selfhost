@@ -396,6 +396,21 @@ describe("admission", () => {
     ]);
   });
 
+  it("refuses someone [background] allowed names who is not in the team, such as a revoked person", async () => {
+    const h = harness({
+      toml: 'version = 1\n[runtime]\ndefault = "e2b"\n[background]\nallowed = ["alice@example.com", "carol@example.com"]\n',
+      people: ["alice@example.com", "bob@example.com"],
+    });
+    const refused = await h.runner.start(
+      h.request({
+        person: "carol@example.com",
+        trigger: { source: "github_comment", sender: "carol", person: "carol@example.com" },
+      }),
+    );
+    expect(refused).toMatchObject({ code: "not_allowed", status: 403 });
+    expect("refused" in refused && refused.refused).toContain("carol@example.com is not in team");
+  });
+
   it("limits runs per hour and runs at once", async () => {
     const h = harness({
       toml: 'version = 1\n[runtime]\ndefault = "e2b"\n[background]\nrate_limit_per_hour = 2\nmax_concurrent = 1\n',

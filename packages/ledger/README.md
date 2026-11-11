@@ -174,6 +174,14 @@ each other at once leave one. `teams.listPeople`, `getPerson`, `renameTeam`, `ge
 `addPerson` (someone already in another team of the org, under the id and name they have there)
 serve the role and people routes of the server.
 
+`0015_membership_revocation.sql` adds `people.revoked_at`. `teams.revokePerson` sets it, and so
+does `teams.revokeToken` when it revokes the person's last live token for the team; joining with
+an invite for their email or `addPerson` clears it. Only active memberships count:
+`memberships`, `listPeople`, `getPerson`, `personForToken`, `peopleWithAccess`, `setRole`,
+`orgs.peopleCounts` and `orgs.assignTeams` skip revoked rows, so a person's token from one team
+never reaches a team of the org they were revoked from. The migration sets it for people who hold
+person tokens for a team and none still live, and leaves people added from another team active.
+
 ## Orgs
 
 `ledger.orgs` holds the org, team and repo hierarchy, from `0007_orgs.sql`:

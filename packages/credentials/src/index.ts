@@ -19,6 +19,21 @@ export {
   withCredentials,
 } from "./prepare.js";
 export {
+  DEFAULT_SECRET_PATH_PREFIX,
+  envSecretRefusal,
+  SECRET_PATH_PREFIX_ENV,
+  type SecretScope,
+  SHARED_ENV_PREFIX,
+  SHARED_TEAMS_ENV,
+  secretRefusal,
+  secretScopeErrors,
+  secretScopeFromEnv,
+  storeSecretRefusal,
+  teamEnvPrefix,
+  teamPathPrefix,
+  teamSecretName,
+} from "./scope.js";
+export {
   type DeclaredSecret,
   declaredSecrets,
   type InfisicalSettings,

@@ -27,10 +27,14 @@ export const VALUES = {
   anthropic: ["fake", "provider", "key", "9999"].join("-"),
 };
 
-/** The server's environment: the run secrets and where the stores are, with their tokens. */
+/**
+ * The server's environment: team platform's run secret, a shared one platform and t may read,
+ * and where the stores are, with their tokens.
+ */
 export const SERVER_ENV: NodeJS.ProcessEnv = {
-  SELFHOST_RUN_SECRET_SENTRY_DSN: VALUES.sentry,
-  SELFHOST_RUN_SECRET_ANTHROPIC_API_KEY: VALUES.anthropic,
+  SELFHOST_RUN_SECRET_PLATFORM__SENTRY_DSN: VALUES.sentry,
+  SELFHOST_RUN_SECRET_SHARED__ANTHROPIC_API_KEY: VALUES.anthropic,
+  SELFHOST_RUN_SECRET_SHARED_TEAMS: "platform, t",
   VAULT_ADDR: "https://vault.acme.test:8200",
   VAULT_NAMESPACE: "eng",
   VAULT_TOKEN: VALUES.vaultToken,
@@ -58,7 +62,7 @@ export function fakeStores(options: { failVault?: number } = {}) {
       if (headers["x-vault-token"] !== VALUES.vaultToken) {
         return new Response('{"errors":["permission denied"]}', { status: 403 });
       }
-      if (pathname === "/v1/secret/data/acme-api/ci") {
+      if (pathname === "/v1/secret/data/selfhost/platform/acme-api/ci") {
         return Response.json({ data: { data: { database_url: VALUES.database } } });
       }
       return new Response('{"errors":[]}', { status: 404 });
@@ -71,7 +75,7 @@ export function fakeStores(options: { failVault?: number } = {}) {
         pathname === "/api/v4/secrets/STRIPE_KEY" &&
         searchParams.get("projectId") === "proj-acme" &&
         searchParams.get("environment") === "ci" &&
-        searchParams.get("secretPath") === "/payments"
+        searchParams.get("secretPath") === "/selfhost/platform/payments"
       ) {
         return Response.json({ secret: { secretKey: "STRIPE_KEY", secretValue: VALUES.stripe } });
       }

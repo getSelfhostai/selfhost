@@ -316,7 +316,7 @@ function sharedRoutes(
   background: Background | undefined,
   handoffs: TeamRouteOptions["handoffs"],
 ): void {
-  policyRoutes(router, ledger, gateway);
+  policyRoutes(router, ledger, gateway, background?.env);
   contextRoutes(router, ledger, { ...(now ? { now } : {}), ...runs });
   integrationRoutes(router, ledger, {
     ...integrations,

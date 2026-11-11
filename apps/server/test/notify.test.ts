@@ -308,4 +308,36 @@ describe("the notification job on a team server", () => {
     });
     expect(apprise.received).toEqual([]);
   });
+
+  it("sends nothing of a team to someone revoked from it who is still in another team", async () => {
+    const { app, dev, lead, admin, apprise } = await team();
+    const data = (await (await admin("/v1/teams", "POST", { name: "Data" })).json()) as {
+      invite: string;
+    };
+    await admin("/v1/join", "POST", { invite: data.invite, person: "dora@example.com" });
+    const invite = (await (
+      await admin("/v1/teams/data/invites", "POST", { email: "dev@example.com" })
+    ).json()) as { invite: string };
+    const joined = (await (
+      await admin("/v1/join", "POST", { invite: invite.invite, person: "dev@example.com" })
+    ).json()) as JoinResponse;
+    const devData = caller(app, joined.token);
+    await dev("/v1/notify/targets", "POST", { url: PHONE, name: "phone" });
+    // Her waiting agent in web, and an item lead's route names her for.
+    await dev("/v1/events", "POST", { events: [waiting("dev@example.com")] });
+    const text = 'version = 1\n[[review.routes]]\nid = "all"\nto = ["dev@example.com"]\n';
+    expect((await lead("/v1/policy", "PUT", { text })).status).toBe(200);
+    await lead("/v1/events", "POST", { events: [waiting("lead@example.com")] });
+    await refreshReviewList(ledger, openReviewList(ledger, { now: () => NOW }));
+    expect((await lead("/v1/teams/web/people/dev@example.com/tokens", "DELETE")).status).toBe(200);
+    expect(
+      ((await (await devData("/v1/me")).json()) as { memberships: unknown[] }).memberships,
+    ).toEqual([{ team: "data", role: "member" }]);
+
+    const directory = serverDirectory(ledger, undefined);
+    expect(await directory.settingsFor("dev@example.com", "default")).toBeDefined();
+    expect(await directory.teamsOf?.("dev@example.com", "default")).toEqual(["data"]);
+    await runNotify(ledger, { deliver: apprise.deliver, directory, now: NOW });
+    expect(apprise.received).toEqual([]);
+  });
 });
