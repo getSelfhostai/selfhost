@@ -203,6 +203,13 @@ describe.each(BACKENDS)("review list on $name", (backend) => {
           }),
         ],
         [alert(t, { alert: "quality_alarm", metric: "test_pass_rate", message: "Pass rate fell" })],
+        [
+          alert(
+            t,
+            { alert: "grant_unverified", person: "dev@example.com", reason: "No signed grant" },
+            { source: "server" },
+          ),
+        ],
         [pullRequest(t, 82)],
         [exceptionBlock(t, { id: requestId(t, 1), fingerprint: "f".repeat(64) })],
         [contextProposal(t, requestId(t, 2))],
