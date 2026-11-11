@@ -6,7 +6,14 @@ The selfhost HTTP API, specified in
 - `GET /v1/health`: liveness, no token needed.
 - `POST /v1/events`: append a batch of up to 1000 ledger events. Atomic: if any event is invalid
   the response is 400 with every error by index and field, and nothing is written. Retrying a
-  batch is safe; already stored ids count as `duplicates`.
+  batch is safe; already stored ids count as `duplicates`. A batch with an event that opens a
+  review item (a block, an ask, an exception request, an alert) answers once the review list
+  holds it, with its owners (up to 10 seconds), so an owner's inbox shows it the moment a
+  member's sync returns. An allow that cites a one-time exception (`data.exception.used`) must
+  match a grant this server signed for that person, unexpired and not cited by another allow;
+  one that does not is stored with `data.grant_unverified: true` and the reason, never dropped,
+  and an `alert.raised` (`data.alert: "grant_unverified"`) opens a `security` item for the
+  team's owners and admins: a possible forged grant on that person's laptop.
 - `GET /v1/events`: search by `person`, `agent`, `model`, `session`, `kind`, `from` and `to`,
   newest first, with `limit` (default 100, max 1000) and `cursor` from `next_cursor`.
 - `POST /v1/decisions`: record one human decision (`CreateDecisionRequest`: `verdict`, `by`,
@@ -55,7 +62,8 @@ other path outside `/v1`, with no token: the pages hold no data, and what they s
 Every route except `/v1/health`, `/v1/join` and `/v1/github/webhooks` needs
 `Authorization: Bearer <token>`. The admin
 token is `SELFHOST_TOKEN` when set; otherwise the server generates one on first start, saves it
-to `<data dir>/token` with mode 0600 and prints it once.
+to `<data dir>/token` with mode 0600 and logs where it is (`cat <data dir>/token` reads it).
+The token itself never goes in the log.
 
 On start the server applies pending ledger migrations, in one transaction, before it listens. A
 database with a migration it does not know (a newer release applied it) stops it with `The

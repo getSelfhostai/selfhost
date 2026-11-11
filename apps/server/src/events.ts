@@ -14,6 +14,7 @@ import {
 } from "@selfhost/schema";
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { auditGrantUses } from "./grant-audit.js";
 
 /** 1000 events of a few KB each fit comfortably; anything bigger is refused before parsing. */
 export const MAX_BODY_BYTES = 16 * 1024 * 1024;
@@ -43,9 +44,36 @@ export interface EventRouteOptions {
   team?: (c: Context) => string | undefined;
   /** The person of that token, so a write naming another team's repo stays in their team. */
   person?: (c: Context) => string | undefined;
-  /** Called with the kinds of a batch that stored new events, after it is stored. */
-  stored?: (kinds: readonly string[]) => void;
+  /**
+   * Called with the kinds and the events of a batch that stored new events, after it is stored.
+   * The response waits for what it returns, up to STORED_WAIT_MS: the review refresh, so a
+   * laptop's sync returns once the items its events open are on the list.
+   */
+  stored?: (kinds: readonly string[], events: readonly unknown[]) => unknown;
+  now?: () => Date;
 }
+
+/** The longest a write waits for `stored`; past it the response goes and the work goes on. */
+export const STORED_WAIT_MS = 10_000;
+
+/** Waits for `work`, at most `ms`; a failure there is the caller's to log, never the request's. */
+async function within(work: unknown, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, ms);
+    timer.unref?.();
+  });
+  try {
+    await Promise.race([Promise.resolve(work).then(() => undefined), late]);
+  } catch {
+    // The refresh logs its own failures.
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const idOf = (event: unknown) =>
+  event !== null && typeof event === "object" ? (event as { id?: unknown }).id : undefined;
 
 function apiError(code: string, message: string): ApiError {
   return { error: { code, message } };
@@ -111,14 +139,38 @@ export function eventRoutes(app: Hono, ledger: Ledger, options: EventRouteOption
       }
       try {
         const person = options.person?.(c);
+        const team = options.team?.(c);
+        // An allow under a one-time exception this server never signed is kept, flagged.
+        const audit = await auditGrantUses(ledger, events, {
+          ...(person !== undefined ? { sender: person } : {}),
+          now: options.now?.() ?? new Date(),
+        });
         // Hooks, session logs and a person's other ledgers each send the same tool calls and
         // session starts under their own ids: the first copy stays.
-        const result = await ledger.append(events, {
-          team: options.team?.(c),
+        const result = await ledger.append(audit.events, {
+          team,
           ...(person !== undefined ? { person } : {}),
           oneCopyPerFact: true,
         });
-        if (result.accepted.length > 0) options.stored?.(kindsOf(events));
+        const accepted = new Set(result.accepted);
+        const alerts = [...audit.alerts]
+          .filter(([eventId]) => accepted.has(eventId))
+          .map(([, alert]) => alert);
+        if (alerts.length > 0) {
+          await ledger.append(alerts, team !== undefined ? { team } : {});
+          for (const alert of alerts) {
+            console.warn(
+              `events: ${String(alert.data?.message)} (event ${String(alert.data?.event_id)}: ${String(alert.data?.reason)})`,
+            );
+          }
+        }
+        if (result.accepted.length > 0 && options.stored) {
+          const stored = [
+            ...audit.events.filter((e) => accepted.has(idOf(e) as string)),
+            ...alerts,
+          ];
+          await within(options.stored(kindsOf(stored), stored), STORED_WAIT_MS);
+        }
         return c.json({
           accepted: result.accepted.length,
           duplicates: result.duplicates.length,

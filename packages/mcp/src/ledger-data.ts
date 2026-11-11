@@ -32,6 +32,7 @@ export const GATING_KINDS: readonly ReviewItemKind[] = [
   "approval",
   "question",
   "exception",
+  "security",
   "blocked_action",
   "context_promotion",
   "budget",

@@ -60,7 +60,14 @@ const ALERT_KINDS: Record<string, ReviewItemKind> = {
   model_request_failed: "stuck_run",
   quality: "quality",
   quality_alarm: "quality",
+  grant_unverified: "security",
 };
+
+/**
+ * data.alert of the alert.raised event a team server writes when a laptop's allow cited a
+ * one-time exception it never signed (or one already used): a forged grant, or a copied one.
+ */
+export const GRANT_UNVERIFIED_ALERT = "grant_unverified";
 
 /**
  * data.request of the approval.requested events the selfhost MCP server writes: an agent asks a
@@ -396,6 +403,8 @@ function fromAlert(event: LedgerEvent): Draft | undefined {
   const alert = text(data.alert);
   const kind = alert ? ALERT_KINDS[alert] : undefined;
   if (!alert || !kind) return undefined;
+  // Only the team server raises a security alert; a laptop's own alerts come from the CLI.
+  if (kind === "security" && event.source !== "server") return undefined;
   const message = text(data.message);
   const agent = agentName(event);
   const common = {
@@ -471,6 +480,24 @@ function fromAlert(event: LedgerEvent): Draft | undefined {
         why: { signal, text: error ?? `The run reported ${alert}.` },
         score: failed ? 60 : 30,
         reasons: [failed ? "A run failed or stopped making progress" : "A run hit errors"],
+      };
+    }
+    case "security": {
+      // The person whose laptop sent the allow: the item is about them, never for them.
+      const person = personId(data.person);
+      return {
+        ...common,
+        dedupeKey: `security:${alert}:${text(data.event_id) ?? event.id}`,
+        title: title(message ?? "An allow cited an exception the server never signed"),
+        why: {
+          signal,
+          text:
+            text(data.reason) ??
+            "The server holds no signed, unused grant for the exception the allow named.",
+        },
+        score: 95,
+        reasons: ["A laptop allowed a call under a grant this server never signed"],
+        ...(person ? { person } : {}),
       };
     }
     default: {

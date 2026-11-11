@@ -42,6 +42,11 @@ export interface TailLine {
   cache_hit_rate: number | null;
   /** An alert's message or a review item's title. */
   message: string | null;
+  /**
+   * An allow that cited a one-time exception the team server never signed (or one already
+   * used): the server stores it flagged and alerts the team's owners and admins.
+   */
+  grant_unverified: boolean;
   /** The run in the console, else null for events with no session. */
   run_url: string | null;
 }
@@ -121,6 +126,7 @@ export function lineOf(
       : null,
     cache_hit_rate: options.cacheHitRate ?? null,
     message: event.kind === "alert.raised" ? text(event.data?.message) : runMessage(event),
+    grant_unverified: event.kind === "policy.evaluated" && event.data?.grant_unverified === true,
     run_url: event.session_id ? runViewUrl(options.console, event.session_id) : null,
   };
 }
@@ -183,6 +189,7 @@ export function reviewLine(item: ReviewItem, console: string): TailLine {
     tokens: null,
     cache_hit_rate: null,
     message: item.title,
+    grant_unverified: false,
     run_url:
       item.run_url ?? (item.session_id ? runViewUrl(console, item.session_id) : (item.url ?? null)),
   };
@@ -210,7 +217,12 @@ const clip = (value: string, max = 80) =>
 const pct = (rate: number) => `${Math.round(rate * 100)}%`;
 
 function rule(line: TailLine): string {
+  if (line.grant_unverified) {
+    return `ALLOWED UNDER AN UNVERIFIED GRANT ${line.rule_id ?? ""}`.trimEnd();
+  }
   const observe = line.mode === "observe";
+  // An allow with no rule hit is the call going ahead: no rule allowed it.
+  if (line.verdict === "allow" && !line.rule_id) return "allowed";
   const what =
     line.verdict === "block"
       ? observe

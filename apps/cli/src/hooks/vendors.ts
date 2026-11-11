@@ -7,7 +7,8 @@ import { isAbsolute, resolve } from "node:path";
  *
  * Vendor docs, as of November 2026:
  * - Claude Code: https://code.claude.com/docs/en/hooks (PreToolUse, hookSpecificOutput; an
- *   "ask" reaches no person in bypassPermissions or dontAsk mode, so there an ask is a deny)
+ *   "ask" reaches no person in bypassPermissions or dontAsk mode, nor in print and SDK runs, so
+ *   there an ask is a deny; see askSkippedBy)
  * - Codex: https://learn.chatgpt.com/docs/hooks (PreToolUse; "ask" is parsed but not
  *   supported, so an ask is answered as a deny)
  * - Cursor: https://cursor.com/docs/hooks (preToolUse, beforeShellExecution, beforeReadFile,
@@ -157,6 +158,33 @@ export function toolAccess(tool: string): "read" | "write" | undefined {
   return undefined;
 }
 
+/** Tools that change their file, by name in any agent; Edit reads it too, but it is a change. */
+const CHANGE_TOOLS = new Set([
+  "Write",
+  "Edit",
+  "MultiEdit",
+  "NotebookEdit",
+  "Delete",
+  "write",
+  "edit",
+  "patch",
+  "apply_patch",
+]);
+const READ_TOOLS = new Set(["Read", "NotebookRead", "Grep", "read", "grep"]);
+
+/**
+ * What a file tool call does, as a person would say it: a read or a change. Undefined for a call
+ * that names no file.
+ */
+export function callAction(call: Pick<PreToolCall, "tool" | "file" | "access">) {
+  if (call.file === undefined) return undefined;
+  if (CHANGE_TOOLS.has(call.tool)) return "change" as const;
+  if (READ_TOOLS.has(call.tool)) return "read" as const;
+  if (call.access === "write") return "change" as const;
+  if (call.access === "read") return "read" as const;
+  return undefined;
+}
+
 function mcpServerOf(tool: string): string | undefined {
   if (!tool.startsWith("mcp__")) return undefined;
   const rest = tool.slice("mcp__".length);
@@ -294,22 +322,80 @@ export type Answer = "allow" | "deny" | "ask";
 const CLAUDE_ASKING_MODES = new Set(["default", "manual", "acceptEdits", "plan", "auto"]);
 
 /**
- * The session's permission mode when it skips asks, so an ask from the hook would not reach a
- * person; undefined when the mode stops to ask (or the agent cannot ask at all).
+ * Claude Code entrypoints with a person at a prompt. Claude Code sets CLAUDE_CODE_ENTRYPOINT in
+ * its own environment, which the hook inherits: "cli" for the interactive terminal (JetBrains
+ * runs this too), "claude-vscode" for the VS Code extension. Print and SDK runs set "sdk-cli",
+ * "sdk-ts" or "sdk-py", where a hook's ask goes to whatever host runs the session, or to no one:
+ * `claude -p` in default mode runs an asked call with no person. Any other value, or none, is not
+ * known to reach a person, so an enforced ask there is a deny with a one-time exception.
  */
-export function askSkippedBy(agent: HookAgent, mode: string | undefined): string | undefined {
-  if (agent !== "claude" || mode === undefined) return undefined;
-  if (CLAUDE_ASKING_MODES.has(mode)) return undefined;
-  // The mode goes into the texts: only a plain name, as the agent sends it.
-  return /^[A-Za-z][\w-]{0,39}$/.test(mode) ? mode : "an unknown";
+const CLAUDE_INTERACTIVE_ENTRYPOINTS = new Set(["cli", "claude-vscode"]);
+
+/** The variable selfhost's background runner sets for the agent and its hooks. */
+export const BACKGROUND_RUN_ENV = "SELFHOST_RUN_ID";
+
+/** A value from the session that goes into the texts: only a plain name, as the agent sends it. */
+const plainName = (value: string) => (/^[A-Za-z][\w-]{0,39}$/.test(value) ? value : undefined);
+
+const set = (value: string | undefined) => value !== undefined && value.trim() !== "";
+
+/** Why no person is at the session, whatever the agent: a selfhost background run, or CI. */
+function unattended(env: NodeJS.ProcessEnv): string | undefined {
+  if (set(env[BACKGROUND_RUN_ENV])) return "is a selfhost background run, with no person to ask";
+  const ci = env.CI?.trim().toLowerCase();
+  if (set(env.GITHUB_ACTIONS) || (ci !== undefined && ci !== "" && ci !== "false" && ci !== "0")) {
+    return "runs in CI, with no person to ask";
+  }
+  return undefined;
 }
 
 /**
- * Whether the agent can put a call to a person from this event, in the session's permission
- * mode when the payload names one.
+ * Why an ask from the hook would reach no person in this session, as the rest of a sentence
+ * that starts "this <agent> session"; undefined when a person is asked (or the agent cannot ask
+ * from this event at all, which canAsk says).
  */
-export function canAsk(agent: HookAgent, event: string, mode?: string): boolean {
-  if (agent === "claude") return askSkippedBy(agent, mode) === undefined;
+export function askSkippedBy(
+  agent: HookAgent,
+  mode: string | undefined,
+  env: NodeJS.ProcessEnv = {},
+): string | undefined {
+  if (agent === "cursor") return unattended(env);
+  if (agent !== "claude") return undefined;
+  if (mode !== undefined && !CLAUDE_ASKING_MODES.has(mode)) {
+    return `runs in ${plainName(mode) ?? "an unknown"} mode, which skips asks`;
+  }
+  const away = unattended(env);
+  if (away) return away;
+  const entrypoint = env.CLAUDE_CODE_ENTRYPOINT?.trim();
+  if (entrypoint === undefined || entrypoint === "") {
+    return "does not say it has a person at a prompt (no CLAUDE_CODE_ENTRYPOINT), so no one is known to be asked";
+  }
+  if (CLAUDE_INTERACTIVE_ENTRYPOINTS.has(entrypoint)) return undefined;
+  if (entrypoint.startsWith("sdk-")) {
+    return `runs without a prompt (${plainName(entrypoint) ?? "an SDK entrypoint"}, as in claude -p), with no person to ask`;
+  }
+  return `runs from entrypoint ${plainName(entrypoint) ?? "an unknown one"}, which is not known to have a person at a prompt`;
+}
+
+/**
+ * Whether the agent can put a call to a person from this event, in this session: its permission
+ * mode when the payload names one, and the environment the agent started the hook in.
+ */
+export function canAsk(
+  agent: HookAgent,
+  event: string,
+  mode?: string,
+  env: NodeJS.ProcessEnv = {},
+): boolean {
+  if (agent === "claude") return askSkippedBy(agent, mode, env) === undefined;
+  if (agent === "cursor")
+    return CURSOR_ASKS.has(event) && askSkippedBy(agent, mode, env) === undefined;
+  return false;
+}
+
+/** Whether the agent can ask from this event in some session; canAsk says whether this one does. */
+export function asksFrom(agent: HookAgent, event: string): boolean {
+  if (agent === "claude") return true;
   if (agent === "cursor") return CURSOR_ASKS.has(event);
   return false;
 }

@@ -456,7 +456,8 @@
                               "spend_spike",
                               "quality",
                               "policy_report",
-                              "context_promotion"
+                              "context_promotion",
+                              "security"
                             ]
                           }
                         },
@@ -2385,7 +2386,8 @@
                     "spend_spike",
                     "quality",
                     "policy_report",
-                    "context_promotion"
+                    "context_promotion",
+                    "security"
                   ]
                 },
                 "title": {
@@ -4332,7 +4334,8 @@
               "spend_spike",
               "quality",
               "policy_report",
-              "context_promotion"
+              "context_promotion",
+              "security"
             ]
           },
           "state": {
@@ -4471,7 +4474,8 @@
               "spend_spike",
               "quality",
               "policy_report",
-              "context_promotion"
+              "context_promotion",
+              "security"
             ]
           },
           "state": {
@@ -4610,7 +4614,8 @@
               "spend_spike",
               "quality",
               "policy_report",
-              "context_promotion"
+              "context_promotion",
+              "security"
             ]
           },
           "state": {
@@ -4795,7 +4800,8 @@
                   "spend_spike",
                   "quality",
                   "policy_report",
-                  "context_promotion"
+                  "context_promotion",
+                  "security"
                 ]
               },
               "title": {

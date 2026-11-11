@@ -146,6 +146,27 @@ function exceptionRoute(
   };
 }
 
+/**
+ * Security items on a team server go to the team's owners and admins, never to the person the
+ * item is about: their laptop is the one that may hold a forged grant.
+ */
+function securityRoute(approvers: readonly string[], about: string | undefined): Routing {
+  const owners = [
+    ...new Set(approvers.filter((person) => person.toLowerCase() !== about?.toLowerCase())),
+  ];
+  if (owners.length > 0) {
+    return { owners, route: { step: "team", from: "the team's owners and admins" } };
+  }
+  return {
+    owners: [],
+    route: {
+      step: "none",
+      from: "nobody",
+      why: "the team has no owner or admin other than the person it is about. Give someone the admin role",
+    },
+  };
+}
+
 /** Budget items on a team server go to the people who hold the budget. */
 function budgetRoute(owners: readonly string[], named: boolean): Routing | undefined {
   if (owners.length === 0) return undefined;
@@ -223,7 +244,14 @@ function routed(
     item.kind === "budget" && ctx.budgetOwners !== undefined
       ? budgetRoute(ctx.budgetOwners, ctx.config.notify.budget_owners.length > 0)
       : undefined;
+  // A security item goes to the owners and admins whatever [[review.routes]] says: a route that
+  // names the person it is about would hand the alert to the laptop it suspects.
+  const security =
+    item.kind === "security" && ctx.approvers !== undefined
+      ? securityRoute(ctx.approvers, person)
+      : undefined;
   const { owners, route } =
+    security ??
     rules ??
     budget ??
     (item.kind === "exception" && ctx.approvers !== undefined

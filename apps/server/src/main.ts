@@ -12,11 +12,16 @@ import { githubAppFromEnv, githubConfig } from "./github.js";
 import { notifyFromEnv, startNotifyJob } from "./notify.js";
 import { clonesUnder } from "./provenance.js";
 import { serverConfig, startRetentionJob } from "./retention.js";
-import { clonesCodeowners, startReviewRefreshJob, WAITING_EVENT_KINDS } from "./review.js";
+import {
+  clonesCodeowners,
+  type ReviewRefreshJob,
+  refreshOnStored,
+  startReviewRefreshJob,
+} from "./review.js";
 import { startTraceExportJob } from "./runs.js";
 import { serverRuntime } from "./runtime.js";
 import { signinFromEnv } from "./signin.js";
-import { loadApiToken } from "./token.js";
+import { loadApiToken, tokenNotice } from "./token.js";
 
 const port = Number(process.env.PORT ?? 4400);
 const hostname = process.env.HOST ?? "127.0.0.1";
@@ -36,10 +41,7 @@ const ledger = await openLedger({
   process.exit(1);
 });
 const { token, path, created } = loadApiToken(dataDir);
-if (created) {
-  const where = path ? `saved to ${path}` : "not saved, the data dir is in memory";
-  console.log(`API token (${where}): ${token}`);
-}
+if (created) console.log(tokenNotice(path));
 
 // The Ed25519 keys one-time exception grants are signed with: made on the first start, kept
 // next to the token (or in SELFHOST_EXCEPTION_KEYS_FILE), never sent anywhere.
@@ -103,10 +105,9 @@ if (background && process.env.SELFHOST_BACKGROUND_RECOVER !== "off") {
 // refresh that raises a budget alert wakes the notify pass. Any refresh that files an item, on
 // any path (the job, an agent's ask_human through MCP), wakes the notify pass itself (see
 // startNotifyJob), so its push goes out in seconds instead of at the next periodic pass.
-const wakeups: { refresh?: () => void; notify?: () => void } = {};
-const eventsStored = (kinds: readonly string[]) => {
-  if (kinds.some((kind) => WAITING_EVENT_KINDS.has(kind))) wakeups.refresh?.();
-};
+const wakeups: { reviews?: ReviewRefreshJob; notify?: () => void } = {};
+// A sync with a block, an ask or an exception request returns once its items are on the list.
+const eventsStored = refreshOnStored(() => wakeups.reviews);
 
 const server = serve(
   {
@@ -180,7 +181,7 @@ const notifications =
   deliver && process.env.SELFHOST_NOTIFY !== "off"
     ? startNotifyJob(ledger, { deliver, config, ...(publicUrl ? { publicUrl } : {}) })
     : undefined;
-if (reviews) wakeups.refresh = reviews.wake;
+if (reviews) wakeups.reviews = reviews;
 if (notifications) wakeups.notify = notifications.wake;
 
 // SELFHOST_CACHE_ALERTS=off stops raising prompt cache alerts for sessions whose hit rate

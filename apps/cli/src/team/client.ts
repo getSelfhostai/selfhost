@@ -3,6 +3,7 @@ import type {
   BackgroundRun,
   BackgroundRunsQuery,
   BackgroundRunsResponse,
+  BudgetResponse,
   ContextFile,
   ContextProposal,
   ContextProposalRequest,
@@ -58,6 +59,7 @@ import type {
   TeamPeopleResponse,
   TeamRepo,
   TeamReposResponse,
+  UsageResponse,
 } from "@selfhost/schema";
 
 export type Fetch = (url: string, init: RequestInit) => Promise<Response>;
@@ -131,6 +133,18 @@ export class TeamClient {
   /** Revokes the person token this client holds. */
   revokeOwnToken(): Promise<RevokeTokensResponse> {
     return this.call("DELETE", "/v1/me/token");
+  }
+
+  /** Spend in the teams this token sees, grouped as asked (GET /v1/usage). */
+  usage(query: { from: string; to: string; group_by?: string }): Promise<UsageResponse> {
+    const params = new URLSearchParams({ from: query.from, to: query.to });
+    if (query.group_by) params.set("group_by", query.group_by);
+    return this.call("GET", `/v1/usage?${params}`);
+  }
+
+  /** The budgets that apply to this token in its team, with the month's spend (GET /v1/budget). */
+  budget(): Promise<BudgetResponse> {
+    return this.call("GET", "/v1/budget");
   }
 
   me(): Promise<MeResponse> {

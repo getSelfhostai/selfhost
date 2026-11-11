@@ -189,7 +189,9 @@ function expectedAnswer(c: Case, replay: Replay): string {
   if (c.verdict === "allow") return "allow";
   if (replay.deferred) return c.verdict === "block" ? "deny" : "allow";
   if (c.verdict === "block") return "deny";
-  return canAsk(replay.agent, replay.event) ? "ask" : "deny";
+  return canAsk(replay.agent, replay.event, undefined, { CLAUDE_CODE_ENTRYPOINT: "cli" })
+    ? "ask"
+    : "deny";
 }
 
 const spoolLines = (home: string): SpoolLine[] => {
@@ -206,7 +208,7 @@ async function hook(replay: Replay, home: string) {
   let stdout = "";
   const errors: string[] = [];
   const code = await runHook([replay.agent], {
-    env: { HOME: home },
+    env: { HOME: home, CLAUDE_CODE_ENTRYPOINT: "cli" },
     readStdin: async () => JSON.stringify(replay.payload),
     writeOutput: (text) => {
       stdout += text;

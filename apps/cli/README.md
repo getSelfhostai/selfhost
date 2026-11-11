@@ -35,6 +35,13 @@ share, then every request type that crossed `--threshold` percent of a day's spe
 it crossed and the days before. `--by` takes `request_type`, `agent`, `model` and `person`; flags
 are always by request type. See [`packages/spend`](../../packages/spend/README.md).
 
+In a team, `selfhost spend` reads the team server instead, like `selfhost inbox` and `selfhost
+tail`: every member's synced spend in the teams the person is in (`GET /v1/usage`, `--by` one or
+two of `person` (default), `agent`, `model`, `team`, `day`), then this month's spend and every
+budget that applies to them (`GET /v1/budget`). `--json` prints one `selfhost.team_spend/v1`
+object. Request types, flags and cost tips come from a laptop's own ledger: `--local`,
+`--database` or `--data-dir` read it as on a laptop with no team.
+
 Each row and the total also show the prompt cache hit rate: cache reads over cache reads plus
 uncached input plus cache writes (`cache_hit_rate` in `--json`). A session that reported no cache
 read or write at all is left out and its group reads `unknown`, not 0%: some agents' logs carry
@@ -56,7 +63,9 @@ run's sandbox cost next to its model cost.
 `selfhost tail [--agent <agent>] [--repo <owner/name>] [--person <id>] [--kind <kinds>]
 [--session <id>] [--since 15m] [--json]` streams agent activity as it lands, one line each: time,
 who, agent, what happened (session start and end, prompt, tool call with its redacted input, rule
-`BLOCKED` or `ASKED` with the rule id, or `would block` in observe, cost with the session's cache
+`BLOCKED` or `ASKED` with the rule id, or `would block` in observe, `allowed` for a call no rule
+hit, `ALLOWED UNDER AN UNVERIFIED GRANT` for an allow the team server flagged as citing an
+exception it never signed (`grant_unverified` in `--json`), cost with the session's cache
 hit rate so far, alerts, review items that opened) and the link to its run in the console.
 `--kind` takes event kinds or their first part (`tool`, `policy`, `cost`, `alert`, `session`) and
 `review`; `--json` prints one `selfhost.tail_line/v1` object per line. Prompt text never shows, and
@@ -835,16 +844,33 @@ installed and is left in place by `guard uninstall`.
 
 | Agent       | Hook                                                                                                   | Block       | Ask                                                   |
 | ----------- | ------------------------------------------------------------------------------------------------------ | ----------- | ----------------------------------------------------- |
-| Claude Code | `PreToolUse` in `~/.claude/settings.json`                                                              | yes         | yes, except where the session skips asks              |
+| Claude Code | `PreToolUse` in `~/.claude/settings.json`                                                              | yes         | yes, where the session can reach a person (see below) |
 | Codex       | `PreToolUse` in `config.toml` (or `hooks.json`); approve it with `/hooks`                              | yes         | answered as a block: Codex hooks cannot ask           |
 | Cursor      | `preToolUse`, `beforeShellExecution`, `beforeReadFile`, `beforeMCPExecution` in `~/.cursor/hooks.json` | yes         | on shell and MCP calls; elsewhere answered as a block |
 | OpenCode    | plugin `~/.config/opencode/plugins/selfhost.js` (`tool.execute.before`)                                | yes         | answered as a block                                   |
 | Goose       | none: Goose has no hooks                                                                               | not covered | not covered                                           |
 
-An enforced ask is put to a person only where the agent stops for one. Claude Code in
-`bypassPermissions` or `dontAsk` mode (the payload's `permission_mode`) skips the hook's ask, so
-there the call is blocked instead, with a one-time exception a person can approve, and the agent
-is told to ask the person to run it or approve the exception.
+An enforced ask is put to a person only where the session can reach one. Everywhere else the
+call is blocked instead, with a one-time exception a person can approve, and the agent is told to
+ask the person to run it or approve the exception. The hook decides from the payload's
+`permission_mode` and from the environment the agent starts it in: Claude Code sets
+`CLAUDE_CODE_ENTRYPOINT` (`cli` in the interactive terminal, `claude-vscode` in the VS Code
+extension, `sdk-cli` for `claude -p`, `sdk-ts` and `sdk-py` for the SDKs), selfhost's background
+runner sets `SELFHOST_RUN_ID`, and CI sets `CI` or `GITHUB_ACTIONS`. An entrypoint or mode not
+known to reach a person, or no entrypoint at all, fails closed.
+
+| Agent       | Permission mode                                     | Where it runs                                             | Enforced ask      |
+| ----------- | --------------------------------------------------- | --------------------------------------------------------- | ----------------- |
+| Claude Code | `default`, `manual`, `acceptEdits`, `plan`, `auto`  | entrypoint `cli` or `claude-vscode`, not CI or background | ask               |
+| Claude Code | same                                                | entrypoint `sdk-cli`, `sdk-ts`, `sdk-py`                  | block + exception |
+| Claude Code | same                                                | any other entrypoint, or none                             | block + exception |
+| Claude Code | same                                                | `CI` or `GITHUB_ACTIONS` set, or a background run         | block + exception |
+| Claude Code | `bypassPermissions`, `dontAsk`, or a mode not known | anywhere                                                  | block + exception |
+| Cursor      | none                                                | `beforeShellExecution`, `beforeMCPExecution`              | ask               |
+| Cursor      | none                                                | same, in CI or a background run                           | block + exception |
+| Cursor      | none                                                | `preToolUse`, `beforeReadFile`                            | block + exception |
+| Codex       | any                                                 | anywhere                                                  | block + exception |
+| OpenCode    | none                                                | anywhere                                                  | block + exception |
 
 On a pre-tool event the hook finds `selfhost.toml` from the call's folder (the nearest one up to
 the repository root, else the team policy pulled by the last sync, else the built-in defaults),

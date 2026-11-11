@@ -12,7 +12,7 @@ import { type Background, backgroundWebhookRoute } from "./background.js";
 import { consoleRoutes } from "./console.js";
 import { refuseContextDecision } from "./context.js";
 import { decisionRoutes } from "./decisions.js";
-import { eventRoutes } from "./events.js";
+import { type EventRouteOptions, eventRoutes } from "./events.js";
 import { type ExceptionKeyring, loadExceptionKeys } from "./exception-keys.js";
 import { type Gateway, gatewayAdminRoutes, gatewayProxyRoutes } from "./gateway.js";
 import { type GitHubRouteOptions, githubRoutes } from "./github.js";
@@ -69,10 +69,11 @@ export interface AppOptions {
   /** On the server `selfhost console` runs on a solo laptop: GET /v1/solo (see solo.ts). */
   solo?: SoloOptions;
   /**
-   * Called with the kinds of each batch of new events POST /v1/events stores, with either kind of
-   * token: the server wakes its review refresh when an agent starts to wait.
+   * Called with the kinds and events of each batch of new events POST /v1/events stores, with
+   * either kind of token; the response waits for what it returns (see EventRouteOptions.stored).
+   * The server refreshes its review list here (refreshOnStored in review.ts).
    */
-  eventsStored?: (kinds: readonly string[]) => void;
+  eventsStored?: EventRouteOptions["stored"];
   /**
    * The Ed25519 keys one-time exception grants are signed with (exception-keys.ts). Default: a
    * key for this process only, as for an in-memory data dir.
@@ -173,7 +174,10 @@ export function createApp({
     c.json({ ok: true, version, event_schemas: acceptedEventSchemas() } satisfies HealthResponse),
   );
 
-  eventRoutes(app, ledger, eventsStored ? { stored: eventsStored } : {});
+  eventRoutes(app, ledger, {
+    ...(eventsStored ? { stored: eventsStored } : {}),
+    ...(now ? { now } : {}),
+  });
   decisionRoutes(app, ledger);
   reviewRoutes(app, ledger, review);
   otlpRoutes(app, ledger);

@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { loadApiToken } from "../src/token.js";
+import { loadApiToken, tokenNotice } from "../src/token.js";
 
 describe("loadApiToken", () => {
   let dir: string;
@@ -51,5 +51,25 @@ describe("loadApiToken", () => {
     const result = loadApiToken("memory://", {});
     expect(result.created).toBe(true);
     expect(result.path).toBeUndefined();
+  });
+
+  it("logs where a new token is and how to read it, never the token", () => {
+    const dataDir = join(dir, "data");
+    const { token, path } = loadApiToken(dataDir, {});
+    const line = tokenNotice(path);
+    expect(line).toBe(
+      `API token made and saved to ${join(dataDir, "token")} (mode 0600). Read it on this machine with: cat ${join(dataDir, "token")}`,
+    );
+    expect(line).not.toContain(token);
+    const memory = loadApiToken("memory://", {});
+    expect(tokenNotice(memory.path)).not.toContain(memory.token);
+    expect(tokenNotice(memory.path)).toContain("SELFHOST_TOKEN");
+  });
+
+  it("start log prints no secret: main.ts logs the notice, not the token", () => {
+    const main = readFileSync(join(import.meta.dirname, "../src/main.ts"), "utf8");
+    const logs = main.split("\n").filter((line) => /console\.(log|error|warn)/.test(line));
+    for (const line of logs) expect(line).not.toMatch(/\$\{(token|exceptionKeys\.\w*key)\}/i);
+    expect(main).toContain("console.log(tokenNotice(path))");
   });
 });

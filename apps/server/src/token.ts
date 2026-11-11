@@ -34,3 +34,14 @@ export function loadApiToken(dataDir: string, env: NodeJS.ProcessEnv = process.e
 function generateToken(): string {
   return `selfhost_${randomBytes(32).toString("base64url")}`;
 }
+
+/**
+ * What the start log says about a token it just made: where it is and how to read it, never the
+ * token itself, since logs are kept and shipped where the admin token must not go.
+ */
+export function tokenNotice(path: string | undefined): string {
+  if (path === undefined) {
+    return "API token made for this process only (the data dir is in memory) and not printed. Set SELFHOST_TOKEN to choose one you can use.";
+  }
+  return `API token made and saved to ${path} (mode 0600). Read it on this machine with: cat ${path}`;
+}

@@ -2,11 +2,17 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Ledger, mapOtelLogs, openLedger } from "@selfhost/ledger";
-import { EVENT_SCHEMA, type LedgerEvent } from "@selfhost/schema";
+import {
+  type CreateTeamResponse,
+  EVENT_SCHEMA,
+  type JoinResponse,
+  type LedgerEvent,
+} from "@selfhost/schema";
+import { createApp } from "@selfhost/server/app";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { runImport } from "../src/import.js";
 import { createProgram } from "../src/program.js";
-import { parseBy, parseThreshold, runSpend } from "../src/spend.js";
+import { parseBy, parseThreshold, runSpend, type TeamSpendReport } from "../src/spend.js";
 
 const fixtures = join(import.meta.dirname, "..", "..", "..", "fixtures");
 const week = join(fixtures, "sources", "subscription-week");
@@ -39,6 +45,7 @@ describe("spend options", () => {
       "--json",
       "--database",
       "--data-dir",
+      "--local",
       "--config",
     ]);
   });
@@ -238,5 +245,91 @@ describe("selfhost spend cache hit rates", () => {
       parsed.groups.find((g: { group: { agent: string } }) => g.group.agent === "cursor"),
     ).toMatchObject({ cache_hit_rate: null });
     expect(report.cache_tips).toHaveLength(2);
+  });
+});
+
+describe("selfhost spend in a team", () => {
+  it("reads the team's spend and budget from the server, not the empty local ledger", async () => {
+    const ledger = await openLedger({ dataDir: "memory://" });
+    try {
+      // Relative to the run, so the spend is inside every window whenever it runs.
+      const now = new Date();
+      const app = createApp({ version: "test", ledger, token: "admin-token", now: () => now });
+      const created = (await (
+        await app.request("/v1/teams", {
+          method: "POST",
+          headers: { authorization: "Bearer admin-token", "content-type": "application/json" },
+          body: JSON.stringify({ name: "Web" }),
+        })
+      ).json()) as CreateTeamResponse;
+      const member = async (person: string) =>
+        (
+          (await (
+            await app.request("/v1/join", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ invite: created.invite, person }),
+            })
+          ).json()) as JoinResponse
+        ).token;
+      const lead = await member("lead@example.com");
+      const dev = await member("dev@example.com");
+      const cost = (usd: number, hoursAgo: number): LedgerEvent => ({
+        id: `01930c4e-2f1a-7b2c-9d3e-${Math.round(usd * 100)
+          .toString(16)
+          .padStart(12, "0")}`,
+        schema: EVENT_SCHEMA,
+        ts: new Date(now.getTime() - hoursAgo * 3_600_000).toISOString(),
+        source: "local_log",
+        kind: "cost.recorded",
+        actor: { kind: "person", id: "dev@example.com" },
+        session_id: "s-team",
+        agent: { vendor: "claude_code" },
+        model: "claude-sonnet-4-5",
+        cost: {
+          input_tokens: 1000,
+          output_tokens: 100,
+          cache_read_tokens: 0,
+          cache_write_tokens: 0,
+          usd,
+          estimated: true,
+        },
+      });
+      // The member syncs; the lead's laptop has nothing in its own ledger.
+      const synced = await app.request("/v1/events", {
+        method: "POST",
+        headers: { authorization: `Bearer ${dev}`, "content-type": "application/json" },
+        body: JSON.stringify({ events: [cost(1.5, 2), cost(2.25, 30)] }),
+      });
+      expect(synced.status).toBe(200);
+
+      const server = "https://selfhost.acme.example.com";
+      const dir = mkdtempSync(join(tmpdir(), "selfhost-spend-team-"));
+      const configPath = join(dir, "config.json");
+      writeFileSync(
+        configPath,
+        JSON.stringify({ server, token: lead, person: "lead@example.com", team: "web" }),
+      );
+      const lines: string[] = [];
+      const fetch = (url: string, init: RequestInit) =>
+        Promise.resolve(app.request(url.replace(server, ""), init));
+      const io = { env: {}, write: (line: string) => lines.push(line), now, configPath, fetch };
+
+      const report = (await runSpend({ since: "7d" }, io)) as TeamSpendReport;
+      expect(report.schema).toBe("selfhost.team_spend/v1");
+      expect(report.usage.total.usd).toBeCloseTo(3.75);
+      expect(report.usage.rows.map((row) => [row.group.person, row.usd])).toEqual([
+        ["dev@example.com", 3.75],
+      ]);
+      expect(report.budget.spent_usd).toBeGreaterThan(0);
+      expect(lines[0]).toMatch(/^Spend of team web on https:\/\/selfhost\.acme\.example\.com/);
+      expect(lines.join("\n")).toContain("dev@example.com");
+      expect(lines.join("\n")).not.toContain("Run selfhost import first");
+
+      // Request types are a laptop's own: the server has none, so --by names --local.
+      await expect(runSpend({ by: "request_type" }, io)).rejects.toThrow(/--local/);
+    } finally {
+      await ledger.close();
+    }
   });
 });

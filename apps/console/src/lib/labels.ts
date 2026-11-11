@@ -21,6 +21,7 @@ export const REVIEW_KIND_NAMES: Record<ReviewItemKind, string> = {
   quality: "Code quality",
   policy_report: "Rules report",
   context_promotion: "Team context proposal",
+  security: "Security alert",
 };
 
 /** The built-in guardrails, in the order the hooks check them. */

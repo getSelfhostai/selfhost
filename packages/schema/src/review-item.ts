@@ -27,6 +27,8 @@ export const REVIEW_ITEM_KINDS = [
   "quality",
   "policy_report",
   "context_promotion",
+  // An allow on a laptop cited a one-time exception the team server never signed, added 2026-11-11.
+  "security",
 ] as const;
 
 export const REVIEW_ITEM_STATES = ["open", "answered", "dismissed", "expired"] as const;

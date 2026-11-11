@@ -126,8 +126,15 @@ export function blockedToolEvents(events: readonly LedgerEvent[]): Set<string> {
   return blocked;
 }
 
-/** One line for a ledger event in the timeline. `blocked`: a hook stopped this tool call. */
-export function eventLine(event: LedgerEvent, blocked = false): { title: string; detail?: string } {
+/**
+ * One line for a ledger event in the timeline. `blocked`: a hook stopped this tool call.
+ * `warning`: the line needs a person's eye, such as an allow under a grant the server never
+ * signed.
+ */
+export function eventLine(
+  event: LedgerEvent,
+  blocked = false,
+): { title: string; detail?: string; warning?: string } {
   const input = event.tool?.input_summary ?? event.target?.value;
   switch (event.kind) {
     case "session.started":
@@ -151,6 +158,19 @@ export function eventLine(event: LedgerEvent, blocked = false): { title: string;
         detail: event.decision?.reason,
       };
     case "policy.evaluated": {
+      const rule = event.decision?.rule_id;
+      if (event.data?.grant_unverified === true) {
+        return {
+          title: `Allowed under a grant the server never signed${rule ? `: rule ${rule}` : ""}`,
+          detail: input,
+          warning:
+            typeof event.data.grant_unverified_reason === "string"
+              ? `Possible forged grant: ${event.data.grant_unverified_reason}`
+              : "Possible forged grant",
+        };
+      }
+      // A call no rule hit went ahead: no rule allowed it.
+      if (event.decision?.verdict === "allow" && !rule) return { title: "Allowed", detail: input };
       const mode = event.decision?.mode === "observe" ? "would have " : "";
       const verdict = event.decision?.verdict;
       const did =
@@ -389,8 +409,15 @@ export function RunScreen() {
                       <span className="text-muted-foreground text-xs tabular-nums">
                         {formatTime(event.ts)}
                       </span>
-                      <span>{line.title}</span>
+                      <span className={line.warning ? "font-medium text-destructive" : undefined}>
+                        {line.title}
+                      </span>
                     </div>
+                    {line.warning ? (
+                      <div className="text-destructive text-xs" role="alert">
+                        {line.warning}
+                      </div>
+                    ) : null}
                     {line.detail ? (
                       <div className="break-all font-mono text-muted-foreground text-xs">
                         {line.detail}

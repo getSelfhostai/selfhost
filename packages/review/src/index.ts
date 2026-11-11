@@ -83,6 +83,7 @@ export {
   CONTEXT_PROMOTION_REQUEST,
   type Draft,
   draftFor,
+  GRANT_UNVERIFIED_ALERT,
   MCP_EXCEPTION_REQUEST,
   MCP_QUESTION_REQUEST,
 } from "./signals.js";

@@ -5,6 +5,7 @@ import {
   AlreadyAnsweredError,
   CODEOWNERS_PATHS,
   decisionRefusal,
+  draftFor,
   openReviewList,
   type RefreshOptions,
   type RefreshResult,
@@ -19,6 +20,7 @@ import {
   createValidator,
   type DecisionRequest,
   DecisionRequestSchema,
+  type LedgerEvent,
   type Person,
   type PersonRole,
   REVIEW_ITEM_STATES,
@@ -405,6 +407,11 @@ export interface ReviewRefreshJob {
   run(): Promise<RefreshResult | undefined>;
   /** A refresh within WAKE_REFRESH_MS, for events that may open an item an agent waits on. */
   wake(): void;
+  /**
+   * A refresh that reads every event stored before the call: it waits for one already running,
+   * which may have read the ledger too early, and then runs (or joins) the next.
+   */
+  settle(): Promise<RefreshResult | undefined>;
   stop(): void;
 }
 
@@ -415,6 +422,33 @@ export const WAITING_EVENT_KINDS: ReadonlySet<string> = new Set([
 ]);
 /** How soon a refresh follows such an event; a burst of them shares one refresh. */
 export const WAKE_REFRESH_MS = 1000;
+
+/** Whether an event opens a review item or adds to one (a block, an ask, an exception ...). */
+function opensItem(event: unknown): boolean {
+  try {
+    return draftFor(event as LedgerEvent) !== undefined;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * What POST /v1/events calls once a batch is stored. A batch with an event that opens a review
+ * item (a block, an ask, an exception request, an alert) waits for a refresh that reads it, so
+ * by the time a laptop's sync returns the item is on the list with its owners and an owner's
+ * inbox shows it. A batch with only other waiting kinds wakes the refresh within
+ * WAKE_REFRESH_MS. `job` is read on each call: the server sets it once the job starts.
+ */
+export function refreshOnStored(
+  job: () => Pick<ReviewRefreshJob, "wake" | "settle"> | undefined,
+): (kinds: readonly string[], events: readonly unknown[]) => Promise<void> {
+  return async (kinds, events) => {
+    const refresh = job();
+    if (!refresh) return;
+    if (events.some(opensItem)) await refresh.settle();
+    else if (kinds.some((kind) => WAITING_EVENT_KINDS.has(kind))) refresh.wake();
+  };
+}
 
 /**
  * Raises budget alerts from each team's spend (once a minute), then builds review items from
@@ -489,10 +523,15 @@ export function startReviewRefreshJob(
     if (running) again = true;
     else void run();
   }, WAKE_REFRESH_MS);
+  const settle = async () => {
+    if (running) await running;
+    return run();
+  };
   void run();
   return {
     run,
     wake,
+    settle,
     stop: () => {
       clearInterval(timer);
       wake.cancel();

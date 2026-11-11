@@ -42,6 +42,8 @@ import {
   type Answer,
   answerText,
   askSkippedBy,
+  asksFrom,
+  callAction,
   canAsk,
   type HookAgent,
   type PreToolCall,
@@ -324,16 +326,16 @@ export async function checkPreToolCall(
     io.writeError(`selfhost hook: ${line}; the call was not held up for it`);
   }
 
-  // An ask the session's permission mode would skip (bypassPermissions) is a deny with a
-  // one-time exception, so a person still says yes before the call runs.
+  // An ask that reaches no person (a mode that skips asks, a print or SDK run, CI, a background
+  // run) is a deny with a one-time exception, so a person still says yes before the call runs.
   const skippedBy =
-    decision.verdict === "ask" && canAsk(agent, call.event)
-      ? askSkippedBy(agent, call.permissionMode)
+    decision.verdict === "ask" && asksFrom(agent, call.event)
+      ? askSkippedBy(agent, call.permissionMode, io.env)
       : undefined;
   const answer: Answer =
     decision.verdict === "allow"
       ? "allow"
-      : decision.verdict === "ask" && canAsk(agent, call.event, call.permissionMode)
+      : decision.verdict === "ask" && canAsk(agent, call.event, call.permissionMode, io.env)
         ? "ask"
         : "deny";
   // A deferred call is decided by the agent's own hook for it, unless this one blocks it.
@@ -400,6 +402,7 @@ export async function checkPreToolCall(
   }
 
   const request = "request" in exception ? exception.request : undefined;
+  const action = callAction(call);
   const text =
     hit && answer !== "allow"
       ? explain({
@@ -409,6 +412,9 @@ export async function checkPreToolCall(
           link: ruleLink(hit.rule_id, policy.sources ?? []),
           ...(request ? { exceptionId: request.id } : {}),
           ...(skippedBy && hit.verdict === "ask" ? { skippedBy } : {}),
+          ...(action && toolCall.path !== undefined
+            ? { target: { action, path: toolCall.path } }
+            : {}),
         })
       : undefined;
   return {

@@ -352,7 +352,8 @@
                     "spend_spike",
                     "quality",
                     "policy_report",
-                    "context_promotion"
+                    "context_promotion",
+                    "security"
                   ]
                 }
               },

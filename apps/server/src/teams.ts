@@ -30,7 +30,7 @@ import {
 import { requireBearerToken } from "./auth.js";
 import { type Background, backgroundRoutes } from "./background.js";
 import { contextRoutes } from "./context.js";
-import { eventRoutes, MAX_BODY_BYTES } from "./events.js";
+import { type EventRouteOptions, eventRoutes, MAX_BODY_BYTES } from "./events.js";
 import { type Gateway, gatewayRoutes } from "./gateway.js";
 import { type HandoffRouteOptions, handoffRoutes } from "./handoffs.js";
 import { limit, readBody, rethrow, SMALL_BODY_BYTES } from "./http.js";
@@ -71,8 +71,8 @@ export interface TeamRouteOptions {
   background?: Background;
   /** Run handoffs and share links: default config, public URL and the GitHub App. */
   handoffs?: Omit<HandoffRouteOptions, "now">;
-  /** Called with the kinds of each batch of new events a person token writes. */
-  eventsStored?: (kinds: readonly string[]) => void;
+  /** Called with the kinds and events of each batch of new events a person token writes. */
+  eventsStored?: EventRouteOptions["stored"];
 }
 
 export type PersonEnv = { Bindings: { person: Person; caller: PersonCaller } };
@@ -139,6 +139,7 @@ export function teamRoutes(
     team: (c) => (c.env as EventsEnv).team,
     person: (c) => (c.env as EventsEnv).person,
     ...(eventsStored ? { stored: eventsStored } : {}),
+    ...(now ? { now } : {}),
   });
   events.onError(rethrow);
 

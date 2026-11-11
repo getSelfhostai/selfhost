@@ -10801,6 +10801,7 @@ components:
             - quality
             - policy_report
             - context_promotion
+            - security
         title:
           type: string
         blocking:
@@ -11004,6 +11005,7 @@ components:
                   - quality
                   - policy_report
                   - context_promotion
+                  - security
               title:
                 type: string
               blocking:
@@ -11369,6 +11371,7 @@ components:
                         - quality
                         - policy_report
                         - context_promotion
+                        - security
                     title:
                       type: string
                     blocking:
@@ -11636,6 +11639,7 @@ components:
                       - quality
                       - policy_report
                       - context_promotion
+                      - security
                   title:
                     type: string
                   blocking:

@@ -34,8 +34,16 @@ export interface Explanation {
   link?: string;
   /** The review item that allows this call once when a person approves it. */
   exceptionId?: string;
-  /** The session's permission mode, when it is why an ask became a deny. */
+  /**
+   * Why the session reaches no person, when that is why an ask became a deny: the rest of a
+   * sentence that starts "this <agent> session", such as "runs in dontAsk mode, which skips asks".
+   */
   skippedBy?: string;
+  /**
+   * The file the call reads or changes. The text names which, since a path rule matches reads
+   * too and its message may speak of changes only.
+   */
+  target?: { action: "read" | "change"; path: string };
 }
 
 /** The text each side reads. */
@@ -99,12 +107,24 @@ function tail(e: Explanation): string[] {
 
 const instead = (e: Explanation) => (e.hit.alternative ? [`Instead: ${e.hit.alternative}`] : []);
 
+/** A path as the agent sent it goes into the texts only when it is a plain one. */
+const plainPath = (path: string) => (/^[\w@%+=:,./ -]{1,200}$/.test(path) ? path : undefined);
+
+/** "a read of vercel.json", "a change to db/x.sql", or "a call" with no file. */
+function what(e: Explanation, article: string): string {
+  if (!e.target) return `${article} call`;
+  const path = plainPath(e.target.path);
+  const noun = e.target.action === "read" ? "read" : "change";
+  const of = e.target.action === "read" ? "of" : "to";
+  return path === undefined ? `${article} ${noun} of a file` : `${article} ${noun} ${of} ${path}`;
+}
+
 /** The first line: what happened and why, for the agent or for the person. */
 function headline(e: Explanation, forAgent: boolean): string {
   const rule = `rule ${e.hit.rule_id}`;
-  const subject = forAgent ? "this call" : `a ${e.agent} call`;
+  const subject = forAgent ? what(e, "this") : what(e, `a ${e.agent}`);
   if (e.hit.verdict === "ask" && e.skippedBy) {
-    return `selfhost blocked ${subject}: ${rule} needs a person's yes first, and this ${e.agent} session runs in ${e.skippedBy} mode, which skips asks. ${e.hit.message}`;
+    return `selfhost blocked ${subject}: ${rule} needs a person's yes first, and this ${e.agent} session ${e.skippedBy}. ${e.hit.message}`;
   }
   if (e.hit.verdict === "ask") {
     return `selfhost blocked ${subject}: ${rule} needs a person's approval first, and ${e.agent} cannot ask from a hook. ${e.hit.message}`;
@@ -136,8 +156,9 @@ function deny(e: Explanation): Explained {
  */
 export function explain(e: Explanation): Explained {
   if (e.answer === "deny") return deny(e);
+  const before = e.target ? `before ${what(e, "this")}` : "first";
   const text = [
-    `selfhost: rule ${e.hit.rule_id} asks a person first: ${e.hit.message}`,
+    `selfhost: rule ${e.hit.rule_id} asks a person ${before}: ${e.hit.message}`,
     ...instead(e),
     ...tail(e),
   ].join("\n");

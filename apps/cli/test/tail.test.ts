@@ -20,7 +20,7 @@ import {
   type TailCommandOptions,
 } from "../src/tail/command.js";
 import { FeedReader, feedDir, readWatcher, startFeed } from "../src/tail/feed.js";
-import { clockIn, type TailLine } from "../src/tail/line.js";
+import { clockIn, formatLine, lineOf, type TailLine } from "../src/tail/line.js";
 import { tempDir } from "./run.js";
 
 const FIXTURES = join(import.meta.dirname, "..", "..", "..", "fixtures");
@@ -114,6 +114,38 @@ describe("selfhost tail options", () => {
       "review",
     ]);
     expect(() => parseKinds("tools")).toThrow(/--kind: unknown tools/);
+  });
+});
+
+describe("rule decision lines", () => {
+  const policy = (decision: LedgerEvent["decision"], data?: LedgerEvent["data"]) =>
+    formatLine(
+      lineOf(
+        event({
+          kind: "policy.evaluated",
+          actor: { kind: "system", id: "selfhost-policy" },
+          tool: { name: "Read", input_summary: "vercel.json" },
+          decision,
+          ...(data ? { data } : {}),
+        }),
+        { console: "http://127.0.0.1:4400" },
+      ),
+      clockIn("UTC"),
+    ).split("  ")[3];
+
+  it("says allowed for a call no rule hit, and names the rule otherwise", () => {
+    expect(policy({ verdict: "allow" }, { answer: "allow" })).toBe("allowed on Read: vercel.json");
+    expect(policy({ verdict: "allow", rule_id: "guard.secret_read", mode: "enforce" })).toBe(
+      "allow guard.secret_read on Read: vercel.json",
+    );
+  });
+
+  it("marks an allow under a grant the team server never signed", () => {
+    const line = policy(
+      { verdict: "allow", rule_id: "guard.secret_read", mode: "enforce" },
+      { answer: "allow", exception: { id: "x", used: true }, grant_unverified: true },
+    );
+    expect(line).toBe("ALLOWED UNDER AN UNVERIFIED GRANT guard.secret_read on Read: vercel.json");
   });
 });
 
@@ -237,6 +269,7 @@ describe("selfhost tail on a laptop with import --watch running", () => {
       tokens: 9150,
       cache_hit_rate: 0,
       message: null,
+      grant_unverified: false,
       run_url: `http://127.0.0.1:4400/?screen=run&run=${SESSION}`,
     });
     expect((await lines({ kind: "tool" })).map((l) => l.tool)).toEqual(["Edit", "shell"]);

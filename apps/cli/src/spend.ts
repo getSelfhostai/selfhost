@@ -1,10 +1,13 @@
 import { readFileSync } from "node:fs";
 import { type Ledger, openLedger } from "@selfhost/ledger";
 import {
+  type BudgetResponse,
   type LedgerEvent,
   parseConfig,
   RUNTIME_LEFTOVER_MINUTES,
   type SandboxWasteResponse,
+  type UsageDimension,
+  type UsageResponse,
   validateConfig,
 } from "@selfhost/schema";
 import {
@@ -31,6 +34,8 @@ import { defaultConfigPath } from "./config-file.js";
 import { findConfig } from "./find-config.js";
 import { percent, table, tokens, usd } from "./format.js";
 import { parseSince } from "./import.js";
+import { type Fetch, TeamClient } from "./team/client.js";
+import { readMembership } from "./team/config.js";
 
 export interface SpendCommandOptions {
   since?: string;
@@ -41,12 +46,15 @@ export interface SpendCommandOptions {
   database?: string;
   dataDir?: string;
   config?: string;
+  /** In a team, read this machine's ledger instead of the team server. */
+  local?: boolean;
 }
 
 interface Io {
   env: NodeJS.ProcessEnv;
   write: (line: string) => void;
   now?: Date;
+  fetch?: Fetch;
   /** Where selfhost.toml is looked for, for [alerts]. Without configPath the defaults apply. */
   cwd?: string;
   configPath?: string;
@@ -282,8 +290,142 @@ function printReport(report: SpendReport, write: (line: string) => void): void {
   printSandboxes(report.sandboxes, write);
 }
 
-/** Groups the ledger's cost.recorded events and flags request types that crossed the threshold. */
+/** Team spend as the team server counts it: every laptop's sync, the gateway and OTLP. */
+export interface TeamSpendReport {
+  schema: "selfhost.team_spend/v1";
+  server: string;
+  team: string;
+  from: string;
+  to: string;
+  by: UsageDimension[];
+  /** The rows and total of GET /v1/usage, for the teams this person sees. */
+  usage: Pick<UsageResponse, "rows" | "total" | "teams">;
+  /** GET /v1/budget: this month's spend and every budget that applies to this person. */
+  budget: BudgetResponse;
+}
+
+/** The dimensions the team server groups by; request types are read on a laptop only. */
+const TEAM_DIMENSIONS: readonly UsageDimension[] = ["person", "agent", "model", "team", "day"];
+
+function teamBy(value: string | undefined): UsageDimension[] {
+  if (value === undefined) return ["person"];
+  const names = [...new Set(value.split(",").map((part) => part.trim()))].filter(Boolean);
+  const unknown = names.filter((name) => !(TEAM_DIMENSIONS as readonly string[]).includes(name));
+  if (unknown.length > 0) {
+    throw new Error(
+      `--by in a team takes ${TEAM_DIMENSIONS.join(", ")}, at most two; ${unknown.join(", ")} is read from this machine's own ledger only (--local)`,
+    );
+  }
+  if (names.length === 0 || names.length > 2) {
+    throw new Error(`--by in a team takes one or two of ${TEAM_DIMENSIONS.join(", ")}`);
+  }
+  return names as UsageDimension[];
+}
+
+const money = (value: number | null) => (value === null ? "-" : usd(value));
+
+function printTeamReport(report: TeamSpendReport, write: (line: string) => void): void {
+  write(
+    `Spend of team ${report.team} on ${report.server} from ${report.from.slice(0, 10)} to ${report.to.slice(0, 10)}, by ${report.by.join(", ")}`,
+  );
+  const { rows, total } = report.usage;
+  if (total.requests === 0) {
+    write("No spend in this window on the team server yet. Laptops send theirs on sync.");
+  } else {
+    table(
+      [
+        [...report.by, "requests", "tokens", "usd", "share", "cache hits"],
+        ...rows.map((row) => [
+          ...report.by.map((dimension) => row.group[dimension] ?? ""),
+          String(row.requests),
+          tokens(row.tokens),
+          usd(row.usd),
+          percent(total.usd > 0 ? row.usd / total.usd : 0),
+          cacheText(row.cache_hit_rate),
+        ]),
+        [
+          "total",
+          ...report.by.slice(1).map(() => ""),
+          String(total.requests),
+          tokens(total.tokens),
+          usd(total.usd),
+          "100.0%",
+          cacheText(total.cache_hit_rate),
+        ],
+      ],
+      write,
+      report.by.length + 2,
+    );
+  }
+  const { budget } = report;
+  write("");
+  write(
+    `This ${budget.period}: ${usd(budget.spent_usd)} spent${budget.limit_usd === null ? ", no budget set" : ` of ${usd(budget.limit_usd)}`}${budget.forecast_usd === null ? "" : `, on course for ${usd(budget.forecast_usd)}`}`,
+  );
+  for (const line of budget.budgets ?? []) {
+    write(
+      `  ${line.scope} ${line.period}: ${money(line.spent_usd)} of ${usd(line.limit_usd)}, ${money(line.remaining_usd)} left (${line.enforcement === "gateway" ? "the gateway stops requests at the limit" : "alerts only"})${line.cut_off ? ", cut off now" : ""}`,
+    );
+  }
+  write("Request types and cache tips come from this machine's ledger: selfhost spend --local.");
+}
+
+/** Team mode: spend and budgets from the team server, as `selfhost inbox` reads its list. */
+async function runTeamSpend(
+  options: SpendCommandOptions,
+  io: Io,
+  membership: { server: string; token: string; team: string },
+): Promise<TeamSpendReport> {
+  const now = io.now ?? new Date();
+  const since = parseSince(options.since ?? "7d", now) ?? now;
+  const by = teamBy(options.by);
+  const client = new TeamClient(membership.server, membership.token, io.fetch ?? fetch);
+  const range = { from: since.toISOString(), to: now.toISOString() };
+  const [usage, budget] = await Promise.all([
+    client.usage({ ...range, group_by: by.join(",") }),
+    client.budget(),
+  ]);
+  const report: TeamSpendReport = {
+    schema: "selfhost.team_spend/v1",
+    server: membership.server,
+    team: membership.team,
+    ...range,
+    by,
+    usage: { rows: usage.rows, total: usage.total, teams: usage.teams },
+    budget,
+  };
+  if (options.json) io.write(JSON.stringify(report, null, 2));
+  else printTeamReport(report, io.write);
+  return report;
+}
+
+/**
+ * Spend: in a team, the team server's (GET /v1/usage and /v1/budget), like `selfhost inbox` and
+ * `selfhost tail`; on a laptop, or with --local, --database or --data-dir, this machine's ledger.
+ */
 export async function runSpend(
+  options: SpendCommandOptions,
+  io: Io,
+  ledger: Ledger,
+): Promise<SpendReport>;
+export async function runSpend(
+  options: SpendCommandOptions,
+  io: Io,
+  ledger?: Ledger,
+): Promise<SpendReport | TeamSpendReport>;
+export async function runSpend(
+  options: SpendCommandOptions,
+  io: Io,
+  ledger?: Ledger,
+): Promise<SpendReport | TeamSpendReport> {
+  const local = ledger !== undefined || options.local || options.database || options.dataDir;
+  const membership = local || !io.configPath ? undefined : readMembership(io.configPath);
+  if (membership) return runTeamSpend(options, io, membership);
+  return runLocalSpend(options, io, ledger);
+}
+
+/** Groups the ledger's cost.recorded events and flags request types that crossed the threshold. */
+export async function runLocalSpend(
   options: SpendCommandOptions,
   io: Io,
   ledger?: Ledger,
@@ -362,6 +504,7 @@ export function registerSpend(program: Command): void {
     .option("--json", "print the report as JSON")
     .option("--database <url>", "Postgres url (default: DATABASE_URL, else the embedded ledger)")
     .option("--data-dir <path>", "embedded ledger folder (default: ~/.selfhost/data)")
+    .option("--local", "in a team, read this machine's ledger instead of the team server")
     .option("-c, --config <path>", "path to selfhost.toml, for the [alerts] cache settings")
     .action(async (options: SpendCommandOptions) => {
       const io = {

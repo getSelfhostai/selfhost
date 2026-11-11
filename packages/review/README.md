@@ -71,6 +71,7 @@ Approvals, questions and alerts older than seven days open nothing.
 | `quality`           | `alert.raised`: `quality`, `quality_alarm`                                                       | metric, else model              | no       | 60       |
 | `policy_report`     | Observe-mode `policy.evaluated` block and ask hits of the last full week (Monday to Monday UTC)  | the week                        | no       | 10       |
 | `context_promotion` | `approval.requested` with `data.request` `context_promotion`, written by the team server         | the item (`rule:<name>`, ...)   | no       | 20       |
+| `security`          | `alert.raised` `grant_unverified` from the team server (source `server` only)                    | the flagged event               | no       | 95       |
 
 - A PR's risk score is an input: `data.risk` (`{ score, reasons }`) or `data.risk_score` on
   `pr.opened`. The scoring itself (`ee/risk`) is not imported here. Without one the score is 50.
@@ -94,6 +95,11 @@ Approvals, questions and alerts older than seven days open nothing.
   proposed it. Approving it, by an owner or admin of the team, adds the item to the team's
   context layer; the server applies it the next time anyone reads the team's context. A newer
   proposal of the same item replaces the open one.
+- A `security` item says an allow on a laptop cited a one-time exception the team server never
+  signed, or one already used: a possible forged grant. The team server checks every such allow
+  as a laptop syncs it, stores it flagged `data.grant_unverified` and raises the alert. On a team
+  server the item goes to the team's owners and admins, never to the person whose laptop sent
+  the allow, whatever `[[review.routes]]` says.
 - Items from one run share `group: "run:<run_id>"`, else one session `group: "session:<id>"`.
 - `review.submitted` (the GitHub App's record of an AI reviewer's verdict, see
   [`@selfhost/integrations`](../integrations/README.md#reviewers-second-opinions)) adds the

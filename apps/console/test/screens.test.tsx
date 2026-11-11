@@ -377,6 +377,47 @@ describe("the run view", () => {
     expect(eventLine(call).title).toBe("Tool call: Read");
   });
 
+  it("marks an allow under a grant the server never signed, and an allow no rule hit", () => {
+    const allow = (data: Record<string, unknown>, rule?: string) =>
+      ({
+        id: "01930c4e-2f1a-7b2c-9d3e-0000000000a3",
+        schema: "selfhost.event/v1",
+        ts: "2026-11-08T10:03:00.000Z",
+        source: "hook",
+        kind: "policy.evaluated",
+        actor: { kind: "system", id: "selfhost-policy" },
+        tool: { name: "Read", input_summary: ".env" },
+        decision: {
+          verdict: "allow",
+          by: "selfhost-policy",
+          ...(rule ? { rule_id: rule, mode: "enforce" } : {}),
+        },
+        data,
+      }) as never;
+    expect(
+      eventLine(
+        allow(
+          {
+            answer: "allow",
+            exception: { id: "x", used: true },
+            grant_unverified: true,
+            grant_unverified_reason: "this server never signed a grant for exception x",
+          },
+          "guard.secret_read",
+        ),
+      ),
+    ).toEqual({
+      title: "Allowed under a grant the server never signed: rule guard.secret_read",
+      detail: ".env",
+      warning: "Possible forged grant: this server never signed a grant for exception x",
+    });
+    expect(eventLine(allow({ answer: "allow" }))).toEqual({ title: "Allowed", detail: ".env" });
+    expect(
+      eventLine(allow({ answer: "allow", exception: { id: "x", used: true } }, "guard.secret_read"))
+        .title,
+    ).toBe("Rule guard.secret_read allowed");
+  });
+
   it("uses the run route and links the tracer when the server has one", async () => {
     mockServer({
       "GET /v1/runs/run-7": {

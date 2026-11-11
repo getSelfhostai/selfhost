@@ -27,6 +27,7 @@ const KIND_NAMES: Record<ReviewItemKind, string> = {
   quality: "Code quality",
   policy_report: "Rules report",
   context_promotion: "Team context proposal",
+  security: "Security alert",
 };
 
 const AGENT_NAMES: Record<AgentVendor, string> = {
@@ -88,6 +89,8 @@ export function summaryOf(item: ReviewItem): string {
       return "A context item was proposed to the team";
     case "policy_report":
       return "Last week's report of what observed rules would have blocked";
+    case "security":
+      return "An allow cited an exception the server never signed: possible forged grant";
     // selfhost writes these titles from numbers; anything else in them falls back.
     case "budget":
       return numbersOnly(item.title) ?? "A budget or plan limit needs attention";
