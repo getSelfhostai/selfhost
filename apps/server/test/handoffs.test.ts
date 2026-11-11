@@ -340,9 +340,15 @@ describe("handing a run to a teammate", () => {
     expect(toMia.body.from).toBe("ben@example.com");
     // Ben no longer holds it, so he cannot hand it again; the team's owner can.
     expect((await handOff(as.ben, { to: "ana@example.com" })).status).toBe(403);
-    const byOwner = await handOff(as.olga, { to: "ana@example.com" });
+    // The files git says the work changed, masked like every path, in place of the tool calls'.
+    const byOwner = await handOff(as.olga, {
+      to: "ana@example.com",
+      files: ["src/limits.ts", "scripts/ACME-77.sh"],
+    });
     expect(byOwner.status).toBe(201);
     expect(byOwner.body).toMatchObject({ from: "mia@example.com", by: "olga@example.com" });
+    expect(byOwner.body.files).toEqual(["src/limits.ts", "scripts/[redacted:ticket].sh"]);
+    expect(toMia.body.files).toEqual(["src/limits.ts"]);
     const late = await json<ApiError>(
       await as.mia(`/v1/handoffs/${toMia.body.id}/takeover`, "POST"),
     );

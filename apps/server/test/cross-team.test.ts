@@ -24,7 +24,9 @@ afterEach(async () => {
 
 let n = 0;
 const id = () => `019a7000-0000-7000-8000-${String(++n).padStart(12, "0")}`;
-const ts = (minute: number) => new Date(Date.UTC(2026, 10, 11, 10, minute)).toISOString();
+// Minutes from just now, so waiting items are inside their deadline whenever this runs.
+const START = Date.now() - 2 * 60_000;
+const ts = (minute: number) => new Date(START + minute * 60_000).toISOString();
 
 async function setup() {
   const ledger = await openLedger({ dataDir: "memory://" });

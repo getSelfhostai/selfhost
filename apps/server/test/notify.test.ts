@@ -1,4 +1,7 @@
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { type Ledger, openLedger } from "@selfhost/ledger";
+import { CLIENT_HEADER } from "@selfhost/mcp";
 import { appriseApi, runNotify } from "@selfhost/notify";
 import { openReviewList, refreshReviewList } from "@selfhost/review";
 import type { JoinResponse, LedgerEvent, NotifySettings } from "@selfhost/schema";
@@ -105,16 +108,18 @@ async function team(apprise = fakeApprise(), eventsStored?: (kinds: readonly str
   const created = (await (await admin("/v1/teams", "POST", { name: "Web" })).json()) as {
     invite: string;
   };
+  const tokens: Record<string, string> = {};
   const join = async (person: string) => {
     const joined = (await (
       await admin("/v1/join", "POST", { invite: created.invite, person })
     ).json()) as JoinResponse;
+    tokens[person] = joined.token;
     return caller(app, joined.token);
   };
   // The first to join is the team's owner.
   const lead = await join("lead@example.com");
   const dev = await join("dev@example.com");
-  return { app, admin, lead, dev, apprise };
+  return { app, admin, lead, dev, apprise, tokens };
 }
 
 describe("notification settings", () => {
@@ -276,6 +281,54 @@ describe("the notification job on a team server", () => {
       expect(Date.now() - posted).toBeLessThan(5000);
     } finally {
       reviews.stop();
+      notify.stop();
+    }
+  });
+
+  it("pushes an agent's ask_human question within seconds, with no refresh job running", async () => {
+    const HOUR = 60 * 60 * 1000;
+    const apprise = fakeApprise();
+    const { app, dev, tokens } = await team(apprise);
+    await dev("/v1/notify/targets", "POST", { url: PHONE, name: "phone" });
+    // Only the notify job runs: the question's item comes from the MCP route's own refresh.
+    // The job reads the server's clock, which dates the question.
+    const notify = startNotifyJob(ledger, {
+      deliver: apprise.deliver,
+      intervalMs: HOUR,
+      wakeMs: 50,
+      now: () => clock,
+      log: () => {},
+    });
+    const transport = new StreamableHTTPClientTransport(new URL("http://selfhost.test/v1/mcp"), {
+      requestInit: {
+        headers: {
+          authorization: `Bearer ${tokens["dev@example.com"]}`,
+          [CLIENT_HEADER]: "claude-code/2.1.0",
+        },
+      },
+      fetch: async (url, init) => app.request(String(url), init),
+    });
+    const client = new Client({ name: "claude-code", version: "2.1.0" });
+    try {
+      await notify.run();
+      expect(apprise.received).toEqual([]);
+      await client.connect(transport);
+      const posted = Date.now();
+      const asked = await client.callTool({
+        name: "ask_human",
+        arguments: { question: "May the cache TTL drop to 30 seconds?" },
+      });
+      expect(asked.isError).toBeFalsy();
+      await vi.waitFor(
+        () =>
+          expect(apprise.received.map((r) => r.title)).toContain(
+            "selfhost: Question, an agent waits",
+          ),
+        { timeout: 5000, interval: 25 },
+      );
+      expect(Date.now() - posted).toBeLessThan(5000);
+    } finally {
+      await client.close();
       notify.stop();
     }
   });

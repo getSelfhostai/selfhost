@@ -100,8 +100,9 @@ if (background && process.env.SELFHOST_BACKGROUND_RECOVER !== "off") {
 }
 
 // Set once the jobs below start: an agent that starts to wait wakes the review refresh, and a
-// refresh that files an item or a budget alert wakes the notify pass, so its push goes out in
-// seconds instead of at the next periodic pass.
+// refresh that raises a budget alert wakes the notify pass. Any refresh that files an item, on
+// any path (the job, an agent's ask_human through MCP), wakes the notify pass itself (see
+// startNotifyJob), so its push goes out in seconds instead of at the next periodic pass.
 const wakeups: { refresh?: () => void; notify?: () => void } = {};
 const eventsStored = (kinds: readonly string[]) => {
   if (kinds.some((kind) => WAITING_EVENT_KINDS.has(kind))) wakeups.refresh?.();

@@ -106,24 +106,53 @@ export function makePrivate(dir: string): boolean {
 
 /**
  * Creates the embedded ledger's folder for its owner only. One made by an earlier release (0755
- * with 0666 files) is fixed here, once, with a note on stderr. The folder holds notify target
- * URLs and everything the agents did.
+ * with 0666 files) is fixed here. The folder holds notify target URLs and everything the agents
+ * did. true when the folder was open to others, for the note openPrivate prints.
  */
-function privateDataDir(dataDir: string): void {
+function privateDataDir(dataDir: string): boolean {
   mkdirSync(dataDir, { recursive: true, mode: PRIVATE_DIR });
-  if ((statSync(dataDir).mode & 0o077) === 0) return;
-  if (makePrivate(dataDir)) {
-    console.error(
-      `selfhost: ${dataDir} was readable by other users; it is now private to you (folders 0700, files 0600).`,
-    );
-  }
+  if ((statSync(dataDir).mode & 0o077) === 0) return false;
+  return makePrivate(dataDir);
 }
 
 const isFolder = (dataDir: string) => dataDir !== MEMORY_DATA_DIR && !dataDir.includes("://");
 
+/** Sets the process umask while `fn` runs, where the platform lets a process set it. */
+async function withUmask<T>(mask: number, fn: () => Promise<T>): Promise<T> {
+  let previous: number | undefined;
+  try {
+    previous = process.umask(mask);
+  } catch {
+    // Worker threads cannot change the umask; the files are made private after open instead.
+  }
+  try {
+    return await fn();
+  } finally {
+    if (previous !== undefined) process.umask(previous);
+  }
+}
+
+/**
+ * Opens PGlite on a folder that only its owner can read: the folder before, every file PGlite
+ * made on open after (it makes them 0666 under its file system), and new files under a umask
+ * of 077 while it opens. A folder an earlier release left open is noted on stderr once, after it
+ * is private.
+ */
+async function openPrivate(dataDir: string): Promise<PGlite> {
+  if (!isFolder(dataDir)) return PGlite.create(dataDir);
+  const fixed = privateDataDir(dataDir);
+  const db = await withUmask(0o077, () => PGlite.create(dataDir));
+  makePrivate(dataDir);
+  if (fixed) {
+    console.error(
+      `selfhost: ${dataDir} was readable by other users; it is now private to you (folders 0700, files 0600).`,
+    );
+  }
+  return db;
+}
+
 async function connectPglite(dataDir: string): Promise<Database> {
-  if (isFolder(dataDir)) privateDataDir(dataDir);
-  const db = await PGlite.create(dataDir);
+  const db = await openPrivate(dataDir);
   const wrap = (client: Pick<PGlite, "query" | "exec">): Queryable => ({
     async query<T>(text: string, params: unknown[] = []) {
       return (await client.query<T>(text, params)).rows;
@@ -315,8 +344,7 @@ export async function rowCounts(db: Queryable): Promise<Record<string, number>> 
  * while nothing else has the folder open: PGlite allows one process at a time.
  */
 export async function dumpDataDir(dataDir: string): Promise<Uint8Array> {
-  if (isFolder(dataDir)) privateDataDir(dataDir);
-  const db = await PGlite.create(dataDir);
+  const db = await openPrivate(dataDir);
   try {
     const archive = await db.dumpDataDir("gzip");
     return privateArchive(new Uint8Array(await archive.arrayBuffer()));

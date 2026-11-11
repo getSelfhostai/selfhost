@@ -104,7 +104,8 @@ export function packageJson() {
     homepage: `https://github.com/${repo}#readme`,
     bugs: { url: `https://github.com/${repo}/issues` },
     repository: { type: "git", url: `git+https://github.com/${repo}.git`, directory: "apps/cli" },
-    license: cli.license,
+    // The bundle ships the ee/ code too, under ee/LICENSE; the source package stays Apache-2.0.
+    license: `${cli.license} AND LicenseRef-selfhost-ee`,
     type: "module",
     bin: { selfhostai: "dist/main.js", selfhost: "dist/main.js" },
     files: [...cli.files, "ee/LICENSE"],

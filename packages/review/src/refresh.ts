@@ -749,6 +749,26 @@ async function applyTimeouts(ledger: Ledger, db: Database, run: Run): Promise<vo
  * approvals past their deadline. Safe to run often and from several
  * processes: every signal is read once, and refreshes take turns.
  */
+/** Who hears that a refresh opened items, by ledger (see onItemsCreated). */
+const createdListeners = new WeakMap<Ledger, Set<(created: number) => void>>();
+
+/**
+ * Calls `listener` after every refresh of this ledger's review list that opened items, whoever
+ * ran it (the refresh job, an MCP question, a context proposal), with how many it opened: so
+ * the notify pass can go out in seconds for each of them. Returns the call that stops it.
+ */
+export function onItemsCreated(ledger: Ledger, listener: (created: number) => void): () => void {
+  let listeners = createdListeners.get(ledger);
+  if (!listeners) {
+    listeners = new Set();
+    createdListeners.set(ledger, listeners);
+  }
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
 export async function refreshReviewList(
   ledger: Ledger,
   list: ReviewList,
@@ -774,6 +794,17 @@ export async function refreshReviewList(
   });
   await applyTimeouts(ledger, db, run);
   const log = options.log ?? console.warn;
+  if (run.result.created > 0) {
+    for (const listener of createdListeners.get(ledger) ?? []) {
+      try {
+        listener(run.result.created);
+      } catch (error) {
+        log(
+          `review list: a listener for new items failed: ${error instanceof Error ? error.message : error}`,
+        );
+      }
+    }
+  }
   for (const refused of run.result.refused ?? []) {
     log(
       `review list: decision ${refused.event_id} by ${refused.by} on item ${refused.item_id} not applied: ${refused.reason}`,

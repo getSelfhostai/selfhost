@@ -835,11 +835,16 @@ installed and is left in place by `guard uninstall`.
 
 | Agent       | Hook                                                                                                   | Block       | Ask                                                   |
 | ----------- | ------------------------------------------------------------------------------------------------------ | ----------- | ----------------------------------------------------- |
-| Claude Code | `PreToolUse` in `~/.claude/settings.json`                                                              | yes         | yes                                                   |
+| Claude Code | `PreToolUse` in `~/.claude/settings.json`                                                              | yes         | yes, except where the session skips asks              |
 | Codex       | `PreToolUse` in `config.toml` (or `hooks.json`); approve it with `/hooks`                              | yes         | answered as a block: Codex hooks cannot ask           |
 | Cursor      | `preToolUse`, `beforeShellExecution`, `beforeReadFile`, `beforeMCPExecution` in `~/.cursor/hooks.json` | yes         | on shell and MCP calls; elsewhere answered as a block |
 | OpenCode    | plugin `~/.config/opencode/plugins/selfhost.js` (`tool.execute.before`)                                | yes         | answered as a block                                   |
 | Goose       | none: Goose has no hooks                                                                               | not covered | not covered                                           |
+
+An enforced ask is put to a person only where the agent stops for one. Claude Code in
+`bypassPermissions` or `dontAsk` mode (the payload's `permission_mode`) skips the hook's ask, so
+there the call is blocked instead, with a one-time exception a person can approve, and the agent
+is told to ask the person to run it or approve the exception.
 
 On a pre-tool event the hook finds `selfhost.toml` from the call's folder (the nearest one up to
 the repository root, else the team policy pulled by the last sync, else the built-in defaults),

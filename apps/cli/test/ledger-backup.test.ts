@@ -200,6 +200,22 @@ describe("selfhost ledger files are for their owner only", () => {
     expect(loose.map((entry) => entry.name)).toEqual([]);
   });
 
+  it("keeps the files private while the ledger is open, not only after it closes", async () => {
+    const dir = tempDir("open");
+    const data = dir.path("data");
+    const ledger = await openLedger({ dataDir: data });
+    try {
+      expect(modeOf(data)).toBe(0o700);
+      const loose = readdirSync(data, { recursive: true, withFileTypes: true }).filter(
+        (entry) =>
+          entry.isFile() && (statSync(join(entry.parentPath, entry.name)).mode & 0o077) !== 0,
+      );
+      expect(loose.map((entry) => entry.name)).toEqual([]);
+    } finally {
+      await ledger.close();
+    }
+  });
+
   it("fixes a ledger an earlier release left open to others, once, with a note", async () => {
     const dir = tempDir("loose");
     const data = dir.path("data");

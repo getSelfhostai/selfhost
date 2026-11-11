@@ -158,7 +158,10 @@ export const HandoffSchema = Type.Object(
     uncommitted: Type.Array(Type.String(), {
       description: "Files with changes not committed on the sender's machine: they did not travel.",
     }),
-    files: Type.Array(Type.String(), { description: "Files the run's tool calls touched." }),
+    files: Type.Array(Type.String(), {
+      description:
+        "Files the run changed: from git on the machine that handed it over when it could tell, else the files of the run's tool calls.",
+    }),
     open_items: Type.Array(HandoffItemSchema, {
       description: "The run's open review items; they route to the new owner.",
     }),
@@ -197,6 +200,13 @@ export const CreateHandoffRequestSchema = Type.Object(
     pushed: Type.Optional(Type.Boolean()),
     remote: Type.Optional(HandoffRemoteSchema),
     uncommitted: Type.Optional(Type.Array(Type.String(), { maxItems: HANDOFF_FILES_MAX })),
+    files: Type.Optional(
+      Type.Array(Type.String(), {
+        maxItems: HANDOFF_FILES_MAX,
+        description:
+          "Files the work changed, from git on the machine handing over: the branch against its merge base with the default branch, plus uncommitted changes. Absent: the server lists the files of the run's tool calls.",
+      }),
+    ),
     turns: Type.Optional(
       Type.Integer({ minimum: 1, maximum: HANDOFF_TURNS_MAX, default: HANDOFF_TURNS_DEFAULT }),
     ),

@@ -6,7 +6,8 @@ import { isAbsolute, resolve } from "node:path";
  * event, so it imports no workspace package.
  *
  * Vendor docs, as of November 2026:
- * - Claude Code: https://code.claude.com/docs/en/hooks (PreToolUse, hookSpecificOutput)
+ * - Claude Code: https://code.claude.com/docs/en/hooks (PreToolUse, hookSpecificOutput; an
+ *   "ask" reaches no person in bypassPermissions or dontAsk mode, so there an ask is a deny)
  * - Codex: https://learn.chatgpt.com/docs/hooks (PreToolUse; "ask" is parsed but not
  *   supported, so an ask is answered as a deny)
  * - Cursor: https://cursor.com/docs/hooks (preToolUse, beforeShellExecution, beforeReadFile,
@@ -95,6 +96,8 @@ export interface PreToolCall {
   mcpServer?: string;
   model?: string;
   toolUseId?: string;
+  /** The session's permission mode, as the agent names it (Claude Code, Codex). */
+  permissionMode?: string;
   /**
    * Another hook of the same agent decides this call: answer allow and record nothing, unless
    * this check blocks it. Cursor sends Shell, Read and MCP calls to preToolUse and then to their
@@ -182,6 +185,7 @@ function claudeOrCodex(vendor: Vendor, event: string, p: Json): PreToolCall | un
     model: text(p.model),
     toolUseId: text(p.tool_use_id),
     mcpServer: mcpServerOf(tool),
+    permissionMode: text(p.permission_mode),
   };
   if (vendor === "codex" && tool === "apply_patch") {
     const files = patchFiles(commandOf(input) ?? "");
@@ -280,9 +284,32 @@ export function preToolCall(agent: HookAgent, payload: Json): PreToolCall | unde
 
 export type Answer = "allow" | "deny" | "ask";
 
-/** Whether the agent can put a call to a person from this event. */
-export function canAsk(agent: HookAgent, event: string): boolean {
-  if (agent === "claude") return true;
+/**
+ * Claude Code permission modes in which a hook's "ask" stops the call for a person. In
+ * bypassPermissions the call runs without a prompt, and in dontAsk anything that would prompt is
+ * denied with no one asked, so in both a hook's ask decides nothing a person sees. A mode not
+ * named here (a new one) is treated the same way: an enforced ask is never let through on a
+ * guess. No mode in the payload (older versions) is the default mode.
+ */
+const CLAUDE_ASKING_MODES = new Set(["default", "manual", "acceptEdits", "plan", "auto"]);
+
+/**
+ * The session's permission mode when it skips asks, so an ask from the hook would not reach a
+ * person; undefined when the mode stops to ask (or the agent cannot ask at all).
+ */
+export function askSkippedBy(agent: HookAgent, mode: string | undefined): string | undefined {
+  if (agent !== "claude" || mode === undefined) return undefined;
+  if (CLAUDE_ASKING_MODES.has(mode)) return undefined;
+  // The mode goes into the texts: only a plain name, as the agent sends it.
+  return /^[A-Za-z][\w-]{0,39}$/.test(mode) ? mode : "an unknown";
+}
+
+/**
+ * Whether the agent can put a call to a person from this event, in the session's permission
+ * mode when the payload names one.
+ */
+export function canAsk(agent: HookAgent, event: string, mode?: string): boolean {
+  if (agent === "claude") return askSkippedBy(agent, mode) === undefined;
   if (agent === "cursor") return CURSOR_ASKS.has(event);
   return false;
 }

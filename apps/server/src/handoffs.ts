@@ -342,7 +342,9 @@ export function handoffRoutes(
             }
           : null,
         uncommitted: (body.uncommitted ?? []).map((path) => maskSecrets(path, patterns).text),
-        files: touchedFiles(events),
+        files: body.files
+          ? body.files.map((path) => maskSecrets(path, patterns).text)
+          : touchedFiles(events),
         open_items: openItems,
         cost_usd: summary.cost_usd,
         tokens: summary.tokens,
