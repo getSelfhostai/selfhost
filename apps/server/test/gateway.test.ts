@@ -490,6 +490,13 @@ describe("the gateway without a proxy in front", () => {
       expect(await checkAgentUrl("bifrost", "https://s.example.com/llm", bifrostHealth)).toEqual({
         ok: true,
       });
+      // No answer from here is a note, not a failure: the server may not reach its own address.
+      const unreachable = (async () => {
+        throw new TypeError("fetch failed");
+      }) as unknown as typeof fetch;
+      const quiet = await checkAgentUrl("bifrost", "https://s.example.com/llm", unreachable);
+      expect(quiet.ok).toBe(true);
+      expect(quiet.note).toContain("could not reach");
     } finally {
       await ledger.close();
     }

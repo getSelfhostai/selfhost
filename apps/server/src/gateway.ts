@@ -49,7 +49,7 @@ export interface Gateway {
    * Checks baseUrl, the address agents use, when it is not the one the client manages: an
    * answer other than the gateway's own health makes GET /v1/gateway report it unhealthy.
    */
-  agentHealth?: () => Promise<{ ok: boolean; detail?: string }>;
+  agentHealth?: () => Promise<{ ok: boolean; detail?: string; note?: string }>;
   /** For the /llm/ proxy. Default: the global fetch. */
   fetch?: typeof fetch;
   /** [integrations.router] providers of the server's own config, for teams that set none. */
@@ -143,14 +143,16 @@ const HEALTH_PATH: Record<RouterTool, string> = {
 };
 
 /**
- * Asks the gateway's health route at the address agents use. Anything but the gateway's own
- * healthy answer (another server's 401, a 404 from a proxy without /llm/, no answer) says so.
+ * Asks the gateway's health route at the address agents use. A wrong answer there (another
+ * server's 401, a 404 from a proxy without /llm/) means agents' requests will fail. No answer at
+ * all is only a note: this server often cannot reach its own public address (a container behind
+ * Caddy, split DNS), while agents on laptops can.
  */
 export async function checkAgentUrl(
   tool: RouterTool,
   baseUrl: string,
   send: typeof fetch = fetch,
-): Promise<{ ok: boolean; detail?: string }> {
+): Promise<{ ok: boolean; detail?: string; note?: string }> {
   const url = `${baseUrl}${HEALTH_PATH[tool]}`;
   const wrong = (what: string) => ({
     ok: false,
@@ -165,9 +167,10 @@ export async function checkAgentUrl(
     }
     return { ok: true };
   } catch (error) {
-    return wrong(
-      `could not be reached from this server (${error instanceof Error ? error.message : String(error)})`,
-    );
+    return {
+      ok: true,
+      note: `Agents are given ${baseUrl}, which this server could not reach to check (${error instanceof Error ? error.message : String(error)}). That is common behind a proxy; check it from a laptop.`,
+    };
   }
 }
 
@@ -280,7 +283,8 @@ export function gatewayRoutes(router: Router, ledger: Ledger, gateway: Gateway |
     const config = await configOf(ledger, team);
     const [managed, reach] = await Promise.all([
       client.health(),
-      gateway.agentHealth?.() ?? Promise.resolve<{ ok: boolean; detail?: string }>({ ok: true }),
+      gateway.agentHealth?.() ??
+        Promise.resolve<{ ok: boolean; detail?: string; note?: string }>({ ok: true }),
     ]);
     const health = managed.ok && !reach.ok ? reach : managed;
     let key: GatewayKey | null = null;
@@ -307,7 +311,11 @@ export function gatewayRoutes(router: Router, ledger: Ledger, gateway: Gateway |
       key,
       last_sync: gateway.state.sync,
       last_usage: gateway.state.usage,
-      notes: client.tool === "litellm" ? [...GATEWAY_NOTES, LITELLM_NOTE] : [...GATEWAY_NOTES],
+      notes: [
+        ...GATEWAY_NOTES,
+        ...(client.tool === "litellm" ? [LITELLM_NOTE] : []),
+        ...(reach.note ? [reach.note] : []),
+      ],
     };
     return c.json(status);
   });
