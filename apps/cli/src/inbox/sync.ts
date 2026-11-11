@@ -20,7 +20,7 @@ import {
   updateInboxCache,
   writeInboxCache,
 } from "./store.js";
-import { closedText, replayLines } from "./text.js";
+import { closedText, needsAnotherApprover, replayLines } from "./text.js";
 
 /** Solo mode's review list over the local ledger. */
 export type OpenLocalReviewList = (ledger: Ledger) => ReviewList | Promise<ReviewList>;
@@ -53,15 +53,26 @@ export async function listAll(
   return items;
 }
 
-/** Reads the open items (the person's, or everyone's with `all`) and saves them as the copy. */
+/**
+ * Reads the open items (the person's, or everyone's with `all`) and saves them as the copy.
+ * With `stuck`, the person's list also gets the exceptions their own agent asked for that went
+ * to nobody, because they are the team's only owner or admin: nobody else sees those.
+ */
 export async function refreshCache(
   list: ReviewList,
   path: string,
   scope: InboxScope,
-  options: { all?: boolean; now: Date; pid?: number | null },
+  options: { all?: boolean; now: Date; pid?: number | null; stuck?: boolean },
 ): Promise<ReviewItem[]> {
   const all = options.all ?? false;
   const items = await listAll(list, { state: "open", ...(all ? {} : { owner: scope.person }) });
+  if (!all && options.stuck) {
+    const own = new Set(items.map((item) => item.id));
+    const open = await listAll(list, { state: "open" });
+    items.push(
+      ...open.filter((item) => !own.has(item.id) && needsAnotherApprover(item, scope.person)),
+    );
+  }
   const previous = readInboxCache(path, scope);
   writeInboxCache(path, {
     schema: "selfhost.inbox_cache/v1",

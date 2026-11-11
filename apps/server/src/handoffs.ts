@@ -105,9 +105,15 @@ async function readableTeams(caller: Caller): Promise<string[] | undefined> {
 function shown(handoff: Handoff, patterns: readonly RedactionPattern[]): Handoff {
   return {
     ...handoff,
+    remote: handoff.remote ?? null,
     note: handoff.note === null ? null : maskSecrets(handoff.note, patterns).text,
     turns: handoff.turns.map((turn) => ({ ...turn, text: maskSecrets(turn.text, patterns).text })),
   };
+}
+
+/** A remote URL without the user name or password a sender's git may keep in it. */
+export function withoutUserInfo(url: string): string {
+  return url.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@]*@/i, "$1");
 }
 
 /** The pull requests a run's events link to, on github.com. */
@@ -329,6 +335,12 @@ export function handoffRoutes(
         branch,
         commit: body.commit ?? null,
         pushed: body.pushed ?? null,
+        remote: body.remote
+          ? {
+              url: maskSecrets(withoutUserInfo(body.remote.url), patterns).text,
+              branch: body.remote.branch,
+            }
+          : null,
         uncommitted: (body.uncommitted ?? []).map((path) => maskSecrets(path, patterns).text),
         files: touchedFiles(events),
         open_items: openItems,

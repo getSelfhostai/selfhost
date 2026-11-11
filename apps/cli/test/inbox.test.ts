@@ -163,6 +163,21 @@ function teamServer(list: FakeList) {
       const itemId = decodeURIComponent(route[1] ?? "");
       const body = JSON.parse(String(init.body));
       try {
+        const asked = list.items.get(itemId);
+        if (
+          route[2] === "decision" &&
+          body.verdict === "approve" &&
+          asked?.kind === "exception" &&
+          asked.requested_by === PERSON
+        ) {
+          return json(403, {
+            error: {
+              code: "forbidden",
+              message:
+                "You cannot approve an exception your own agent asked for. An owner or admin of the team approves it, or the team's selfhost.toml sets [review] self_approve_exceptions = true.",
+            },
+          });
+        }
         if (route[2] === "decision") {
           expect(Object.keys(body).every((key) => key === "verdict" || key === "reason")).toBe(
             true,
@@ -259,9 +274,11 @@ describe("selfhost inbox in team mode", () => {
       queued: [],
     });
     expect(report.items.map((entry: ReviewItem) => entry.title)).toEqual(["Item 2", "Item 1"]);
-    // The runs handed to the person come next; this fake server has none (404), so none show.
+    // The open list once more, for an exception of theirs that went to nobody, then the runs
+    // handed to the person; this fake server has none (404), so none show.
     expect(server.calls).toEqual([
       `GET ${SERVER}/v1/review-items?state=open&owner=dev%40example.com&limit=1000`,
+      `GET ${SERVER}/v1/review-items?state=open&limit=1000`,
       `GET ${SERVER}/v1/handoffs?to=me&state=pending`,
     ]);
 
@@ -423,6 +440,47 @@ describe("selfhost inbox in team mode", () => {
       (await run(["inbox", "--json"], { ...deps, now: new Date("2026-11-08T14:00:01Z") })).out,
     );
     expect(later.items).toHaveLength(2);
+  });
+
+  it("shows the sole owner's own exception, routed to nobody, with why and the ways forward", async () => {
+    blockNetwork();
+    const why =
+      "the team's only owner or admin, dev@example.com, is the person whose agent was blocked, and nobody approves their own exception. Invite an admin to the team, or set [review] self_approve_exceptions = true in the team's selfhost.toml";
+    const stuck = item(3, {
+      kind: "exception",
+      title: "Allow once: Bash: git push --force",
+      owners: [],
+      requested_by: PERSON,
+      blocking: true,
+      route: { step: "none", from: "nobody", why },
+    });
+    const other = item(4, { kind: "exception", owners: [], requested_by: BOB });
+    const list = new FakeList([item(1), stuck, other]);
+    const server = teamServer(list);
+    const deps = { configPath: joined().configPath, fetch: server.fetch, now: NOW };
+
+    const listed = await run(["inbox"], deps);
+    expect(listed.out).toContain("exception requested, needs another approver");
+    expect(listed.out).toContain("Needs another approver: your own agent asked");
+    expect(listed.out).toContain("self_approve_exceptions = true");
+    expect(listed.out).not.toContain("Item 4");
+    const json = parse((await run(["inbox", "--json"], deps)).out);
+    expect(json.items.map((entry: ReviewItem) => entry.id)).toEqual([item(1).id, stuck.id]);
+
+    const opened = await run(["inbox", "open", stuck.id.slice(-8), "--no-open"], deps);
+    expect(opened.out).toContain(`Routed to nobody: ${why}`);
+
+    const refused = await run(["inbox", "approve", stuck.id.slice(-8)], {
+      ...deps,
+      stdinIsTTY: true,
+    });
+    expect(refused.code).toBe(1);
+    expect(refused.err).toContain("you are the team's only owner or admin");
+    expect(refused.err).toContain("selfhost team invite");
+    expect(refused.err).toContain("[review] self_approve_exceptions = true");
+    // Denying it is still theirs to do.
+    const denied = await run(["inbox", "deny", stuck.id.slice(-8)], { ...deps, stdinIsTTY: true });
+    expect(denied.code).toBe(0);
   });
 
   it("opens an item with its brief", async () => {

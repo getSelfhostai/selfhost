@@ -107,6 +107,27 @@ export const HandoffTranscriptInfoSchema = Type.Object(
   { additionalProperties: false, title: "HandoffTranscriptInfo" },
 );
 
+export const HandoffRemoteSchema = Type.Object(
+  {
+    url: Type.String({
+      minLength: 1,
+      maxLength: 2000,
+      description:
+        "The remote's URL as the sender's git has it, with any user name or password taken out.",
+    }),
+    branch: NonEmpty({
+      description:
+        "The branch on that remote: the upstream's name, which can differ from the local one.",
+    }),
+  },
+  {
+    additionalProperties: false,
+    title: "HandoffRemote",
+    description: "Where the branch was pushed: the remote and branch its upstream names.",
+  },
+);
+export type HandoffRemote = Static<typeof HandoffRemoteSchema>;
+
 export const HandoffSchema = Type.Object(
   {
     schema: Type.Literal(HANDOFF_SCHEMA),
@@ -128,6 +149,12 @@ export const HandoffSchema = Type.Object(
       description:
         "Whether the branch's commits were on its upstream when it was handed over, as the sender's git knew; null when not known.",
     }),
+    remote: Type.Optional(
+      Type.Union([HandoffRemoteSchema, Type.Null()], {
+        description:
+          "The remote the branch was pushed to, so takeover fetches from it whatever the new owner named that remote; null when the branch tracks none. Absent on handoffs from before it was recorded.",
+      }),
+    ),
     uncommitted: Type.Array(Type.String(), {
       description: "Files with changes not committed on the sender's machine: they did not travel.",
     }),
@@ -168,6 +195,7 @@ export const CreateHandoffRequestSchema = Type.Object(
     branch: Type.Optional(NonEmpty()),
     commit: Type.Optional(Type.String({ pattern: "^[0-9a-f]{7,64}$" })),
     pushed: Type.Optional(Type.Boolean()),
+    remote: Type.Optional(HandoffRemoteSchema),
     uncommitted: Type.Optional(Type.Array(Type.String(), { maxItems: HANDOFF_FILES_MAX })),
     turns: Type.Optional(
       Type.Integer({ minimum: 1, maximum: HANDOFF_TURNS_MAX, default: HANDOFF_TURNS_DEFAULT }),

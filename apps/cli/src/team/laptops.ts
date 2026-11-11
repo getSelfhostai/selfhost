@@ -23,6 +23,18 @@ function files(row: LaptopRow): string {
   return state === "pending" ? `${pending} pending` : FILES[state];
 }
 
+/**
+ * The status column. Managed settings that wait on an admin install are a one-time step on
+ * that laptop, not a fault, so they read as what to do rather than as a flag.
+ */
+function statusText(row: LaptopRow): string {
+  if (row.status !== "not_installed") return row.status;
+  return row.managed.state === "off" ? "managed off" : "needs sudo once";
+}
+
+/** Whether a row is flagged for more than the one-time admin install. */
+const flaggedRow = (row: LaptopRow) => row.flags.some((flag) => flag !== "not_installed");
+
 /** Parses --silent-days. */
 function silentDays(value: string | undefined): number | undefined {
   if (value === undefined) return undefined;
@@ -50,9 +62,13 @@ export async function teamLaptops(
     io.write(JSON.stringify(report, null, 2));
     return report;
   }
-  const flagged = report.laptops.filter((row) => row.flags.length > 0).length;
+  const flagged = report.laptops.filter(flaggedRow).length;
+  const waiting = report.laptops.filter(
+    (row) => row.flags.includes("not_installed") && row.managed.state === "pending",
+  ).length;
+  const off = report.laptops.some((row) => row.managed.state === "off");
   io.write(
-    `Team ${team} on ${server}: ${plural(report.laptops.length, "laptop")}, ${flagged} flagged. ` +
+    `Team ${team} on ${server}: ${plural(report.laptops.length, "laptop")}, ${flagged} flagged${waiting > 0 ? `, ${waiting} waiting on a one-time admin install` : ""}. ` +
       (report.policy_hash
         ? `Team policy ${report.policy_hash.slice(0, 12)}.`
         : "The team has no policy yet."),
@@ -62,7 +78,7 @@ export async function teamLaptops(
       [
         ["status", "person", "laptop", "platform", "policy", "files", "last heartbeat"],
         ...report.laptops.map((row) => [
-          row.status === "not_installed" ? "not installed" : row.status,
+          statusText(row),
           row.person,
           row.hostname ?? row.machine.slice(0, 8),
           row.platform,
@@ -80,8 +96,14 @@ export async function teamLaptops(
     );
   }
   io.write(
-    `behind: runs another policy than the team's. silent: nothing for ${report.silent_days} days. not installed: managed settings pending or turned off.`,
+    `behind: runs another policy than the team's. silent: nothing for ${report.silent_days} days.`,
   );
+  if (waiting > 0) {
+    io.write(
+      "needs sudo once: managed settings not installed on that laptop yet. Its owner runs, once per policy version, the admin commands selfhost status prints there (selfhost never runs sudo itself).",
+    );
+  }
+  if (off) io.write("off: joined with --no-managed, so syncs never install the managed settings.");
   return report;
 }
 

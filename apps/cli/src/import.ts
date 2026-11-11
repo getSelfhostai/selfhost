@@ -405,7 +405,7 @@ function describeLaptop({ laptop }: Pick<SyncReport, "laptop">): string[] {
   return [
     // Quiet on the usual sync, when every file was already in place.
     ...(laptop?.managed?.files.some((file) => file.status !== "current")
-      ? describeManaged(laptop.managed)
+      ? describeManaged(laptop.managed, laptop.managed_shown_before === true)
       : []),
     ...(laptop?.managed_error ? [`Managed settings not installed: ${laptop.managed_error}`] : []),
   ];

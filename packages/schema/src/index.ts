@@ -30,6 +30,7 @@ export * from "./roi.js";
 export * from "./run.js";
 export * from "./sandbox.js";
 export * from "./second-opinion.js";
+export * from "./short-id.js";
 export * from "./tail.js";
 export * from "./team.js";
 export { TomlLineIndex } from "./toml-lines.js";

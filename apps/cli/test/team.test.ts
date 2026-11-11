@@ -635,6 +635,12 @@ describe("admin commands", () => {
     expect(parse(notMine.out).error).toMatch(/^Permission denied: Changing team settings/);
     const listed = await run(["team", "repo", "list"], member);
     expect(listed.out).toBe(`Team platform on ${SERVER} owns acme/api.`);
+    // An add says it once, then only the repos it owns besides.
+    const second = await run(["team", "repo", "add", "acme/web"], owner);
+    expect(second.out).toBe(
+      `Team platform on ${SERVER} owns acme/web (acme/web): every run in it is the team's.\nIt also owns acme/api.`,
+    );
+    await run(["team", "repo", "remove", "acme/web", "--json"], owner);
     const removed = parse((await run(["team", "repo", "remove", "acme/api", "--json"], owner)).out);
     expect(removed.repos).toEqual([]);
 

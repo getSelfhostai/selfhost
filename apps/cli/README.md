@@ -916,7 +916,10 @@ A person can allow one blocked call, once. Nothing here opens the ledger in the 
    <call>` with secrets masked. The call was already denied and the agent went on, so the item
    is not blocking and has no timeout (an agent that makes its case over MCP and waits makes it
    blocking). On a team server it goes to the team's owners and admins, and the person whose
-   agent was blocked cannot approve it unless `[review] self_approve_exceptions = true`. A retry
+   agent was blocked cannot approve it unless `[review] self_approve_exceptions = true`. When
+   that person is the team's only owner or admin, the item goes to nobody: their `selfhost inbox`
+   still lists it, marked `needs another approver`, `inbox open` shows why, and `inbox approve`
+   says the two ways on (invite an admin, or set `self_approve_exceptions`). A retry
    of the same call replaces it with the new id. In solo mode
    `selfhost inbox` and `selfhost review list` read blocked calls from the spool first, so the
    item is there right after the block.
@@ -1012,10 +1015,13 @@ selfhost team leave
   the team policy hash it runs (its config version) and whether its managed files are current,
   pending, off or none. `selfhost team laptops [--silent-days 7]` lists every laptop of the team
   from the newest heartbeat of each, flagged `behind` (another policy hash than the team's),
-  `silent` (nothing for `--silent-days`) or `not installed` (managed files pending or off), and
-  the people with no heartbeat from any laptop. The console's Team screen shows the same list.
-- `selfhost status` shows solo or team, the server, the person, the last sync and the team
-  policy hash, from local files only. Sync progress is in `~/.selfhost/sync.json`.
+  `silent` (nothing for `--silent-days`), `needs sudo once` (managed files waiting on the admin
+  commands `selfhost status` prints on that laptop, a one-time step per policy version, not
+  counted as flagged) or `managed off` (joined with `--no-managed`), and the people with no
+  heartbeat from any laptop. Join prints those admin commands, and so does the first sync of each
+  policy version; later syncs say in one line that they are still to run. The console's Team screen shows the same list.
+- `selfhost status` shows solo or team, the server, the person, the last sync, the team
+  policy hash and the admin commands the managed settings still need, from local files only. Sync progress is in `~/.selfhost/sync.json`.
 - `selfhost team policy push [file]` checks a `selfhost.toml` (default: this repository's) and
   makes it the team's policy (owners and admins; the server checks the role, and it refuses
   inside an agent session); `selfhost team policy show` prints it and `selfhost team policy pull
@@ -1122,8 +1128,12 @@ that are not committed (they do not travel; you are told), the files the run tou
 review items, cost so far, a redacted summary of the last turns and your note. Push the branch
 first; the command warns when commits are not on its upstream.
 
-`selfhost takeover <id>` runs on the new owner's machine, under their own login. It fetches the
-branch and switches to it when the working tree is clean, writes a short brief to
+`selfhost takeover <id>` runs on the new owner's machine, under their own login. `<id>` is the
+end of the handoff id as `selfhost handoff` and `selfhost inbox` show it (the start works too,
+but handoffs made the same minute share it). It fetches the branch from the remote it was pushed
+to (the handoff records that remote's URL, so it does not matter what this clone calls it), else
+from each remote in turn, else prints the exact `git fetch` command, and switches to it when the
+working tree is clean, writes a short brief to
 `.selfhost/handoff/<id>.md` (kept out of commits through `.git/info/exclude`) and prints how to
 carry on. `--print` prints the brief and changes nothing.
 
@@ -1303,9 +1313,12 @@ agent session (`disconnect --dry-run` excepted), and the hooks block an agent th
   0600), so `connect codex` after `connect claude-code` (or `connect env`) uses the same key and
   the same `[budget.person]` limits. `connect --rotate` gives a new value and rewrites every
   agent connect wrote on the laptop, or changes nothing and names the settings that can't take
-  it; settings you pasted yourself need the new value pasted too. Disconnecting the last agent
-  deletes the kept copy, and a key that is not kept on the laptop needs `--rotate`. Run keys are
-  never kept. Provider keys never leave the gateway.
+  it; settings you pasted yourself need the new value pasted too. When the server's gateway
+  moved to another address, `connect <agent>` again points every agent connect wrote at the new
+  one with the same key: no `disconnect` and no `--rotate`. `disconnect` keeps the kept copy while
+  another agent here uses it, and says so; disconnecting the last agent deletes it, and a key that
+  is not kept on the laptop needs `--rotate`. Run keys are never kept. Provider keys never leave
+  the gateway.
 - `connect <agent>` writes the gateway and the key into the agent's own config, with a
   `.selfhost-backup-*` copy of each file it changes and a record in
   `~/.selfhost/gateway-connect.json`; `disconnect [agent]` (or `connect <agent> --undo`) puts

@@ -4,6 +4,7 @@ import {
   type CreateTeamResponse,
   EVENT_SCHEMA,
   type JoinResponse,
+  type LedgerEvent,
   type NotifySettings,
   type ReviewItemsPage,
 } from "@selfhost/schema";
@@ -114,21 +115,24 @@ describe("writes into another team", () => {
   }
 
   const PR = "https://github.com/acme/web/pull/7";
-  const opened = () => ({
+  const opened = (): LedgerEvent => ({
     id: id(),
     schema: EVENT_SCHEMA,
     ts: ts(0),
-    source: "cli",
+    source: "github",
     kind: "pr.opened",
+    actor: { kind: "person", id: "lead@example.com" },
     repo: "acme/web",
     agent: { vendor: "claude_code" },
     links: { pr_url: PR },
     data: { title: "web PR" },
   });
+  // pr.opened is the server's to write (see the refusal below), so the tests append it.
+  const open = (h: { ledger: Ledger }) => h.ledger.append([opened()], { team: "web" });
 
   it("keeps a member's events naming another team's repo in their own team", async () => {
     const h = await twoTeams();
-    expect((await h.lead("/v1/events", "POST", { events: [opened()] })).status).toBe(200);
+    await open(h);
     await h.refresh();
     const decision = {
       id: id(),
@@ -148,9 +152,16 @@ describe("writes into another team", () => {
     expect(items.items.map((i) => `${i.kind}:${i.state}`)).toEqual(["pr:open"]);
   });
 
-  it("refuses review.submitted, pr.merged and pr.closed from a person token", async () => {
+  it("refuses review.submitted, pr.merged, pr.closed and pr.opened from a person token", async () => {
     const h = await twoTeams();
-    expect((await h.lead("/v1/events", "POST", { events: [opened()] })).status).toBe(200);
+    await open(h);
+    // An agent PR item with the risk score and tests-first result the writer likes.
+    const forgedOpen = { ...opened(), id: id(), data: { risk_score: 0, tests: "passed" } };
+    const refused = await h.lead("/v1/events", "POST", { events: [forgedOpen] });
+    expect(refused.status).toBe(400);
+    expect(JSON.stringify(await refused.json())).toContain(
+      "A person token cannot write pr.opened: only the server records it",
+    );
     for (const kind of ["review.submitted", "pr.merged", "pr.closed"]) {
       const forged = {
         id: id(),

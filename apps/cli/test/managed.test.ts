@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, statSync } from "node:f
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { PolicyCompileReport } from "../src/policy/compile.js";
-import { systemPath, vendorsHere } from "../src/policy/managed.js";
+import { describeManaged, systemPath, vendorsHere } from "../src/policy/managed.js";
 import type { MdmBundle } from "../src/policy/mdm.js";
 import { run, tempDir } from "./run.js";
 
@@ -39,6 +39,25 @@ describe("systemPath", () => {
     ).toBe(
       join("/tmp/r", "C", "Program Files", "ClaudeCode", "managed-settings.d", "selfhost.json"),
     );
+  });
+});
+
+describe("describeManaged", () => {
+  it("says file needs for one and files need for more", () => {
+    const pending = (n: number) =>
+      describeManaged({
+        state: "pending",
+        platform: "linux",
+        files: Array.from({ length: n }, (_, i) => ({
+          vendor: "codex" as const,
+          target: `/etc/codex/${i}`,
+          path: `/etc/codex/${i}`,
+          status: "needs_admin" as const,
+        })),
+        commands: Array.from({ length: n }, (_, i) => `sudo install ${i}`),
+      });
+    expect(pending(1)).toContain("1 file needs an admin. Run (selfhost never runs sudo itself):");
+    expect(pending(2)).toContain("2 files need an admin. Run (selfhost never runs sudo itself):");
   });
 });
 

@@ -21,27 +21,33 @@ const ADMIN = "admin-token";
 let ledger: Ledger;
 let fetch: (url: string, init: RequestInit) => Promise<Response>;
 let tokens: Record<string, string> = {};
+/** The same server after its operator moved the gateway to another address. */
+let movedFetch: (url: string, init: RequestInit) => Promise<Response>;
 
 beforeAll(async () => {
   ledger = await openLedger({ dataDir: "memory://" });
   const fake = fakeBifrost();
-  const app = createApp({
-    version: "test",
-    ledger,
-    token: ADMIN,
-    gateway: {
-      client: bifrostClient({
-        url: "http://bifrost:8080",
-        username: "selfhost",
-        password: fake.password,
-        fetch: fake.fetch,
-        minIntervalMs: 0,
-      }),
-      baseUrl: "https://selfhost.example.com/llm",
-      state: { sync: null, usage: null },
-    },
-  });
+  const server = (baseUrl: string) =>
+    createApp({
+      version: "test",
+      ledger,
+      token: ADMIN,
+      gateway: {
+        client: bifrostClient({
+          url: "http://bifrost:8080",
+          username: "selfhost",
+          password: fake.password,
+          fetch: fake.fetch,
+          minIntervalMs: 0,
+        }),
+        baseUrl,
+        state: { sync: null, usage: null },
+      },
+    });
+  const app = server("https://selfhost.example.com/llm");
+  const moved = server("https://llm.acme.example.com");
   fetch = async (url, init) => app.request(url, init);
+  movedFetch = async (url, init) => moved.request(url, init);
   const json = { "content-type": "application/json" };
   const created = (await (
     await app.request(`${SERVER}/v1/teams`, {
@@ -53,7 +59,7 @@ beforeAll(async () => {
   tokens = {};
   const people = [
     ...["ada", "ben", "cy", "di", "ed", "flo", "gus", "hal", "ivy"],
-    ...["jo", "kim", "lu", "max", "ned"],
+    ...["jo", "kim", "lu", "max", "ned", "oz"],
   ];
   for (const person of people.map((name) => `${name}@example.com`)) {
     const res = await app.request(`${SERVER}/v1/join`, {
@@ -222,6 +228,56 @@ describe("selfhost gateway connect", () => {
     expect(again.code).toBe(1);
     expect(again.err).toContain("not kept on this laptop");
     expect(again.err).toContain("--rotate");
+  });
+
+  it("follows the gateway to a new address with the kept key, and says why it keeps the key", async () => {
+    const { home, deps } = laptop("oz@example.com");
+    const settings = home.write(".claude/settings.json", "{}\n");
+    const first = JSON.parse(
+      (await run(["gateway", "connect", "claude-code", "--json"], deps)).out,
+    ) as ConnectReport;
+    expect((await run(["gateway", "connect", "codex"], deps)).code).toBe(0);
+
+    // The operator moved the gateway: connecting again points every agent at it, same key.
+    const moved = { ...deps, fetch: movedFetch };
+    const again = await run(["gateway", "connect", "claude-code", "--json"], moved);
+    expect(again.code).toBe(0);
+    const report = JSON.parse(again.out) as ConnectReport;
+    expect(report).toMatchObject({
+      status: "connected",
+      reused: true,
+      value: first.value,
+      moved_from: "https://selfhost.example.com/llm",
+      base_url: "https://llm.acme.example.com",
+    });
+    expect(report.notes.join(" ")).toContain("No disconnect or --rotate is needed");
+    expect(JSON.parse(readFileSync(settings, "utf8")).env).toEqual({
+      ANTHROPIC_BASE_URL: "https://llm.acme.example.com/anthropic",
+      ANTHROPIC_AUTH_TOKEN: first.value,
+    });
+    const toml = parseToml(readFileSync(home.path(".codex/config.toml"), "utf8")) as {
+      model_providers: { selfhost: { base_url: string; experimental_bearer_token: string } };
+    };
+    expect(toml.model_providers.selfhost).toMatchObject({
+      base_url: "https://llm.acme.example.com/openai/v1",
+      experimental_bearer_token: first.value,
+    });
+    // The kept copy follows, so the next connect has nothing to move.
+    const settled = JSON.parse(
+      (await run(["gateway", "connect", "codex", "--json"], moved)).out,
+    ) as ConnectReport;
+    expect(settled.moved_from).toBeUndefined();
+
+    const one = await run(["gateway", "disconnect", "codex"], moved);
+    expect(one.out).toContain(
+      "Kept ~/.selfhost/gateway-key.json, the copy of your key: Claude Code here still uses it.",
+    );
+    expect(existsSync(home.path(".selfhost/gateway-key.json"))).toBe(true);
+    const last = await run(["gateway", "disconnect", "claude-code", "--json"], moved);
+    expect(JSON.parse(last.out)).toMatchObject({
+      key_removed: home.path(".selfhost/gateway-key.json"),
+      key_kept_for: [],
+    });
   });
 
   it("refuses to rotate while a connected agent's settings can't take the new value", async () => {

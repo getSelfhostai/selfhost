@@ -13,7 +13,7 @@ import { drainSpool } from "../hooks/drain.js";
 import type { ExceptionGrant, GrantsReport, LookupItem } from "../hooks/exceptions.js";
 import { spoolDir } from "../hooks/receive.js";
 import { requireHuman } from "../human.js";
-import { type Fetch, TeamClient } from "../team/client.js";
+import { type Fetch, TeamApiError, TeamClient } from "../team/client.js";
 import { readMembership } from "../team/config.js";
 import { grantLine, refreshGrants } from "./grants.js";
 import { closedItem, httpReviewList } from "./http.js";
@@ -44,9 +44,12 @@ import {
   closedText,
   fullId,
   itemLines,
+  needsAnotherApprover,
   queuedText,
   replayLines,
   resolveId,
+  SOLE_APPROVER_REFUSAL,
+  shortIds,
   writeItems,
 } from "./text.js";
 
@@ -361,7 +364,7 @@ export async function runInboxList(
     const all = options.all ?? false;
     if (session.list) {
       try {
-        await refreshCache(session.list, paths.cache, scope, { all, now });
+        await refreshCache(session.list, paths.cache, scope, { all, now, stuck: true });
       } catch (error) {
         goOffline(session, error);
       }
@@ -389,11 +392,14 @@ export async function runInboxList(
     if (session.offline) {
       io.write(`${notLive(session)}. Showing the copy saved ${ago(cache.written_at, now)}.`);
     }
-    writeItems(report.items, now, io.write);
+    writeItems(report.items, now, io.write, session.mode === "team" ? scope.person : undefined);
     if (handoffs && handoffs.length > 0) {
       io.write("");
       io.write("Handed to you:");
-      for (const handoff of handoffs) io.write(`  ${handoffLine(handoff, now)}`);
+      const short = shortIds(handoffs.map((handoff) => handoff.id));
+      for (const handoff of handoffs) {
+        io.write(`  ${handoffLine(handoff, short.get(handoff.id) ?? handoff.id, now)}`);
+      }
       io.write("Take one over in a clone of its repository: selfhost takeover <id>");
     }
     if (queued.length > 0) {
@@ -418,10 +424,10 @@ async function pendingHandoffs(io: InboxIo): Promise<Handoff[] | undefined> {
   }
 }
 
-function handoffLine(handoff: Handoff, now: Date): string {
+function handoffLine(handoff: Handoff, id: string, now: Date): string {
   const note = handoff.note?.split("\n")[0]?.trim();
   const where = [handoff.repo, handoff.branch].filter(Boolean).join(" ");
-  return `${handoff.id.slice(0, 8)}  run ${handoff.run_id.slice(0, 8)} from ${handoff.from}, ${duration(now.getTime() - Date.parse(handoff.created_at))} ago${where ? `, ${where}` : ""}${note ? `: ${note}` : ""}`;
+  return `${id}  run ${handoff.run_id.slice(0, 8)} from ${handoff.from}, ${duration(now.getTime() - Date.parse(handoff.created_at))} ago${where ? `, ${where}` : ""}${note ? `: ${note}` : ""}`;
 }
 
 interface Applied {
@@ -524,6 +530,21 @@ function printAction(
   }
 }
 
+/**
+ * The server's 403 for approving one's own exception says only that it is not allowed. When the
+ * person is also the team's only owner or admin, nobody can approve it: say so, with the ways on.
+ */
+async function soleApprover(
+  error: unknown,
+  list: ReviewList,
+  id: string,
+  person: string,
+): Promise<unknown> {
+  if (!(error instanceof TeamApiError) || error.status !== 403) return error;
+  const item = await list.get(id).catch(() => undefined);
+  return item && needsAnotherApprover(item, person) ? new Error(SOLE_APPROVER_REFUSAL) : error;
+}
+
 /** `selfhost inbox approve|deny <id>`: answers an item; the list records the decision. */
 export async function runInboxDecide(
   verdict: "approve" | "deny",
@@ -537,8 +558,12 @@ export async function runInboxDecide(
     const report = await act(session, arg, verdict, { reason }, async (list, id) => {
       const at = session.now.toISOString();
       const by = session.scope.person;
-      const response = await list.decide(id, { verdict, by, at, ...(reason ? { reason } : {}) });
-      return { item: response.item, decision_event: response.decision_event };
+      try {
+        const response = await list.decide(id, { verdict, by, at, ...(reason ? { reason } : {}) });
+        return { item: response.item, decision_event: response.decision_event };
+      } catch (error) {
+        throw await soleApprover(error, list, id, by);
+      }
     });
     if (report.outcome === "applied" && report.item?.kind === "exception") {
       const grants = await sessionGrants(session);

@@ -10544,6 +10544,27 @@ components:
           anyOf:
             - type: boolean
             - type: "null"
+        remote:
+          description: The remote the branch was pushed to, so takeover fetches from it whatever the new owner named that remote; null when the branch tracks none. Absent on handoffs from before it was recorded.
+          anyOf:
+            - additionalProperties: false
+              title: HandoffRemote
+              description: "Where the branch was pushed: the remote and branch its upstream names."
+              type: object
+              required:
+                - url
+                - branch
+              properties:
+                url:
+                  minLength: 1
+                  maxLength: 2000
+                  description: The remote's URL as the sender's git has it, with any user name or password taken out.
+                  type: string
+                branch:
+                  minLength: 1
+                  description: "The branch on that remote: the upstream's name, which can differ from the local one."
+                  type: string
+            - type: "null"
         uncommitted:
           description: "Files with changes not committed on the sender's machine: they did not travel."
           type: array
@@ -10709,6 +10730,24 @@ components:
           type: string
         pushed:
           type: boolean
+        remote:
+          additionalProperties: false
+          title: HandoffRemote
+          description: "Where the branch was pushed: the remote and branch its upstream names."
+          type: object
+          required:
+            - url
+            - branch
+          properties:
+            url:
+              minLength: 1
+              maxLength: 2000
+              description: The remote's URL as the sender's git has it, with any user name or password taken out.
+              type: string
+            branch:
+              minLength: 1
+              description: "The branch on that remote: the upstream's name, which can differ from the local one."
+              type: string
         uncommitted:
           maxItems: 200
           type: array
@@ -10863,6 +10902,27 @@ components:
                 description: Whether the branch's commits were on its upstream when it was handed over, as the sender's git knew; null when not known.
                 anyOf:
                   - type: boolean
+                  - type: "null"
+              remote:
+                description: The remote the branch was pushed to, so takeover fetches from it whatever the new owner named that remote; null when the branch tracks none. Absent on handoffs from before it was recorded.
+                anyOf:
+                  - additionalProperties: false
+                    title: HandoffRemote
+                    description: "Where the branch was pushed: the remote and branch its upstream names."
+                    type: object
+                    required:
+                      - url
+                      - branch
+                    properties:
+                      url:
+                        minLength: 1
+                        maxLength: 2000
+                        description: The remote's URL as the sender's git has it, with any user name or password taken out.
+                        type: string
+                      branch:
+                        minLength: 1
+                        description: "The branch on that remote: the upstream's name, which can differ from the local one."
+                        type: string
                   - type: "null"
               uncommitted:
                 description: "Files with changes not committed on the sender's machine: they did not travel."
@@ -11109,6 +11169,27 @@ components:
               description: Whether the branch's commits were on its upstream when it was handed over, as the sender's git knew; null when not known.
               anyOf:
                 - type: boolean
+                - type: "null"
+            remote:
+              description: The remote the branch was pushed to, so takeover fetches from it whatever the new owner named that remote; null when the branch tracks none. Absent on handoffs from before it was recorded.
+              anyOf:
+                - additionalProperties: false
+                  title: HandoffRemote
+                  description: "Where the branch was pushed: the remote and branch its upstream names."
+                  type: object
+                  required:
+                    - url
+                    - branch
+                  properties:
+                    url:
+                      minLength: 1
+                      maxLength: 2000
+                      description: The remote's URL as the sender's git has it, with any user name or password taken out.
+                      type: string
+                    branch:
+                      minLength: 1
+                      description: "The branch on that remote: the upstream's name, which can differ from the local one."
+                      type: string
                 - type: "null"
             uncommitted:
               description: "Files with changes not committed on the sender's machine: they did not travel."

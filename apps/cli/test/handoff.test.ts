@@ -245,7 +245,7 @@ describe("handing a run over and taking it over, two people on two machines", ()
     ]);
     expect(out[0]).toBe("Handed Claude Code run 5f0c2b1e to ben@example.com.");
     expect(out.join("\n")).toContain(
-      `ben@example.com takes it over with: selfhost takeover ${handoffId.slice(0, 8)}`,
+      `ben@example.com takes it over with: selfhost takeover ${handoffId.slice(-8)}`,
     );
   });
 
@@ -265,7 +265,7 @@ describe("handing a run over and taking it over, two people on two machines", ()
       now: NOW,
     });
     expect(text.out).toContain("Handed to you:");
-    expect(text.out).toContain(`${handoffId.slice(0, 8)}  run 5f0c2b1e from ana@example.com`);
+    expect(text.out).toContain(`${handoffId.slice(-8)}  run 5f0c2b1e from ana@example.com`);
   });
 
   it("lets only Ben take it over", async () => {
@@ -278,7 +278,7 @@ describe("handing a run over and taking it over, two people on two machines", ()
   it("takes it over in Ben's clone: branch, brief kept out of commits, and Claude Code's own resume", async () => {
     const { io: benIo, out } = io("ben", benClone);
     const report = await runTakeover(handoffId.slice(0, 8), {}, benIo);
-    expect(report.checkout).toEqual({ fetched: true, switched: true });
+    expect(report.checkout).toEqual({ fetched: true, remote: "origin", switched: true });
     expect(sh(benClone, "rev-parse", "--abbrev-ref", "HEAD")).toBe(BRANCH);
     expect(sh(benClone, "rev-parse", "HEAD")).toBe(report.handoff.commit);
     expect(report.handoff.state).toBe("taken");
@@ -352,5 +352,79 @@ describe("handing a run over and taking it over, two people on two machines", ()
       why: expect.stringMatching(/^No native resume: the team does not share transcripts/),
     });
     expect(out.join("\n")).toContain(`# Handoff: Codex run ${CODEX_SESSION}`);
+  });
+
+  it("fetches from the remote the branch was pushed to, and tells same-minute handoffs apart", async () => {
+    const team = root.path("team.git");
+    const teamBranch = "ana/team-only";
+    sh(root.root, "init", "--bare", "--initial-branch=main", team);
+    sh(anaClone, "remote", "add", "team", team);
+    sh(anaClone, "switch", "-c", teamBranch);
+    root.write("ana/api/src/team.ts", "export const TEAM = true;\n");
+    sh(anaClone, "add", "src/team.ts");
+    sh(anaClone, "commit", "-m", "Team only");
+    sh(anaClone, "push", "-u", "team", teamBranch);
+    root.write("ana/api/selfhost.toml", "version = 1\n");
+    const sessions = [
+      "7a1d2c3b-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+      "8b2e3d4c-5f6a-4b7c-9d8e-0f1a2b3c4d5e",
+    ];
+    const res = await fetch(`${SERVER}/v1/events`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${tokens.ana}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        events: sessions.map((session) =>
+          event({
+            kind: "session.started",
+            ts: "2026-11-11T11:00:00.000Z",
+            session_id: session,
+            data: { cwd: anaClone },
+          }),
+        ),
+      }),
+    });
+    expect(res.status).toBe(200);
+
+    const handed = [];
+    for (const session of sessions) {
+      const { io: anaIo, out } = io("ana", root.root);
+      const report = await runHandoff(session, { to: "ben@example.com" }, anaIo);
+      handed.push({ report, out });
+    }
+    const [first, second] = handed.map(({ report }) => report.handoff.id) as [string, string];
+    // Made the same minute: their start is the same timestamp, so the CLI shows their end.
+    expect(first.slice(0, 8)).toBe(second.slice(0, 8));
+    expect(handed[0]?.report.handoff.remote).toEqual({ url: team, branch: teamBranch });
+    expect(handed[0]?.report.warnings).toEqual([
+      "1 file(s) have changes that are not committed; they stay on this machine.",
+      "selfhost.toml is not committed yet (selfhost config, not work in progress): commit it so teammates and the new owner get the same rules.",
+    ]);
+    expect(handed[0]?.out.at(-1)).toBe(
+      `ben@example.com takes it over with: selfhost takeover ${first.slice(-8)}`,
+    );
+    expect(handed[1]?.out.at(-1)).toBe(
+      `ben@example.com takes it over with: selfhost takeover ${second.slice(-8)}`,
+    );
+    await expect(runTakeover(first.slice(0, 8), {}, io("ben", benClone).io)).rejects.toThrow(
+      /2 pending handoffs start or end with/,
+    );
+
+    // Ben calls the team's remote "upstream", and origin does not have the branch.
+    sh(benClone, "remote", "add", "upstream", team);
+    const { io: benIo, out } = io("ben", benClone);
+    const taken = await runTakeover(first.slice(-8), {}, benIo);
+    expect(taken.checkout).toEqual({ fetched: true, remote: "upstream", switched: true });
+    expect(sh(benClone, "rev-parse", "--abbrev-ref", "HEAD")).toBe(teamBranch);
+    expect(sh(benClone, "rev-parse", "HEAD")).toBe(taken.handoff.commit);
+    expect(out).toContain(`  On branch ${teamBranch}, fetched from upstream.`);
+
+    // A clone with no remote that has it: the exact command to fetch it from where it went.
+    const other = root.path("ben", "other");
+    sh(root.root, "clone", origin, other);
+    const lost = await runTakeover(second.slice(-8), { repo: other }, io("ben", other).io);
+    expect(lost.checkout).toMatchObject({ fetched: false });
+    expect(lost.warnings[0]).toContain(
+      `git fetch ${team} ${teamBranch}:${teamBranch} && git switch ${teamBranch}`,
+    );
   });
 });

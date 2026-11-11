@@ -51,6 +51,11 @@ export interface LaptopReport {
   managed: ManagedReport | null;
   /** Why the team policy could not be compiled into managed files. */
   managed_error?: string;
+  /**
+   * true when an earlier join or sync already printed the admin commands for this policy's
+   * managed settings: a sync then says so in one line instead of printing them again.
+   */
+  managed_shown_before?: boolean;
   heartbeat: { sent: boolean; machine: string; error?: string };
 }
 
@@ -149,6 +154,35 @@ const hashOf = (beat: LaptopHeartbeat) =>
   createHash("sha256").update(JSON.stringify(beat)).digest("hex");
 
 /**
+ * Keeps the admin commands the managed settings still need, for selfhost status, and whether
+ * they were printed for this version of the team policy already. Returns true when they were and
+ * this is a sync (`always` false), which then does not print them again.
+ */
+function rememberCommands(
+  configPath: string,
+  state: SyncState,
+  commands: string[],
+  always: boolean,
+): boolean {
+  const key =
+    commands.length > 0
+      ? createHash("sha256")
+          .update(`${state.policy_hash ?? ""}\n${commands.join("\n")}`)
+          .digest("hex")
+      : undefined;
+  const before = state.managed_shown;
+  const same = (state.managed_commands ?? []).join("\n") === commands.join("\n") && before === key;
+  if (!same) {
+    if (commands.length > 0) state.managed_commands = commands;
+    else delete state.managed_commands;
+    if (key === undefined) delete state.managed_shown;
+    else state.managed_shown = key;
+    writeSyncState(configPath, state);
+  }
+  return !always && key !== undefined && before === key;
+}
+
+/**
  * The laptop part of a join or sync: installs the managed files of the pulled team policy, then
  * sends a heartbeat. On sync (`always` false) the heartbeat goes only when what it says changed
  * or the last one is an hour old. A failed heartbeat is reported, never thrown: the next sync
@@ -163,6 +197,7 @@ export async function reportLaptop(
   always: boolean,
 ): Promise<LaptopReport> {
   const installed = installTeamManaged(configPath, membership, laptop, state.managed_off === true);
+  const shownBefore = rememberCommands(configPath, state, installed.report?.commands ?? [], always);
   const machine = machineId(configPath);
   const now = laptop.now?.() ?? new Date();
   const beat = heartbeat(machine, laptop, state.policy_hash ?? null, installed.report);
@@ -173,6 +208,7 @@ export async function reportLaptop(
   const report: LaptopReport = {
     managed: installed.report,
     ...(installed.error === undefined ? {} : { managed_error: installed.error }),
+    ...(shownBefore ? { managed_shown_before: true } : {}),
     heartbeat: { sent: false, machine },
   };
   if (!due) return report;

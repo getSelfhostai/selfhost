@@ -1,30 +1,12 @@
-import type { ReviewItem } from "@selfhost/schema";
+import { type ReviewItem, shortId, shortIds } from "@selfhost/schema";
 import { duration } from "../alerts/text.js";
 import { plural, table } from "../format.js";
 import type { QueuedAction } from "./store.js";
 import type { ReplayEntry } from "./sync.js";
 
-const SHORT = 8;
 const compact = (id: string) => id.replaceAll("-", "").toLowerCase();
 
-/**
- * The shortest tail, at least 8 characters, that tells each id apart from the others. Item ids
- * are UUIDv7: their first characters are a timestamp, so items made the same minute share them,
- * while the tail is random.
- */
-export function shortIds(ids: readonly string[]): Map<string, string> {
-  const short = new Map<string, string>();
-  for (const id of ids) {
-    let length = SHORT;
-    const taken = (n: number) => ids.some((other) => other !== id && other.endsWith(id.slice(-n)));
-    while (length < id.length && (taken(length) || id.at(-length) === "-")) length++;
-    short.set(id, id.slice(-length));
-  }
-  return short;
-}
-
-/** The short form of one id, as a line about a single item shows it. */
-export const shortId = (id: string): string => (id.length > SHORT ? id.slice(-SHORT) : id);
+export { shortId, shortIds };
 
 const FULL_ID = /^[0-9a-f]{32}$/;
 
@@ -81,14 +63,43 @@ const age = (item: ReviewItem, now: Date) => duration(now.getTime() - Date.parse
 const kindText = (item: ReviewItem) =>
   item.kind === "exception" ? "exception requested" : item.kind;
 
+/**
+ * An exception the person's own agent asked for that went to nobody: they are the team's only
+ * owner or admin, and nobody approves their own exception. The inbox shows it to them anyway,
+ * since nobody else sees it, as one that needs another approver.
+ */
+export function needsAnotherApprover(item: ReviewItem, person: string | undefined): boolean {
+  return (
+    item.kind === "exception" &&
+    item.state === "open" &&
+    item.route?.step === "none" &&
+    item.owners.length === 0 &&
+    person !== undefined &&
+    item.requested_by?.toLowerCase() === person.toLowerCase()
+  );
+}
+
+/** What to do about an exception that needs another approver. */
+export const ANOTHER_APPROVER_HOW =
+  "Invite an admin to approve it (selfhost team invite, then selfhost team role <person> admin once they join), or set [review] self_approve_exceptions = true in the team's selfhost.toml (selfhost team policy push selfhost.toml).";
+
+/** The refusal for approving one's own exception as the team's only owner or admin. */
+export const SOLE_APPROVER_REFUSAL = `You cannot approve an exception your own agent asked for, and you are the team's only owner or admin, so nobody else can approve it either. ${ANOTHER_APPROVER_HOW}`;
+
 /** The list as aligned columns, with the shortest ids that tell the items apart. */
-export function itemRows(items: readonly ReviewItem[], now: Date): string[][] {
+export function itemRows(items: readonly ReviewItem[], now: Date, person?: string): string[][] {
   const short = shortIds(items.map((item) => item.id));
+  const kind = (item: ReviewItem) =>
+    needsAnotherApprover(item, person)
+      ? `${kindText(item)}, needs another approver`
+      : item.blocking
+        ? `${kindText(item)}, blocking`
+        : kindText(item);
   return [
     ["ID", "KIND", "RISK", "AGE", "TITLE"],
     ...items.map((item) => [
       short.get(item.id) ?? item.id,
-      item.blocking ? `${kindText(item)}, blocking` : kindText(item),
+      kind(item),
       String(item.risk.score),
       age(item, now),
       item.repo ? `${item.title} (${item.repo})` : item.title,
@@ -100,6 +111,7 @@ export function writeItems(
   items: readonly ReviewItem[],
   now: Date,
   write: (line: string) => void,
+  person?: string,
 ): void {
   if (items.length === 0) {
     write("Nothing to review.");
@@ -107,9 +119,14 @@ export function writeItems(
   }
   const blocking = items.filter((item) => item.blocking).length;
   write(`${plural(items.length, "item")} to review${blocking ? `, ${blocking} blocking` : ""}:`);
-  table(itemRows(items, now), write);
+  table(itemRows(items, now, person), write);
   write("");
   write("Act on one with selfhost inbox approve|deny|snooze|open <id>.");
+  if (items.some((item) => needsAnotherApprover(item, person))) {
+    write(
+      `Needs another approver: your own agent asked, and you are the team's only owner or admin, so the item went to nobody. You can deny it. ${ANOTHER_APPROVER_HOW}`,
+    );
+  }
 }
 
 /** Everything `inbox open` shows about an item, its brief last. */
@@ -125,6 +142,14 @@ export function itemLines(item: ReviewItem, now: Date): string[] {
   if (item.agent) lines.push(`Agent: ${item.agent.name ?? item.agent.vendor}`);
   if (item.owners.length > 0) lines.push(`Owners: ${item.owners.join(", ")}`);
   if (item.url) lines.push(`Link: ${item.url}`);
+  if (item.route) {
+    const { step, from, why } = item.route;
+    lines.push(
+      step === "none"
+        ? `Routed to nobody${why ? `: ${why}` : ""}`
+        : `Routed by ${from}${why ? `: ${why}` : ""}`,
+    );
+  }
   if (item.why) {
     const rule = item.why.rule_id ? ` (rule ${item.why.rule_id})` : "";
     lines.push(`Why${rule}: ${item.why.text}`);

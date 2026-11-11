@@ -2,7 +2,14 @@ import type { MeResponse } from "@selfhost/schema";
 import { useCallback, useEffect, useState } from "react";
 import { Console } from "@/components/console";
 import { SignIn } from "@/components/sign-in";
-import { ApiRequestError, forgetToken, getMe, saveToken, storedToken } from "@/lib/api";
+import {
+  ApiRequestError,
+  forgetToken,
+  getMe,
+  saveToken,
+  storedToken,
+  tokenGivenNow,
+} from "@/lib/api";
 import { parseView, type View, viewSearch } from "@/lib/view";
 
 type Session =
@@ -20,10 +27,13 @@ export function App() {
       setSession({ state: "signed_in", me, withToken: storedToken() !== undefined });
     } catch (error) {
       if (error instanceof ApiRequestError && (error.status === 401 || error.status === 403)) {
-        // A stored token the server no longer takes is dropped; sign-in at a proxy may still work.
-        if (storedToken() !== undefined) {
+        // A token the server does not take is dropped; sign-in at a proxy may still work. Only a
+        // token given with this page is the visitor's mistake: one this browser kept from an
+        // earlier visit just leaves them signed out, with how to get access.
+        if (storedToken() !== undefined || tokenGivenNow()) {
+          const given = tokenGivenNow();
           forgetToken();
-          return check("That token is not valid on this server.");
+          return check(given ? "That token is not valid on this server." : undefined);
         }
         setSession({ state: "signed_out", ...(rejected ? { error: rejected } : {}) });
       } else {
@@ -54,6 +64,7 @@ export function App() {
     return (
       <SignIn
         {...(session.error ? { error: session.error } : {})}
+        link={view.run !== undefined || view.screen !== undefined}
         onToken={(token) => {
           saveToken(token);
           void check();

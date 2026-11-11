@@ -3,7 +3,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
-export function SignIn({ error, onToken }: { error?: string; onToken: (token: string) => void }) {
+export function SignIn({
+  error,
+  link = false,
+  onToken,
+}: {
+  error?: string;
+  /** Opened from a link to a run or a screen, such as one a teammate shared. */
+  link?: boolean;
+  onToken: (token: string) => void;
+}) {
   const [token, setToken] = useState("");
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -15,7 +24,9 @@ export function SignIn({ error, onToken }: { error?: string; onToken: (token: st
         <CardHeader>
           <CardTitle>Sign in to selfhost</CardTitle>
           <CardDescription>
-            Paste an API token. It stays in this browser and is sent only to this server.
+            {link
+              ? "This link opens a page of a selfhost server, for the people in its team. Sign in to see it."
+              : "Paste an API token. It stays in this browser and is sent only to this server."}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -35,6 +46,15 @@ export function SignIn({ error, onToken }: { error?: string; onToken: (token: st
             </Button>
           </form>
           <ul className="mt-6 space-y-2 text-muted-foreground text-sm">
+            {link ? (
+              <li>
+                Not in the team yet? Ask a team owner or admin for an invite (
+                <code className="text-foreground">selfhost team invite</code>), join with{" "}
+                <code className="text-foreground">selfhost join &lt;server&gt; &lt;invite&gt;</code>
+                , then run <code className="text-foreground">selfhost console</code>: it signs this
+                browser in, and the link opens.
+              </li>
+            ) : null}
             <li>
               On your laptop, run <code className="text-foreground">selfhost console</code>: it
               opens this page signed in.

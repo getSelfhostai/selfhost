@@ -137,7 +137,7 @@ describe("runs handed to the signed-in person on the review list", () => {
       `?screen=run&run=${RUN}`,
     );
     expect(screen.getByText("Limits half done")).toBeTruthy();
-    expect(screen.getByText("selfhost takeover 01930c4e")).toBeTruthy();
+    expect(screen.getByText("selfhost takeover 00000021")).toBeTruthy();
     const call = server.calls.find((c) => c.path === "/v1/handoffs");
     expect(call?.url.searchParams.get("to")).toBe("me");
     expect(call?.url.searchParams.get("state")).toBe("pending");

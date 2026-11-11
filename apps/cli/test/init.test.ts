@@ -237,11 +237,15 @@ describe("selfhost init", () => {
     const { repo, init } = laptop();
     const first = await init("--data-dir", "memory://");
     expect(first.out).toContain("Policy: wrote selfhost.toml, 4 rules, all in observe mode:");
+    expect(first.out).toContain(
+      'Next: commit selfhost.toml (git add selfhost.toml && git commit -m "Add selfhost policy")',
+    );
     const path = repo.path("selfhost.toml");
     expect(readFileSync(path, "utf8")).toBe(STARTER_CONFIG);
     writeFileSync(path, `${STARTER_CONFIG}# edited\n`);
     const second = await init("--data-dir", "memory://");
     expect(second.out).toContain("Policy: kept selfhost.toml.");
+    expect(second.out).not.toContain("Next: commit");
     expect(readFileSync(path, "utf8")).toBe(`${STARTER_CONFIG}# edited\n`);
 
     const outside = tempDir("no-repo");

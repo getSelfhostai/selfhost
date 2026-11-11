@@ -278,6 +278,31 @@ describe("laptop rollout through selfhost join", () => {
           status: "not_installed",
           managed: { state: "pending", files: 3, pending: 3 },
         });
+
+        // A sync on the same policy says it in one line rather than printing the sudo lines again.
+        const sync = ["import", "--data-dir", "memory://", "--person", "ada@example.com"];
+        const again = await run(sync, ada.deps);
+        expect(again.code).toBe(0);
+        expect(again.out).not.toContain("sudo ");
+        expect(again.out).toContain(
+          "Managed settings: 3 admin commands from an earlier sync still to run once. selfhost status prints them again.",
+        );
+        const status = await run(["status"], ada.deps);
+        expect(status.out).toContain(
+          "Managed settings: not installed here yet. Run once as an admin (selfhost never runs sudo itself):",
+        );
+        expect(status.out).toContain(`sudo install -o root -m 0644 '${staged}'`);
+        // A new policy version prints them once more.
+        await server.setPolicy(POLICY.replace('mode = "enforce"', 'mode = "observe"'));
+        const changed = await run(sync, ada.deps);
+        expect(changed.out).toContain("Run (selfhost never runs sudo itself):");
+        expect((await run(sync, ada.deps)).out).not.toContain("sudo ");
+
+        // Coverage reads it as a one-time step, not a fault.
+        const text = await run(["team", "laptops"], ada.deps);
+        expect(text.out).toMatch(/1 laptop, 0 flagged, 1 waiting on a one-time admin install\./);
+        expect(text.out).toMatch(/needs sudo once\s+ada@example\.com/);
+        expect(text.out).toContain("the admin commands selfhost status prints there");
       } finally {
         chmodSync(ada.root.path("etc"), 0o755);
       }

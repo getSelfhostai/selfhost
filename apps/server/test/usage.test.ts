@@ -430,9 +430,10 @@ describe.each(BACKENDS)("usage views on a seeded ledger on $name", (backend) => 
     if (!lead || !dora) throw new Error("not joined");
     expect((await lead("/v1/teams/web/repos", "POST", { remote: "acme/site" })).status).toBe(201);
     expect((await dora("/v1/teams/data/repos", "POST", { remote: "acme/etl" })).status).toBe(201);
-    // Merges come from the GitHub App's webhook, which writes with the server's own access; a
-    // person token cannot write them.
-    const fromGitHub = (event: LedgerEvent) => event.kind === "pr.merged";
+    // Pull requests come from the server (the GitHub App's webhook, background runs), which
+    // writes with its own access; a person token cannot write them.
+    const fromGitHub = (event: LedgerEvent) =>
+      event.kind === "pr.merged" || event.kind === "pr.opened";
     for (const [id, events] of Object.entries(WRITES)) {
       const res = await (as[id] as ReturnType<typeof caller>)("/v1/events", "POST", {
         events: events.filter((event) => !fromGitHub(event)),

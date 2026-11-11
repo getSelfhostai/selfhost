@@ -101,6 +101,11 @@ export interface ConnectReport {
    * shared by every agent connected here.
    */
   reused: boolean;
+  /**
+   * The gateway address the kept key was connected with, when the gateway has moved since:
+   * connect then rewrote every agent connected here with the new one, same key.
+   */
+  moved_from?: string;
   value: string | null;
   base_url: string | null;
   settings: string | null;
@@ -427,6 +432,8 @@ interface HeldKey {
   base_url: string;
   tool: RouterTool;
   reused: boolean;
+  /** The address the kept key was connected with, when the gateway's is another one now. */
+  moved_from?: string;
 }
 
 const AGENT_OF: Record<AgentId, ConnectAgent | undefined> = Object.fromEntries(
@@ -454,12 +461,16 @@ async function holdKey(
   const stored = readStoredKey(scope(io).home, membership);
   if (stored) {
     const status = await team.gateway();
+    const base_url = status.base_url ?? stored.base_url;
+    const tool = status.tool ?? stored.tool;
+    const moved = base_url !== stored.base_url || tool !== stored.tool;
     return {
       key: status.key,
       value: stored.value,
-      base_url: status.base_url ?? stored.base_url,
-      tool: status.tool ?? stored.tool,
+      base_url,
+      tool,
       reused: true,
+      ...(moved ? { moved_from: stored.base_url } : {}),
     };
   }
   const names = holders.map((id) => AGENT_NAMES[id]);
@@ -642,7 +653,8 @@ export async function gatewayConnect(
   }
 
   const held = await holdKey(options, io, membership, others);
-  if (!held.reused) storeKey(home, membership, held);
+  // A new value, or the gateway at a new address: the kept copy follows.
+  if (!held.reused || held.moved_from) storeKey(home, membership, held);
   const { spec, note: modelsNote } = await specFor(agent, held, io);
   const kit = options.managed
     ? claudeManagedKit(spec, platform)
@@ -653,6 +665,7 @@ export async function gatewayConnect(
     status: "printed",
     key: held.key,
     reused: held.reused,
+    ...(held.moved_from ? { moved_from: held.moved_from } : {}),
     value: held.value,
     base_url: held.base_url,
     settings: kit.text,
@@ -662,10 +675,11 @@ export async function gatewayConnect(
     notes: [...(modelsNote ? [modelsNote] : []), ...kit.notes],
   };
 
-  // A new value: rewrite every other agent connected here, so none is left with the old one.
+  // A new value or a new address: rewrite every other agent connected here, so none is left
+  // with the old one.
   const rewritten: AppliedChange[] = [];
   const rewriteNotes: string[] = [];
-  if (!held.reused) {
+  if (!held.reused || held.moved_from) {
     for (const other of others) {
       const otherAgent = AGENT_OF[other];
       if (!otherAgent) continue;
@@ -679,6 +693,12 @@ export async function gatewayConnect(
         continue;
       }
       rewritten.push(...writePlan(plan, io));
+    }
+    if (held.moved_from) {
+      const names = others.map((other) => AGENT_NAMES[other]);
+      rewriteNotes.push(
+        `The gateway moved from ${held.moved_from} to ${held.base_url}: ${names.length > 0 ? `${names.join(" and ")} now point${names.length === 1 ? "s" : ""} there too, ` : ""}with the same key. No disconnect or --rotate is needed for a new address.`,
+      );
     }
     if (options.rotate) {
       rewriteNotes.push(
@@ -724,6 +744,8 @@ export interface DisconnectReport {
   left: number;
   /** The kept key's file, removed once no agent on this laptop is connected. */
   key_removed: string | null;
+  /** The agents still connected here, which keep the key's file in use. */
+  key_kept_for: string[];
 }
 
 /**
@@ -750,16 +772,19 @@ export function gatewayDisconnect(
   const result = undoRecorded(record, dryRun, { schema: GATEWAY_RECORD_SCHEMA, only });
   const keyPath = gatewayKeyPath(home);
   let removed: string | null = null;
-  if (!dryRun && connectedAgents(home).length === 0 && existsSync(keyPath)) {
+  const still = connectedAgents(home);
+  if (!dryRun && still.length === 0 && existsSync(keyPath)) {
     rmSync(keyPath, { force: true });
     removed = keyPath;
   }
+  const keptFor = existsSync(keyPath) ? still.map((id) => AGENT_NAMES[id]) : [];
   const report: DisconnectReport = {
     schema: "selfhost.gateway_disconnect/v1",
     dry_run: dryRun,
     record,
     ...result,
     key_removed: removed,
+    key_kept_for: keptFor,
   };
   if (options.json) {
     io.write(JSON.stringify(report, null, 2));
@@ -767,11 +792,13 @@ export function gatewayDisconnect(
   }
   const { write } = io;
   const removedText = `Deleted ${removed ? tilde(removed, home) : ""}, the copy of your key: no agent here uses it now. The key stays on the gateway; the next connect asks for --rotate to get a new value.`;
+  const keptText = `Kept ${tilde(keyPath, home)}, the copy of your key: ${keptFor.join(" and ")} here still ${keptFor.length === 1 ? "uses" : "use"} it. It goes when the last agent here is disconnected. To point agents at a new gateway address, run selfhost gateway connect <agent> again: no disconnect needed.`;
   if (report.files.length === 0) {
     write(
       `Nothing to undo: selfhost gateway connect wrote no files${agentName ? ` for ${agentName}` : ""} on this laptop.`,
     );
     if (removed) write(removedText);
+    else if (keptFor.length > 0 && !dryRun) write(keptText);
     return report;
   }
   for (const file of report.files) {
@@ -785,6 +812,7 @@ export function gatewayDisconnect(
     } else write(`${dryRun ? "Would delete" : "Deleted"} ${path}: connect created it.`);
   }
   if (removed) write(removedText);
+  else if (keptFor.length > 0 && !dryRun) write(keptText);
   else if (!dryRun) {
     write(
       "The key itself stays on the gateway; connect --rotate replaces its value if it got out.",

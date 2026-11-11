@@ -8,6 +8,7 @@ import {
   type Handoff,
   type RunShareResponse,
   redactTranscript,
+  shortId,
   TRANSCRIPT_VENDORS,
   type TranscriptUpload,
 } from "@selfhost/schema";
@@ -116,6 +117,9 @@ const isTranscriptAgent = (vendor: string | undefined): vendor is TranscriptAgen
 
 const short = (id: string) => id.slice(0, 8);
 
+/** The policy file selfhost init writes at the top of a clone, until someone commits it. */
+const CONFIG_FILE = "selfhost.toml";
+
 /** `selfhost share <session>`: the run's stable link, posted on its pull requests by the App. */
 export async function runShare(
   session: string,
@@ -198,9 +202,15 @@ export async function runHandoff(
         `${state.branch} tracks no upstream: push it (git push -u origin ${state.branch}) so the new owner can fetch it.`,
       );
     }
-    if (state.uncommitted.length > 0) {
+    const work = state.uncommitted.filter((path) => path !== CONFIG_FILE);
+    if (work.length > 0) {
       warnings.push(
-        `${state.uncommitted.length} file(s) have changes that are not committed; they stay on this machine.`,
+        `${work.length} file(s) have changes that are not committed; they stay on this machine.`,
+      );
+    }
+    if (work.length < state.uncommitted.length) {
+      warnings.push(
+        `${CONFIG_FILE} is not committed yet (selfhost config, not work in progress): commit it so teammates and the new owner get the same rules.`,
       );
     }
   } else {
@@ -236,6 +246,7 @@ export async function runHandoff(
     ...(state?.branch ? { branch: state.branch } : {}),
     ...(state?.commit ? { commit: state.commit } : {}),
     ...(state?.pushed !== undefined ? { pushed: state.pushed } : {}),
+    ...(state?.remote ? { remote: state.remote } : {}),
     ...(state && state.uncommitted.length > 0 ? { uncommitted: state.uncommitted } : {}),
     ...(turns !== undefined ? { turns } : {}),
     ...(transcript ? { transcript } : {}),
@@ -263,7 +274,7 @@ export async function runHandoff(
   io.write(`  ${TRANSCRIPT_LINES[outcome](vendor)}`);
   for (const warning of warnings) io.write(`  Warning: ${warning}`);
   io.write(`  Run: ${handoff.run_url}`);
-  io.write(`${handoff.to} takes it over with: selfhost takeover ${short(handoff.id)}`);
+  io.write(`${handoff.to} takes it over with: selfhost takeover ${shortId(handoff.id)}`);
   return report;
 }
 
@@ -281,18 +292,31 @@ const TRANSCRIPT_LINES: Record<TranscriptOutcome, (vendor: string | undefined) =
     `Transcript: over ${HANDOFF_TRANSCRIPT_MAX_BYTES / 1024 / 1024} MB, so not sent. The brief is the handoff.`,
 };
 
-/** The full handoff id for what was typed: a full id, or the start of a pending one's. */
+/**
+ * The full handoff id for what was typed: a full id, or the start or the end of a pending one's
+ * (dashes and case ignored). selfhost inbox and handoff show the end: ids made the same minute
+ * share their start, which is a timestamp.
+ */
 async function resolveHandoff(client: TeamClient, arg: string): Promise<string> {
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(arg)) return arg;
+  const part = arg.replaceAll("-", "").toLowerCase();
+  if (!/^[0-9a-f]{4,}$/.test(part)) {
+    throw new Error(`Expected a handoff id or at least 4 characters of one, got "${arg}"`);
+  }
   const { handoffs } = await client.handoffs({ to: "me", state: "pending" });
-  const matches = handoffs.filter((h) => h.id.startsWith(arg.toLowerCase()));
+  const matches = handoffs.filter((h) => {
+    const hex = h.id.replaceAll("-", "").toLowerCase();
+    return hex.startsWith(part) || hex.endsWith(part);
+  });
   if (matches.length === 1 && matches[0]) return matches[0].id;
   if (matches.length === 0) {
     throw new Error(
-      `No pending handoff to you starts with ${arg}. selfhost inbox lists the ones handed to you.`,
+      `No pending handoff to you starts or ends with ${arg}. selfhost inbox lists the ones handed to you.`,
     );
   }
-  throw new Error(`${matches.length} pending handoffs start with ${arg}; type more of the id.`);
+  throw new Error(
+    `${matches.length} pending handoffs start or end with ${arg}; type more of the id: ${matches.map((h) => h.id).join(", ")}`,
+  );
 }
 
 const quote = (text: string) => `"${text.replace(/(["\\$`])/g, "\\$1")}"`;
@@ -361,8 +385,8 @@ export async function runTakeover(
   if (pending.state !== "pending") {
     throw new Error(
       pending.state === "taken"
-        ? `Handoff ${short(id)} was taken over at ${pending.taken_at}.`
-        : `Handoff ${short(id)} was superseded: the run was handed on again. selfhost inbox shows the newer one.`,
+        ? `Handoff ${shortId(id)} was taken over at ${pending.taken_at}.`
+        : `Handoff ${shortId(id)} was superseded: the run was handed on again. selfhost inbox shows the newer one.`,
     );
   }
   let top: string | undefined;
@@ -390,8 +414,8 @@ export async function runTakeover(
   let placed: { path: string; resumeBy: "id" | "path" } | undefined;
   if (top) {
     if (handoff.branch) {
-      checkout = checkoutBranch(git, top, handoff.branch);
-      if (!checkout.fetched) warnings.push(`${checkout.error}: fetch ${handoff.branch} yourself.`);
+      checkout = checkoutBranch(git, top, handoff.branch, handoff.remote);
+      if (!checkout.fetched) warnings.push(checkout.error);
       else if (!checkout.switched)
         warnings.push(`Not switched to ${handoff.branch}: ${checkout.why}.`);
     } else {
@@ -463,7 +487,9 @@ export async function runTakeover(
   io.write(
     `You hold ${agentName(handoff)} run ${short(handoff.run_id)} now (from ${handoff.from}).`,
   );
-  if (checkout?.fetched && checkout.switched) io.write(`  On branch ${handoff.branch}, fetched.`);
+  if (checkout?.fetched && checkout.switched) {
+    io.write(`  On branch ${handoff.branch}, fetched from ${checkout.remote}.`);
+  }
   io.write(`  Brief: ${briefPath(handoff)} (kept out of commits)`);
   if (transcriptPath) io.write(`  Transcript: ${transcriptPath}`);
   for (const warning of warnings) io.write(`  Warning: ${warning}`);
@@ -518,7 +544,7 @@ export function registerHandoff(
     .description(
       "take over a run handed to you: fetch its branch, write the handoff brief and set up the agent's own resume where it has one (a person's decision: refused inside an agent session)",
     )
-    .argument("<id>", "the handoff id, or its start (selfhost inbox lists them)")
+    .argument("<id>", "the handoff id, or its end or start (selfhost inbox lists them)")
     .option("--repo <dir>", "your clone of the run's repository (default: here)")
     .option("--print", "print the brief instead of writing it; change nothing in a clone")
     .option("--json", "print JSON")

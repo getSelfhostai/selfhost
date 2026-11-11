@@ -408,9 +408,15 @@ function printHeader(
   write("");
 }
 
-function printFooter(report: InitReport, write: (line: string) => void): void {
+function printFooter(report: InitReport, write: (line: string) => void, cwd: string): void {
   write("");
   for (const warning of report.warnings) write(`Note: ${warning}`);
+  if (report.config.action === "created" && report.config.path && !report.dry_run) {
+    const file = shown(cwd, report.config.path);
+    write(
+      `Next: commit ${file} (git add ${file} && git commit -m "Add selfhost policy"), so teammates, CI and the new owner of a handed-off run read the same rules. Until then handoffs list it as not committed yet.`,
+    );
+  }
   if (report.spool) {
     write(
       `Hook events wait in ${tilde(report.spool, report.home)} until the next selfhost import;` +
@@ -829,7 +835,7 @@ export async function runInit(options: InitOptions, io: InitIo): Promise<number>
   }
   if (report.import.sync?.error)
     report.warnings.push(`team sync failed: ${report.import.sync.error}`);
-  printFooter(report, write);
+  printFooter(report, write, io.cwd);
   if (options.json) io.write(JSON.stringify(report, null, 2));
   const failed = apply.some((plan) => plan.items.some((item) => item.status === "error"));
   return failed ? 1 : 0;

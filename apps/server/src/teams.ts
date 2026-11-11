@@ -383,13 +383,17 @@ function laptopSystemRefusal(event: Record<string, unknown>): BatchError["field"
 }
 
 /**
- * Kinds only the GitHub App's webhook writes: a reviewer's verdict and a pull request's merge or
- * close. From a person token they would let an agent on a laptop approve its own pull request.
+ * Kinds only the server writes: a reviewer's verdict and a pull request's merge or close, from
+ * the GitHub App's webhook, and a pull request opened, from a background run. From a person token
+ * they would let an agent on a laptop approve its own pull request, or open an agent PR item with
+ * the risk score and tests-first result it likes. No laptop path writes them: the CLI's PR
+ * attribution reads pull requests for its reports and keeps them out of the ledger.
  */
-const GITHUB_ONLY_KINDS: ReadonlySet<string> = new Set([
-  "review.submitted",
-  "pr.merged",
-  "pr.closed",
+const SERVER_ONLY_KINDS: ReadonlyMap<string, string> = new Map([
+  ["review.submitted", "only the GitHub App's webhook records it"],
+  ["pr.merged", "only the GitHub App's webhook records it"],
+  ["pr.closed", "only the GitHub App's webhook records it"],
+  ["pr.opened", "only the server records it, for the pull requests its background runs open"],
 ]);
 
 const SYSTEM_REFUSALS: Record<string, string> = {
@@ -426,11 +430,13 @@ export function stampEvents(
     const upgraded = upgradeEvent(value);
     const event = upgraded.ok ? upgraded.value : value;
     if (!isObject(event)) return event;
-    if (typeof event.kind === "string" && GITHUB_ONLY_KINDS.has(event.kind)) {
+    const serverOnly =
+      typeof event.kind === "string" ? SERVER_ONLY_KINDS.get(event.kind) : undefined;
+    if (serverOnly !== undefined) {
       errors.push({
         index,
         field: "kind",
-        message: `A person token cannot write ${event.kind}: only the GitHub App's webhook records it`,
+        message: `A person token cannot write ${event.kind}: ${serverOnly}`,
       });
       return event;
     }

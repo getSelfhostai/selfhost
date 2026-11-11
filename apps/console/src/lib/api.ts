@@ -56,6 +56,13 @@ export function takeTokenFromUrl(location: Location, history: History): void {
 
 const currentToken = () => memoryToken ?? storedToken();
 
+/**
+ * Whether the token in use came with this page: from the URL fragment or typed into the sign-in
+ * form. A token this browser kept from an earlier visit did not, so its refusal is no error of
+ * the visitor's.
+ */
+export const tokenGivenNow = () => memoryToken !== undefined;
+
 async function request(path: string, signal?: AbortSignal, init: RequestInit = {}) {
   const token = currentToken();
   const res = await fetch(path, {

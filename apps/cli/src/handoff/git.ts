@@ -30,9 +30,52 @@ export function originRepo(git: Git, top: string): string | undefined {
   return url ? parseRemote(url)?.repo : undefined;
 }
 
+/** A remote URL without the user name or password git may keep in it. */
+export function withoutUserInfo(url: string): string {
+  return url.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@]*@/i, "$1");
+}
+
+/** One form for the ways a remote URL can be written: https or ssh, with or without .git. */
+function remoteKey(url: string): string {
+  const bare = withoutUserInfo(url.trim());
+  return (
+    parseRemote(bare)?.remote ??
+    bare
+      .replace(/\/+$/, "")
+      .replace(/\.git$/i, "")
+      .toLowerCase()
+  );
+}
+
+/** The clone's remotes and their fetch URLs, origin first. */
+export function remotes(git: Git, top: string): { name: string; url: string }[] {
+  const names = (git(top, ["remote"]) ?? "").split("\n").filter((name) => name.trim() !== "");
+  const found = names.flatMap((name) => {
+    const url = git(top, ["config", "--get", `remote.${name}.url`]);
+    return url ? [{ name, url }] : [];
+  });
+  return found.sort((a, b) => Number(b.name === "origin") - Number(a.name === "origin"));
+}
+
+/** Where a branch was pushed: its upstream's remote URL and branch, when it tracks one. */
+export function upstreamOf(
+  git: Git,
+  top: string,
+  branch: string,
+): { url: string; branch: string } | undefined {
+  const name = git(top, ["config", "--get", `branch.${branch}.remote`]);
+  const merge = git(top, ["config", "--get", `branch.${branch}.merge`]);
+  if (!name || name === "." || !merge) return undefined;
+  const url = git(top, ["config", "--get", `remote.${name}.url`]);
+  if (!url) return undefined;
+  return { url: withoutUserInfo(url), branch: merge.replace(/^refs\/heads\//, "") };
+}
+
 export interface WorkState {
   /** The checked-out branch; undefined on a detached HEAD. */
   branch?: string;
+  /** The remote the branch tracks, as upstreamOf reads it. */
+  remote?: { url: string; branch: string };
   commit?: string;
   /**
    * true when every commit is on the branch's upstream, false when some are not, undefined when
@@ -50,8 +93,11 @@ export function workState(git: Git, top: string): WorkState {
   const upstream = git(top, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
   const ahead = upstream ? git(top, ["rev-list", "--count", "@{u}..HEAD"]) : undefined;
   const status = git(top, ["status", "--porcelain", "--untracked-files=normal"]) ?? "";
+  const named = branch && branch !== "HEAD" ? branch : undefined;
+  const remote = named ? upstreamOf(git, top, named) : undefined;
   return {
-    ...(branch && branch !== "HEAD" ? { branch } : {}),
+    ...(named ? { branch: named } : {}),
+    ...(remote ? { remote } : {}),
     ...(commit && /^[0-9a-f]{7,64}$/.test(commit) ? { commit } : {}),
     ...(ahead !== undefined ? { pushed: ahead === "0" } : {}),
     uncommitted: status
@@ -64,26 +110,65 @@ export function workState(git: Git, top: string): WorkState {
 
 export type CheckoutResult =
   | { fetched: false; error: string }
-  | { fetched: true; switched: true }
-  | { fetched: true; switched: false; why: string };
+  | { fetched: true; remote: string; switched: true }
+  | { fetched: true; remote: string; switched: false; why: string };
+
+const shellWord = (word: string) =>
+  /^[\w@%+=:,./-]+$/.test(word) ? word : `'${word.replace(/'/g, "'\\''")}'`;
 
 /**
- * Fetches the branch from origin and switches to it when the working tree is clean. A tree with
- * changes is left alone: switching could carry them onto the branch, or fail half way.
+ * Fetches the branch and switches to it when the working tree is clean. It fetches from the
+ * remote whose URL is the one the branch was pushed to, whatever this clone names it, else from
+ * each remote in turn, origin first. A tree with changes is left alone: switching could carry
+ * them onto the branch, or fail half way.
  */
-export function checkoutBranch(git: Git, top: string, branch: string): CheckoutResult {
-  if (git(top, ["fetch", "origin", branch]) === undefined) {
-    return { fetched: false, error: `git fetch origin ${branch} failed` };
+export function checkoutBranch(
+  git: Git,
+  top: string,
+  branch: string,
+  pushedTo?: { url: string; branch: string } | null,
+): CheckoutResult {
+  const from = pushedTo?.branch ?? branch;
+  // The names come from the server: only what git takes as a branch name goes on a command line.
+  for (const name of new Set([branch, from])) {
+    if (name.startsWith("-") || git(top, ["check-ref-format", "--branch", name]) === undefined) {
+      return {
+        fetched: false,
+        error: `the handoff names ${JSON.stringify(name)}, which is not a branch name; nothing was fetched`,
+      };
+    }
   }
+  const all = remotes(git, top);
+  const want = pushedTo ? remoteKey(pushedTo.url) : undefined;
+  const same = all.filter((remote) => remoteKey(remote.url) === want);
+  const order = [...same, ...all.filter((remote) => !same.includes(remote))];
+  const remote = order.find(
+    ({ name }) =>
+      git(top, ["fetch", name, `+refs/heads/${from}:refs/remotes/${name}/${from}`]) !== undefined,
+  )?.name;
+  if (remote === undefined) {
+    const tried = all.length > 0 ? all.map((r) => r.name).join(", ") : "none";
+    const command = pushedTo
+      ? `git fetch ${shellWord(pushedTo.url)} ${shellWord(`${from}:${branch}`)} && git switch ${shellWord(branch)}`
+      : undefined;
+    return {
+      fetched: false,
+      error: command
+        ? `${branch} was pushed to ${pushedTo?.url}, which no remote of this clone (${tried}) could fetch it from. Fetch it with: ${command}`
+        : `no remote of this clone (${tried}) has ${branch}, and the handoff does not say where it was pushed. Ask the previous owner where, then run: git fetch <remote> ${shellWord(branch)}`,
+    };
+  }
+  const tracking = `${remote}/${from}`;
   if (git(top, ["rev-parse", "--abbrev-ref", "HEAD"]) === branch) {
-    const merged = git(top, ["merge", "--ff-only", `origin/${branch}`]);
+    const merged = git(top, ["merge", "--ff-only", tracking]);
     return merged === undefined
       ? {
           fetched: true,
+          remote,
           switched: false,
-          why: `already on ${branch}, which has commits origin/${branch} does not; merge it yourself`,
+          why: `already on ${branch}, which has commits ${tracking} does not; merge it yourself`,
         }
-      : { fetched: true, switched: true };
+      : { fetched: true, remote, switched: true };
   }
   const dirty = (git(top, ["status", "--porcelain"]) ?? "")
     .split("\n")
@@ -91,6 +176,7 @@ export function checkoutBranch(git: Git, top: string, branch: string): CheckoutR
   if (dirty) {
     return {
       fetched: true,
+      remote,
       switched: false,
       why: "the working tree has changes; commit or stash them, then switch",
     };
@@ -98,11 +184,11 @@ export function checkoutBranch(git: Git, top: string, branch: string): CheckoutR
   const exists = git(top, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]);
   const switched = exists
     ? git(top, ["switch", branch]) !== undefined &&
-      git(top, ["merge", "--ff-only", `origin/${branch}`]) !== undefined
-    : git(top, ["switch", "--track", "-c", branch, `origin/${branch}`]) !== undefined;
+      git(top, ["merge", "--ff-only", tracking]) !== undefined
+    : git(top, ["switch", "--track", "-c", branch, tracking]) !== undefined;
   return switched
-    ? { fetched: true, switched: true }
-    : { fetched: true, switched: false, why: `git switch ${branch} failed` };
+    ? { fetched: true, remote, switched: true }
+    : { fetched: true, remote, switched: false, why: `git switch ${branch} failed` };
 }
 
 /** Keeps a path out of commits through .git/info/exclude, which is never shared. */

@@ -56,6 +56,9 @@ export function renderBrief(handoff: Handoff, resume: ResumePlan): string {
   } else if (handoff.commit) {
     lines.push(`- Commit: ${handoff.commit.slice(0, 12)} (no branch named)`);
   }
+  if (handoff.remote) {
+    lines.push(`- Pushed to: ${handoff.remote.branch} on ${handoff.remote.url}`);
+  }
   if (handoff.pushed === false) {
     lines.push("- Some commits were not pushed when it was handed over: ask for them.");
   }

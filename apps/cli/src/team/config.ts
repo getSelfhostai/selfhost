@@ -79,6 +79,13 @@ export interface SyncState {
   context_repos?: string[];
   /** Set by selfhost join --no-managed: syncs report the managed files but never write them. */
   managed_off?: boolean;
+  /**
+   * The admin commands the managed settings still need, as the last join or sync found them, so
+   * selfhost status can print them again; and a hash of them with the team policy, so a sync
+   * prints them once per policy version rather than on every sync.
+   */
+  managed_commands?: string[];
+  managed_shown?: string;
   /** When the last laptop heartbeat went up, and a hash of what it said. */
   heartbeat_at?: string;
   heartbeat_hash?: string;

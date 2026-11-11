@@ -1,4 +1,4 @@
-import type { HandoffsResponse, MeResponse } from "@selfhost/schema";
+import { type HandoffsResponse, type MeResponse, shortIds } from "@selfhost/schema";
 import { Section } from "@/components/common";
 import { Card, CardContent } from "@/components/ui/card";
 import { getOptional } from "@/lib/api";
@@ -18,6 +18,7 @@ export function HandedToYou({ me, now }: { me: MeResponse; now: Date }) {
   );
   const handoffs = loaded.data?.handoffs ?? [];
   if (handoffs.length === 0) return null;
+  const short = shortIds(handoffs.map((handoff) => handoff.id));
   return (
     <Section
       title="Handed to you"
@@ -38,7 +39,9 @@ export function HandedToYou({ me, now }: { me: MeResponse; now: Date }) {
                 {handoff.open_items.length} open review item
                 {handoff.open_items.length === 1 ? "" : "s"}, ${handoff.cost_usd.toFixed(2)} so far.
                 Take it over:{" "}
-                <code className="font-mono">selfhost takeover {handoff.id.slice(0, 8)}</code>
+                <code className="font-mono">
+                  selfhost takeover {short.get(handoff.id) ?? handoff.id}
+                </code>
               </p>
             </CardContent>
           </Card>

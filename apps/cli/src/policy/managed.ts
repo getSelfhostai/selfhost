@@ -365,8 +365,12 @@ export function managedSummary(report: ManagedReport | undefined): LaptopManaged
   return { state: report.state, files: report.files.length, pending };
 }
 
-/** Lines that say what an install did, with the admin commands for what is left. */
-export function describeManaged(report: ManagedReport): string[] {
+/**
+ * Lines that say what an install did, with the admin commands for what is left. With
+ * `shownBefore` (a sync after the commands were printed for this policy), one line says they are
+ * still waiting instead of printing them again.
+ */
+export function describeManaged(report: ManagedReport, shownBefore = false): string[] {
   const { files } = report;
   if (files.length === 0) return [];
   const count = (status: ManagedFileStatus) => files.filter((f) => f.status === status).length;
@@ -395,12 +399,17 @@ export function describeManaged(report: ManagedReport): string[] {
       `Left out the managed settings of ${names}: not on this laptop. A later sync installs them once one is.`,
     );
   }
-  if (report.commands.length > 0) {
+  if (report.commands.length > 0 && shownBefore) {
+    lines.push(
+      `Managed settings: ${plural(report.commands.length, "admin command")} from an earlier sync still to run once. selfhost status prints them again.`,
+    );
+  } else if (report.commands.length > 0) {
     const needs = count("needs_admin");
+    const need = `${plural(needs, "file")} ${needs === 1 ? "needs" : "need"}`;
     lines.push(
       report.platform === "win32"
-        ? `${needs > 0 ? `${plural(needs, "file")} need an administrator. ` : ""}Run in PowerShell as administrator:`
-        : `${needs > 0 ? `${plural(needs, "file")} need an admin. ` : ""}Run (selfhost never runs sudo itself):`,
+        ? `${needs > 0 ? `${need} an administrator. ` : ""}Run in PowerShell as administrator:`
+        : `${needs > 0 ? `${need} an admin. ` : ""}Run (selfhost never runs sudo itself):`,
     );
     for (const command of report.commands) lines.push(`  ${command}`);
   }

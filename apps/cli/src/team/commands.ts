@@ -147,6 +147,8 @@ export interface StatusReport {
   last_sync: string | null;
   history_synced: boolean;
   policy_hash: string | null;
+  /** Admin commands the team's managed settings still need here, as the last sync found them. */
+  managed_commands: string[];
 }
 
 /** `selfhost team leave --json`. */
@@ -447,21 +449,30 @@ export async function teamRepo(
     throw new Error(`team repo ${action} needs the repo: a remote URL or owner/name`);
   }
   let line: string | undefined;
+  let changed: string | undefined;
   if (action === "add") {
     const added = await client.addRepo(team, remote ?? "");
-    line = `Team ${team} owns ${added.repo} (${added.remote}): every run in it is the team's.`;
+    changed = added.repo;
+    line = `Team ${team} on ${server} owns ${added.repo} (${added.remote}): every run in it is the team's.`;
   } else if (action === "remove") {
     await client.removeRepo(team, (remote ?? "").toLowerCase());
-    line = `Team ${team} no longer owns ${remote}.`;
+    changed = (remote ?? "").toLowerCase();
+    line = `Team ${team} on ${server} no longer owns ${remote}.`;
   }
   const { repos } = await client.repos(team);
   const report: TeamReposReport = { schema: "selfhost.team_repos/v1", server, team, repos };
-  print(io, options.json, report, [
-    ...(line ? [line] : []),
-    repos.length === 0
-      ? `Team ${team} on ${server} owns no repos.`
-      : `Team ${team} on ${server} owns ${repos.map((r) => r.repo).join(", ")}.`,
-  ]);
+  // After an add or a remove, the rest of the list only when there is a rest.
+  const others = repos.filter((r) => r.repo.toLowerCase() !== changed).map((r) => r.repo);
+  const summary = line
+    ? others.length > 0
+      ? [`It also owns ${others.join(", ")}.`]
+      : []
+    : [
+        repos.length === 0
+          ? `Team ${team} on ${server} owns no repos.`
+          : `Team ${team} on ${server} owns ${repos.map((r) => r.repo).join(", ")}.`,
+      ];
+  print(io, options.json, report, [...(line ? [line] : []), ...summary]);
   return report;
 }
 
@@ -628,6 +639,7 @@ export function status(options: JsonOption, io: TeamIo): StatusReport {
     last_sync: state?.last_sync ?? null,
     history_synced: state?.history_synced_at !== undefined,
     policy_hash: state?.policy_hash ?? null,
+    managed_commands: state?.managed_commands ?? [],
   };
   const lines = membership
     ? [
@@ -636,6 +648,12 @@ export function status(options: JsonOption, io: TeamIo): StatusReport {
         report.policy_hash
           ? `Team policy: ${report.policy_hash.slice(0, 12)}.`
           : "Team policy: none pulled yet. If the team has none, an owner or admin sets one with selfhost team policy push selfhost.toml.",
+        ...(report.managed_commands.length > 0
+          ? [
+              "Managed settings: not installed here yet. Run once as an admin (selfhost never runs sudo itself):",
+              ...report.managed_commands.map((command) => `  ${command}`),
+            ]
+          : []),
       ]
     : ["Solo mode: everything stays on this machine."];
   print(io, options.json, report, lines);

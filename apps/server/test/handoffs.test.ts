@@ -210,6 +210,7 @@ describe("handing a run to a teammate", () => {
       branch: "agent/rate-limits",
       commit: "4f2a9c1d7e3b5a8f0c6d2e9b1a7f3c5d8e0b2a4c",
       pushed: true,
+      remote: { url: "https://ana:ghp_notreal@git.acme.example.com/acme/api.git", branch: "rl" },
       uncommitted: ["src/wip.ts"],
       transcript: { vendor: "claude_code", file_name: `${RUN}.jsonl`, text: transcript },
     });
@@ -225,6 +226,8 @@ describe("handing a run to a teammate", () => {
       by: "ana@example.com",
       branch: "agent/rate-limits",
       pushed: true,
+      // The user name and password a remote URL can carry never reach the new owner.
+      remote: { url: "https://git.acme.example.com/acme/api.git", branch: "rl" },
       uncommitted: ["src/wip.ts"],
       files: ["src/limits.ts"],
       cost_usd: 0.42,
@@ -385,10 +388,12 @@ describe("the run link on the run's pull request", () => {
     ({ ledger, as } = await setup({ app }));
     const pr = event({
       kind: "pr.opened",
+      source: "github",
       ts: "2026-11-11T11:00:00.000Z",
       links: { pr_url: PR },
     });
-    expect((await as.ana("/v1/events", "POST", { events: [pr] })).status).toBe(200);
+    // pr.opened is the server's to write; a person token is refused it.
+    await ledger.append([pr], { team: "web" });
   });
 
   afterAll(async () => {
