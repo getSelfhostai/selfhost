@@ -10,6 +10,7 @@ import {
   labelsOf,
   loadSdk,
   MANAGED_LABEL,
+  ranOutOfTime,
   secretValues,
   timedOutResult,
   withTimeout,
@@ -163,7 +164,7 @@ export function openSandboxRuntime(options: AdapterOptions<OpenSandboxSdk>): Run
         const stdout = execution.logs.stdout.map((message) => message.text).join("");
         const stderr = execution.logs.stderr.map((message) => message.text).join("");
         const exitCode = execution.exitCode ?? (execution.error ? 1 : 0);
-        if (timeoutMs && exitCode !== 0 && Date.now() - begun >= timeoutMs) {
+        if (timeoutMs && exitCode !== 0 && ranOutOfTime(begun, timeoutMs)) {
           return timedOutResult(stdout, stderr);
         }
         return { exitCode, stdout, stderr, timedOut: false };

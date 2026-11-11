@@ -8,6 +8,7 @@ import {
   loadSdk,
   MANAGED_LABEL,
   pollLogs,
+  ranOutOfTime,
   readFileCommand,
   readFileOutput,
   secretValues,
@@ -157,7 +158,7 @@ export function modalRuntime(options: AdapterOptions<ModalSdk>): RuntimeAdapter 
       const answer = await withTimeout(work, timeoutMs ? timeoutMs + 5000 : undefined);
       if ("timedOut" in answer) return timedOutResult();
       const { exitCode, stdout, stderr } = answer.value;
-      if (timeoutMs && exitCode !== 0 && Date.now() - begun >= timeoutMs) {
+      if (timeoutMs && exitCode !== 0 && ranOutOfTime(begun, timeoutMs)) {
         return timedOutResult(stdout, stderr);
       }
       return { exitCode, stdout, stderr, timedOut: false };

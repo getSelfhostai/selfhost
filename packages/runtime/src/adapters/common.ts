@@ -230,3 +230,12 @@ export async function loadSdk<T>(name: string, version: string): Promise<T> {
     throw error;
   }
 }
+
+/**
+ * Whether a command that failed ran for its whole timeout, so the provider stopped it. Timers can
+ * fire a few milliseconds early against the clock, so a small margin keeps a real timeout from
+ * reading as an ordinary failure.
+ */
+export function ranOutOfTime(begun: number, timeoutMs: number, now: number = Date.now()): boolean {
+  return now - begun >= timeoutMs - 250;
+}
