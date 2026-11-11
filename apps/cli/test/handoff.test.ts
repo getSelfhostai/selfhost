@@ -14,7 +14,13 @@ import { createApp } from "@selfhost/server/app";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { plantedValues, readPlanted } from "../../../fixtures/redaction/planted.js";
 import { type HandoffIo, runHandoff, runShare, runTakeover } from "../src/handoff/commands.js";
-import { type Git, systemGit } from "../src/handoff/git.js";
+import {
+  changedFiles,
+  checkoutBranch,
+  type Git,
+  systemGit,
+  workState,
+} from "../src/handoff/git.js";
 import type { InboxReport } from "../src/inbox/commands.js";
 import { run } from "./run.js";
 
@@ -184,6 +190,13 @@ describe("handing a run over and taking it over, two people on two machines", ()
         tool: { name: "Edit", input_summary: "src/limits.ts" },
         target: { type: "file", value: "src/limits.ts" },
       }),
+      // An edit that failed: the file never changed, so the brief does not list it.
+      event({
+        kind: "tool.called",
+        ts: "2026-11-11T09:02:00.000Z",
+        tool: { name: "Edit", input_summary: "src/ghost.ts" },
+        target: { type: "file", value: "src/ghost.ts" },
+      }),
       event({
         kind: "session.started",
         ts: "2026-11-11T10:00:00.000Z",
@@ -236,7 +249,8 @@ describe("handing a run over and taking it over, two people on two machines", ()
       commit: sh(anaClone, "rev-parse", "HEAD"),
       pushed: true,
       uncommitted: ["notes.txt"],
-      files: ["src/limits.ts"],
+      // From git: the branch's commit and the file written outside any tool call.
+      files: ["src/limits.ts", "notes.txt"],
       note: "Limits work; ticket [redacted:ticket] has the numbers",
       transcript: { vendor: "claude_code", file_name: `${SESSION}.jsonl`, redacted: true },
     });
@@ -426,5 +440,111 @@ describe("handing a run over and taking it over, two people on two machines", ()
     expect(lost.warnings[0]).toContain(
       `git fetch ${team} ${teamBranch}:${teamBranch} && git switch ${teamBranch}`,
     );
+  });
+});
+
+describe("the branch's git state at handoff and takeover", () => {
+  const root = keptDir("handoff-git");
+  const origin = root.path("origin.git");
+  const team = root.path("team.git");
+  const ana = root.path("ana");
+  afterAll(() => root.remove());
+
+  beforeAll(() => {
+    sh(root.root, "init", "--bare", "--initial-branch=main", origin);
+    sh(root.root, "init", "--bare", "--initial-branch=main", team);
+    sh(root.root, "clone", origin, ana);
+    root.write("ana/README.md", "# api\n");
+    sh(ana, "add", ".");
+    sh(ana, "commit", "-m", "Start");
+    sh(ana, "push", "-u", "origin", "HEAD:main");
+    sh(ana, "remote", "add", "team", team);
+    sh(ana, "push", "team", "main");
+  });
+
+  const branchWith = (name: string, file: string) => {
+    sh(ana, "switch", "-c", name, "main");
+    root.write(`ana/${file}`, `${name}\n`);
+    sh(ana, "add", file);
+    sh(ana, "commit", "-m", name);
+  };
+
+  it("records the remote a branch pushed without -u went to, and warns about none", () => {
+    branchWith("ana/no-u", "src/no-u.ts");
+    sh(ana, "push", "team", "ana/no-u");
+    expect(systemGit(ana, ["config", "--get", "branch.ana/no-u.remote"])).toBeUndefined();
+    const state = workState(systemGit, ana);
+    expect(state).toMatchObject({
+      branch: "ana/no-u",
+      remote: { url: team, branch: "ana/no-u" },
+      pushed: true,
+    });
+    expect(state.pushTo).toBeUndefined();
+
+    // The new owner fetches it from that remote, not from origin first.
+    const ben = root.path("ben-no-u");
+    sh(root.root, "clone", origin, ben);
+    sh(ben, "remote", "add", "team", team);
+    const result = checkoutBranch(systemGit, ben, "ana/no-u", state.remote);
+    expect(result).toEqual({ fetched: true, remote: "team", switched: true });
+  });
+
+  it("suggests the remote that takes pushes for a branch no remote has", () => {
+    branchWith("ana/local", "src/local.ts");
+    expect(workState(systemGit, ana)).toMatchObject({ branch: "ana/local", pushTo: "origin" });
+    sh(ana, "remote", "set-url", "--push", "origin", "no_push");
+    try {
+      const state = workState(systemGit, ana);
+      expect(state.pushed).toBeUndefined();
+      expect(state.remote).toBeUndefined();
+      expect(state.pushTo).toBe("team");
+    } finally {
+      sh(ana, "config", "--unset", "remote.origin.pushurl");
+    }
+  });
+
+  it("lists the files the branch changed from git, and nothing to compare on the default branch", () => {
+    branchWith("ana/files", "src/files.ts");
+    root.write("ana/scripts/gen.sh", "echo made by a shell command\n");
+    expect(workState(systemGit, ana).uncommitted).toEqual(["scripts/"]);
+    root.write("ana/README.md", "# api, edited\n");
+    expect(changedFiles(systemGit, ana)).toEqual(["src/files.ts", "README.md", "scripts/gen.sh"]);
+    sh(ana, "checkout", "--", "README.md");
+    rmSync(join(ana, "scripts"), { recursive: true });
+    sh(ana, "switch", "main");
+    expect(changedFiles(systemGit, ana)).toBeUndefined();
+  });
+
+  it("switches a clone whose only change is an untracked selfhost.toml", () => {
+    branchWith("ana/switch", "src/switch.ts");
+    sh(ana, "push", "origin", "ana/switch");
+    const ben = root.path("ben-switch");
+    sh(root.root, "clone", origin, ben);
+    root.write("ben-switch/selfhost.toml", "version = 1\n");
+    expect(sh(ben, "status", "--porcelain")).toBe("?? selfhost.toml");
+    const result = checkoutBranch(systemGit, ben, "ana/switch");
+    expect(result).toEqual({ fetched: true, remote: "origin", switched: true });
+    expect(sh(ben, "rev-parse", "--abbrev-ref", "HEAD")).toBe("ana/switch");
+    expect(readFileSync(join(ben, "selfhost.toml"), "utf8")).toBe("version = 1\n");
+  });
+
+  it("still refuses changes to tracked files, and names an untracked file the branch has", () => {
+    branchWith("ana/has-toml", "selfhost.toml");
+    sh(ana, "push", "origin", "ana/has-toml");
+    const ben = root.path("ben-refuse");
+    sh(root.root, "clone", origin, ben);
+    root.write("ben-refuse/selfhost.toml", "version = 1\n");
+    expect(checkoutBranch(systemGit, ben, "ana/has-toml")).toEqual({
+      fetched: true,
+      remote: "origin",
+      switched: false,
+      why: "ana/has-toml has files this clone holds untracked (selfhost.toml); move them aside, then switch",
+    });
+    expect(sh(ben, "rev-parse", "--abbrev-ref", "HEAD")).toBe("main");
+    root.write("ben-refuse/README.md", "# changed\n");
+    expect(checkoutBranch(systemGit, ben, "ana/switch")).toMatchObject({
+      switched: false,
+      why: "the working tree has changes; commit or stash them, then switch",
+    });
   });
 });

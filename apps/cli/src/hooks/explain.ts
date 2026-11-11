@@ -34,6 +34,8 @@ export interface Explanation {
   link?: string;
   /** The review item that allows this call once when a person approves it. */
   exceptionId?: string;
+  /** The session's permission mode, when it is why an ask became a deny. */
+  skippedBy?: string;
 }
 
 /** The text each side reads. */
@@ -101,6 +103,9 @@ const instead = (e: Explanation) => (e.hit.alternative ? [`Instead: ${e.hit.alte
 function headline(e: Explanation, forAgent: boolean): string {
   const rule = `rule ${e.hit.rule_id}`;
   const subject = forAgent ? "this call" : `a ${e.agent} call`;
+  if (e.hit.verdict === "ask" && e.skippedBy) {
+    return `selfhost blocked ${subject}: ${rule} needs a person's yes first, and this ${e.agent} session runs in ${e.skippedBy} mode, which skips asks. ${e.hit.message}`;
+  }
   if (e.hit.verdict === "ask") {
     return `selfhost blocked ${subject}: ${rule} needs a person's approval first, and ${e.agent} cannot ask from a hook. ${e.hit.message}`;
   }
@@ -110,13 +115,15 @@ function headline(e: Explanation, forAgent: boolean): string {
 /** The text for a deny: the agent's version and the person's. */
 function deny(e: Explanation): Explained {
   const path = e.hit.alternative ? "the alternative above" : "another approach the rule allows";
+  const yourself = e.skippedBy ? ", ask the user to run it themselves" : "";
   const next = e.exceptionId
-    ? `Do not retry this call, or a variant of it, to get around the rule: it will be blocked again. Take ${path}, or, if this exact call is needed, ask the user to approve one-time exception ${e.exceptionId}. Only a person can approve it, in their own terminal or the console; do not run the approval yourself. Once they approve, make the identical call again and it is allowed once.`
-    : `Do not retry this call, or a variant of it, to get around the rule: it will be blocked again. Take ${path}, or ask the user how to go on.`;
+    ? `Do not retry this call, or a variant of it, to get around the rule: it will be blocked again. Take ${path}${yourself}, or, if this exact call is needed, ask the user to approve one-time exception ${e.exceptionId}. Only a person can approve it, in their own terminal or the console; do not run the approval yourself. Once they approve, make the identical call again and it is allowed once.`
+    : `Do not retry this call, or a variant of it, to get around the rule: it will be blocked again. Take ${path}${yourself}, or ask the user how to go on.`;
   const agent = [headline(e, true), ...instead(e), next, ...tail(e)];
   const user = [
     headline(e, false),
     ...instead(e),
+    ...(e.skippedBy ? ["Run it yourself, or allow the agent's call once."] : []),
     ...(e.exceptionId ? [`To allow it once, run: ${approveCommand(e.exceptionId)}`] : []),
     ...tail(e),
   ];

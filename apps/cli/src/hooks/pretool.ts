@@ -35,6 +35,7 @@ import {
   AGENT_LABELS,
   type Answer,
   answerText,
+  askSkippedBy,
   canAsk,
   type HookAgent,
   type PreToolCall,
@@ -280,10 +281,16 @@ export async function checkPreToolCall(
     io.writeError(`selfhost hook: ${line}; the call was not held up for it`);
   }
 
+  // An ask the session's permission mode would skip (bypassPermissions) is a deny with a
+  // one-time exception, so a person still says yes before the call runs.
+  const skippedBy =
+    decision.verdict === "ask" && canAsk(agent, call.event)
+      ? askSkippedBy(agent, call.permissionMode)
+      : undefined;
   const answer: Answer =
     decision.verdict === "allow"
       ? "allow"
-      : decision.verdict === "ask" && canAsk(agent, call.event)
+      : decision.verdict === "ask" && canAsk(agent, call.event, call.permissionMode)
         ? "ask"
         : "deny";
   // A deferred call is decided by the agent's own hook for it, unless this one blocks it.
@@ -350,6 +357,7 @@ export async function checkPreToolCall(
           answer,
           link: ruleLink(hit.rule_id, policy.sources ?? []),
           ...(request ? { exceptionId: request.id } : {}),
+          ...(skippedBy && hit.verdict === "ask" ? { skippedBy } : {}),
         })
       : undefined;
   return {

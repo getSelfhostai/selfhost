@@ -17,6 +17,7 @@ import {
   testMessage,
   urlProblem,
 } from "@selfhost/notify";
+import { onItemsCreated } from "@selfhost/review";
 import {
   AddNotifyTargetRequestSchema,
   createValidator,
@@ -417,12 +418,16 @@ export function startNotifyJob(ledger: Ledger, options: NotifyJobOptions) {
     if (running) again = true;
     else void run();
   }, options.wakeMs ?? WAKE_NOTIFY_MS);
+  // Every refresh that opens an item wakes the pass, whatever path ran it: the refresh job, an
+  // agent's ask_human through MCP, a context proposal.
+  const unsubscribe = onItemsCreated(ledger, () => wake());
   void run();
   return {
     run,
     wake,
     stop: () => {
       clearInterval(timer);
+      unsubscribe();
       wake.cancel();
     },
   };

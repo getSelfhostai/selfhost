@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { findTranscript, placeTranscript, type TranscriptAgent } from "@selfhost/importers";
 import {
+  HANDOFF_FILES_MAX,
   HANDOFF_TRANSCRIPT_MAX_BYTES,
   HANDOFF_TURNS_MAX,
   type Handoff,
@@ -19,6 +20,7 @@ import { type Membership, readMembership } from "../team/config.js";
 import { agentName, BRIEF_DIR, briefPath, type ResumePlan, renderBrief } from "./brief.js";
 import {
   type CheckoutResult,
+  changedFiles,
   checkoutBranch,
   excludeLocally,
   type Git,
@@ -184,6 +186,7 @@ export async function runHandoff(
 
   const top = cloneOf(git, options.repo, runCwd, io.cwd);
   let state: ReturnType<typeof workState> | undefined;
+  let files: string[] | undefined;
   if (top) {
     const origin = originRepo(git, top);
     if (run.run.repo && origin && origin.toLowerCase() !== run.run.repo.toLowerCase()) {
@@ -192,6 +195,9 @@ export async function runHandoff(
       );
     }
     state = workState(git, top);
+    // selfhost.toml left uncommitted by init is selfhost's, not the run's.
+    const config = state.uncommitted.includes(CONFIG_FILE) ? [CONFIG_FILE] : [];
+    files = changedFiles(git, top, config)?.slice(0, HANDOFF_FILES_MAX);
     if (!state.branch) warnings.push("HEAD is detached: no branch was named for the new owner.");
     if (state.pushed === false) {
       warnings.push(
@@ -199,7 +205,7 @@ export async function runHandoff(
       );
     } else if (state.pushed === undefined && state.branch) {
       warnings.push(
-        `${state.branch} tracks no upstream: push it (git push -u origin ${state.branch}) so the new owner can fetch it.`,
+        `${state.branch} is on no remote yet: push it (git push -u ${state.pushTo ?? "<remote>"} ${state.branch}) so the new owner can fetch it.`,
       );
     }
     const work = state.uncommitted.filter((path) => path !== CONFIG_FILE);
@@ -248,6 +254,7 @@ export async function runHandoff(
     ...(state?.pushed !== undefined ? { pushed: state.pushed } : {}),
     ...(state?.remote ? { remote: state.remote } : {}),
     ...(state && state.uncommitted.length > 0 ? { uncommitted: state.uncommitted } : {}),
+    ...(files ? { files } : {}),
     ...(turns !== undefined ? { turns } : {}),
     ...(transcript ? { transcript } : {}),
   });
