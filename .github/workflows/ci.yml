@@ -203,23 +203,28 @@ jobs:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           persist-credentials: false
+          # The previous release is built from the commit before the newest migration.
+          fetch-depth: 0
       - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Build this release's server, and the previous one without the newest migration
+      # No release is tagged yet, so the previous release is the code as it was just before the
+      # newest migration was added: its own server, not this one with a migration removed.
+      - name: Build this release's server, and the previous one from before the newest migration
         run: |
           pnpm --filter @selfhost/console build
           pnpm --filter @selfhost/server build
           mv apps/server/dist apps/server/dist-current
           newest=$(ls packages/ledger/migrations/*.sql | grep -v '[.]down[.]sql$' | sort | tail -n 1)
-          rm "$newest" "${newest%.sql}.down.sql"
-          pnpm --filter @selfhost/ledger embed-migrations
-          pnpm --filter @selfhost/server build
-          mv apps/server/dist apps/server/dist-previous
-          git checkout -- packages/ledger
+          added=$(git log -1 --format=%H --diff-filter=A -- "$newest")
+          echo "previous release: the parent of $added, which added $newest"
+          git worktree add --detach "$RUNNER_TEMP/previous" "$added^"
+          (cd "$RUNNER_TEMP/previous" && pnpm install --frozen-lockfile \
+            && pnpm --filter @selfhost/console build && pnpm --filter @selfhost/server build)
+          ln -s "$RUNNER_TEMP/previous/apps/server/dist" apps/server/dist-previous
           git diff --exit-code
       - name: Seed through the previous release, upgrade, roll back and upgrade again
         run: |
