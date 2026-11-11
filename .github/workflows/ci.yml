@@ -747,7 +747,7 @@ jobs:
         run: |
           systemctl is-enabled selfhost-backup.timer
           sudo systemctl start selfhost-backup.service
-          ls backups/selfhost-*.dump
+          sudo sh -c 'ls backups/selfhost-*.dump'
 
       - name: Show logs on failure
         if: failure()
