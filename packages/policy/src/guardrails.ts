@@ -710,6 +710,10 @@ const DECISION_COMMANDS: readonly { words: readonly string[]; flag?: string }[] 
   // included): an agent that took itself off the gateway would leave its budget behind.
   { words: ["gateway", "connect"] },
   { words: ["gateway", "disconnect"] },
+  // Who holds a run, and so whose login its next step runs under: an agent never hands its own
+  // run to someone, nor takes over one handed to its person.
+  { words: ["handoff"] },
+  { words: ["takeover"] },
 ];
 
 /** The selfhost decision command these words name, after the program, if they name one. */

@@ -10,6 +10,7 @@ import {
 } from "@selfhost/schema";
 import { parse as parseToml } from "smol-toml";
 import type { PolicySource } from "../find-config.js";
+import { DOCS_URL } from "../project.js";
 
 /**
  * What a block or an ask says, to the agent and to the person. The agent's text names the rule,
@@ -18,7 +19,7 @@ import type { PolicySource } from "../find-config.js";
  * call once. Both link to the rule: its line in selfhost.toml, or the docs of a built-in check.
  */
 
-const DOCS = "https://github.com/getselfhostai/selfhost/blob/main/packages";
+const DOCS = `${DOCS_URL}/packages`;
 export const GUARDRAILS_DOCS = `${DOCS}/policy/README.md#guardrails`;
 export const PACKAGES_DOCS = `${DOCS}/package-guard/README.md#rules-and-verdicts`;
 

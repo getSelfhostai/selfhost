@@ -1,16 +1,25 @@
 name: CI
 
 on:
+  # Branches only: a v* tag runs these jobs through release.yml, which calls this workflow.
   push:
+    branches: ["**"]
   pull_request:
+  workflow_call:
 
+permissions:
+  contents: read
+
+# The workflow name keeps a call from release.yml (named Release there) apart from a push run.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   check:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     services:
       postgres:
         image: postgres:16
@@ -28,32 +37,40 @@ jobs:
     env:
       DATABASE_URL: postgres://selfhost:selfhost@localhost:5432/selfhost
     steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Check that the version and the image owner agree everywhere
+        run: node scripts/release/version.mjs --check
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
 
   cli:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     env:
       # Fixture logs for the import checks, never the runner's home directory.
       CLAUDE_CONFIG_DIR: ${{ github.workspace }}/fixtures/claude-code
       CODEX_HOME: ${{ github.workspace }}/fixtures/codex
     steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version-file: .nvmrc
           cache: pnpm
       # Keep in step with the bun entry in the pnpm-workspace.yaml catalog.
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
         with:
           bun-version: 1.4.4
       - run: pnpm install --frozen-lockfile
@@ -77,6 +94,11 @@ jobs:
           node apps/cli/dist/main.js policy --help
           node apps/cli/dist/main.js policy test presets
           sh "$RUNNER_TEMP/ledger-check.sh" node apps/cli/dist/main.js
+      - name: Pack the npm package and install it in a clean folder with an empty HOME
+        run: |
+          node scripts/release/pack-cli.mjs --out "$RUNNER_TEMP/npm"
+          sh scripts/release/smoke.sh "$RUNNER_TEMP/npm/selfhostai-$(node scripts/release/version.mjs --print).tgz" \
+            "$(node scripts/release/version.mjs --print)"
       - run: pnpm build:cli
       - name: Smoke test the linux-x64 binary
         run: |
@@ -100,7 +122,7 @@ jobs:
           sh "$RUNNER_TEMP/ledger-check.sh" env -i PATH="$empty" \
             CLAUDE_CONFIG_DIR="$CLAUDE_CONFIG_DIR" CODEX_HOME="$CODEX_HOME" "$bin"
       # Kept briefly for a manual download; a full artifact quota must not fail the build.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         continue-on-error: true
         with:
           name: selfhost-cli
@@ -113,14 +135,18 @@ jobs:
   # Chromium's headless shell is installed, and cached by Playwright version.
   receipt:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 10
     env:
       PLAYWRIGHT_VERSION: 1.64.1
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
     steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -137,7 +163,7 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/playwright" --no-save --no-audit --no-fund \
             --loglevel=error "playwright-core@$PLAYWRIGHT_VERSION"
           echo "SELFHOST_RECEIPT_PLAYWRIGHT=$RUNNER_TEMP/playwright/node_modules/playwright-core" >> "$GITHUB_ENV"
-      - uses: actions/cache@v4
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: ${{ env.PLAYWRIGHT_BROWSERS_PATH }}
           key: playwright-chromium-${{ runner.os }}-${{ env.PLAYWRIGHT_VERSION }}
@@ -154,6 +180,8 @@ jobs:
   # the migration tests, a forced failure included, run on the same Postgres.
   upgrade:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 10
     services:
       postgres:
@@ -172,9 +200,11 @@ jobs:
     env:
       DATABASE_URL: postgres://selfhost:selfhost@localhost:5432/selfhost
     steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -266,12 +296,16 @@ jobs:
   # collector, an upgrade, then a backup restored into a fresh volume.
   compose:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 15
     defaults:
       run:
         working-directory: deploy/docker
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
       - name: Write .env as the install guide does
         run: |
           cp .env.example .env
@@ -520,12 +554,16 @@ jobs:
   # HTTPS from its own local CA and no DNS or Let's Encrypt is involved.
   install:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 20
     defaults:
       run:
         working-directory: deploy/docker
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
       - name: Build the server image
         run: docker build -f Dockerfile -t selfhost-ci:ci-1 ../..
 

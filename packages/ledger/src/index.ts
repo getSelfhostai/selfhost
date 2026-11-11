@@ -53,6 +53,7 @@ export {
 } from "./deliveries.js";
 export { type LedgerFieldError, LedgerQueryError, LedgerValidationError } from "./errors.js";
 export { type FileCallQuery, fileCalls } from "./files.js";
+export type { HandoffFilter, HandoffStore } from "./handoffs.js";
 export {
   type AppendOptions,
   type AppendResult,

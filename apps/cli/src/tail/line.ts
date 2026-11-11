@@ -1,4 +1,4 @@
-import { EVENT_KINDS, type LedgerEvent, type ReviewItem } from "@selfhost/schema";
+import { EVENT_KINDS, handoffOf, type LedgerEvent, type ReviewItem } from "@selfhost/schema";
 import { hitRate } from "@selfhost/spend";
 import { runViewUrl } from "@selfhost/traces";
 import { tokens, usd } from "../format.js";
@@ -151,6 +151,10 @@ function runMessage(event: LedgerEvent): string | null {
     case "run.output": {
       const lines = field(data.output, "lines");
       return Array.isArray(lines) ? lines.filter((l) => typeof l === "string").join(" | ") : null;
+    }
+    case "run.handed_off": {
+      const handoff = handoffOf(event);
+      return handoff ? `handed from ${handoff.previous_owner} to ${handoff.owner}` : null;
     }
     default:
       return null;

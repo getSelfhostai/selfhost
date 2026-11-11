@@ -13,6 +13,7 @@ export {
   SPANS_PER_REQUEST,
   teamOfRun,
 } from "./export.js";
+export { lastTurns, touchedFiles, turnText } from "./handoff.js";
 export {
   backgroundRunsUrl,
   runViewUrl,
@@ -35,5 +36,5 @@ export {
   tracerHeaders,
   tracesUrl,
 } from "./otlp.js";
-export { type ReadRunOptions, type ReadRunResult, readRun } from "./run.js";
+export { type ReadRunOptions, type ReadRunResult, readRun, runHandoffs } from "./run.js";
 export { RUN_IDLE_MS, runCosts, runEnd, summarizeRun } from "./summary.js";

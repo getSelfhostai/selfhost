@@ -1,6 +1,7 @@
 import { type Static, Type } from "@sinclair/typebox";
 import { DateTime, StringEnum } from "./common.js";
 import { AgentRefSchema, LedgerEventSchema } from "./event.js";
+import { RunHandoffSchema } from "./handoff.js";
 import { SecondOpinionSchema } from "./second-opinion.js";
 import { CACHE_HIT_RATE_TEXT } from "./usage.js";
 
@@ -28,6 +29,9 @@ export const RunSummarySchema = Type.Object(
     }),
     model: NullableText("The model most of the run's requests went to, or null."),
     person: NullableText("The person the run worked for, or null when not known."),
+    owner: NullableText(
+      "The person who holds the run now: the new owner of its newest handoff, else person.",
+    ),
     team: NullableText("The team the run belongs to, or null on a laptop ledger."),
     repo: NullableText("Repository as owner/name, or null when not known."),
     started_at: DateTime({ description: "The run's first event." }),
@@ -104,6 +108,10 @@ export const RunResponseSchema = Type.Object(
     trace_url: Type.Union([Type.String(), Type.Null()], {
       description:
         "The run in the team's tracer: [integrations.tracer] run_url with {run_id} and {trace_id} filled in. null when no tracer is set up, it has no run_url, or the run has not been sent yet.",
+    }),
+    handoffs: Type.Array(RunHandoffSchema, {
+      description:
+        "Who held the run: each handoff, oldest first, with its redacted note. Empty when it never changed hands.",
     }),
   },
   { additionalProperties: false, title: "RunResponse" },

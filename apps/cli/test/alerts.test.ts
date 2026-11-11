@@ -14,6 +14,7 @@ import { runForecast, runPlan } from "../src/alerts/forecast.js";
 import { startMonitor } from "../src/alerts/monitor.js";
 import type { AlertIo } from "../src/alerts/settings.js";
 import { runStatusline } from "../src/alerts/statusline.js";
+import { DEFAULT_RUNBOOK_URL } from "../src/alerts/text.js";
 import { runImport } from "../src/import.js";
 import { createProgram } from "../src/program.js";
 import { tempDir } from "./run.js";
@@ -129,7 +130,7 @@ describe("selfhost spend alarms", () => {
           {
             id: "rotate_key",
             target: null,
-            url: "https://github.com/getselfhostai/selfhost/blob/main/packages/spend/README.md#key-rotation-runbook",
+            url: DEFAULT_RUNBOOK_URL,
           },
         ],
       },

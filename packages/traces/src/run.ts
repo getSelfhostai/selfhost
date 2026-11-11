@@ -2,9 +2,11 @@ import { databaseOf, type Ledger } from "@selfhost/ledger";
 import {
   type LedgerEvent,
   latestSecondOpinions,
+  maskSecrets,
   type ResolvedSelfhostConfig,
   RUN_EVENTS_LIMIT_DEFAULT,
   RUN_SCHEMA,
+  type RunHandoff,
   type RunPullRequest,
   type RunResponse,
   redactEvent,
@@ -100,6 +102,24 @@ async function runPulls(ledger: Ledger, events: LedgerEvent[]): Promise<RunPullR
   });
 }
 
+/** The run's handoffs, oldest first, each note masked under the team's current settings. */
+export async function runHandoffs(
+  ledger: Ledger,
+  runId: string,
+  settings: { patterns: readonly { name: string; pattern: string }[] },
+): Promise<RunHandoff[]> {
+  return (await ledger.handoffs.ofRun(runId)).map((h) => ({
+    id: h.id,
+    from: h.from,
+    to: h.to,
+    by: h.by,
+    at: h.created_at,
+    note: h.note === null ? null : maskSecrets(h.note, settings.patterns).text,
+    state: h.state,
+    taken_at: h.taken_at,
+  }));
+}
+
 /**
  * One run for the console's run view, as GET /v1/runs/{run_id} answers. The run belongs to the
  * team most of its events belong to; a caller who cannot read that team gets forbidden, and
@@ -159,6 +179,7 @@ export async function readRun(
       next_cursor: last && start + limit < visible.length ? encodeCursor(last) : null,
       prs: await runPulls(ledger, visible),
       trace_url: exported ? (tracerRunUrl(tracer?.run_url, runId) ?? null) : null,
+      handoffs: await runHandoffs(ledger, runId, redactionSettings(config)),
     },
   };
 }

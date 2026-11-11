@@ -17,6 +17,7 @@ import { type ConnectOptions, connect, type Database, migrate } from "./db.js";
 import { createDecisionStore, type DecisionStore } from "./decisions/store.js";
 import { createDeliveryStore, type DeliveryStore } from "./deliveries.js";
 import { type LedgerFieldError, LedgerQueryError, LedgerValidationError } from "./errors.js";
+import { createHandoffStore, type HandoffStore } from "./handoffs.js";
 import { createOrgStore, type OrgStore } from "./orgs.js";
 import { createReceiptStore, type ReceiptStore } from "./receipts.js";
 import { redactBatch, teamRedaction } from "./redaction.js";
@@ -100,6 +101,8 @@ export interface Ledger {
   receipts: ReceiptStore;
   /** Background runs and the team and org kill switches. */
   backgroundRuns: BackgroundRunStore;
+  /** Run handoffs: who handed a run to whom, and what the new owner needs to take it over. */
+  handoffs: HandoffStore;
   close(): Promise<void>;
 }
 
@@ -242,6 +245,7 @@ export function createLedger(db: Database, options: LedgerOptions = {}): Ledger 
     receipts: createReceiptStore(db),
 
     backgroundRuns: createBackgroundRunStore(db),
+    handoffs: createHandoffStore(db),
 
     close: () => db.close(),
   };

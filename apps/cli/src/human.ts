@@ -73,7 +73,8 @@ export interface HumanCheck {
 /**
  * Throws inside a coding agent session. For decision commands a person may also script, which
  * need no terminal: `init --undo`, `gateway connect` and `gateway disconnect`, `notify add` and
- * `notify remove`. `what` names the command; `elsewhere` is where else a person can do it.
+ * `notify remove`, and `handoff` and `takeover`, which decide who holds a run and so whose login
+ * its next step runs under. `what` names the command; `elsewhere` is where else a person can do it.
  */
 export function refuseAgentSession(
   what: string,

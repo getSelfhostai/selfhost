@@ -109,6 +109,12 @@ export const SEEDS: readonly (readonly [table: string, sql: string])[] = [
      VALUES ('5eed0000-0000-4000-8000-000000000013', 'team', 'seed', 'alice@example.com',
        '2026-11-09T09:30:00Z', 'alice@example.com', '2026-11-09T09:35:00Z') ON CONFLICT DO NOTHING`,
   ],
+  [
+    "handoffs",
+    `INSERT INTO handoffs (id, run_id, team, from_person, to_person, state, created_at, body)
+     VALUES ('5eed0000-0000-4000-8000-000000000014', 'seed-session', 'seed', 'alice@example.com',
+       'bob@example.com', 'pending', '2026-11-11T09:30:00Z', '{}') ON CONFLICT DO NOTHING`,
+  ],
 ];
 
 /** Seeds every table of SEEDS the database has; tables a release does not have are skipped. */

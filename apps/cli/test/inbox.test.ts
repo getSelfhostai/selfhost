@@ -259,8 +259,10 @@ describe("selfhost inbox in team mode", () => {
       queued: [],
     });
     expect(report.items.map((entry: ReviewItem) => entry.title)).toEqual(["Item 2", "Item 1"]);
+    // The runs handed to the person come next; this fake server has none (404), so none show.
     expect(server.calls).toEqual([
       `GET ${SERVER}/v1/review-items?state=open&owner=dev%40example.com&limit=1000`,
+      `GET ${SERVER}/v1/handoffs?to=me&state=pending`,
     ]);
 
     const text = await run(["inbox"], deps);

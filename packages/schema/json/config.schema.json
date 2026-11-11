@@ -1817,6 +1817,25 @@
           }
         }
       }
+    },
+    "handoff": {
+      "additionalProperties": false,
+      "description": "Handing a run to a teammate (selfhost handoff, selfhost takeover). Without a transcript the handoff carries the branch, commit, files, open review items, cost and a redacted summary of the last turns.",
+      "type": "object",
+      "properties": {
+        "share_transcript": {
+          "default": false,
+          "description": "Send the agent's own transcript with a handoff (selfhost handoff), so the new owner resumes the session natively (claude --resume, codex resume). Off by default because transcripts can hold secrets: when on, secrets, emails and the [[redaction]] patterns are masked before it leaves the sender's machine and again on the server, which deletes its copy once the new owner takes the run over.",
+          "type": "boolean"
+        },
+        "turns": {
+          "minimum": 1,
+          "maximum": 50,
+          "default": 10,
+          "description": "How many of the run's last turns the handoff summarizes.",
+          "type": "integer"
+        }
+      }
     }
   }
 }

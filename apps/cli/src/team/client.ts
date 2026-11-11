@@ -7,6 +7,7 @@ import type {
   ContextProposal,
   ContextProposalRequest,
   ContextResponse,
+  CreateHandoffRequest,
   CreateInviteRequest,
   CreateInviteResponse,
   CreateTeamResponse,
@@ -14,6 +15,9 @@ import type {
   DecisionResponse,
   GatewayKeysResponse,
   GatewayStatus,
+  Handoff,
+  HandoffQuery,
+  HandoffsResponse,
   IngestEventsResponse,
   IntegrationKind,
   IntegrationsResponse,
@@ -39,10 +43,14 @@ import type {
   RevokeTokensResponse,
   RoiQuery,
   RoiResponse,
+  RunResponse,
+  RunShareRequest,
+  RunShareResponse,
   SetIntegrationRequest,
   StartRunRequest,
   TailQuery,
   TailResponse,
+  TakeoverResponse,
   TeamLaptopsResponse,
   TeamPeopleResponse,
   TeamRepo,
@@ -344,6 +352,38 @@ export class TeamClient {
   clearKill(scope: KillScope, target: string): Promise<KillResponse> {
     const query = `scope=${scope}&target=${encodeURIComponent(target)}`;
     return this.call("DELETE", `/v1/background-runs/kill?${query}`);
+  }
+
+  /** One agent run with its first page of events, as the console's run view reads it. */
+  agentRun(id: string, limit?: number): Promise<RunResponse> {
+    const query = limit === undefined ? "" : `?limit=${limit}`;
+    return this.call("GET", `/v1/runs/${encodeURIComponent(id)}${query}`);
+  }
+
+  /** The run's stable link, posted on its pull requests when the server has the GitHub App. */
+  shareRun(id: string, request: RunShareRequest = {}): Promise<RunShareResponse> {
+    return this.call("POST", `/v1/runs/${encodeURIComponent(id)}/share`, request);
+  }
+
+  /** Hands a run to a teammate; only its owner or a team owner or admin can. */
+  handOff(runId: string, request: CreateHandoffRequest): Promise<Handoff> {
+    return this.call("POST", `/v1/runs/${encodeURIComponent(runId)}/handoffs`, request);
+  }
+
+  handoffs(query: HandoffQuery = {}): Promise<HandoffsResponse> {
+    const search = new URLSearchParams(
+      Object.entries(query).filter((entry): entry is [string, string] => entry[1] !== undefined),
+    ).toString();
+    return this.call("GET", `/v1/handoffs${search ? `?${search}` : ""}`);
+  }
+
+  handoff(id: string): Promise<Handoff> {
+    return this.call("GET", `/v1/handoffs/${encodeURIComponent(id)}`);
+  }
+
+  /** Takes a run handed to this person over; the transcript comes once, in this answer. */
+  takeover(id: string): Promise<TakeoverResponse> {
+    return this.call("POST", `/v1/handoffs/${encodeURIComponent(id)}/takeover`, {});
   }
 
   private async call<T>(method: string, path: string, body?: unknown): Promise<T> {

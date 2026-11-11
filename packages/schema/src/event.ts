@@ -59,6 +59,8 @@ export const EVENT_KINDS = [
   "run.gate",
   "sandbox.started",
   "sandbox.stopped",
+  // Run handoff (src/handoff.ts), added 2026-11-11.
+  "run.handed_off",
 ] as const;
 
 export const ACTOR_KINDS = ["person", "agent", "system"] as const;

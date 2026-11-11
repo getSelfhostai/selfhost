@@ -12,6 +12,17 @@ export { deterministicUuidv7 } from "./ids.js";
 export { importAll, type SkippedLines, type WriteResult, writeEvents } from "./import.js";
 export { claudeLimitHit, codexLimitHit, USAGE_LIMIT_ALERT, type UsageLimitHit } from "./limits.js";
 export { parseLogFile } from "./parse.js";
+export {
+  claudeProjectName,
+  findTranscript,
+  isCodexRollout,
+  type PlacedTranscript,
+  placeTranscript,
+  rehomeTranscript,
+  type TranscriptAgent,
+  type TranscriptPlaces,
+  transcriptCwd,
+} from "./transcripts.js";
 export type {
   ImportOptions,
   LedgerWriter,

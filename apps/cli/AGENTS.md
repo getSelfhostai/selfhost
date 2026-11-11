@@ -10,8 +10,8 @@ After the first release, with the version the release names (a pinned version ne
 whatever else is published under the name):
 
 ```sh
-npx selfhostai@<version> init --dry-run   # show the person what would change; writes nothing
-npx selfhostai@<version> init
+npx selfhostai@0.1.0 init --dry-run   # show the person what would change; writes nothing
+npx selfhostai@0.1.0 init
 ```
 
 The npm package is not published yet. Until it is, from a clone of the repository:
@@ -45,8 +45,8 @@ the repository.
   run: force pushes, `git reset --hard`, `rm -rf` outside the workspace and reads of `.env` and
   key files are blocked unless `[guardrails] mode` in `selfhost.toml` is `observe` or `off`.
 - Approving or denying a review item, `selfhost decide`, `policy promote`, `team policy push`,
-  `gateway connect` and `gateway disconnect`, and the commands that take selfhost out (`init
-  --undo` among them) are a person's: the hooks block an agent that runs them
+  `gateway connect` and `gateway disconnect`, `handoff` and `takeover`, and the commands that
+  take selfhost out (`init --undo` among them) are a person's: the hooks block an agent that runs them
   (`guard.selfhost_decision`), and the commands refuse inside an agent session. The ones that
   answer for a person also refuse without a terminal, unless a person's own script (a CI job, not
   a coding agent) sets `SELFHOST_PERSON_SCRIPT=1`; `init --undo` and `gateway disconnect` need no
@@ -83,7 +83,7 @@ in `~/.selfhost/spool` (readable by this user only) until the next import. With 
 - If `selfhost` is not on PATH, each hook looks for it when it runs: `selfhost` on PATH by then,
   else the node binary and script that ran init while both exist. If neither is there, the hook
   prints one line pointing at the install docs and exits 1 (agents show it without blocking);
-  `SELFHOST_NPX=1` in the agent's environment makes it run `npx -y selfhostai@<the version that
-  ran init>` instead, after the first release.
+  `SELFHOST_NPX=1` in the agent's environment makes it run `npx -y selfhostai@0.1.0` instead,
+  pinned to the release that ran init.
   `selfhost doctor` says when it is not on PATH. Install it globally and run `selfhost init`
   again for the plain `selfhost hook` command.

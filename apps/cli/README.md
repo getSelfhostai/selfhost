@@ -717,7 +717,8 @@ and `--dry-run` never ask (the files are then only listed). [`AGENTS.md`](AGENTS
    `selfhost hook <agent>` to Claude Code and Codex through `agents configure`, which backs up
    every file first. When `selfhost` is not on PATH the hook calls the running node and script
    by absolute path instead; if those are gone too, it prints one line pointing here and exits 1
-   (`SELFHOST_NPX=1` runs `npx -y selfhostai@<this version>` instead, after the first release). An agent
+   (`SELFHOST_NPX=1` runs `npx -y selfhostai@0.1.0` instead, pinned to the release that ran
+   init). An agent
    where `agents configure` already set other settings is
    left alone, so they are not taken out.
 3. It writes a starter `selfhost.toml` at the git repository root when none is found: four
@@ -1097,6 +1098,56 @@ observe it is a neutral check on the pull request; in enforce a failure opens no
 
 `selfhost import --hook-events` prints the hook spool's events as JSON lines and writes nothing;
 background runs read their sandbox's hook events this way.
+
+## Hand a run to a teammate: `selfhost handoff`
+
+```sh
+selfhost share <session>                       # the run's stable link; posted on its PR by the App
+selfhost handoff <session> --to ben@acme.dev [--note "rate limits half done"] [--no-transcript]
+selfhost inbox                                 # the new owner sees "Handed to you"
+selfhost takeover <id>                         # in their clone of the repo, as themselves
+```
+
+`selfhost share` prints the run's link to its timeline in the console (`?screen=run&run=<id>`).
+Opening it needs sign-in and a place in the run's team; anyone else gets an access error with
+nothing of the run, and secrets and the team's `[[redaction]]` patterns are masked for every
+viewer. With the GitHub App on the server, the link goes on each pull request the run links to as
+one comment; sharing again updates that comment. `--no-comment` prints the link only.
+
+`selfhost handoff` gives a run to someone in its team. Only the run's owner, or an owner or admin
+of the team, can; the server checks. The ledger records the owner change (a `run.handed_off`
+event: previous owner, new owner, time), so cost and outcome stay on one run, and the run's open
+review items go to the new owner from then on. The handoff carries the branch and commit, files
+that are not committed (they do not travel; you are told), the files the run touched, its open
+review items, cost so far, a redacted summary of the last turns and your note. Push the branch
+first; the command warns when commits are not on its upstream.
+
+`selfhost takeover <id>` runs on the new owner's machine, under their own login. It fetches the
+branch and switches to it when the working tree is clean, writes a short brief to
+`.selfhost/handoff/<id>.md` (kept out of commits through `.git/info/exclude`) and prints how to
+carry on. `--print` prints the brief and changes nothing.
+
+Native resume needs the agent's transcript, which can hold secrets, so it travels only when the
+team turns it on:
+
+```toml
+[handoff]
+share_transcript = false   # true: send the transcript, masked on both ends, for a native resume
+turns = 10                 # last turns summarized in the handoff
+```
+
+With it on, the transcript is masked (secrets, emails, the team's `[[redaction]]` patterns) before
+it leaves the sender's machine and again on the server, which deletes its copy at takeover. The
+takeover puts it where the agent looks, moved to the new owner's clone:
+
+| Agent       | Where the copy goes                                                                                | Resume                                                   |
+| ----------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Claude Code | `~/.claude/projects/<clone path, non-alphanumerics as ->/<session>.jsonl` (or `CLAUDE_CONFIG_DIR`) | `claude --resume <session>`                              |
+| Codex       | `~/.codex/sessions/YYYY/MM/DD/rollout-...-<thread>.jsonl` (or `CODEX_HOME`)                        | `codex resume <thread>`                                  |
+| Others      | nothing                                                                                            | the brief: start a new session and point it at the brief |
+
+Without a transcript the brief is the handoff. `handoff` and `takeover` are a person's: the hooks
+block an agent that runs them, and they refuse inside an agent session.
 
 ## Integrations: `selfhost integrations`
 

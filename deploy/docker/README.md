@@ -31,12 +31,14 @@ and dropped. Hooks and importers write to `POST /v1/events` directly.
 ## Install on a clean Linux server
 
 You need Docker Engine 23 or later with the Compose v2 plugin (`docker compose`), see
-[docs.docker.com/engine/install](https://docs.docker.com/engine/install/), plus `git` and
-`openssl`.
+[docs.docker.com/engine/install](https://docs.docker.com/engine/install/), plus `openssl`. Each
+GitHub Release carries this folder as `selfhost-docker-<version>.tar.gz`, with `SELFHOST_VERSION`
+set to that release, so no clone is needed:
 
 ```sh
-git clone https://github.com/getselfhostai/selfhost.git
-cd selfhost/deploy/docker
+version=0.1.0
+curl -fsSLO "https://github.com/getSelfhostai/selfhost/releases/download/v$version/selfhost-docker-$version.tar.gz"
+tar -xzf "selfhost-docker-$version.tar.gz" && cd "selfhost-docker-$version"
 cp .env.example .env
 for key in POSTGRES_PASSWORD SELFHOST_TOKEN SELFHOST_OTLP_TOKEN; do
   sed -i "s/^$key=$/$key=$(openssl rand -hex 32)/" .env
@@ -45,8 +47,9 @@ chmod 600 .env
 docker compose up -d
 ```
 
-Until release images are published, build the server from the checkout with
-`docker compose up -d --build`.
+[`install.sh`](#installsh) does the same as root, and installs Docker first when it is missing.
+To build the server from source instead, clone the repository, run the same steps in
+`deploy/docker`, and start it with `docker compose up -d --build`.
 
 `docker compose ps` lists `postgres`, `selfhost` and `otel-collector` as `healthy` within a
 minute (`collector-probe` exits after it copies its file). Then:
@@ -96,8 +99,8 @@ curl -H "Authorization: Bearer <SELFHOST_TOKEN>" "http://<server>:4400/v1/events
 4. It sets `SELFHOST_VERSION` in `.env`, and the new server replaces the running one.
 
 Events live in the `selfhost_postgres-data` volume, which an upgrade never touches. When a
-release also moves a pinned image or the collector config, pull the new release's files first
-(`git pull`). If you build from source, build the target image first (`SELFHOST_VERSION=<version>
+release also moves a pinned image or the collector config, take the new release's files first
+(`git pull`, or its `selfhost-docker-<version>.tar.gz` unpacked over this folder, `.env` kept). If you build from source, build the target image first (`SELFHOST_VERSION=<version>
 docker compose build selfhost`); upgrade.sh only pulls an image it does not have.
 
 Every migration ships with a rollback, but rolling back drops what the newer release added (a

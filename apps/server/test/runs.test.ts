@@ -144,6 +144,7 @@ describe("GET /v1/runs/{run_id}", () => {
       "next_cursor",
       "prs",
       "trace_url",
+      "handoffs",
     ]);
     expect(body.schema).toBe("selfhost.run/v1");
     expect(body.run).toEqual({
@@ -151,6 +152,7 @@ describe("GET /v1/runs/{run_id}", () => {
       agent: { vendor: "claude_code", version: "2.1.0" },
       model: "claude-sonnet-4-5",
       person: "lead@example.com",
+      owner: "lead@example.com",
       team: "web",
       repo: "acme/api",
       started_at: "2026-10-12T09:00:00.000Z",
@@ -165,6 +167,7 @@ describe("GET /v1/runs/{run_id}", () => {
     expect(body.prs).toEqual([{ url: PR, state: "merged" }]);
     // No [integrations.tracer] yet.
     expect(body.trace_url).toBeNull();
+    expect(body.handoffs).toEqual([]);
   });
 
   it("shows no prompt text while log_prompts is off", async () => {

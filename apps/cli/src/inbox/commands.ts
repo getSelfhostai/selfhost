@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { isPostgresUrl, type Ledger, openLedger } from "@selfhost/ledger";
-import type { LedgerEvent, ReviewItem } from "@selfhost/schema";
+import type { Handoff, LedgerEvent, ReviewItem } from "@selfhost/schema";
 import type { Command } from "commander";
 import { isAlive, readCache } from "../alerts/cache.js";
 import { localPerson } from "../alerts/person.js";
@@ -110,6 +110,11 @@ export interface InboxReport {
   queued: QueuedAction[];
   /** What sending the queue did first. */
   sync: ReplayReport;
+  /**
+   * Runs teammates handed to this person, waiting for selfhost takeover. Team mode only, and
+   * only while the server can be reached.
+   */
+  handoffs?: Handoff[];
 }
 
 /** `selfhost inbox approve|deny|snooze --json`. */
@@ -364,6 +369,7 @@ export async function runInboxList(
     const cache = savedCopy(session);
     if (!cache) throw noCopyError(session);
     const queued = queuedFor(readQueue(paths.queue), scope);
+    const handoffs = session.offline === undefined ? await pendingHandoffs(io) : undefined;
     const report: InboxReport = {
       schema: "selfhost.inbox/v1",
       mode: session.mode,
@@ -373,6 +379,7 @@ export async function runInboxList(
       items: pendingItems(cache, queued, now, all),
       queued,
       sync: session.sync,
+      ...(handoffs ? { handoffs } : {}),
     };
     if (options.json) {
       io.write(JSON.stringify(report, null, 2));
@@ -383,6 +390,12 @@ export async function runInboxList(
       io.write(`${notLive(session)}. Showing the copy saved ${ago(cache.written_at, now)}.`);
     }
     writeItems(report.items, now, io.write);
+    if (handoffs && handoffs.length > 0) {
+      io.write("");
+      io.write("Handed to you:");
+      for (const handoff of handoffs) io.write(`  ${handoffLine(handoff, now)}`);
+      io.write("Take one over in a clone of its repository: selfhost takeover <id>");
+    }
     if (queued.length > 0) {
       io.write("");
       io.write(`Queued, sent ${whereQueued(session)}:`);
@@ -390,6 +403,25 @@ export async function runInboxList(
     }
     return report;
   });
+}
+
+/** Runs handed to this person and not taken over yet; undefined when they cannot be read. */
+async function pendingHandoffs(io: InboxIo): Promise<Handoff[] | undefined> {
+  const membership = readMembership(io.configPath);
+  if (!membership) return undefined;
+  try {
+    const client = new TeamClient(membership.server, membership.token, io.fetch);
+    return (await client.handoffs({ to: "me", state: "pending" })).handoffs;
+  } catch {
+    // An older server without handoffs, or a blip: the review list is what the inbox is for.
+    return undefined;
+  }
+}
+
+function handoffLine(handoff: Handoff, now: Date): string {
+  const note = handoff.note?.split("\n")[0]?.trim();
+  const where = [handoff.repo, handoff.branch].filter(Boolean).join(" ");
+  return `${handoff.id.slice(0, 8)}  run ${handoff.run_id.slice(0, 8)} from ${handoff.from}, ${duration(now.getTime() - Date.parse(handoff.created_at))} ago${where ? `, ${where}` : ""}${note ? `: ${note}` : ""}`;
 }
 
 interface Applied {

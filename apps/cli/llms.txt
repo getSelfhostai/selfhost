@@ -4,7 +4,7 @@
 
 ## Install, for a coding agent
 
-- Published package (after the first release, pinned to the released version): `npx selfhostai@<version> init`
+- Published package: `npx selfhostai@0.1.0 init`
 - From source: `pnpm install && pnpm --filter @selfhost/cli build && node apps/cli/dist/main.js init`
 - Preview first: `init --dry-run` prints every change and writes nothing. `--json` prints one `selfhost.init/v1` object.
 - Join a team while installing: `init --team "selfhost join <server> <invite>"`. A refused invite exits 1 and changes no files.
@@ -36,6 +36,7 @@
 - `selfhost up --provider hetzner|digitalocean|aws|ssh` sets up the shared server (HTTPS, daily backups, optional GitHub or Google sign-in) and prints the `selfhost join` line. `--dry-run` prints the plan and the cloud-init user-data and creates nothing. It needs cloud credentials (HCLOUD_TOKEN, DIGITALOCEAN_TOKEN, the aws CLI) or `--host user@host`, so ask the person before running it without `--dry-run`: it creates billed servers.
 
 - `selfhost up --gateway` also runs the AI gateway (Bifrost). `selfhost gateway connect claude-code|codex|opencode|goose` issues the person's virtual key and writes the settings that send that agent's API traffic through it into the agent's own config (backed up; `selfhost gateway disconnect` restores the files byte for byte); `--print` and `env` print them instead. The key's value is shown once. Cursor, Copilot and agents signed in with a subscription are left unchanged (`--api-billing` overrides the subscription check). `selfhost gateway` shows the team's hard limits and what is left. Connect and disconnect are a person's: they refuse inside a coding agent session, and the hooks block an agent that runs them.
+- `selfhost share <session>` prints a run's stable link (sign-in and the run's team needed to open it) and, with the GitHub App, posts it once on the run's pull requests. `selfhost handoff <session> --to <person>` gives a run to a teammate and `selfhost takeover <id>` takes one over on the new owner's machine; both are a person's: they refuse inside a coding agent session and the hooks block them. Tell the person what to run.
 
 ## Docs
 

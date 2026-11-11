@@ -576,8 +576,7 @@ describe("the hook command", () => {
     expect(command).toMatch(
       /^if command -v selfhost >\/dev\/null 2>&1; then exec selfhost hook \{agent\}; elif \[ -x \S+ \]/,
     );
-    // npx only on request, and pinned to this version: the package is on npm only after the
-    // first release, and whatever else is published under the name never runs.
+    // npx only on request, and pinned to this release, never whatever npm serves as latest.
     expect(command).toContain(
       ` hook {agent}; elif [ "$SELFHOST_NPX" = 1 ]; then exec npx -y selfhostai@${VERSION} hook {agent}; else echo`,
     );
