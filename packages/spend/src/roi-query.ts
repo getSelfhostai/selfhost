@@ -17,8 +17,8 @@ import { countedCostsSql } from "./sources.js";
 
 /**
  * The ROI input from the ledger's tables, and the frozen baseline in roi_baselines. An event's
- * team is the team that owns its repo in the org, or its run's repo, else the team of the token
- * that wrote it, as GET /v1/usage reads it.
+ * team is the team it was stored with; one stored with no team goes to the team that owns its
+ * repo in the org, or its run's repo, as GET /v1/usage reads it.
  */
 
 /** What the readers need of a ledger: `databaseOf(ledger)` from @selfhost/ledger. */
@@ -46,7 +46,7 @@ const teamed = (org: string) => `events e
   LEFT JOIN team_repos tr
     ON tr.org_id = ${org} AND tr.repo = coalesce(lower(e.body->>'repo'), rr.repo)`;
 const REPO = "coalesce(lower(e.body->>'repo'), rr.repo)";
-const TEAM = "coalesce(tr.team_id, e.team)";
+const TEAM = "coalesce(e.team, tr.team_id)";
 
 type Nullable<T> = { [K in keyof T]: T[K] | null };
 const defined = <T extends object>(row: Nullable<T>): T =>

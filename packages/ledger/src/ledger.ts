@@ -17,6 +17,7 @@ import { type ConnectOptions, connect, type Database, migrate } from "./db.js";
 import { createDecisionStore, type DecisionStore } from "./decisions/store.js";
 import { createDeliveryStore, type DeliveryStore } from "./deliveries.js";
 import { type LedgerFieldError, LedgerQueryError, LedgerValidationError } from "./errors.js";
+import { oneCopyPerFact } from "./facts.js";
 import { createHandoffStore, type HandoffStore } from "./handoffs.js";
 import { createOrgStore, type OrgStore } from "./orgs.js";
 import { createReceiptStore, type ReceiptStore } from "./receipts.js";
@@ -67,6 +68,12 @@ export interface AppendOptions {
    * person is in that team; otherwise it stays in `team`.
    */
   person?: string;
+  /**
+   * Keep one copy of each tool call and session start (see oneCopyPerFact in facts.ts): a second
+   * copy under another id, from another source or another laptop's ledger, is reported under
+   * duplicates, and a decision in the batch that links to it is linked to the copy kept.
+   */
+  oneCopyPerFact?: boolean;
 }
 
 export interface EventPage {
@@ -193,12 +200,15 @@ export function createLedger(db: Database, options: LedgerOptions = {}): Ledger 
       });
       const inserted = new Set<string>();
       await db.transaction(async (tx) => {
-        await orgs.recordRuns(tx, stored);
-        for (let start = 0; start < stored.length; start += MAX_EVENT_BATCH) {
-          const chunk = stored.slice(start, start + MAX_EVENT_BATCH);
+        const kept = appendOptions.oneCopyPerFact
+          ? await oneCopyPerFact(tx, stored, assigned)
+          : { events: stored, teams: assigned };
+        await orgs.recordRuns(tx, kept.events);
+        for (let start = 0; start < kept.events.length; start += MAX_EVENT_BATCH) {
+          const chunk = kept.events.slice(start, start + MAX_EVENT_BATCH);
           const rows = await tx.query<{ id: string }>(INSERT_SQL, [
             JSON.stringify(chunk),
-            JSON.stringify(assigned.slice(start, start + MAX_EVENT_BATCH)),
+            JSON.stringify(kept.teams.slice(start, start + MAX_EVENT_BATCH)),
           ]);
           for (const row of rows) inserted.add(row.id);
         }

@@ -91,6 +91,32 @@ describe("messages hold a summary and a link only", () => {
     expectClean(body);
   });
 
+  it("names the person a budget alert is about, and masks any other email", () => {
+    const event = {
+      id: "01930c4e-2f1a-7b2c-8d3e-00000000fffe",
+      schema: "selfhost.event/v1",
+      ts: "2026-11-09T10:00:00.000Z",
+      source: "gateway",
+      kind: "alert.raised",
+      actor: { kind: "person", id: "ada@example.com" },
+      team: "web",
+      data: {
+        alert: "budget_exceeded",
+        message: "ada@example.com spent the day's gateway budget of $0.03, ask eve@example.com",
+        suggestion: "Ask ada@example.com or eve@example.com.",
+        owner: "ada@example.com",
+        limit_usd: 0.03,
+        spent_usd: 0.04,
+        scope: "person",
+      },
+    } as LedgerEvent;
+    const alert = spendAlertMessage(event, CONSOLE);
+    expect(alert.body).toContain("ada@example.com spent the day's gateway budget of $0.03");
+    expect(alert.body).not.toContain("eve@example.com");
+    // Only the alert's message names its subject; the suggestion stays fully masked.
+    expect(alert.body).toContain("Ask [redacted] or [redacted].");
+  });
+
   it("writes budget alerts and the spend digest without secrets", () => {
     const event = {
       id: "01930c4e-2f1a-7b2c-8d3e-00000000ffff",

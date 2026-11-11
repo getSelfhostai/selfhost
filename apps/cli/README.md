@@ -71,7 +71,7 @@ tool input only as the run view shows it.
 - In a team it follows the team server (`GET /v1/events/tail`, a long poll), which shows the
   person only the teams they are in; `--local` follows this machine instead.
 
-`selfhost console [--port 4400] [--host 127.0.0.1] [--no-open] [--json]` serves the web console
+`selfhost console [--port 4400] [--host 127.0.0.1] [--no-open] [--json [--show-token]]` serves the web console
 ([`apps/console`](../console/README.md)) and the API on this machine's ledger (the one `selfhost
 import` writes, or `--database` / `--data-dir`) and opens it in the browser, signed in: it prints
 the URL, the link with the API token in its fragment, and the token (kept in `<data dir>/token`).
@@ -80,7 +80,9 @@ It listens on 127.0.0.1 unless `--host` says otherwise and stops on Ctrl-C. The 
 is one process at a time, so stop `selfhost import --watch` first, or use Postgres. On a laptop
 that joined a team it opens the team server's console instead, signed in as this person
 (`<server>/#token=<person token>`, the same fragment sign-in); `--local` serves this machine's
-own ledger.
+own ledger. `--json` prints one line with the console's URL and where the token is kept, but
+not the token or the signed-in link, since JSON output tends to end up in logs; add
+`--show-token` for both (`token`, `signed_in_url`).
 
 `selfhost ledger prune [--days <n>] [--config <path>] [--json]` deletes events older than the
 retention from the ledger (the one `selfhost import` writes, or `--database` / `--data-dir`):

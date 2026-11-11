@@ -406,12 +406,13 @@ message = "Not in the pipeline."
           data: { note: "fixes ACME-12" },
         }),
       ]);
-      // A Claude Code run of Sam's carries no repo, so it starts as Web's...
+      // A Claude Code run of Sam's carries no repo, so it is Web's, the team Sam wrote it from...
       await write(as.sam, [
         cost("sam@example.com", 2, { session_id: "claude-1" }),
         cost("sam@example.com", 1, { session_id: "claude-1" }),
       ]);
-      // ...until selfhost scan finds its commit in the pipeline.
+      // ...and stays Web's when selfhost scan later finds its commit in the pipeline: repo
+      // ownership never moves spend another team already holds.
       await write(as.sam, [
         event({
           kind: "commit.created",
@@ -485,18 +486,18 @@ message = "Not in the pipeline."
         team: { id: "data", org: "acme" },
         people: 4,
         repos: ["acme/pipeline"],
-        spend: { usd: 57, requests: 4 },
-        budget: { period: "month", spent_usd: 57, limit_usd: 100, remaining_usd: 43 },
+        spend: { usd: 54, requests: 2 },
+        budget: { period: "month", spent_usd: 54, limit_usd: 100, remaining_usd: 46 },
         review: { open: 0 },
       });
       expect(data.by_person).toEqual([
         { key: "dan@example.com", usd: 50, tokens: 1100, requests: 1 },
-        { key: "sam@example.com", usd: 7, tokens: 3300, requests: 3 },
+        { key: "sam@example.com", usd: 4, tokens: 1100, requests: 1 },
       ]);
       const web = (await (await as.wendy("/v1/teams/web/overview")).json()) as TeamOverview;
       expect(web).toMatchObject({
-        spend: { usd: 10, requests: 1 },
-        budget: { limit_usd: 300, spent_usd: 10 },
+        spend: { usd: 13, requests: 3 },
+        budget: { limit_usd: 300, spent_usd: 13 },
         review: { open: 1, blocking: 1 },
       });
       expect((await as.wendy("/v1/teams/data/overview")).status).toBe(403);
@@ -506,15 +507,15 @@ message = "Not in the pipeline."
         period: "month",
         from: "2026-11-01T00:00:00.000Z",
         to: "2026-12-01T00:00:00.000Z",
-        spent_usd: 10,
+        spent_usd: 13,
         limit_usd: 300,
-        remaining_usd: 290,
+        remaining_usd: 287,
       });
-      expect(budget.forecast_usd).toBeCloseTo(10 / (19.5 / 30), 2);
+      expect(budget.forecast_usd).toBeCloseTo(13 / (19.5 / 30), 2);
       const samInData = (await (
         await as.dora("/v1/budget?team=data&person=sam%40example.com")
       ).json()) as BudgetResponse;
-      expect(samInData).toMatchObject({ spent_usd: 7, limit_usd: null, remaining_usd: null });
+      expect(samInData).toMatchObject({ spent_usd: 4, limit_usd: null, remaining_usd: null });
       const week = (await (await as.dora("/v1/budget?period=week")).json()) as BudgetResponse;
       expect(week).toMatchObject({
         from: "2026-11-16T00:00:00.000Z",
@@ -529,8 +530,8 @@ message = "Not in the pipeline."
       const view = (await res.json()) as OrgOverview;
       matches(OrgOverviewSchema, view);
       expect(view.teams.map((t) => [t.team.id, t.spend.usd])).toEqual([
-        ["data", 57],
-        ["web", 10],
+        ["data", 54],
+        ["web", 13],
       ]);
       expect(view.total).toMatchObject({ usd: 67, requests: 5 });
       // The org budget is the org's, set in its floor; no team's spend is charged to another.

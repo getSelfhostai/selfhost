@@ -162,10 +162,16 @@ bootstrap admin; everything else is a token the server issues and keeps only as 
   `cut_off: true` while the gateway refuses the requests and `raise` naming who can raise it.
   The org's spend shows only to whoever sees every team. A `PUT /v1/policy` (team or repo),
   `PUT /v1/orgs/{org}/policy` or a router change in `PUT /v1/teams/{team}/integrations/{kind}`
-  pushes budgets and providers to the gateway at once; the five-minute sync stays as well. The review refresh job also checks each
+  pushes budgets and providers to the gateway at once; the five-minute sync stays as well. A
+  push changes a budget's limit in place (Bifrost keeps the budget's id), so what was spent in
+  the current window stays counted: only the window's end resets it. The review refresh job also checks each
   team's spend against its `[budget]` once a minute and raises an `alert.raised` at 50%, 80% and
   100% of each period's budget, once per window, which the review list files as budget items;
-  requests go on (only a gateway with `[budget] mode = "hard"` stops them).
+  requests go on (only a gateway with `[budget] mode = "hard"` stops them), and each alert's
+  suggestion says which of the two holds the team's budget. An alert, or an item an agent waits
+  on, wakes the notification job: its push goes out within seconds, not at the next minute's
+  pass. An `approval.requested` or `policy.evaluated` event wakes the review refresh the same
+  way.
 - `GET /v1/teams/{team}/provenance?from&to&repo` (anyone in the team): for each repo the team
   owns, lines merged to the main branch by agent, model, person and module, and how many were
   reverted or reworked within `[review] revert_window_days`, computed on read by
@@ -202,9 +208,11 @@ events route, so validation, atomicity and idempotent ids are the same. The ledg
 each event with the team that owns its run: the team owning the event's repo, or the repo an
 earlier event of its session named, else the token's team (teams of the token's org only), and
 sets the event's `team` to it. So a run in another team's repo is that team's: its people read
-it, its review list and routing get its items, and its spend counts there. Spend reads the
-same rule when asked, so a run whose repo became known later (a commit found by
-`selfhost scan`) moves to the repo's team. The admin token reads everything and can filter with
+it, its review list and routing get its items, and its spend counts there. Spend is then
+counted by that stored team only: naming another team's or another org's repo later, or in an
+event of your own team, never moves spend there, so usage, budgets, budget alerts and cost per
+merged PR cannot be charged to a team by someone outside it. Only an event stored with no team
+(the admin token) goes to the team that owns its repo, or its run's repo, when read. The admin token reads everything and can filter with
 `?team=`; its events go to a repo's team when exactly one org maps the repo, else no team.
 
 A person token acts only in the teams where its person's membership is active. Revoking someone
@@ -251,8 +259,9 @@ sources.
 - `prs_opened` and `prs_merged` count distinct pull request URLs of `pr.opened` and `pr.merged`
   events in the range, so a pull request a scan and the webhook both report counts once. Their
   agent and model are the attribution from [`packages/attribution`](../../packages/attribution).
-- An event's team is the team that owns its repo (or its run's repo) in the org, else the team
-  of the person token that wrote it, read now, as the overview reads it. `org` picks the org
+- An event's team is the team it was stored with (see [Teams](#teams)); one stored with no team
+  (the admin token) goes to the team that owns its repo, or its run's repo, in the org, as the
+  overview reads it. `org` picks the org
   (default: the person token's, or `default` with the admin token).
 
 Who sees what follows the roles: a person token sees every team of its org it is in (what each
@@ -732,3 +741,40 @@ Environment:
 | `VAULT_ADDR`, `VAULT_TOKEN`        | unset              | Vault for `vault:` secrets, with `VAULT_NAMESPACE` and `SELFHOST_VAULT_MOUNT` (default `secret`). Never set by a policy.        |
 | `INFISICAL_PROJECT_ID`             | unset              | Infisical for `infisical:` secrets, with `INFISICAL_ENVIRONMENT`, `INFISICAL_TOKEN` and `INFISICAL_URL`. Never set by a policy. |
 | `SELFHOST_GIT_CLONES`              | unset              | Folder of clones at `<owner>/<name>` (lower case), read for provenance and module revert rates.                                 |
+| `SELFHOST_GATEWAY_TOOL`            | unset              | `bifrost` or `litellm`: the AI gateway to configure when the server's `selfhost.toml` sets no `[integrations.router]`.          |
+| `SELFHOST_GATEWAY_URL`             | unset              | The gateway's own address: its management API, and Bifrost's model routes. Unset with Bifrost: `http://bifrost:8080`.           |
+| `SELFHOST_GATEWAY_ADMIN_KEY`       | unset              | Bifrost's admin password, or LiteLLM's master key. Sent only to the gateway.                                                    |
+| `SELFHOST_GATEWAY_ADMIN_USER`      | `selfhost`         | Bifrost's admin username.                                                                                                       |
+| `SELFHOST_GATEWAY_PUBLIC_URL`      | unset              | Gateway address agents get. Unset: `<SELFHOST_PUBLIC_URL>/llm` with Bifrost (see [Without Docker](#without-docker)).            |
+| `SELFHOST_GATEWAY_SYNC`            | `5m`               | `off` stops writing budgets and keys to the gateway and reading its usage from this server.                                     |
+
+## Without Docker
+
+The server runs from a build with Node 20 or later, on the embedded database or Postgres, with no
+Caddy in front:
+
+```sh
+pnpm install && pnpm --filter @selfhost/server... build
+DATABASE_URL=postgres://selfhost@localhost/selfhost \
+SELFHOST_PUBLIC_URL=https://selfhost.example.com \
+  node apps/server/dist/main.js
+```
+
+Whatever terminates TLS in front of it forwards every path to the server. With an AI gateway,
+also set `SELFHOST_GATEWAY_TOOL`, `SELFHOST_GATEWAY_URL` and `SELFHOST_GATEWAY_ADMIN_KEY` (and
+`SELFHOST_GATEWAY_ADMIN_USER` when Bifrost's admin is not `selfhost`):
+
+```sh
+SELFHOST_GATEWAY_TOOL=bifrost
+SELFHOST_GATEWAY_URL=http://127.0.0.1:8080
+SELFHOST_GATEWAY_ADMIN_KEY=<Bifrost's admin password>
+```
+
+Agents get the address in `SELFHOST_GATEWAY_PUBLIC_URL` when it is set. Otherwise, with Bifrost
+and `SELFHOST_PUBLIC_URL`, they get `<SELFHOST_PUBLIC_URL>/llm`, and the server forwards
+`/llm/anthropic/`, `/llm/openai/`, `/llm/v1/` and `/llm/health` to `SELFHOST_GATEWAY_URL` itself,
+as Caddy does in the Docker install: Bifrost's management API and web UI are not served. Without
+either, agents get `SELFHOST_GATEWAY_URL`, which must then be reachable from their laptops. `GET
+/v1/gateway` (`selfhost gateway`) checks the gateway's health at the address agents get, not only
+the management address, so a URL that answers with something other than the gateway shows as
+unhealthy with the reason.

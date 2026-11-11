@@ -271,3 +271,72 @@ describe("POST /v1/events with older event schema versions", () => {
     ]);
   });
 });
+
+describe("POST /v1/events from two ledgers of the same run", () => {
+  it("keeps the first copy of each tool call and session start, and relinks decisions", async () => {
+    const ledger = await openLedger({ dataDir: "memory://" });
+    try {
+      const app = createApp({ version: "test", ledger, token: TOKEN });
+      const post = async (events: LedgerEvent[], token = TOKEN) =>
+        (await (
+          await app.request("/v1/events", {
+            method: "POST",
+            headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+            body: JSON.stringify({ events }),
+          })
+        ).json()) as { accepted: number; duplicates: number };
+      const run = { session_id: "s-two-ledgers", agent: { vendor: "claude_code" as const } };
+      const call = (source: LedgerEvent["source"], toolUse: string) =>
+        makeEvent({
+          ...run,
+          source,
+          kind: "tool.called",
+          tool: { name: "Bash", input_summary: `echo ${toolUse}` },
+          data: { tool_use_id: toolUse },
+        });
+      const decided = (tool: LedgerEvent) =>
+        makeEvent({
+          ...run,
+          source: "hook",
+          kind: "policy.evaluated",
+          tool: tool.tool,
+          decision: { verdict: "allow", by: "selfhost-policy" },
+          data: { tool_event_id: tool.id },
+        });
+
+      // The watch ledger synced the hook copies first.
+      const hookA = call("hook", "toolu_a");
+      expect(await post([makeEvent({ ...run }), hookA, decided(hookA)])).toEqual({
+        accepted: 3,
+        duplicates: 0,
+      });
+      // A one-shot import into a fresh data dir sends its own copies of the same facts.
+      const logA = call("local_log", "toolu_a");
+      const hookB = call("hook", "toolu_b");
+      const logB = call("local_log", "toolu_b");
+      const second = await post([
+        makeEvent({ ...run, source: "local_log" }),
+        logA,
+        hookB,
+        logB,
+        decided(logB),
+      ]);
+      expect(second).toEqual({ accepted: 2, duplicates: 3 });
+
+      const stored = (await ledger.query({ session: run.session_id, limit: 100 })).events;
+      const calls = stored.filter((e) => e.kind === "tool.called");
+      expect(calls.map((e) => [e.source, e.data?.tool_use_id]).sort()).toEqual([
+        ["hook", "toolu_a"],
+        ["hook", "toolu_b"],
+      ]);
+      expect(stored.filter((e) => e.kind === "session.started")).toHaveLength(1);
+      // The decision on the skipped log copy links to the hook copy that stayed.
+      const links = stored
+        .filter((e) => e.kind === "policy.evaluated")
+        .map((e) => e.data?.tool_event_id);
+      expect(links.sort()).toEqual([hookA.id, hookB.id].sort());
+    } finally {
+      await ledger.close();
+    }
+  });
+});

@@ -11,7 +11,8 @@ describe("selfhost console", () => {
     let report: ConsoleReport | undefined;
     const opened: string[] = [];
     const checks: Promise<void>[] = [];
-    const result = run(["console", "--port", "0", "--data-dir", data.root, "--json"], {
+    const args = ["console", "--port", "0", "--data-dir", data.root, "--json", "--show-token"];
+    const result = run(args, {
       openBrowser: (url) => opened.push(url),
       untilStopped: () =>
         new Promise<void>((resolve) => {
@@ -19,12 +20,13 @@ describe("selfhost console", () => {
         }),
       write: (line) => {
         report = JSON.parse(line) as ConsoleReport;
-        const signedIn = new URL(report.url);
+        const signedIn = new URL(report.signed_in_url ?? "");
         const token = decodeURIComponent(signedIn.hash.replace(/^#token=/, ""));
         const base = `${signedIn.origin}/`;
         checks.push(
           (async () => {
             expect(token).toBe(report?.token);
+            expect(report?.url).toBe(`${signedIn.origin}/`);
             expect(readFileSync(data.path("token"), "utf8").trim()).toBe(token);
             expect(signedIn.hostname).toBe("127.0.0.1");
             const page = await fetch(base);
@@ -45,7 +47,7 @@ describe("selfhost console", () => {
     expect(err).toBe("");
     expect(code).toBe(0);
     expect(report).toMatchObject({ schema: "selfhost.console/v1", token_file: data.path("token") });
-    expect(opened).toEqual([report?.url]);
+    expect(opened).toEqual([report?.signed_in_url]);
   });
 
   it("in a team, opens the team server's console signed in with the person token", async () => {
@@ -69,8 +71,18 @@ describe("selfhost console", () => {
     );
     expect(out).toContain(`Signed-in link: ${link}`);
     expect(opened).toEqual([link]);
+    // JSON lands in logs and scripts: no token in it unless --show-token asks.
     const json = await run(["console", "--json", "--no-open"], { configPath });
-    expect(JSON.parse(json.out)).toMatchObject({ mode: "team", url: link });
+    expect(json.out).not.toContain("selfhost_person_abc");
+    const report = JSON.parse(json.out) as ConsoleReport;
+    expect(report).toMatchObject({ mode: "team", url: "https://selfhost.acme.dev/" });
+    expect(report).not.toHaveProperty("token");
+    expect(report).not.toHaveProperty("signed_in_url");
+    const shown = await run(["console", "--json", "--show-token", "--no-open"], { configPath });
+    expect(JSON.parse(shown.out)).toMatchObject({
+      token: "selfhost_person_abc",
+      signed_in_url: link,
+    });
   });
 
   it("refuses a port that is not one", async () => {

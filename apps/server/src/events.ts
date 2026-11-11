@@ -43,6 +43,8 @@ export interface EventRouteOptions {
   team?: (c: Context) => string | undefined;
   /** The person of that token, so a write naming another team's repo stays in their team. */
   person?: (c: Context) => string | undefined;
+  /** Called with the kinds of a batch that stored new events, after it is stored. */
+  stored?: (kinds: readonly string[]) => void;
 }
 
 function apiError(code: string, message: string): ApiError {
@@ -109,10 +111,14 @@ export function eventRoutes(app: Hono, ledger: Ledger, options: EventRouteOption
       }
       try {
         const person = options.person?.(c);
+        // Hooks, session logs and a person's other ledgers each send the same tool calls and
+        // session starts under their own ids: the first copy stays.
         const result = await ledger.append(events, {
           team: options.team?.(c),
           ...(person !== undefined ? { person } : {}),
+          oneCopyPerFact: true,
         });
+        if (result.accepted.length > 0) options.stored?.(kindsOf(events));
         return c.json({
           accepted: result.accepted.length,
           duplicates: result.duplicates.length,
@@ -164,6 +170,15 @@ export function eventRoutes(app: Hono, ledger: Ledger, options: EventRouteOption
     }
   });
 }
+
+const kindsOf = (events: unknown[]) => [
+  ...new Set(
+    events.flatMap((event) => {
+      const kind = (event as { kind?: unknown }).kind;
+      return typeof kind === "string" ? [kind] : [];
+    }),
+  ),
+];
 
 function invalidQuery(c: Context, field: string, message: string) {
   return c.json(apiError("invalid_query", `${field}: ${message}`), 400);

@@ -85,4 +85,35 @@ describe("budget alerts from ledger spend", () => {
     ]);
     expect(items[0]?.route?.from).toBe("the team's owners");
   });
+
+  it("suggests what matches the [budget] mode in force", async () => {
+    const suggestionFor = async (budget: string, gateway?: boolean) => {
+      const ledger = await openLedger({ dataDir: "memory://" });
+      ledgers.push(ledger);
+      const app = createApp({ version: "1.2.3", ledger, token: TOKEN, now: () => NOW });
+      const admin = caller(app, TOKEN);
+      const created = (await (await admin("/v1/teams", "POST", { name: "Web" })).json()) as {
+        invite: string;
+      };
+      const joined = (await (
+        await admin("/v1/join", "POST", { invite: created.invite, person: "dev@example.com" })
+      ).json()) as JoinResponse;
+      const dev = caller(app, joined.token);
+      const text = `version = 1\n[budget]\nmonthly_usd = 1\n${budget}`;
+      expect((await dev("/v1/policy", "PUT", { text })).status).toBe(200);
+      expect((await dev("/v1/events", "POST", { events: [cost(1.2)] })).status).toBe(200);
+      expect(await raiseBudgetAlerts(ledger, NOW, gateway === undefined ? {} : { gateway })).toBe(
+        1,
+      );
+      const [alert] = (await ledger.query({ kind: "alert.raised" })).events;
+      return String(alert?.data?.suggestion);
+    };
+    expect(await suggestionFor("")).toContain('or set [budget] mode = "hard" with a gateway');
+    const hard = await suggestionFor('mode = "hard"\n', true);
+    expect(hard).not.toContain('set [budget] mode = "hard"');
+    expect(hard).toContain("the gateway refuses requests sent with its keys");
+    const noGateway = await suggestionFor('mode = "hard"\n', false);
+    expect(noGateway).not.toContain('set [budget] mode = "hard"');
+    expect(noGateway).toContain("no gateway runs on this server");
+  });
 });

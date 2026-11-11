@@ -377,7 +377,7 @@ describe.each(BACKENDS)("orgs, roles and repos on $name", (backend) => {
     );
 
     it.skipIf(backend.skip)(
-      "moves a run's spend to its repo's team once the repo is known",
+      "keeps a run's spend in the team that wrote it once the repo is known",
       async () => {
         const { ledger, db } = store;
         const from = "2026-11-01T00:00:00.000Z";
@@ -402,11 +402,13 @@ describe.each(BACKENDS)("orgs, roles and repos on $name", (backend) => {
           }),
         ]);
         const after = await ledger.orgs.teamCosts("runs", ["runs-web", "runs-data"], from, to);
+        // Repo ownership labels the run but never moves spend another team wrote.
         expect(after.map((c) => [c.event.id.slice(-4), c.team])).toEqual([
-          ["1c21", "runs-data"],
-          ["1c22", "runs-data"],
+          ["1c21", "runs-web"],
+          ["1c22", "runs-web"],
           ["1c23", "runs-web"],
         ]);
+        expect(await ledger.orgs.teamCosts("runs", ["runs-data"], from, to)).toEqual([]);
         expect(
           await ledger.orgs.teamCosts("runs", ["runs-data"], to, "2027-01-01T00:00:00Z"),
         ).toEqual([]);

@@ -23,8 +23,10 @@ import { countedCostsSql, sourceRankSql } from "@selfhost/spend";
  *   events of sessions that reported any cache read or write in the range; a session that
  *   reported none is unknown and left out, as cacheStats in @selfhost/spend does.
  *
- * An event's team is the team that owns its repo in the org, or its run's repo, else the team of
- * the person token that wrote it, read now, as the team overview reads it.
+ * An event's team is the team it was stored with: the writer's team, or the repo's team when the
+ * writer is in it (OrgStore.assignTeams). Repo ownership read now only labels an event stored with
+ * no team (written with the admin token), with the team that owns its repo, or its run's repo, in
+ * this org. It never moves spend from the team that wrote it to another team or org.
  */
 
 export interface UsageFilters {
@@ -123,7 +125,7 @@ export function usageSql(input: UsageQueryInput): { text: string; params: unknow
   const text = `
 WITH base AS (
   SELECT e.id, e.ts, e.source, e.kind, e.session_id, e.body,
-    coalesce(tr.team_id, e.team) AS team_id,
+    coalesce(e.team, tr.team_id) AS team_id,
     e.agent AS vendor,
     CASE WHEN e.actor_kind = 'person' THEN e.actor_id END AS person_id,
     e.model AS model_id

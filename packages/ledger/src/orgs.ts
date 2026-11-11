@@ -92,8 +92,10 @@ export interface OrgStore {
   /** Remembers the repo of each run (session) the events name one for. */
   recordRuns(tx: Queryable, events: LedgerEvent[]): Promise<void>;
   /**
-   * cost.recorded events from `from` (inclusive) to `to` of runs assigned to these teams of the
-   * org. A run's team is read now, so spend moves to a repo's team once the run's repo is known.
+   * cost.recorded events from `from` (inclusive) to `to` stored with these teams of the org. An
+   * event stored with no team (the admin token) goes to the team that owns its repo, or its run's
+   * repo, read now; a stored team is never moved by repo ownership, so naming another team's or
+   * org's repo cannot charge spend to it.
    */
   teamCosts(org: string, teams: string[], from: string, to: string): Promise<TeamCost[]>;
   /** People in each of these teams, not counting those revoked from it. */
@@ -376,13 +378,13 @@ export function createOrgStore(db: Database): OrgStore {
     async teamCosts(org, teams, from, to) {
       if (teams.length === 0) return [];
       const rows = await db.query<{ team: string; body: unknown }>(
-        `SELECT coalesce(tr.team_id, e.team) AS team, e.body
+        `SELECT coalesce(e.team, tr.team_id) AS team, e.body
          FROM events e
          LEFT JOIN run_repos rr ON rr.session_id = e.session_id
          LEFT JOIN team_repos tr
            ON tr.org_id = $2 AND tr.repo = coalesce(lower(e.body->>'repo'), rr.repo)
          WHERE e.kind = 'cost.recorded' AND e.ts >= $3::timestamptz AND e.ts < $4::timestamptz
-           AND coalesce(tr.team_id, e.team) ${IN_LIST}
+           AND coalesce(e.team, tr.team_id) ${IN_LIST}
          ORDER BY e.ts, e.id`,
         [JSON.stringify(teams), org, from, to],
       );

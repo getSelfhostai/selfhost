@@ -72,6 +72,7 @@ export function turnText(event: LedgerEvent): string | undefined {
 /**
  * The run's last `count` turns, oldest first, each one line masked again under `patterns`, so a
  * value the team's [[redaction]] patterns name stays masked even in text written before them.
+ * Each tool call (by its tool_use_id) shows once, however many copies of it were stored.
  */
 export function lastTurns(
   events: readonly LedgerEvent[],
@@ -79,7 +80,15 @@ export function lastTurns(
   patterns: readonly RedactionPattern[] = [],
 ): HandoffTurn[] {
   const turns: HandoffTurn[] = [];
+  // A tool call reported by both the hook and the session log, or by two ledgers, shows once.
+  const calls = new Set<string>();
   for (const event of [...events].sort(order)) {
+    const call = event.kind === "tool.called" ? event.data?.tool_use_id : undefined;
+    if (typeof call === "string" && call !== "") {
+      const key = `${event.agent?.vendor ?? ""}\n${event.session_id ?? ""}\n${call}`;
+      if (calls.has(key)) continue;
+      calls.add(key);
+    }
     const text = turnText(event);
     if (text !== undefined) {
       turns.push({ ts: event.ts, kind: event.kind, text: maskSecrets(text, patterns).text });

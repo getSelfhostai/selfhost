@@ -36,11 +36,14 @@ import { limit, readBody, SMALL_BODY_BYTES } from "./http.js";
 import { costsOf } from "./orgs.js";
 import { teamConfig } from "./runs.js";
 import type { PersonEnv } from "./teams.js";
+import { wakeAfter } from "./wake.js";
 
 /** A person keeps at most this many targets. */
 export const MAX_TARGETS = 10;
 /** How often the job looks for something to send. */
 export const NOTIFY_INTERVAL_MS = 60_000;
+/** How soon a pass follows an item an agent waits on or a budget alert being filed. */
+export const WAKE_NOTIFY_MS = 2000;
 
 const addTargetBody = createValidator(AddNotifyTargetRequestSchema);
 const digestBody = createValidator(SetNotifyDigestRequestSchema);
@@ -363,6 +366,8 @@ export interface NotifyJobOptions {
   /** SELFHOST_PUBLIC_URL, for links to the console. */
   publicUrl?: string;
   intervalMs?: number;
+  /** Default: WAKE_NOTIFY_MS. */
+  wakeMs?: number;
   log?: (line: string) => void;
   now?: () => Date;
 }
@@ -375,6 +380,7 @@ export function startNotifyJob(ledger: Ledger, options: NotifyJobOptions) {
   const { intervalMs = NOTIFY_INTERVAL_MS, log = console.log } = options;
   const directory = serverDirectory(ledger, options.config);
   let running: Promise<void> | undefined;
+  let again = false;
   const run = () => {
     running ??= runNotify(ledger, {
       deliver: options.deliver,
@@ -396,11 +402,28 @@ export function startNotifyJob(ledger: Ledger, options: NotifyJobOptions) {
       )
       .finally(() => {
         running = undefined;
+        if (again) {
+          again = false;
+          void run();
+        }
       });
     return running;
   };
   const timer = setInterval(run, intervalMs);
   timer.unref();
+  // An item an agent waits on, or a budget alert, was just filed: a pass within WAKE_NOTIFY_MS,
+  // and another after the one running, which may have read the list before it was filed.
+  const wake = wakeAfter(() => {
+    if (running) again = true;
+    else void run();
+  }, options.wakeMs ?? WAKE_NOTIFY_MS);
   void run();
-  return { run, stop: () => clearInterval(timer) };
+  return {
+    run,
+    wake,
+    stop: () => {
+      clearInterval(timer);
+      wake.cancel();
+    },
+  };
 }

@@ -7,6 +7,7 @@ import {
   NAME_PREFIX,
   ownerFromMetadata,
   RUN_KEY_TTL_MS,
+  sameBudgets,
   teamName,
 } from "./policy.js";
 import type {
@@ -94,12 +95,22 @@ function budgetsOf(list: BifrostBudget[] | undefined): GatewayBudget[] {
   });
 }
 
-const budgetBody = (limits: BudgetLimit[]) =>
-  limits.map((limit) => ({
-    max_limit: limit.limit_usd,
-    reset_duration: RESET[limit.period],
-    calendar_aligned: limit.period !== "run",
-  }));
+/**
+ * The budgets to send. A budget that exists for the same period keeps its id, so Bifrost changes
+ * its limit in place and keeps what was spent in the current window; a budget sent without an id
+ * is a new one that starts at zero. current_usage goes along for a gateway that rebuilds budgets.
+ */
+const budgetBody = (limits: BudgetLimit[], current: BifrostBudget[] = []) =>
+  limits.map((limit) => {
+    const found = current.find((b) => b.reset_duration === RESET[limit.period]);
+    return {
+      ...(found?.id ? { id: found.id } : {}),
+      max_limit: limit.limit_usd,
+      reset_duration: RESET[limit.period],
+      calendar_aligned: limit.period !== "run",
+      ...(typeof found?.current_usage === "number" ? { current_usage: found.current_usage } : {}),
+    };
+  });
 
 /**
  * Fallbacks: Bifrost tries a key's other providers in order of weight when a request has none of
@@ -142,6 +153,15 @@ function managed(key: BifrostKey): ManagedKey | undefined {
 export function bifrostClient(options: BifrostOptions): GatewayClient {
   const now = options.now ?? (() => new Date());
   const basic = Buffer.from(`${options.username}:${options.password}`).toString("base64");
+  // Each team's and key's budgets as last read, by "team:<id>" and "key:<id>", so an update
+  // names the budgets it changes instead of replacing them (which would reset their spend).
+  const known = new Map<string, BifrostBudget[]>();
+  const remember = (owner: string, budgets: BifrostBudget[] | undefined) =>
+    known.set(owner, budgets ?? []);
+  /** A full read replaces what was known of that kind, so deleted keys are not kept. */
+  const forget = (kind: "team" | "key") => {
+    for (const owner of known.keys()) if (owner.startsWith(`${kind}:`)) known.delete(owner);
+  };
   const http = createHttp({
     baseUrl: options.url.replace(/\/+$/, ""),
     headers: { authorization: `Basic ${basic}` },
@@ -149,11 +169,16 @@ export function bifrostClient(options: BifrostOptions): GatewayClient {
     ...(options.minIntervalMs === undefined ? {} : { minIntervalMs: options.minIntervalMs }),
   });
 
-  const keyBody = (owner: KeyOwner, settings: KeySettings, team?: ManagedTeam) => ({
+  const keyBody = (
+    owner: KeyOwner,
+    settings: KeySettings,
+    team?: ManagedTeam,
+    current?: BifrostBudget[],
+  ) => ({
     name: keyName(owner),
     description: "Managed by selfhost from selfhost.toml. Changes made here are overwritten.",
     metadata: keyMetadata(owner),
-    budgets: budgetBody(settings.budgets),
+    budgets: budgetBody(settings.budgets, current),
     is_active: settings.active,
     ...providerBody(settings),
     ...(team ? { team_id: team.id } : {}),
@@ -168,6 +193,7 @@ export function bifrostClient(options: BifrostOptions): GatewayClient {
   function issued(key: BifrostKey | undefined): IssuedKey {
     const found = key ? managed(key) : undefined;
     if (!key?.value || !found) throw new Error("Bifrost answered without the key it created");
+    remember(`key:${key.id}`, key.budgets);
     return { key: found, value: key.value };
   }
 
@@ -194,6 +220,8 @@ export function bifrostClient(options: BifrostOptions): GatewayClient {
 
     async teams() {
       const body = await http.call<{ teams?: BifrostTeam[] }>("GET", "/api/governance/teams");
+      forget("team");
+      for (const team of body.teams ?? []) remember(`team:${team.id}`, team.budgets);
       return (body.teams ?? []).flatMap((team) =>
         team.name.startsWith(NAME_PREFIX)
           ? [
@@ -213,18 +241,25 @@ export function bifrostClient(options: BifrostOptions): GatewayClient {
         budgets: budgetBody(budgets),
       });
       if (!body.team?.id) throw new Error("Bifrost answered without the team it created");
+      remember(`team:${body.team.id}`, body.team.budgets);
       return { id: body.team.id, team, budgets: budgetsOf(body.team.budgets) };
     },
 
     async updateTeam(existing, budgets) {
-      await http.call("PUT", `/api/governance/teams/${encodeURIComponent(existing.id)}`, {
-        name: teamName(existing.team),
-        budgets: budgetBody(budgets),
-      });
+      const body = await http.call<{ team?: BifrostTeam }>(
+        "PUT",
+        `/api/governance/teams/${encodeURIComponent(existing.id)}`,
+        {
+          name: teamName(existing.team),
+          budgets: budgetBody(budgets, known.get(`team:${existing.id}`)),
+        },
+      );
+      if (body?.team?.budgets) remember(`team:${existing.id}`, body.team.budgets);
     },
 
     async keys() {
       const keys: ManagedKey[] = [];
+      forget("key");
       // Paged, by name. Any key value in the answer is dropped by managed() and goes nowhere.
       for (let offset = 0; ; offset += PAGE) {
         const body = await http.call<{ virtual_keys?: BifrostKey[]; total_count?: number }>(
@@ -233,6 +268,7 @@ export function bifrostClient(options: BifrostOptions): GatewayClient {
         );
         const page = body.virtual_keys ?? [];
         for (const key of page) {
+          remember(`key:${key.id}`, key.budgets);
           const found = managed(key);
           if (found) keys.push(found);
         }
@@ -254,13 +290,18 @@ export function bifrostClient(options: BifrostOptions): GatewayClient {
       const {
         expires_at: _expires,
         delete_after_expire: _delete,
-        ...body
-      } = keyBody(existing, settings);
-      await http.call(
+        budgets,
+        ...rest
+      } = keyBody(existing, settings, undefined, known.get(`key:${existing.id}`));
+      // Budgets go only when they change: a key turned off or given other providers keeps its
+      // budgets, and what it spent, as they are.
+      const body = sameBudgets(existing.budgets, settings.budgets) ? rest : { ...rest, budgets };
+      const answer = await http.call<{ virtual_key?: BifrostKey }>(
         "PUT",
         `/api/governance/virtual-keys/${encodeURIComponent(existing.id)}`,
         body,
       );
+      if (answer?.virtual_key?.budgets) remember(`key:${existing.id}`, answer.virtual_key.budgets);
     },
 
     async rotateKey(existing) {
