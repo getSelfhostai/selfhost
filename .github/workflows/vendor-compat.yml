@@ -36,7 +36,7 @@ jobs:
       run: ${{ steps.latest.outputs.run }}
       versions: ${{ steps.latest.outputs.versions }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           sparse-checkout: |
             packages/vendor-compat
@@ -46,18 +46,21 @@ jobs:
           FORCE: ${{ (github.event_name == 'workflow_dispatch' && inputs.force) || github.event.schedule == '17 5 * * 1' }}
         run: node packages/vendor-compat/scripts/latest.mjs --github-output
 
+  # Runs the newly released vendor CLIs, so it gets a read-only token and keeps no credentials in
+  # the checkout. It hands its results to the publish job as an artifact.
   compat:
     needs: releases
     if: needs.releases.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
-      contents: write
-      issues: write
+      contents: read
     steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -65,7 +68,6 @@ jobs:
       - name: Set paths
         run: |
           echo "COMPAT_RESULTS=$RUNNER_TEMP/compat/results.json" >> "$GITHUB_ENV"
-          echo "COMPAT_ISSUES=$RUNNER_TEMP/compat/issues.json" >> "$GITHUB_ENV"
           echo "COMPAT_VENDORS=$RUNNER_TEMP/compat/vendors" >> "$GITHUB_ENV"
 
       # Each step records failures in the results file and exits 0, so one broken CLI does not
@@ -91,23 +93,46 @@ jobs:
           COMPAT_CLAUDE_MODEL: ${{ vars.COMPAT_CLAUDE_MODEL }}
           COMPAT_CODEX_MODEL: ${{ vars.COMPAT_CODEX_MODEL }}
         run: pnpm --silent --filter @selfhost/vendor-compat compat live --results "$COMPAT_RESULTS"
-
-      - name: Update the compatibility page
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: ${{ !cancelled() }}
+        with:
+          name: vendor-compat-results
+          path: ${{ runner.temp }}/compat/results.json
+          if-no-files-found: error
+          retention-days: 14
+
+  # Writes the page from the results and commits it, and opens or closes issues. It never runs a
+  # vendor CLI; it reads the compat job's results as data.
+  publish:
+    needs: compat
+    if: ${{ !cancelled() && needs.compat.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: vendor-compat-results
+          path: ${{ runner.temp }}/compat
+      - name: Set paths
+        run: |
+          echo "COMPAT_RESULTS=$RUNNER_TEMP/compat/results.json" >> "$GITHUB_ENV"
+          echo "COMPAT_ISSUES=$RUNNER_TEMP/compat/issues.json" >> "$GITHUB_ENV"
+      - name: Update the compatibility page
         run: >-
           pnpm --silent --filter @selfhost/vendor-compat compat report
           --results "$COMPAT_RESULTS" --issues "$COMPAT_ISSUES"
           --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-      - uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() }}
-        continue-on-error: true
-        with:
-          name: vendor-compat-results
-          path: ${{ runner.temp }}/compat/*.json
-          if-no-files-found: warn
-          retention-days: 14
       - name: Commit the page
-        if: ${{ !cancelled() }}
         run: |
           git add docs/compatibility
           if git diff --cached --quiet; then

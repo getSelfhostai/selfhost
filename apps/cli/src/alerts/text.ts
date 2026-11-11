@@ -9,10 +9,10 @@ import type {
   WindowForecast,
 } from "@selfhost/spend";
 import { usd } from "../format.js";
+import { DOCS_URL } from "../project.js";
 
 /** Default key rotation runbook, overridden by [alerts] runbook_url. */
-export const DEFAULT_RUNBOOK_URL =
-  "https://github.com/getselfhostai/selfhost/blob/main/packages/spend/README.md#key-rotation-runbook";
+export const DEFAULT_RUNBOOK_URL = `${DOCS_URL}/packages/spend/README.md#key-rotation-runbook`;
 
 export const PLAN_NAMES: Record<Plan, string> = { claude: "Claude", codex: "Codex" };
 export const WINDOW_NAMES: Record<LimitWindow, string> = { session: "5-hour", weekly: "weekly" };

@@ -1,0 +1,367 @@
+name: Release
+
+# Publishes a release from a v* tag: the npm package selfhostai, the server image
+# ghcr.io/<owner>/selfhost for linux/amd64 and linux/arm64, and a GitHub Release with the
+# binaries, the npm tarball, the Docker Compose files, the JSON Schemas, SHA256SUMS and build
+# provenance attestations. The tag must match `pnpm release:version`, and every CI job must pass.
+#
+# Run it by hand (workflow_dispatch) with dry_run to build, pack, smoke test and check everything
+# without publishing anything. A run that publishes must be on a v* tag.
+#
+# Order: the image first (selfhost up checks it exists), then npm, then the GitHub Release. Each
+# publish step skips what a previous attempt already published, so a failed run can be re-run.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build and check everything, publish nothing
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      dry_run: ${{ steps.version.outputs.dry_run }}
+      image: ${{ steps.version.outputs.image }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      npm_tag: ${{ steps.version.outputs.npm_tag }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Check the tag, the version everywhere, the changelog and the image owner
+        id: version
+        env:
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          version=$(node scripts/release/version.mjs --print)
+          if [ "$DRY_RUN" = true ]; then
+            node scripts/release/version.mjs --check --changelog
+            # A dry run may come from a branch or another owner: these only warn.
+            [ "$GITHUB_REF" = "refs/tags/v$version" ] \
+              || echo "::warning::$GITHUB_REF is not the tag v$version; a real release needs it"
+            node scripts/release/version.mjs --check --owner "$GITHUB_REPOSITORY_OWNER" > /dev/null 2>&1 \
+              || echo "::warning::GITHUB_OWNER in apps/cli/src/project.ts is not $GITHUB_REPOSITORY_OWNER, so selfhost up would look for the image elsewhere"
+          else
+            case "$GITHUB_REF" in
+              refs/tags/v*) ;;
+              *) echo "::error::A release that publishes runs on a v* tag, not $GITHUB_REF. Use dry_run on a branch."; exit 1 ;;
+            esac
+            node scripts/release/version.mjs --check --changelog \
+              --tag "$GITHUB_REF_NAME" --owner "$GITHUB_REPOSITORY_OWNER"
+          fi
+          # ghcr.io names are lower case; the owner may not be.
+          owner=$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
+          case "$version" in
+            *-*) prerelease=true npm_tag=next ;;
+            *) prerelease=false npm_tag=latest ;;
+          esac
+          {
+            echo "version=$version"
+            echo "tag=v$version"
+            echo "dry_run=$DRY_RUN"
+            echo "image=ghcr.io/$owner/selfhost"
+            echo "prerelease=$prerelease"
+            echo "npm_tag=$npm_tag"
+          } >> "$GITHUB_OUTPUT"
+          echo "release v$version, dry run: $DRY_RUN, image ghcr.io/$owner/selfhost"
+
+  # Every CI job (check, cli, receipt, upgrade, compose, install) from ci.yml, unchanged.
+  ci:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      # Keep in step with the bun entry in the pnpm-workspace.yaml catalog.
+      - uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
+        with:
+          bun-version: 1.4.4
+      - run: pnpm install --frozen-lockfile
+      - name: Build the Node bundle and the binaries
+        run: |
+          pnpm --filter "@selfhost/cli..." --filter @selfhost/console build
+          # CI is set, so every target the cli job builds.
+          pnpm build:cli
+          [ "$(./apps/cli/dist/selfhost-linux-x64 --version)" = "$VERSION" ]
+          [ "$(node apps/cli/dist/main.js --version)" = "$VERSION" ]
+      - name: Pack the npm package and gather the release files
+        run: |
+          node scripts/release/pack-cli.mjs --out "$RUNNER_TEMP/npm"
+          node scripts/release/assets.mjs "$RUNNER_TEMP/npm/selfhostai-$VERSION.tgz" "$RUNNER_TEMP/release"
+          mkdir -p "$RUNNER_TEMP/notes"
+          node scripts/release/notes.mjs "$VERSION" > "$RUNNER_TEMP/notes/notes.md"
+          cat "$RUNNER_TEMP/release/SHA256SUMS"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-files
+          path: ${{ runner.temp }}/release
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-notes
+          path: ${{ runner.temp }}/notes/notes.md
+          if-no-files-found: error
+          retention-days: 7
+
+  # The packed tarball, installed the ways people install it, on the Node versions it supports.
+  smoke:
+    needs: [verify, build]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: [20, 22]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/release
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-files
+          path: ${{ runner.temp }}/release
+      - name: Check SHA256SUMS
+        working-directory: ${{ runner.temp }}/release
+        run: shasum -a 256 -c SHA256SUMS
+      - name: Install the npm tarball with npx, npm install and npm install -g
+        run: sh scripts/release/smoke.sh "$RUNNER_TEMP/release/selfhostai-$VERSION.tgz" "$VERSION"
+      - name: Run this platform's binary with no Node on PATH
+        working-directory: ${{ runner.temp }}/release
+        run: |
+          case "$RUNNER_OS-$RUNNER_ARCH" in
+            Linux-X64) bin=selfhost-linux-x64 ;;
+            macOS-ARM64) bin=selfhost-darwin-arm64 ;;
+            macOS-X64) bin=selfhost-darwin-x64 ;;
+            *) echo "no binary for $RUNNER_OS-$RUNNER_ARCH"; exit 0 ;;
+          esac
+          chmod +x "$bin"
+          empty=$(mktemp -d)
+          [ "$(env -i PATH="$empty" HOME="$empty" "./$bin" --version)" = "$VERSION" ]
+          env -i PATH="$empty" HOME="$empty" "./$bin" doctor --json > /dev/null
+
+  image:
+    needs: [verify, ci, smoke]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      IMAGE: ${{ needs.verify.outputs.image }}
+      DRY_RUN: ${{ needs.verify.outputs.dry_run }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        if: needs.verify.outputs.dry_run != 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Tags, and whether this release is already pushed
+        id: tags
+        env:
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+        run: |
+          {
+            echo "tags<<EOF"
+            echo "$IMAGE:$VERSION"
+            [ "$PRERELEASE" = true ] || echo "$IMAGE:latest"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          [ "$DRY_RUN" != true ] || exit 0
+          # A re-run skips an image this commit already pushed, and refuses to replace one
+          # built from another commit.
+          if docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Image}}' \
+            > "$RUNNER_TEMP/existing.json" 2> /dev/null; then
+            revision=$(jq -r '[.. | objects | .Labels? // empty | ."org.opencontainers.image.revision"] | first // ""' \
+              "$RUNNER_TEMP/existing.json")
+            if [ "$revision" = "$GITHUB_SHA" ]; then
+              echo "::notice::$IMAGE:$VERSION is already pushed from $GITHUB_SHA"
+              echo "pushed=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "::error::$IMAGE:$VERSION is already pushed from ${revision:-another commit}; a release is never pushed twice"
+            exit 1
+          fi
+      - name: Build for linux/amd64 and linux/arm64, and push unless this is a dry run
+        id: build
+        if: steps.tags.outputs.pushed != 'true'
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ needs.verify.outputs.dry_run != 'true' }}
+          tags: ${{ steps.tags.outputs.tags }}
+          labels: |
+            org.opencontainers.image.title=selfhost
+            org.opencontainers.image.description=The selfhost API server and web console
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ needs.verify.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=Apache-2.0
+          provenance: mode=max
+          sbom: true
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        if: needs.verify.outputs.dry_run != 'true' && steps.tags.outputs.pushed != 'true'
+        with:
+          subject-name: ${{ needs.verify.outputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: Check the published image has both platforms
+        if: needs.verify.outputs.dry_run != 'true'
+        run: |
+          docker buildx imagetools inspect "$IMAGE:$VERSION" | tee "$RUNNER_TEMP/manifest.txt"
+          grep -q 'linux/amd64' "$RUNNER_TEMP/manifest.txt"
+          grep -q 'linux/arm64' "$RUNNER_TEMP/manifest.txt"
+
+  npm:
+    needs: [verify, ci, smoke, image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      DRY_RUN: ${{ needs.verify.outputs.dry_run }}
+      NPM_TAG: ${{ needs.verify.outputs.npm_tag }}
+    steps:
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-files
+          path: ${{ runner.temp }}/release
+      # Trusted publishing (OIDC) needs npm 11.5.1 or later.
+      - run: npm install -g npm@11.6.2
+      - name: Publish selfhostai, with trusted publishing or NPM_TOKEN
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          tarball="$RUNNER_TEMP/release/selfhostai-$VERSION.tgz"
+          # npm tries trusted publishing (OIDC) first; the token is the fallback when it is set.
+          if [ -n "$NPM_TOKEN" ]; then
+            export NPM_CONFIG_USERCONFIG="$RUNNER_TEMP/npmrc"
+            # Written as ${NPM_TOKEN} for npm to read from the environment, never the value.
+            # shellcheck disable=SC2016
+            printf '//registry.npmjs.org/:_authToken=${NPM_TOKEN}\n' > "$NPM_CONFIG_USERCONFIG"
+          fi
+          if [ "$DRY_RUN" = true ]; then
+            npm publish "$tarball" --access public --tag "$NPM_TAG" --dry-run
+            exit 0
+          fi
+          if [ "$(npm view "selfhostai@$VERSION" version 2> /dev/null)" = "$VERSION" ]; then
+            echo "::notice::selfhostai@$VERSION is already on npm"
+            exit 0
+          fi
+          npm publish "$tarball" --access public --tag "$NPM_TAG" --provenance
+
+  github-release:
+    needs: [verify, image, npm]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      TAG: ${{ needs.verify.outputs.tag }}
+      DRY_RUN: ${{ needs.verify.outputs.dry_run }}
+      PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-files
+          path: ${{ runner.temp }}/release
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-notes
+          path: ${{ runner.temp }}/notes
+      - name: Attest the binaries, the npm tarball and the Docker Compose files
+        id: attest
+        if: needs.verify.outputs.dry_run != 'true'
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: |
+            ${{ runner.temp }}/release/selfhost-*
+            ${{ runner.temp }}/release/selfhostai-*.tgz
+      - name: Create the GitHub Release
+        env:
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          cd "$RUNNER_TEMP/release"
+          [ -z "$BUNDLE" ] || cp "$BUNDLE" "selfhost-$VERSION.sigstore.json"
+          if [ "$DRY_RUN" = true ]; then
+            echo "Would create release $TAG (prerelease: $PRERELEASE) with:"
+            ls -l
+            cat "$RUNNER_TEMP/notes/notes.md"
+            exit 0
+          fi
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber -- *
+          else
+            flags=""
+            [ "$PRERELEASE" = true ] && flags="--prerelease"
+            # shellcheck disable=SC2086
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag $flags \
+              --title "$TAG" --notes-file "$RUNNER_TEMP/notes/notes.md" -- *
+          fi

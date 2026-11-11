@@ -1,8 +1,9 @@
 import { STACK_FILES, type StackFile } from "@selfhost/deploy/stack";
 
+export { DEFAULT_IMAGE } from "../project.js";
+
 /** Where the stack lives on the server; it mirrors deploy/docker in the repository. */
 export const STACK_DIR = "/opt/selfhost/deploy/docker";
-export const DEFAULT_IMAGE = "ghcr.io/getselfhostai/selfhost";
 
 /** The files a server needs; .env.example only supplies defaults here. */
 export const SERVER_FILES: readonly StackFile[] = STACK_FILES.filter(

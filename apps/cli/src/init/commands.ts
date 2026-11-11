@@ -38,6 +38,7 @@ import {
   runImport,
 } from "../import.js";
 import { type PolicyObserveReport, policyObserve } from "../policy/commands.js";
+import { DOCS_URL, NPM_PACKAGE } from "../project.js";
 import { readContext } from "../scan/context/files.js";
 import { repoDir } from "../scan/index.js";
 import { listText } from "../scan/render-text.js";
@@ -220,14 +221,14 @@ const shellQuote = (text: string) =>
   /^[\w@%+=:,./-]+$/.test(text) ? text : `'${text.replaceAll("'", `'\\''`)}'`;
 
 /** Where a hook that can't find selfhost points the person. */
-export const INSTALL_DOCS =
-  "https://github.com/getselfhostai/selfhost/blob/main/apps/cli/README.md#install-on-a-laptop-selfhost-init";
+export const INSTALL_DOCS = `${DOCS_URL}/apps/cli/README.md#install-on-a-laptop-selfhost-init`;
 
 /**
  * `selfhost hook {agent}` when selfhost is on PATH, as compiled managed settings call it.
  * Otherwise a command that finds selfhost each time the hook runs: `selfhost` on PATH by then,
- * else the node and script running now while both still exist, else `npx selfhostai` only when
- * SELFHOST_NPX=1 is set (the package is not on npm yet, so npx could not find it), else one line
+ * else the node and script running now while both still exist, else `npx selfhostai@<this
+ * version>` only when SELFHOST_NPX=1 is set (pinned, so a hook never runs whatever npm serves as
+ * latest, and opt-in, as it downloads on the hook's first run), else one line
  * on stderr pointing at the install docs and exit 1, which agents show without blocking. So a
  * node version switch, which takes the node binary or the global install off PATH, does not
  * break the hooks silently.
@@ -243,13 +244,12 @@ export function hookCommand(which: Which | undefined): { command: string; warnin
   const command = [
     "if command -v selfhost >/dev/null 2>&1; then exec selfhost hook {agent};",
     `elif ${exists.join(" && ")}; then exec ${self.map(shellQuote).join(" ")} hook {agent};`,
-    `elif [ "$SELFHOST_NPX" = 1 ]; then exec npx -y selfhostai hook {agent};`,
+    `elif [ "$SELFHOST_NPX" = 1 ]; then exec npx -y ${NPM_PACKAGE} hook {agent};`,
     `else echo 'selfhost hook: selfhost is not installed here (not on PATH, and not where selfhost init ran it). Install it: ${INSTALL_DOCS}' >&2; exit 1; fi`,
   ].join(" ");
   return {
     command,
-    warning:
-      "selfhost is not on PATH, so each hook looks for it when it runs: on PATH, then where it runs now. If neither is there the hook says so in one line and points at the install docs (SELFHOST_NPX=1 tries npx selfhostai instead). Install it (npm install -g selfhostai) and run selfhost init again for the plain selfhost hook command.",
+    warning: `selfhost is not on PATH, so each hook looks for it when it runs: on PATH, then where it runs now. If neither is there the hook says so in one line and points at the install docs (SELFHOST_NPX=1 tries npx ${NPM_PACKAGE} instead). Install it (npm install -g ${NPM_PACKAGE}) and run selfhost init again for the plain selfhost hook command.`,
   };
 }
 

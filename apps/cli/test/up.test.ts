@@ -17,6 +17,7 @@ import type { ExecOptions, ExecResult } from "../src/up/resources.js";
 import {
   BOOTSTRAP_FILES,
   bootstrapScript,
+  DEFAULT_IMAGE,
   envFile,
   finishScript,
   parseReadBack,
@@ -195,7 +196,7 @@ function io(
 }
 
 const settings = (over: Partial<StackSettings> = {}): StackSettings => ({
-  image: "ghcr.io/getselfhostai/selfhost",
+  image: DEFAULT_IMAGE,
   version: "0.1.0",
   backupTime: "03:00",
   backupKeepDays: 14,
