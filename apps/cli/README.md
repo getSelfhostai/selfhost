@@ -717,7 +717,8 @@ and `--dry-run` never ask (the files are then only listed). [`AGENTS.md`](AGENTS
    `selfhost hook <agent>` to Claude Code and Codex through `agents configure`, which backs up
    every file first. When `selfhost` is not on PATH the hook calls the running node and script
    by absolute path instead; if those are gone too, it prints one line pointing here and exits 1
-   (`SELFHOST_NPX=1` runs `npx -y selfhostai` instead, for once the package is on npm). An agent
+   (`SELFHOST_NPX=1` runs `npx -y selfhostai@0.1.0` instead, pinned to the release that ran
+   init). An agent
    where `agents configure` already set other settings is
    left alone, so they are not taken out.
 3. It writes a starter `selfhost.toml` at the git repository root when none is found: four

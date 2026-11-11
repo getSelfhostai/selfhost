@@ -19,7 +19,7 @@ import { runImport } from "../src/import.js";
 import { HOSTED_URL, hookCommand, INSTALL_DOCS, parseInvite } from "../src/init/commands.js";
 import { PRESETS } from "../src/init/presets.generated.js";
 import { STARTER_CONFIG } from "../src/init/starter.js";
-import { createProgram } from "../src/program.js";
+import { createProgram, VERSION } from "../src/program.js";
 import { runSpend } from "../src/spend.js";
 import { blockNetwork } from "./network.js";
 import { run, tempDir } from "./run.js";
@@ -576,9 +576,9 @@ describe("the hook command", () => {
     expect(command).toMatch(
       /^if command -v selfhost >\/dev\/null 2>&1; then exec selfhost hook \{agent\}; elif \[ -x \S+ \]/,
     );
-    // npx only on request: the package is not on npm yet, so npx could only fail.
+    // npx only on request, and pinned to this release, never whatever npm serves as latest.
     expect(command).toContain(
-      ' hook {agent}; elif [ "$SELFHOST_NPX" = 1 ]; then exec npx -y selfhostai hook {agent}; else echo',
+      ` hook {agent}; elif [ "$SELFHOST_NPX" = 1 ]; then exec npx -y selfhostai@${VERSION} hook {agent}; else echo`,
     );
     expect(warning).toContain("selfhost is not on PATH");
     // Neither selfhost nor the script that ran init: one line on stderr, exit 1, no npx call.

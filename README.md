@@ -2,10 +2,77 @@
 
 The open backend for your coding agent fleet: one ledger, one review list, one team config across every coding agent.
 
-## Status
+## Install
 
-Usable, before a first release. The npm package is not published yet, so it runs from a clone
-(see [`apps/cli/AGENTS.md`](./apps/cli/AGENTS.md)). What works today:
+Needs Node 20 or later for the npm package, or nothing for the standalone binaries. Releases are
+listed on [GitHub Releases](https://github.com/getSelfhostai/selfhost/releases); each has its
+notes in [CHANGELOG.md](./CHANGELOG.md).
+
+### On a laptop
+
+```sh
+npx selfhostai@0.1.0 init --dry-run   # every change it would make; writes nothing
+npx selfhostai@0.1.0 init
+```
+
+`init` adds a hook to Claude Code and Codex that applies `selfhost.toml` and the built-in
+guardrails before every tool call, writes a starter `selfhost.toml` in observe mode, and imports
+the last 30 days of local session logs into a ledger on this machine (embedded Postgres, no
+Docker). Solo mode sends nothing anywhere. See [`apps/cli`](./apps/cli/README.md#install-on-a-laptop-selfhost-init).
+
+The hooks run `selfhost` on every tool call, so put it on PATH:
+
+```sh
+npm install -g selfhostai@0.1.0       # installs selfhost (and selfhostai)
+selfhost doctor
+```
+
+Or download a binary instead of Node: `selfhost-linux-x64`, `selfhost-linux-arm64`,
+`selfhost-darwin-arm64` or `selfhost-darwin-x64` from the release, then
+`chmod +x selfhost-* && mv selfhost-* /usr/local/bin/selfhost`.
+
+### A team server
+
+`selfhost up` creates a server on Hetzner, DigitalOcean or AWS, or uses any Linux host over SSH,
+and runs the release's image (`ghcr.io/getselfhostai/selfhost`, tagged with the version) with
+HTTPS, a daily backup and optional console sign-in:
+
+```sh
+selfhost up --provider hetzner --dry-run            # the plan, nothing created
+selfhost up --provider hetzner                      # HCLOUD_TOKEN
+selfhost up --provider ssh --host ubuntu@203.0.113.10
+```
+
+It prints a `selfhost join` line for each laptop. See [`apps/cli`](./apps/cli/README.md#team-server-selfhost-up).
+
+To run the Docker Compose install yourself on a Linux server, take
+`selfhost-docker-<version>.tar.gz` from the release. `install.sh` installs Docker when it is
+missing, pulls the image and sets up the daily backup:
+
+```sh
+version=0.1.0
+curl -fsSLO "https://github.com/getSelfhostai/selfhost/releases/download/v$version/selfhost-docker-$version.tar.gz"
+tar -xzf "selfhost-docker-$version.tar.gz" && cd "selfhost-docker-$version"
+cp .env.example .env
+sudo ./install.sh               # generates the secrets left empty in .env, then starts the stack
+curl http://localhost:4400/v1/health
+```
+
+[`deploy/docker`](./deploy/docker/README.md) covers HTTPS, sign-in, upgrades, backups and restores.
+
+### Verify a download
+
+Each release has `SHA256SUMS` and build provenance attestations for its binaries, npm tarball,
+Docker Compose files and image. With the [GitHub CLI](https://cli.github.com):
+
+```sh
+sha256sum --check --ignore-missing SHA256SUMS      # shasum -a 256 -c on macOS
+gh attestation verify selfhost-linux-x64 --repo getSelfhostai/selfhost
+gh attestation verify oci://ghcr.io/getselfhostai/selfhost:0.1.0 --repo getSelfhostai/selfhost
+npm audit signatures                               # in a project that installed selfhostai
+```
+
+### What works today
 
 - `selfhost init` on a laptop: a hook in Claude Code and Codex (`selfhost guard install` also
   covers Cursor, OpenCode and Goose) that applies `selfhost.toml` and the built-in guardrails
@@ -74,6 +141,26 @@ pnpm --filter @selfhost/cli dev doctor
 
 Other scripts: `pnpm build`, `pnpm format`, `pnpm build:cli` (standalone binaries with
 `bun build --compile`). `docker compose up -d` starts Postgres 16 for local development.
+
+## Releasing
+
+The version in the root `package.json` is the one source; `pnpm release:version` writes it
+everywhere else it appears and CI fails when they differ:
+
+```sh
+pnpm release:version 0.2.0      # the CLI and server packages, SELFHOST_VERSION, the embedded stack
+pnpm release:version --check    # what CI runs
+```
+
+Add a `## 0.2.0` section to [CHANGELOG.md](./CHANGELOG.md), merge, then push the tag `v0.2.0`.
+[`release.yml`](./.github/workflows/release.yml) checks the tag matches, runs every CI job, and
+publishes the image, the npm package `selfhostai` and the GitHub Release. Run it by hand with
+`dry_run` to do everything but publish. `node scripts/release/pack-cli.mjs` and
+`sh scripts/release/smoke.sh <tarball>` pack and try the npm package locally.
+
+The GitHub owner of the repository and the image is `GITHUB_OWNER` in
+[`apps/cli/src/project.ts`](./apps/cli/src/project.ts); after changing it, `pnpm
+release:version` rewrites the image and repository defaults in `deploy/docker` and the READMEs.
 
 After changing a contract in `packages/schema/src`, run `pnpm --filter @selfhost/schema export`
 to regenerate the JSON Schema, OpenAPI and MCP files; a test fails if they are stale.

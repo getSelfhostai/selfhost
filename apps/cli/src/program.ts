@@ -1,7 +1,6 @@
 import { homedir, hostname } from "node:os";
 import { detectAgents, type Env, type Probes, systemProbes } from "@selfhost/agents";
 import { Command } from "commander";
-import pkg from "../package.json" with { type: "json" };
 import {
   type AgentsOptions,
   agentsCommand,
@@ -38,6 +37,7 @@ import { registerPolicy } from "./policy/commands.js";
 import { registerPolicyCompile } from "./policy/compile.js";
 import { registerPolicyEditing } from "./policy/editing.js";
 import { registerPolicyPackage } from "./policy/mdm.js";
+import { VERSION } from "./project.js";
 import { registerProvenance } from "./provenance.js";
 import { registerReview } from "./review.js";
 import { localReviewList, registerReviewList } from "./review-list.js";
@@ -62,7 +62,7 @@ import { registerUp } from "./up/commands.js";
 import type { ImageCheck } from "./up/registry.js";
 import { type Exec, systemExec } from "./up/resources.js";
 
-export const VERSION = pkg.version;
+export { VERSION };
 
 /** What the commands read and write; tests pass fixtures instead of the real machine. */
 export interface CliDeps {
