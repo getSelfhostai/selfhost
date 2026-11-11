@@ -53,7 +53,8 @@ export interface TailRow {
   repo: string | null;
   /**
    * The person the event belongs to: its actor when that is a person, else data.sent_by, else
-   * the person of its session's first person event; null when none is known.
+   * the run's owner after the newest handoff before it, else the person of its session's first
+   * person event; null when none is known.
    */
   person: string | null;
 }
@@ -71,10 +72,17 @@ const ZERO_ID = "00000000-0000-0000-0000-000000000000";
 const EPOCH_KEY = "1970-01-01T00:00:00.000000Z";
 const GROUPS = new Set(EVENT_KINDS.map((kind) => kind.split(".")[0]));
 
-/** The person an event belongs to, for the person filter and TailRow.person. */
+/**
+ * The person an event belongs to, for the person filter and TailRow.person. An agent's event
+ * after a handoff belongs to the run's owner at that time.
+ */
 const PERSON = `coalesce(
   CASE WHEN e.actor_kind = 'person' THEN e.actor_id END,
   e.body#>>'{data,sent_by}',
+  (SELECT h.body#>>'{data,owner}' FROM events h
+   WHERE e.session_id IS NOT NULL AND h.session_id = e.session_id
+     AND h.kind = 'run.handed_off' AND h.ts <= e.ts
+   ORDER BY h.ts DESC, h.id DESC LIMIT 1),
   (SELECT s.actor_id FROM events s
    WHERE e.session_id IS NOT NULL AND s.session_id = e.session_id AND s.actor_kind = 'person'
    ORDER BY s.ts, s.id LIMIT 1))`;

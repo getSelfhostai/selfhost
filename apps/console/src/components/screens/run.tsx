@@ -1,6 +1,8 @@
 import {
+  currentOwner,
   describeSecondOpinion,
   type EventsPage,
+  handoffOf,
   type LedgerEvent,
   secondOpinionOf,
 } from "@selfhost/schema";
@@ -54,13 +56,15 @@ export function runFromEvents(
     const state = PR_KINDS[event.kind];
     if (url) prs.set(url, state ?? prs.get(url) ?? "open");
   }
+  const person = first((e) => (e.actor.kind === "person" ? e.actor.id : undefined));
   return {
     schema: "selfhost.run/v1",
     run: {
       id,
       agent: sorted.find((e) => e.agent)?.agent ?? null,
       model: first((e) => e.model),
-      person: first((e) => (e.actor.kind === "person" ? e.actor.id : undefined)),
+      person,
+      owner: currentOwner(sorted, person),
       team: first((e) => e.team),
       repo: first((e) => e.repo),
       started_at: sorted[0]?.ts ?? null,
@@ -175,6 +179,15 @@ export function eventLine(event: LedgerEvent, blocked = false): { title: string;
       return { title: "Pull request closed", detail: event.links?.pr_url };
     case "alert.raised":
       return { title: "Alert", detail: String(event.data?.alert ?? "") };
+    case "run.handed_off": {
+      const handoff = handoffOf(event);
+      return {
+        title: handoff
+          ? `Handed from ${handoff.previous_owner} to ${handoff.owner}`
+          : "Handed to another person",
+        detail: handoff?.branch ? `Branch ${handoff.branch}` : undefined,
+      };
+    }
     case "review.submitted": {
       const opinion = secondOpinionOf(event);
       return {
@@ -286,6 +299,9 @@ export function RunScreen() {
             <CardContent className="px-4">
               <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm md:grid-cols-4">
                 <Fact name="Who" value={run.person ?? "Unknown"} />
+                {run.owner && run.owner !== run.person ? (
+                  <Fact name="Held by" value={run.owner} />
+                ) : null}
                 <Fact name="Agent" value={run.agent?.name ?? agentName(run.agent?.vendor)} />
                 <Fact name="Model" value={run.model ?? "Unknown"} />
                 <Fact name="Repo" value={run.repo ?? "None"} />
@@ -300,6 +316,38 @@ export function RunScreen() {
               ) : null}
             </CardContent>
           </Card>
+          {data.handoffs && data.handoffs.length > 0 ? (
+            <Section
+              title="Handoffs"
+              description="Who held the run. Cost and outcome stay on this one run."
+            >
+              <ul className="space-y-2 text-sm">
+                {data.handoffs.map((handoff) => (
+                  <li key={handoff.id}>
+                    <div className="flex flex-wrap items-baseline gap-x-2">
+                      <span className="text-muted-foreground text-xs tabular-nums">
+                        {formatTime(handoff.at)}
+                      </span>
+                      <span>
+                        {handoff.from} to {handoff.to}
+                        {handoff.by !== handoff.from ? `, by ${handoff.by}` : ""}
+                      </span>
+                      <Badge variant="outline">
+                        {handoff.state === "taken"
+                          ? `taken over ${handoff.taken_at ? formatTime(handoff.taken_at) : ""}`.trim()
+                          : handoff.state === "pending"
+                            ? "waiting for takeover"
+                            : "handed on again"}
+                      </Badge>
+                    </div>
+                    {handoff.note ? (
+                      <p className="break-words text-muted-foreground">{handoff.note}</p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          ) : null}
           {data.prs.length > 0 ? (
             <Section title="Pull requests">
               <ul className="space-y-1 text-sm">

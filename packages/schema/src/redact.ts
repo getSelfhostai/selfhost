@@ -68,6 +68,7 @@ export function redactionSettings(
 export const IDENTITY_DATA_KEYS = [
   "owner",
   "owners",
+  "previous_owner",
   "budget_owner",
   "person",
   "people",

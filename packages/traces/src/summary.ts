@@ -1,4 +1,4 @@
-import type { AgentRef, LedgerEvent, RunSummary } from "@selfhost/schema";
+import { type AgentRef, currentOwner, type LedgerEvent, type RunSummary } from "@selfhost/schema";
 import {
   type CacheTipOptions,
   cacheTips,
@@ -63,11 +63,13 @@ export function summarizeRun(
   // The run's requests as one session, whatever session ids its sources gave them.
   const [cache] = sessionCaches(costs.map((e) => ({ ...e, session_id: id })));
   const tip = cache && options.cacheTip ? cacheTips([cache], options.cacheTip)[0] : undefined;
+  const person = sorted.find((e) => e.actor.kind === "person")?.actor.id ?? null;
   return {
     id,
     agent,
     model: mostCommon(costs.map((e) => e.model)) ?? sorted.find((e) => e.model)?.model ?? null,
-    person: sorted.find((e) => e.actor.kind === "person")?.actor.id ?? null,
+    person,
+    owner: currentOwner(sorted, person),
     team: options.team ?? mostCommon(sorted.map((e) => e.team)) ?? null,
     repo: sorted.find((e) => e.repo)?.repo ?? null,
     started_at: sorted[0]?.ts ?? options.now.toISOString(),

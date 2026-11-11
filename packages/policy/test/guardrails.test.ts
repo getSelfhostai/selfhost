@@ -214,6 +214,8 @@ describe("selfhost decision commands", () => {
     "selfhost gateway connect claude-code --undo",
     "selfhost gateway connect codex --rotate",
     "npx -y selfhostai gateway connect env --print",
+    "selfhost handoff 5f0c2b1e --to ben@example.com",
+    "npx -y selfhostai takeover 01930c4e",
   ])("blocks %s, even with the guardrails off", async (command) => {
     const decision = await checkToolCall(off, bash(command), { env: ENV });
     expect(decision.verdict).toBe("block");
@@ -230,6 +232,7 @@ describe("selfhost decision commands", () => {
     "selfhost agents configure",
     "selfhost gateway status",
     "selfhost gateway keys",
+    "selfhost share 5f0c2b1e",
     "git commit -m 'selfhost inbox approve'",
     "pnpm install",
   ])("allows %s", (command) => {

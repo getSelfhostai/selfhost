@@ -8,6 +8,7 @@ import type {
 import { Check, ExternalLink, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Empty, Failed, Loading, PageHeader } from "@/components/common";
+import { HandedToYou } from "@/components/handoffs";
 import { SecondOpinionBadges, SecondOpinions } from "@/components/second-opinions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -421,6 +422,7 @@ export function ReviewScreen() {
           {outcome.text}
         </p>
       ) : null}
+      {state === "open" ? <HandedToYou me={me} now={now} /> : null}
       {list.error ? <Failed error={list.error} what="the review list" /> : null}
       {!list.data && !list.error ? <Loading /> : null}
       {list.data && items.length === 0 ? (

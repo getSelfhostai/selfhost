@@ -122,6 +122,7 @@ paths:
               - run.gate
               - sandbox.started
               - sandbox.stopped
+              - run.handed_off
         - name: team
           in: query
           required: false
@@ -1688,6 +1689,212 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /v1/runs/{run_id}/share:
+    post:
+      operationId: shareRun
+      summary: The run's stable link, posted on its pull requests by the GitHub App.
+      description: "The admin token, or a person token of anyone in the team. Posting on GitHub needs the work role. The link opens the run view in the console, which needs sign-in and the read role in the run's team; anyone else gets an access error with nothing of the run. With the GitHub App configured, the link goes on each pull request the run links to as one comment, found again by a hidden marker: a second share updates it instead of adding another. selfhost share makes this call."
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          description: "Run id: the agent's session id."
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunShareRequest"
+      responses:
+        "200":
+          description: The link and what was posted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunShareResponse"
+        "400":
+          description: Invalid body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: A person token whose teams do not include the run's team, the same answer whether or not the run exists; or a role without work when posting.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such run (admin token).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/runs/{run_id}/handoffs:
+    post:
+      operationId: handOffRun
+      summary: "Hand a run to a teammate: owner change in the ledger and a handoff record."
+      description: "The run's current owner with the work role in its team, a team owner or admin, or the admin token. The new owner must be in the run's team with the work role. Writes a run.handed_off ledger event (data v 1: handoff, owner, previous_owner, branch) and stores the record: branch, commit, uncommitted files, files the run touched, its open review items (which route to the new owner from then on), cost so far and the last turns, redacted under the team's settings, with the note. A transcript is accepted only when the team's [handoff] share_transcript is on; it is masked again and kept until the takeover. An earlier pending handoff of the run is superseded. selfhost handoff makes this call."
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          description: "Run id: the agent's session id."
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateHandoffRequest"
+      responses:
+        "201":
+          description: The handoff.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Handoff"
+        "400":
+          description: Invalid body, a new owner who is not in the team, the run's own owner, or a transcript while [handoff] share_transcript is off.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Not the run's owner nor a team owner or admin, or not in the run's team (the same answer whether or not the run exists).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such run (admin token).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: The body is over the transcript limit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/handoffs:
+    get:
+      operationId: listHandoffs
+      summary: Handoffs in the caller's teams, newest first; to=me for the ones to take over.
+      description: The admin token, or a person token of anyone in the team. A person token sees the handoffs of every team of its org it can read. Notes and turns are masked under each team's current settings.
+      parameters:
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - pending
+              - taken
+              - superseded
+        - name: run
+          in: query
+          required: false
+          description: One run's handoffs.
+          schema:
+            minLength: 1
+            type: string
+        - name: to
+          in: query
+          required: false
+          description: Handoffs to this person; me for the person token's own.
+          schema:
+            minLength: 1
+            type: string
+      responses:
+        "200":
+          description: The handoffs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HandoffsResponse"
+        "400":
+          description: Invalid query.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/handoffs/{id}:
+    get:
+      operationId: getHandoff
+      summary: One handoff record.
+      description: The admin token, or a person token of anyone in the team. The transcript's text is not in it; the new owner gets it once, from the takeover.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Handoff id.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The handoff.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Handoff"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: No handoff the caller can read has this id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: No such handoff (admin token).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/handoffs/{id}/takeover:
+    post:
+      operationId: takeOverRun
+      summary: "The new owner takes the run over: the record and the transcript, once."
+      description: "A person token only, of the handoff's new owner, who must still be in the run's team with the work role: a takeover runs under that person's own login, never the previous owner's. Marks the handoff taken and answers with the transcript, deleting the server's copy. selfhost takeover makes this call."
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Handoff id.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Taken over.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TakeoverResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The admin token, someone other than the new owner, or a new owner no longer in the run's team.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Already taken over, or handed on again.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /v1/background-runs:
     post:
       operationId: startBackgroundRun
@@ -2032,7 +2239,7 @@ paths:
           required: false
           description: Comma-separated event kinds, or their first part (tool for tool.called and tool.result).
           schema:
-            pattern: ^(?:session\.started|session\.ended|prompt\.submitted|tool\.called|tool\.result|approval\.requested|decision\.recorded|cost\.recorded|commit\.created|pr\.opened|pr\.merged|pr\.closed|policy\.evaluated|alert\.raised|config\.reported|review\.submitted|credential\.issued|credential\.revoked|egress\.blocked|run\.triggered|run\.updated|run\.output|run\.health|run\.gate|sandbox\.started|sandbox\.stopped|session|prompt|tool|approval|decision|cost|commit|pr|policy|alert|config|review|credential|egress|run|sandbox)(?:,(?:session\.started|session\.ended|prompt\.submitted|tool\.called|tool\.result|approval\.requested|decision\.recorded|cost\.recorded|commit\.created|pr\.opened|pr\.merged|pr\.closed|policy\.evaluated|alert\.raised|config\.reported|review\.submitted|credential\.issued|credential\.revoked|egress\.blocked|run\.triggered|run\.updated|run\.output|run\.health|run\.gate|sandbox\.started|sandbox\.stopped|session|prompt|tool|approval|decision|cost|commit|pr|policy|alert|config|review|credential|egress|run|sandbox))*$
+            pattern: ^(?:session\.started|session\.ended|prompt\.submitted|tool\.called|tool\.result|approval\.requested|decision\.recorded|cost\.recorded|commit\.created|pr\.opened|pr\.merged|pr\.closed|policy\.evaluated|alert\.raised|config\.reported|review\.submitted|credential\.issued|credential\.revoked|egress\.blocked|run\.triggered|run\.updated|run\.output|run\.health|run\.gate|sandbox\.started|sandbox\.stopped|run\.handed_off|session|prompt|tool|approval|decision|cost|commit|pr|policy|alert|config|review|credential|egress|run|sandbox)(?:,(?:session\.started|session\.ended|prompt\.submitted|tool\.called|tool\.result|approval\.requested|decision\.recorded|cost\.recorded|commit\.created|pr\.opened|pr\.merged|pr\.closed|policy\.evaluated|alert\.raised|config\.reported|review\.submitted|credential\.issued|credential\.revoked|egress\.blocked|run\.triggered|run\.updated|run\.output|run\.health|run\.gate|sandbox\.started|sandbox\.stopped|run\.handed_off|session|prompt|tool|approval|decision|cost|commit|pr|policy|alert|config|review|credential|egress|run|sandbox))*$
             type: string
         - name: person
           in: query
@@ -9600,6 +9807,7 @@ components:
         - agent
         - model
         - person
+        - owner
         - team
         - repo
         - started_at
@@ -9646,6 +9854,11 @@ components:
             - type: "null"
         person:
           description: The person the run worked for, or null when not known.
+          anyOf:
+            - type: string
+            - type: "null"
+        owner:
+          description: "The person who holds the run now: the new owner of its newest handoff, else person."
           anyOf:
             - type: string
             - type: "null"
@@ -9769,6 +9982,50 @@ components:
                 pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
                 description: The review.submitted ledger event that holds it.
                 type: string
+    RunHandoff:
+      additionalProperties: false
+      title: RunHandoff
+      type: object
+      required:
+        - id
+        - from
+        - to
+        - by
+        - at
+        - note
+        - state
+        - taken_at
+      properties:
+        id:
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+          type: string
+        from:
+          minLength: 1
+          type: string
+        to:
+          minLength: 1
+          type: string
+        by:
+          minLength: 1
+          type: string
+        at:
+          format: date-time
+          type: string
+        note:
+          anyOf:
+            - type: string
+            - type: "null"
+        state:
+          type: string
+          enum:
+            - pending
+            - taken
+            - superseded
+        taken_at:
+          anyOf:
+            - format: date-time
+              type: string
+            - type: "null"
     RunResponse:
       additionalProperties: false
       title: RunResponse
@@ -9780,6 +10037,7 @@ components:
         - next_cursor
         - prs
         - trace_url
+        - handoffs
       properties:
         schema:
           const: selfhost.run/v1
@@ -9793,6 +10051,7 @@ components:
             - agent
             - model
             - person
+            - owner
             - team
             - repo
             - started_at
@@ -9839,6 +10098,11 @@ components:
                 - type: "null"
             person:
               description: The person the run worked for, or null when not known.
+              anyOf:
+                - type: string
+                - type: "null"
+            owner:
+              description: "The person who holds the run now: the new owner of its newest handoff, else person."
               anyOf:
                 - type: string
                 - type: "null"
@@ -9979,6 +10243,1018 @@ components:
           description: "The run in the team's tracer: [integrations.tracer] run_url with {run_id} and {trace_id} filled in. null when no tracer is set up, it has no run_url, or the run has not been sent yet."
           anyOf:
             - type: string
+            - type: "null"
+        handoffs:
+          description: "Who held the run: each handoff, oldest first, with its redacted note. Empty when it never changed hands."
+          type: array
+          items:
+            additionalProperties: false
+            title: RunHandoff
+            type: object
+            required:
+              - id
+              - from
+              - to
+              - by
+              - at
+              - note
+              - state
+              - taken_at
+            properties:
+              id:
+                pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+                type: string
+              from:
+                minLength: 1
+                type: string
+              to:
+                minLength: 1
+                type: string
+              by:
+                minLength: 1
+                type: string
+              at:
+                format: date-time
+                type: string
+              note:
+                anyOf:
+                  - type: string
+                  - type: "null"
+              state:
+                type: string
+                enum:
+                  - pending
+                  - taken
+                  - superseded
+              taken_at:
+                anyOf:
+                  - format: date-time
+                    type: string
+                  - type: "null"
+    RunShareRequest:
+      additionalProperties: false
+      title: RunShareRequest
+      type: object
+      properties:
+        comment:
+          default: true
+          description: Post or update the run link on the run's pull requests through the App.
+          type: boolean
+    RunShareResponse:
+      additionalProperties: false
+      title: RunShareResponse
+      type: object
+      required:
+        - schema
+        - run_id
+        - url
+        - comments
+        - skipped
+      properties:
+        schema:
+          const: selfhost.run_share/v1
+          type: string
+        run_id:
+          minLength: 1
+          type: string
+        url:
+          format: uri
+          description: The run's stable link in the console.
+          type: string
+        comments:
+          description: One per pull request the run links to.
+          type: array
+          items:
+            additionalProperties: false
+            type: object
+            required:
+              - pr
+              - url
+              - action
+            properties:
+              pr:
+                format: uri
+                type: string
+              url:
+                description: The comment, once posted.
+                anyOf:
+                  - format: uri
+                    type: string
+                  - type: "null"
+              action:
+                type: string
+                enum:
+                  - created
+                  - updated
+                  - unchanged
+                  - failed
+              error:
+                type: string
+        skipped:
+          description: Why nothing was posted on GitHub, when nothing was.
+          anyOf:
+            - type: string
+            - type: "null"
+    HandoffTurn:
+      additionalProperties: false
+      title: HandoffTurn
+      type: object
+      required:
+        - ts
+        - kind
+        - text
+      properties:
+        ts:
+          format: date-time
+          description: When it happened.
+          type: string
+        kind:
+          minLength: 1
+          description: The ledger event kind.
+          type: string
+        text:
+          description: "One line, redacted under the team's settings: a prompt shows only while log_prompts is on."
+          type: string
+    HandoffItem:
+      additionalProperties: false
+      title: HandoffItem
+      description: An open review item.
+      type: object
+      required:
+        - id
+        - kind
+        - title
+        - blocking
+      properties:
+        id:
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+          type: string
+        kind:
+          type: string
+          enum:
+            - pr
+            - approval
+            - question
+            - blocked_action
+            - exception
+            - stuck_run
+            - budget
+            - spend_spike
+            - quality
+            - policy_report
+            - context_promotion
+        title:
+          type: string
+        blocking:
+          type: boolean
+    HandoffTranscriptInfo:
+      additionalProperties: false
+      title: HandoffTranscriptInfo
+      type: object
+      required:
+        - vendor
+        - file_name
+        - bytes
+        - redacted
+      properties:
+        vendor:
+          type: string
+          enum:
+            - claude_code
+            - codex
+        file_name:
+          minLength: 1
+          description: The transcript's own file name on the sender's machine.
+          type: string
+        bytes:
+          minimum: 0
+          type: integer
+        redacted:
+          description: Secrets, emails and the team's [[redaction]] patterns were masked before it was stored.
+          const: true
+          type: boolean
+    Handoff:
+      additionalProperties: false
+      title: Handoff
+      type: object
+      required:
+        - schema
+        - id
+        - run_id
+        - team
+        - repo
+        - agent
+        - from
+        - to
+        - by
+        - created_at
+        - note
+        - branch
+        - commit
+        - pushed
+        - uncommitted
+        - files
+        - open_items
+        - cost_usd
+        - tokens
+        - turns
+        - transcript
+        - state
+        - taken_at
+        - event_id
+        - run_url
+      properties:
+        schema:
+          const: selfhost.handoff/v1
+          type: string
+        id:
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+          description: Handoff id, as selfhost takeover takes it.
+          type: string
+        run_id:
+          minLength: 1
+          description: "The run: the agent's session id."
+          type: string
+        team:
+          anyOf:
+            - type: string
+            - type: "null"
+        repo:
+          anyOf:
+            - pattern: ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$
+              type: string
+            - type: "null"
+        agent:
+          anyOf:
+            - additionalProperties: false
+              description: Which coding agent was involved.
+              type: object
+              required:
+                - vendor
+              properties:
+                vendor:
+                  description: Agent product.
+                  type: string
+                  enum:
+                    - claude_code
+                    - codex
+                    - opencode
+                    - goose
+                    - cursor
+                    - copilot
+                    - other
+                version:
+                  description: Agent CLI or app version, for example 2.1.0.
+                  type: string
+                name:
+                  description: Agent or subagent name when the vendor reports one, for example a Claude Code subagent type.
+                  type: string
+            - type: "null"
+        from:
+          minLength: 1
+          description: The owner before the handoff.
+          type: string
+        to:
+          minLength: 1
+          description: The new owner.
+          type: string
+        by:
+          minLength: 1
+          description: "Who handed it over: the owner, a team owner or admin, or admin (the token)."
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        note:
+          description: Redacted.
+          anyOf:
+            - type: string
+            - type: "null"
+        branch:
+          anyOf:
+            - type: string
+            - type: "null"
+        commit:
+          anyOf:
+            - pattern: ^[0-9a-f]{7,64}$
+              type: string
+            - type: "null"
+        pushed:
+          description: Whether the branch's commits were on its upstream when it was handed over, as the sender's git knew; null when not known.
+          anyOf:
+            - type: boolean
+            - type: "null"
+        uncommitted:
+          description: "Files with changes not committed on the sender's machine: they did not travel."
+          type: array
+          items:
+            type: string
+        files:
+          description: Files the run's tool calls touched.
+          type: array
+          items:
+            type: string
+        open_items:
+          description: The run's open review items; they route to the new owner.
+          type: array
+          items:
+            additionalProperties: false
+            title: HandoffItem
+            description: An open review item.
+            type: object
+            required:
+              - id
+              - kind
+              - title
+              - blocking
+            properties:
+              id:
+                pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+                type: string
+              kind:
+                type: string
+                enum:
+                  - pr
+                  - approval
+                  - question
+                  - blocked_action
+                  - exception
+                  - stuck_run
+                  - budget
+                  - spend_spike
+                  - quality
+                  - policy_report
+                  - context_promotion
+              title:
+                type: string
+              blocking:
+                type: boolean
+        cost_usd:
+          minimum: 0
+          description: The run's spend up to the handoff.
+          type: number
+        tokens:
+          minimum: 0
+          type: integer
+        turns:
+          description: The run's last turns, oldest first.
+          type: array
+          items:
+            additionalProperties: false
+            title: HandoffTurn
+            type: object
+            required:
+              - ts
+              - kind
+              - text
+            properties:
+              ts:
+                format: date-time
+                description: When it happened.
+                type: string
+              kind:
+                minLength: 1
+                description: The ledger event kind.
+                type: string
+              text:
+                description: "One line, redacted under the team's settings: a prompt shows only while log_prompts is on."
+                type: string
+        transcript:
+          description: The agent's own transcript, when the team's [handoff] share_transcript is on and it was sent; its text goes to the new owner once, at takeover.
+          anyOf:
+            - additionalProperties: false
+              title: HandoffTranscriptInfo
+              type: object
+              required:
+                - vendor
+                - file_name
+                - bytes
+                - redacted
+              properties:
+                vendor:
+                  type: string
+                  enum:
+                    - claude_code
+                    - codex
+                file_name:
+                  minLength: 1
+                  description: The transcript's own file name on the sender's machine.
+                  type: string
+                bytes:
+                  minimum: 0
+                  type: integer
+                redacted:
+                  description: Secrets, emails and the team's [[redaction]] patterns were masked before it was stored.
+                  const: true
+                  type: boolean
+            - type: "null"
+        state:
+          type: string
+          enum:
+            - pending
+            - taken
+            - superseded
+        taken_at:
+          anyOf:
+            - format: date-time
+              type: string
+            - type: "null"
+        event_id:
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+          description: The run.handed_off ledger event.
+          type: string
+        run_url:
+          format: uri
+          description: The run in the console.
+          type: string
+    TranscriptUpload:
+      additionalProperties: false
+      title: TranscriptUpload
+      type: object
+      required:
+        - vendor
+        - file_name
+        - text
+      properties:
+        vendor:
+          type: string
+          enum:
+            - claude_code
+            - codex
+        file_name:
+          pattern: ^[A-Za-z0-9._-]{1,200}\.jsonl$
+          type: string
+        text:
+          description: The JSONL transcript, redacted by the sender.
+          type: string
+    CreateHandoffRequest:
+      additionalProperties: false
+      title: CreateHandoffRequest
+      type: object
+      required:
+        - to
+      properties:
+        to:
+          minLength: 1
+          description: The teammate who takes the run over.
+          type: string
+        note:
+          maxLength: 4000
+          type: string
+        branch:
+          minLength: 1
+          type: string
+        commit:
+          pattern: ^[0-9a-f]{7,64}$
+          type: string
+        pushed:
+          type: boolean
+        uncommitted:
+          maxItems: 200
+          type: array
+          items:
+            type: string
+        turns:
+          minimum: 1
+          maximum: 50
+          default: 10
+          type: integer
+        transcript:
+          additionalProperties: false
+          title: TranscriptUpload
+          type: object
+          required:
+            - vendor
+            - file_name
+            - text
+          properties:
+            vendor:
+              type: string
+              enum:
+                - claude_code
+                - codex
+            file_name:
+              pattern: ^[A-Za-z0-9._-]{1,200}\.jsonl$
+              type: string
+            text:
+              description: The JSONL transcript, redacted by the sender.
+              type: string
+    HandoffsResponse:
+      additionalProperties: false
+      title: HandoffsResponse
+      type: object
+      required:
+        - schema
+        - handoffs
+      properties:
+        schema:
+          const: selfhost.handoffs/v1
+          type: string
+        handoffs:
+          description: Newest first.
+          type: array
+          items:
+            additionalProperties: false
+            title: Handoff
+            type: object
+            required:
+              - schema
+              - id
+              - run_id
+              - team
+              - repo
+              - agent
+              - from
+              - to
+              - by
+              - created_at
+              - note
+              - branch
+              - commit
+              - pushed
+              - uncommitted
+              - files
+              - open_items
+              - cost_usd
+              - tokens
+              - turns
+              - transcript
+              - state
+              - taken_at
+              - event_id
+              - run_url
+            properties:
+              schema:
+                const: selfhost.handoff/v1
+                type: string
+              id:
+                pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+                description: Handoff id, as selfhost takeover takes it.
+                type: string
+              run_id:
+                minLength: 1
+                description: "The run: the agent's session id."
+                type: string
+              team:
+                anyOf:
+                  - type: string
+                  - type: "null"
+              repo:
+                anyOf:
+                  - pattern: ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$
+                    type: string
+                  - type: "null"
+              agent:
+                anyOf:
+                  - additionalProperties: false
+                    description: Which coding agent was involved.
+                    type: object
+                    required:
+                      - vendor
+                    properties:
+                      vendor:
+                        description: Agent product.
+                        type: string
+                        enum:
+                          - claude_code
+                          - codex
+                          - opencode
+                          - goose
+                          - cursor
+                          - copilot
+                          - other
+                      version:
+                        description: Agent CLI or app version, for example 2.1.0.
+                        type: string
+                      name:
+                        description: Agent or subagent name when the vendor reports one, for example a Claude Code subagent type.
+                        type: string
+                  - type: "null"
+              from:
+                minLength: 1
+                description: The owner before the handoff.
+                type: string
+              to:
+                minLength: 1
+                description: The new owner.
+                type: string
+              by:
+                minLength: 1
+                description: "Who handed it over: the owner, a team owner or admin, or admin (the token)."
+                type: string
+              created_at:
+                format: date-time
+                type: string
+              note:
+                description: Redacted.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              branch:
+                anyOf:
+                  - type: string
+                  - type: "null"
+              commit:
+                anyOf:
+                  - pattern: ^[0-9a-f]{7,64}$
+                    type: string
+                  - type: "null"
+              pushed:
+                description: Whether the branch's commits were on its upstream when it was handed over, as the sender's git knew; null when not known.
+                anyOf:
+                  - type: boolean
+                  - type: "null"
+              uncommitted:
+                description: "Files with changes not committed on the sender's machine: they did not travel."
+                type: array
+                items:
+                  type: string
+              files:
+                description: Files the run's tool calls touched.
+                type: array
+                items:
+                  type: string
+              open_items:
+                description: The run's open review items; they route to the new owner.
+                type: array
+                items:
+                  additionalProperties: false
+                  title: HandoffItem
+                  description: An open review item.
+                  type: object
+                  required:
+                    - id
+                    - kind
+                    - title
+                    - blocking
+                  properties:
+                    id:
+                      pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+                      type: string
+                    kind:
+                      type: string
+                      enum:
+                        - pr
+                        - approval
+                        - question
+                        - blocked_action
+                        - exception
+                        - stuck_run
+                        - budget
+                        - spend_spike
+                        - quality
+                        - policy_report
+                        - context_promotion
+                    title:
+                      type: string
+                    blocking:
+                      type: boolean
+              cost_usd:
+                minimum: 0
+                description: The run's spend up to the handoff.
+                type: number
+              tokens:
+                minimum: 0
+                type: integer
+              turns:
+                description: The run's last turns, oldest first.
+                type: array
+                items:
+                  additionalProperties: false
+                  title: HandoffTurn
+                  type: object
+                  required:
+                    - ts
+                    - kind
+                    - text
+                  properties:
+                    ts:
+                      format: date-time
+                      description: When it happened.
+                      type: string
+                    kind:
+                      minLength: 1
+                      description: The ledger event kind.
+                      type: string
+                    text:
+                      description: "One line, redacted under the team's settings: a prompt shows only while log_prompts is on."
+                      type: string
+              transcript:
+                description: The agent's own transcript, when the team's [handoff] share_transcript is on and it was sent; its text goes to the new owner once, at takeover.
+                anyOf:
+                  - additionalProperties: false
+                    title: HandoffTranscriptInfo
+                    type: object
+                    required:
+                      - vendor
+                      - file_name
+                      - bytes
+                      - redacted
+                    properties:
+                      vendor:
+                        type: string
+                        enum:
+                          - claude_code
+                          - codex
+                      file_name:
+                        minLength: 1
+                        description: The transcript's own file name on the sender's machine.
+                        type: string
+                      bytes:
+                        minimum: 0
+                        type: integer
+                      redacted:
+                        description: Secrets, emails and the team's [[redaction]] patterns were masked before it was stored.
+                        const: true
+                        type: boolean
+                  - type: "null"
+              state:
+                type: string
+                enum:
+                  - pending
+                  - taken
+                  - superseded
+              taken_at:
+                anyOf:
+                  - format: date-time
+                    type: string
+                  - type: "null"
+              event_id:
+                pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+                description: The run.handed_off ledger event.
+                type: string
+              run_url:
+                format: uri
+                description: The run in the console.
+                type: string
+    TakeoverResponse:
+      additionalProperties: false
+      title: TakeoverResponse
+      type: object
+      required:
+        - schema
+        - handoff
+        - transcript
+      properties:
+        schema:
+          const: selfhost.takeover/v1
+          type: string
+        handoff:
+          additionalProperties: false
+          title: Handoff
+          type: object
+          required:
+            - schema
+            - id
+            - run_id
+            - team
+            - repo
+            - agent
+            - from
+            - to
+            - by
+            - created_at
+            - note
+            - branch
+            - commit
+            - pushed
+            - uncommitted
+            - files
+            - open_items
+            - cost_usd
+            - tokens
+            - turns
+            - transcript
+            - state
+            - taken_at
+            - event_id
+            - run_url
+          properties:
+            schema:
+              const: selfhost.handoff/v1
+              type: string
+            id:
+              pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+              description: Handoff id, as selfhost takeover takes it.
+              type: string
+            run_id:
+              minLength: 1
+              description: "The run: the agent's session id."
+              type: string
+            team:
+              anyOf:
+                - type: string
+                - type: "null"
+            repo:
+              anyOf:
+                - pattern: ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$
+                  type: string
+                - type: "null"
+            agent:
+              anyOf:
+                - additionalProperties: false
+                  description: Which coding agent was involved.
+                  type: object
+                  required:
+                    - vendor
+                  properties:
+                    vendor:
+                      description: Agent product.
+                      type: string
+                      enum:
+                        - claude_code
+                        - codex
+                        - opencode
+                        - goose
+                        - cursor
+                        - copilot
+                        - other
+                    version:
+                      description: Agent CLI or app version, for example 2.1.0.
+                      type: string
+                    name:
+                      description: Agent or subagent name when the vendor reports one, for example a Claude Code subagent type.
+                      type: string
+                - type: "null"
+            from:
+              minLength: 1
+              description: The owner before the handoff.
+              type: string
+            to:
+              minLength: 1
+              description: The new owner.
+              type: string
+            by:
+              minLength: 1
+              description: "Who handed it over: the owner, a team owner or admin, or admin (the token)."
+              type: string
+            created_at:
+              format: date-time
+              type: string
+            note:
+              description: Redacted.
+              anyOf:
+                - type: string
+                - type: "null"
+            branch:
+              anyOf:
+                - type: string
+                - type: "null"
+            commit:
+              anyOf:
+                - pattern: ^[0-9a-f]{7,64}$
+                  type: string
+                - type: "null"
+            pushed:
+              description: Whether the branch's commits were on its upstream when it was handed over, as the sender's git knew; null when not known.
+              anyOf:
+                - type: boolean
+                - type: "null"
+            uncommitted:
+              description: "Files with changes not committed on the sender's machine: they did not travel."
+              type: array
+              items:
+                type: string
+            files:
+              description: Files the run's tool calls touched.
+              type: array
+              items:
+                type: string
+            open_items:
+              description: The run's open review items; they route to the new owner.
+              type: array
+              items:
+                additionalProperties: false
+                title: HandoffItem
+                description: An open review item.
+                type: object
+                required:
+                  - id
+                  - kind
+                  - title
+                  - blocking
+                properties:
+                  id:
+                    pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+                    type: string
+                  kind:
+                    type: string
+                    enum:
+                      - pr
+                      - approval
+                      - question
+                      - blocked_action
+                      - exception
+                      - stuck_run
+                      - budget
+                      - spend_spike
+                      - quality
+                      - policy_report
+                      - context_promotion
+                  title:
+                    type: string
+                  blocking:
+                    type: boolean
+            cost_usd:
+              minimum: 0
+              description: The run's spend up to the handoff.
+              type: number
+            tokens:
+              minimum: 0
+              type: integer
+            turns:
+              description: The run's last turns, oldest first.
+              type: array
+              items:
+                additionalProperties: false
+                title: HandoffTurn
+                type: object
+                required:
+                  - ts
+                  - kind
+                  - text
+                properties:
+                  ts:
+                    format: date-time
+                    description: When it happened.
+                    type: string
+                  kind:
+                    minLength: 1
+                    description: The ledger event kind.
+                    type: string
+                  text:
+                    description: "One line, redacted under the team's settings: a prompt shows only while log_prompts is on."
+                    type: string
+            transcript:
+              description: The agent's own transcript, when the team's [handoff] share_transcript is on and it was sent; its text goes to the new owner once, at takeover.
+              anyOf:
+                - additionalProperties: false
+                  title: HandoffTranscriptInfo
+                  type: object
+                  required:
+                    - vendor
+                    - file_name
+                    - bytes
+                    - redacted
+                  properties:
+                    vendor:
+                      type: string
+                      enum:
+                        - claude_code
+                        - codex
+                    file_name:
+                      minLength: 1
+                      description: The transcript's own file name on the sender's machine.
+                      type: string
+                    bytes:
+                      minimum: 0
+                      type: integer
+                    redacted:
+                      description: Secrets, emails and the team's [[redaction]] patterns were masked before it was stored.
+                      const: true
+                      type: boolean
+                - type: "null"
+            state:
+              type: string
+              enum:
+                - pending
+                - taken
+                - superseded
+            taken_at:
+              anyOf:
+                - format: date-time
+                  type: string
+                - type: "null"
+            event_id:
+              pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+              description: The run.handed_off ledger event.
+              type: string
+            run_url:
+              format: uri
+              description: The run in the console.
+              type: string
+        transcript:
+          description: "The transcript, given once: the server deletes its copy as it answers. null when none was sent."
+          anyOf:
+            - additionalProperties: false
+              title: TranscriptUpload
+              type: object
+              required:
+                - vendor
+                - file_name
+                - text
+              properties:
+                vendor:
+                  type: string
+                  enum:
+                    - claude_code
+                    - codex
+                file_name:
+                  pattern: ^[A-Za-z0-9._-]{1,200}\.jsonl$
+                  type: string
+                text:
+                  description: The JSONL transcript, redacted by the sender.
+                  type: string
             - type: "null"
     TailResponse:
       additionalProperties: false

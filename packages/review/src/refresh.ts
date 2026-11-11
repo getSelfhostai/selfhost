@@ -7,6 +7,8 @@ import {
   stableEventId,
 } from "@selfhost/ledger";
 import {
+  HANDOFF_EVENT_KIND,
+  handoffOf,
   type LedgerEvent,
   PERSON_ROLES,
   PERSON_VERDICTS,
@@ -27,6 +29,7 @@ import {
   routeInput,
 } from "./build.js";
 import { type CodeOwners, parseCodeOwners } from "./codeowners.js";
+import { handedOverItem } from "./handoff.js";
 import { decisionSubject, internalsOf, type ReviewList } from "./list.js";
 import { buildPolicyReport } from "./policy-report.js";
 import { escalateRoute, routeItem } from "./routing.js";
@@ -113,7 +116,8 @@ interface Run {
 const SIGNALS = `
 SELECT e.id::text AS id, e.body, e.team, e.ingested_at FROM events e
 WHERE e.ingested_at >= $1::timestamptz
-  AND (e.kind IN ('pr.opened', 'pr.merged', 'pr.closed', 'decision.recorded', 'review.submitted')
+  AND (e.kind IN ('pr.opened', 'pr.merged', 'pr.closed', 'decision.recorded', 'review.submitted',
+      'run.handed_off')
     OR (e.ts >= $2::timestamptz AND (
       e.kind IN ('approval.requested', 'alert.raised')
       OR (e.kind = 'policy.evaluated'
@@ -215,7 +219,12 @@ function codeownersReader(
   };
 }
 
-/** The person a session belongs to: the actor of its first event written as a person. */
+const personKey = (team: string | null, sessionId: string) => `${team ?? ""}\n${sessionId}`;
+
+/**
+ * The person a session belongs to: the new owner of its newest handoff, else the actor of its
+ * first event written as a person.
+ */
 async function sessionPerson(
   tx: Queryable,
   team: string | null,
@@ -223,16 +232,49 @@ async function sessionPerson(
   run: Run,
 ): Promise<string | undefined> {
   if (sessionId === undefined) return undefined;
-  const key = `${team ?? ""}\n${sessionId}`;
+  const key = personKey(team, sessionId);
   if (run.persons.has(key)) return run.persons.get(key);
-  const [row] = await tx.query<{ actor_id: string }>(
-    `SELECT actor_id FROM events
-     WHERE session_id = $1 AND actor_kind = 'person' AND coalesce(team, '') = $2
-     ORDER BY ts, id LIMIT 1`,
+  const [row] = await tx.query<{ person: string | null }>(
+    `SELECT coalesce(
+       (SELECT body#>>'{data,owner}' FROM events
+        WHERE session_id = $1 AND kind = '${HANDOFF_EVENT_KIND}' AND coalesce(team, '') = $2
+        ORDER BY ts DESC, id DESC LIMIT 1),
+       (SELECT actor_id FROM events
+        WHERE session_id = $1 AND actor_kind = 'person' AND coalesce(team, '') = $2
+        ORDER BY ts, id LIMIT 1)) AS person`,
     [sessionId, team ?? ""],
   );
-  run.persons.set(key, row?.actor_id);
-  return row?.actor_id;
+  const person = row?.person ?? undefined;
+  run.persons.set(key, person);
+  return person;
+}
+
+/**
+ * A run changed hands: its open items move to the new owner (see handedOverItem), and items it
+ * raises from now on go to them too.
+ */
+async function applyHandoff(
+  tx: Queryable,
+  event: LedgerEvent,
+  team: string | null,
+  run: Run,
+): Promise<undefined> {
+  const data = handoffOf(event);
+  if (!data || event.session_id === undefined) return undefined;
+  run.persons.delete(personKey(team, event.session_id));
+  const rows = await tx.query<{ id: string }>(
+    `SELECT id::text AS id FROM review_items
+     WHERE state = 'open' AND session_id = $1 AND coalesce(team, '') = $2 ORDER BY created_at, id`,
+    [event.session_id, team ?? ""],
+  );
+  for (const { id } of rows) {
+    const stored = await getItem(tx, id, {});
+    const next = stored && handedOverItem(stored.item, data, run.now);
+    if (stored && next && (await updateItem(tx, { ...stored, item: next }))) {
+      run.result.updated += 1;
+    }
+  }
+  return undefined;
 }
 
 async function firstResolver(
@@ -465,6 +507,7 @@ async function applySignal(
   run: Run,
 ): Promise<string | undefined> {
   if (event.kind === "decision.recorded") return applyDecision(tx, event, team, run);
+  if (event.kind === HANDOFF_EVENT_KIND) return applyHandoff(tx, event, team, run);
   if (event.kind === "review.submitted") {
     const done = await applySecondOpinion(tx, event, team, {
       config: run.configFor(team),

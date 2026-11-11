@@ -10,6 +10,7 @@ export * from "./egress.js";
 export * from "./event.js";
 export * from "./event-versions.js";
 export * from "./gateway.js";
+export * from "./handoff.js";
 export * from "./hooks/claude-code.js";
 export * from "./hooks/codex.js";
 export * from "./laptop.js";

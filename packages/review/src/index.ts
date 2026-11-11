@@ -19,6 +19,14 @@ export {
 } from "./codeowners.js";
 export { AlreadyAnsweredError, ReviewInputError, ReviewItemNotFoundError } from "./errors.js";
 export {
+  type HandoffRefusal,
+  type HandoffTarget,
+  handedOverItem,
+  handoffRefusal,
+  RUN_OWNER_ROUTE,
+  takeoverRefusal,
+} from "./handoff.js";
+export {
   type DecideInput,
   defaultConfig,
   openReviewList,

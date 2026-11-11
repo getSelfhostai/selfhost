@@ -840,6 +840,31 @@ export const RoiConfigSchema = Type.Object(
   },
 );
 
+export const HandoffConfigSchema = Type.Object(
+  {
+    share_transcript: Type.Optional(
+      Type.Boolean({
+        default: false,
+        description:
+          "Send the agent's own transcript with a handoff (selfhost handoff), so the new owner resumes the session natively (claude --resume, codex resume). Off by default because transcripts can hold secrets: when on, secrets, emails and the [[redaction]] patterns are masked before it leaves the sender's machine and again on the server, which deletes its copy once the new owner takes the run over.",
+      }),
+    ),
+    turns: Type.Optional(
+      Type.Integer({
+        minimum: 1,
+        maximum: 50,
+        default: 10,
+        description: "How many of the run's last turns the handoff summarizes.",
+      }),
+    ),
+  },
+  {
+    additionalProperties: false,
+    description:
+      "Handing a run to a teammate (selfhost handoff, selfhost takeover). Without a transcript the handoff carries the branch, commit, files, open review items, cost and a redacted summary of the last turns.",
+  },
+);
+
 export {
   REVIEWER_TOOLS,
   type ReviewerTool,
@@ -1522,6 +1547,7 @@ export const SelfhostConfigSchema = Type.Object(
     integrations: Type.Optional(IntegrationsSchema),
     roi: Type.Optional(RoiConfigSchema),
     background: Type.Optional(BackgroundConfigSchema),
+    handoff: Type.Optional(HandoffConfigSchema),
   },
   {
     $id: CONFIG_SCHEMA_URL,
@@ -1545,6 +1571,7 @@ export type ReceiptConfig = Static<typeof ReceiptConfigSchema>;
 export type Budget = Static<typeof BudgetSchema>;
 export type NotifyConfig = Static<typeof NotifyConfigSchema>;
 export type RoiConfig = Static<typeof RoiConfigSchema>;
+export type HandoffConfig = Static<typeof HandoffConfigSchema>;
 export type Integrations = Static<typeof IntegrationsSchema>;
 export type ReviewRouteRule = Static<typeof ReviewRouteRuleSchema>;
 export type AutoApprove = Static<typeof AutoApproveSchema>;

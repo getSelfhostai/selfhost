@@ -1,4 +1,4 @@
-import type { AgentRef, LedgerEvent, SecondOpinion } from "@selfhost/schema";
+import type { AgentRef, LedgerEvent, RunHandoff, SecondOpinion } from "@selfhost/schema";
 
 /**
  * Bodies of routes the server is gaining in other changes. The console reads them when they
@@ -38,6 +38,8 @@ export interface RunReport {
     agent: AgentRef | null;
     model: string | null;
     person: string | null;
+    /** Who holds the run now: the newest handoff's new owner, else person. Absent on older servers. */
+    owner?: string | null;
     team: string | null;
     repo: string | null;
     started_at: string | null;
@@ -57,6 +59,8 @@ export interface RunReport {
   trace_url: string | null;
   /** Pass as cursor for the next page of events; null on the last page. */
   next_cursor: string | null;
+  /** Who held the run, oldest handoff first. Absent on older servers. */
+  handoffs?: RunHandoff[];
 }
 
 /** Links review items carry on servers that know the item's run. */

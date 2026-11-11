@@ -7,6 +7,7 @@ import {
   type CreateTeamResponse,
   createValidator,
   DEFAULT_ORG_ID,
+  HANDOFF_EVENT_KIND,
   type IngestEventsError,
   JoinRequestSchema,
   type JoinResponse,
@@ -31,6 +32,7 @@ import { type Background, backgroundRoutes } from "./background.js";
 import { contextRoutes } from "./context.js";
 import { eventRoutes, MAX_BODY_BYTES } from "./events.js";
 import { type Gateway, gatewayRoutes } from "./gateway.js";
+import { type HandoffRouteOptions, handoffRoutes } from "./handoffs.js";
 import { limit, readBody, rethrow, SMALL_BODY_BYTES } from "./http.js";
 import { teamId } from "./ids.js";
 import { type IntegrationRouteOptions, integrationRoutes } from "./integrations.js";
@@ -67,6 +69,8 @@ export interface TeamRouteOptions {
   gateway?: Gateway;
   /** Background runs; their routes answer 503 without them. */
   background?: Background;
+  /** Run handoffs and share links: default config, public URL and the GitHub App. */
+  handoffs?: Omit<HandoffRouteOptions, "now">;
 }
 
 export type PersonEnv = { Bindings: { person: Person; caller: PersonCaller } };
@@ -118,6 +122,7 @@ export function teamRoutes(
     integrations,
     gateway,
     background,
+    handoffs,
   }: TeamRouteOptions,
 ): void {
   const { teams } = ledger;
@@ -203,7 +208,17 @@ export function teamRoutes(
       else person.on(method, path, run);
     },
   };
-  sharedRoutes(asPerson, ledger, now, provenance, runs, integrations, gateway, background);
+  sharedRoutes(
+    asPerson,
+    ledger,
+    now,
+    provenance,
+    runs,
+    integrations,
+    gateway,
+    background,
+    handoffs,
+  );
   personRoutes?.(person);
 
   app.use("*", async (c, next) => {
@@ -283,7 +298,7 @@ export function teamRoutes(
       else app.on(method, path, adminOnly, run);
     },
   };
-  sharedRoutes(asAdmin, ledger, now, provenance, runs, integrations, gateway, background);
+  sharedRoutes(asAdmin, ledger, now, provenance, runs, integrations, gateway, background, handoffs);
 }
 
 /** The routes both kinds of token reach, each checking the caller's role. */
@@ -296,6 +311,7 @@ function sharedRoutes(
   integrations: TeamRouteOptions["integrations"],
   gateway: Gateway | undefined,
   background: Background | undefined,
+  handoffs: TeamRouteOptions["handoffs"],
 ): void {
   policyRoutes(router, ledger, gateway);
   contextRoutes(router, ledger, { ...(now ? { now } : {}), ...runs });
@@ -324,6 +340,7 @@ function sharedRoutes(
   tailRoutes(router, ledger, { ...runs, ...(now ? { now } : {}) });
   gatewayRoutes(router, ledger, gateway);
   backgroundRoutes(router, ledger, background);
+  handoffRoutes(router, ledger, { ...handoffs, ...(now ? { now } : {}) });
 }
 
 /**
@@ -396,6 +413,16 @@ export function stampEvents(
     const upgraded = upgradeEvent(value);
     const event = upgraded.ok ? upgraded.value : value;
     if (!isObject(event)) return event;
+    // An owner change is the server's to record, after it checked who may hand the run over.
+    if (event.kind === HANDOFF_EVENT_KIND) {
+      errors.push({
+        index,
+        field: "kind",
+        message:
+          "A person token cannot write run.handed_off events: hand a run over with selfhost handoff (POST /v1/runs/{run_id}/handoffs), which checks who may",
+      });
+      return event;
+    }
     const actor = event.actor ?? { kind: "person", id: person.id };
     if (isObject(actor) && actor.kind === "person" && actor.id !== person.id) {
       errors.push({

@@ -17,6 +17,7 @@ import { registerDecisions } from "./decisions.js";
 import { doctor } from "./doctor.js";
 import { registerGateway } from "./gateway/commands.js";
 import { registerGuard } from "./guard/commands.js";
+import { registerHandoff } from "./handoff/commands.js";
 import { readStdin, runHook } from "./hooks/receive.js";
 import {
   type ImportCommandOptions,
@@ -748,6 +749,20 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
     fail,
   );
 
+  registerHandoff(
+    program,
+    () => ({
+      env: deps.env,
+      cwd: deps.cwd,
+      write: deps.write,
+      setExitCode: deps.setExitCode,
+      configPath: deps.configPath ?? defaultConfigPath(),
+      fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
+      ...(deps.home ? { home: deps.home } : {}),
+      ...(deps.now ? { now: deps.now } : {}),
+    }),
+    fail,
+  );
   registerRuns(
     program,
     () => ({

@@ -121,6 +121,11 @@ export function createApp({
     },
     ...(gateway ? { gateway } : {}),
     ...(background ? { background } : {}),
+    handoffs: {
+      ...(config ? { config } : {}),
+      ...(github.publicUrl ? { publicUrl: github.publicUrl } : {}),
+      ...(github.app ? { githubApp: github.app } : {}),
+    },
     personRoutes: (person) => {
       reviewRoutes(person, ledger, {
         ...review,

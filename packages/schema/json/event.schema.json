@@ -178,7 +178,8 @@
         "run.health",
         "run.gate",
         "sandbox.started",
-        "sandbox.stopped"
+        "sandbox.stopped",
+        "run.handed_off"
       ]
     },
     "actor": {

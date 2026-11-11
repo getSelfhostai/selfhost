@@ -42,8 +42,8 @@ the repository.
   run: force pushes, `git reset --hard`, `rm -rf` outside the workspace and reads of `.env` and
   key files are blocked unless `[guardrails] mode` in `selfhost.toml` is `observe` or `off`.
 - Approving or denying a review item, `selfhost decide`, `policy promote`, `team policy push`,
-  `gateway connect` and `gateway disconnect`, and the commands that take selfhost out (`init
-  --undo` among them) are a person's: the hooks block an agent that runs them
+  `gateway connect` and `gateway disconnect`, `handoff` and `takeover`, and the commands that
+  take selfhost out (`init --undo` among them) are a person's: the hooks block an agent that runs them
   (`guard.selfhost_decision`), and the commands refuse inside an agent session. The ones that
   answer for a person also refuse without a terminal, unless a person's own script (a CI job, not
   a coding agent) sets `SELFHOST_PERSON_SCRIPT=1`; `init --undo` and `gateway disconnect` need no
