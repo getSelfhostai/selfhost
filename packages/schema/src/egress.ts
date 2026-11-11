@@ -14,9 +14,12 @@ import type { ResolvedSelfhostConfig, RuleMode } from "./config.js";
 export const EGRESS_HOST_PATTERN =
   "^(?:(?:\\*\\.)?[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*|\\d{1,3}(?:\\.\\d{1,3}){3}(?:/\\d{1,2})?)$";
 
-/** `env:NAME`, `vault:path#key`, `infisical:path#key` or `infisical:key`, `github-app:repo`. */
+/**
+ * `env:SELFHOST_RUN_SECRET_NAME` (no other server variable), `vault:path#key`,
+ * `infisical:path#key` or `infisical:key`, `github-app:repo`.
+ */
 export const SECRET_SOURCE_PATTERN =
-  "^(?:env:[A-Za-z_][A-Za-z0-9_]*|vault:[^#\\s]+#[^#\\s]+|infisical:(?:[^#\\s]+#)?[^#\\s/]+|github-app:repo)$";
+  "^(?:env:SELFHOST_RUN_SECRET_[A-Za-z0-9_]+|vault:[^#\\s]+#[^#\\s]+|infisical:(?:[^#\\s]+#)?[^#\\s/]+|github-app:repo)$";
 
 /** The egress policy that applies to a run or a tool call. */
 export interface EgressRules {

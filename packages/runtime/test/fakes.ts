@@ -4,7 +4,12 @@
  * leaves the process.
  */
 import type { Fetch } from "@selfhost/integrations";
-import type { CoderSocket, CoderSocketFactory } from "../src/adapters/coder.js";
+import {
+  type CoderSocket,
+  type CoderSocketFactory,
+  PTY_BOOTSTRAP,
+  PTY_READY_MARKER,
+} from "../src/adapters/coder.js";
 import type { DaytonaBox, DaytonaSdk } from "../src/adapters/daytona.js";
 import type { E2BBox, E2BInfo, E2BSdk } from "../src/adapters/e2b.js";
 import type { ModalBox, ModalSdk, ModalStream } from "../src/adapters/modal.js";
@@ -456,15 +461,31 @@ export function fakeCoder(cloud: Cloud, base = "https://coder.example.com") {
     }
     return json({ message: `no route ${method} ${path}` }, 404);
   };
+  /** Every PTY URL opened, to check that no command or value is ever in one. */
+  const urls: string[] = [];
   const webSocket: CoderSocketFactory = (url, socketHeaders) => {
+    urls.push(url);
     const parsed = new URL(url);
     const agent = /workspaceagents\/agent-([^/]+)\/pty/.exec(parsed.pathname)?.[1] ?? "";
+    const run = (command: string) => {
+      const box = cloud.boxes.get(agent);
+      if (!box) return;
+      const result = runShell(command, box, { timeoutMs: 5000 });
+      if (result.timedOut) return; // A long command: the socket stays open until closed.
+      const output = (result.stdout + result.stderr).replace(/\n/g, "\r\n");
+      socket.onmessage?.({ data: new TextEncoder().encode(output).buffer });
+      socket.onclose?.();
+    };
     const socket: CoderSocket = {
       binaryType: "blob",
       onmessage: null,
       onclose: null,
       onerror: null,
-      send() {},
+      // The reader of PTY_BOOTSTRAP: one base64 line, the command to run.
+      send(data) {
+        const line = (JSON.parse(data) as { data: string }).data.trim();
+        setTimeout(() => run(Buffer.from(line, "base64").toString("utf8")), 0);
+      },
       close() {
         setTimeout(() => socket.onclose?.(), 0);
       },
@@ -479,13 +500,14 @@ export function fakeCoder(cloud: Cloud, base = "https://coder.example.com") {
         socket.onerror?.({ message: "agent offline" });
         return;
       }
-      const result = runShell(parsed.searchParams.get("command") ?? "", box, { timeoutMs: 5000 });
-      if (result.timedOut) return; // A long command: the socket stays open until closed.
-      const output = (result.stdout + result.stderr).replace(/\n/g, "\r\n");
-      socket.onmessage?.({ data: new TextEncoder().encode(output).buffer });
-      socket.onclose?.();
+      const command = parsed.searchParams.get("command") ?? "";
+      if (command !== PTY_BOOTSTRAP) {
+        run(command);
+        return;
+      }
+      socket.onmessage?.({ data: `${PTY_READY_MARKER}\r\n` });
     }, 0);
     return socket;
   };
-  return { fetch, webSocket, token, base };
+  return { fetch, webSocket, token, base, urls };
 }

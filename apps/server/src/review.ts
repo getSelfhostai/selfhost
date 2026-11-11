@@ -12,6 +12,7 @@ import {
   ReviewItemNotFoundError,
   type ReviewList,
   refreshReviewList,
+  waitingRefusal,
 } from "@selfhost/review";
 import {
   type ApiError,
@@ -326,8 +327,17 @@ export function reviewRoutes<E extends Env>(
     const by = actor(c, body.by);
     if (by instanceof Response) return by;
     const id = c.req.param("id");
+    const { list, team } = await holder(c, id);
+    const item = await list.get(id);
+    const person = options.person?.(c);
+    if (item && person) {
+      const where = team ?? person.team;
+      const role = (await options.role?.(c, where)) ?? person.role;
+      const reason = waitingRefusal(item, where, { by, role });
+      if (reason !== undefined) return c.json(apiError("forbidden", reason), 403);
+    }
     try {
-      return c.json(await (await listWith(c, id)).snooze(id, { by, until: body.until }));
+      return c.json(await list.snooze(id, { by, until: body.until }));
     } catch (error) {
       if (error instanceof AlreadyAnsweredError) return conflict(c, error);
       if (error instanceof ReviewItemNotFoundError) return missing(c, id);

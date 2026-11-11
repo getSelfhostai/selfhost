@@ -66,8 +66,17 @@ interface Workspace {
 export const CODER_PREFIX = "selfhost-";
 /** Marks a command's exit status in the PTY output. */
 const EXIT_MARKER = "__SELFHOST_EXIT__";
-/** Base64 characters per write call, to keep each URL short. */
+/** Base64 characters per write call, to keep each command short. */
 const WRITE_CHUNK = 3000;
+/** The PTY reader prints this once echo is off and it waits for the command. */
+export const PTY_READY_MARKER = "__SELFHOST_READY__";
+
+/**
+ * What the PTY URL runs: a fixed reader. The command itself, with the run's environment and
+ * secrets, goes over the socket once the reader says it is ready, base64 encoded on one line
+ * with echo off, so no value is ever in a URL, where proxies and Coder's own logs keep it.
+ */
+export const PTY_BOOTSTRAP = `sh -c 'stty -echo -icanon 2>/dev/null; echo ${PTY_READY_MARKER}; IFS= read -r c; eval "$(printf %s "$c" | base64 -d)"'`;
 
 /** A Coder build's status, mapped to the contract's. */
 export function coderState(build: Build | undefined): SandboxState {
@@ -153,7 +162,10 @@ export function coderRuntime(options: CoderOptions): RuntimeAdapter {
   const agentOf = (workspace: Workspace) =>
     workspace.latest_build.resources?.flatMap((resource) => resource.agents ?? [])[0];
 
-  /** Runs one command in the agent's PTY; stdout and stderr arrive merged. */
+  /**
+   * Runs one command in the agent's PTY; stdout and stderr arrive merged. The URL carries only
+   * PTY_BOOTSTRAP; the command and its environment go on the socket once the reader is ready.
+   */
   function pty(agent: string, command: string, execOptions: ExecOptions, log?: LogBuffer) {
     const wrapped = `sh -c ${shellQuote(command)}; printf '\\n${EXIT_MARKER}%s\\n' "$?"`;
     const url = new URL(`${base}/api/v2/workspaceagents/${agent}/pty`);
@@ -161,10 +173,12 @@ export function coderRuntime(options: CoderOptions): RuntimeAdapter {
     url.searchParams.set("reconnect", randomUUID());
     url.searchParams.set("width", "200");
     url.searchParams.set("height", "50");
-    url.searchParams.set("command", wrapped);
+    url.searchParams.set("command", PTY_BOOTSTRAP);
     return new Promise<ExecResult>((resolve, reject) => {
       const socket = openSocket(url.toString(), token);
       socket.binaryType = "arraybuffer";
+      let prelude = "";
+      let ready = false;
       let raw = "";
       let done = false;
       const decoder = new TextDecoder();
@@ -176,10 +190,19 @@ export function coderRuntime(options: CoderOptions): RuntimeAdapter {
           }, execOptions.timeoutMs)
         : undefined;
       socket.onmessage = (event) => {
-        const text =
+        let text =
           typeof event.data === "string"
             ? event.data
             : decoder.decode(new Uint8Array(event.data as ArrayBuffer), { stream: true });
+        if (!ready) {
+          prelude += text;
+          const at = prelude.indexOf(PTY_READY_MARKER);
+          if (at === -1) return;
+          ready = true;
+          text = prelude.slice(at + PTY_READY_MARKER.length).replace(/^\r?\n/, "");
+          socket.send(JSON.stringify({ data: `${Buffer.from(wrapped).toString("base64")}\n` }));
+          if (text === "") return;
+        }
         raw += text;
         const shown = text.replace(new RegExp(`\\r?\\n?${EXIT_MARKER}\\d*\\r?\\n?`), "");
         emit(execOptions, log, "stdout", shown.replace(/\r\n/g, "\n"));

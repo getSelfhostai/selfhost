@@ -116,7 +116,7 @@ export const IssueGatewayKeyRequestSchema = Type.Object(
       StringEnum(GATEWAY_KEY_KINDS, {
         default: "person",
         description:
-          "person: the caller's own key (person tokens only). team: a shared key for the team (owner or admin). run: a key for one background run, which expires after 24 hours.",
+          "person: the caller's own key (person tokens only). team: a shared key for the team (owner or admin). run is refused here: the server issues each background run its own capped key and revokes it when the run ends.",
       }),
     ),
     team: Type.Optional(
@@ -125,7 +125,11 @@ export const IssueGatewayKeyRequestSchema = Type.Object(
       }),
     ),
     run_id: Type.Optional(
-      Type.String({ minLength: 1, maxLength: 200, description: "The run, for kind run." }),
+      Type.String({
+        minLength: 1,
+        maxLength: 200,
+        description: "The run, for kind run, which this route refuses.",
+      }),
     ),
     rotate: Type.Optional(
       Type.Boolean({

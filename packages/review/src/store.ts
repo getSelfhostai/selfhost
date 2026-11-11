@@ -1,6 +1,7 @@
 import type { Queryable } from "@selfhost/ledger";
 import {
   createValidator,
+  DEFAULT_ORG_ID,
   PAGE_LIMIT_DEFAULT,
   type ReviewItem,
   type ReviewItemQuery,
@@ -33,6 +34,8 @@ export interface StoredItem {
 /** Which items a list reads and writes: one team's, or every item when team is undefined. */
 export interface Scope {
   team?: string;
+  /** Items of this org's teams only; an item with no team counts as the default org's. */
+  org?: string;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -90,9 +93,16 @@ const SET = `kind = $2, state = $3, blocking = $4, risk_score = $5, session_id =
   body = $14::text::jsonb, version = version + 1`;
 
 function scoped(scope: Scope, params: unknown[]): string {
-  if (scope.team === undefined) return "";
-  params.push(scope.team);
-  return ` AND team = $${params.length}`;
+  let sql = "";
+  if (scope.team !== undefined) {
+    params.push(scope.team);
+    sql += ` AND team = $${params.length}`;
+  }
+  if (scope.org !== undefined) {
+    params.push(scope.org);
+    sql += ` AND coalesce((SELECT t.org_id FROM teams t WHERE t.id = review_items.team), '${DEFAULT_ORG_ID}') = $${params.length}`;
+  }
+  return sql;
 }
 
 const notClaimed = "(claimed_until IS NULL OR claimed_until < now())";

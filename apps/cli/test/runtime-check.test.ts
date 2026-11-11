@@ -9,7 +9,7 @@ mode = "enforce"
 allow = ["github.com", "*.npmjs.org"]
 
 [secrets.env]
-STRIPE_KEY = { from = "env:STRIPE_KEY", host = "api.stripe.com" }
+STRIPE_KEY = { from = "env:SELFHOST_RUN_SECRET_STRIPE_KEY", host = "api.stripe.com" }
 
 [integrations.runtime]
 tool = "modal"

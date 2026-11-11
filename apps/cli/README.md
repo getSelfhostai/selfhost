@@ -717,7 +717,7 @@ and `--dry-run` never ask (the files are then only listed). [`AGENTS.md`](AGENTS
    `selfhost hook <agent>` to Claude Code and Codex through `agents configure`, which backs up
    every file first. When `selfhost` is not on PATH the hook calls the running node and script
    by absolute path instead; if those are gone too, it prints one line pointing here and exits 1
-   (`SELFHOST_NPX=1` runs `npx -y selfhostai` instead, for once the package is on npm). An agent
+   (`SELFHOST_NPX=1` runs `npx -y selfhostai@<this version>` instead, after the first release). An agent
    where `agents configure` already set other settings is
    left alone, so they are not taken out.
 3. It writes a starter `selfhost.toml` at the git repository root when none is found: four
@@ -1082,6 +1082,7 @@ tests_first = "observe"      # off, observe or enforce
 test_command = "pnpm test"   # unset: detected
 pr_size_cap = 800            # changed lines; 0 for no cap
 webhook_secret_env = "SELFHOST_RUNS_SECRET"
+webhook_senders = ["alice@example.com"]  # who the webhook's bridge may start runs for
 
 [[background.schedules]]
 name = "nightly-deps"
@@ -1216,7 +1217,6 @@ selfhost gateway keys                     # the team's keys and limits, never th
 selfhost gateway connect claude-code      # issue your key, write it into ~/.claude/settings.json
 selfhost gateway connect codex            # or opencode, goose: the provider in their own config
 selfhost gateway disconnect               # put every file connect changed back, byte for byte
-selfhost gateway connect env --run run-42 # print a key for one background run, for 24 hours
 ```
 
 The team server configures an AI gateway: the bundled Bifrost (`selfhost up --gateway`, see

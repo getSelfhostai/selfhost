@@ -78,9 +78,16 @@ export interface OrgStore {
    * The team each event belongs to: the team that owns the event's repo, else the team that
    * owns its run's repo (from earlier events of the session that named one), else `writer`,
    * the team of the person token that wrote it. With a writer only teams of its org count;
-   * without one (the admin token) a repo counts when exactly one org maps it.
+   * without one (the admin token) a repo counts when exactly one org maps it. With `person`,
+   * the person who wrote the batch, an event moves to the repo's team only when that person is
+   * in it: naming another team's repo must not write into that team.
    */
-  assignTeams(tx: Queryable, events: LedgerEvent[], writer?: string): Promise<(string | null)[]>;
+  assignTeams(
+    tx: Queryable,
+    events: LedgerEvent[],
+    writer?: string,
+    person?: string,
+  ): Promise<(string | null)[]>;
   /** Remembers the repo of each run (session) the events name one for. */
   recordRuns(tx: Queryable, events: LedgerEvent[]): Promise<void>;
   /**
@@ -303,7 +310,7 @@ export function createOrgStore(db: Database): OrgStore {
       };
     },
 
-    async assignTeams(tx, events, writer) {
+    async assignTeams(tx, events, writer, person) {
       const sessions = [...new Set(events.flatMap((e) => (e.session_id ? [e.session_id] : [])))];
       const repos = new Map<string, string>();
       if (sessions.length > 0) {
@@ -330,15 +337,23 @@ export function createOrgStore(db: Database): OrgStore {
         ]);
         org = row?.org_id;
       }
+      let member: Set<string> | undefined;
+      if (writer !== undefined && person !== undefined) {
+        const rows = await tx.query<{ team_id: string }>(
+          `SELECT p.team_id FROM people p JOIN teams t ON t.id = p.team_id
+           WHERE t.org_id = $1 AND lower(p.id) = lower($2::text)`,
+          [org ?? null, person],
+        );
+        member = new Set([writer, ...rows.map((row) => row.team_id)]);
+      }
       const teamOf = new Map<string, string>();
       for (const repo of named) {
         const candidates = owners.filter(
           (row) => row.repo === repo && (org === undefined || row.org_id === org),
         );
         const [only] = candidates;
-        if (only && (writer !== undefined || candidates.length === 1)) {
-          teamOf.set(repo, only.team_id);
-        }
+        if (!only || (member && !member.has(only.team_id))) continue;
+        if (writer !== undefined || candidates.length === 1) teamOf.set(repo, only.team_id);
       }
       return events.map((event) => {
         const repo = repoOf(event);

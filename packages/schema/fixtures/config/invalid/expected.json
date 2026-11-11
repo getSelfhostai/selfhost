@@ -26,6 +26,7 @@
   "receipt-port-out-of-range.toml": { "field": "receipt.port", "line": 5 },
   "egress-host-invalid.toml": { "field": "egress.allow[1]", "line": 4 },
   "egress-team-widens.toml": { "field": "teams.platform.egress.allow[1]", "line": 7 },
-  "secret-store-missing.toml": { "field": "secrets.env.DATABASE_URL", "line": 4 },
+  "secret-env-not-run-secret.toml": { "field": "secrets.env.STOLEN", "line": 4 },
+  "secret-store-settings.toml": { "field": "secrets.vault", "line": 6 },
   "secret-source-unknown.toml": { "field": "secrets.env.TOKEN", "line": 4 }
 }

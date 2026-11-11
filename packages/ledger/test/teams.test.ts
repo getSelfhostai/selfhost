@@ -246,6 +246,32 @@ describe.each(BACKENDS)("team store on $name", (backend) => {
     expect(await teams.revokePerson("roles", "erin@example.com")).toBeUndefined();
   });
 
+  it.skipIf(backend.skip)(
+    "gives a revoked owner who is invited back the role an invite gives",
+    async () => {
+      const created = await teams.createTeam({ id: "rejoin", name: "Rejoin" });
+      const invite = created?.invite ?? "";
+      joined(await teams.join(invite, { id: "first@example.com" }));
+      const second = joined(await teams.join(invite, { id: "second@example.com" }));
+      expect(
+        await teams.setRole("rejoin", "second@example.com", "owner", "first@example.com"),
+      ).toMatchObject({
+        person: { role: "owner" },
+      });
+      // Still holding a token, a new machine keeps the role.
+      const laptop = await teams.createInvite("rejoin", { email: "second@example.com" });
+      expect(
+        joined(await teams.join(laptop?.invite ?? "", { id: "second@example.com" })).person.role,
+      ).toBe("owner");
+      // Revoked, then invited back by email: a member, not an owner again.
+      await teams.revokePerson("rejoin", "second@example.com");
+      const back = await teams.createInvite("rejoin", { email: "second@example.com" });
+      const again = joined(await teams.join(back?.invite ?? "", { id: "second@example.com" }));
+      expect(again.person.role).toBe("member");
+      expect(second.person.role).toBe("member");
+    },
+  );
+
   it.skipIf(backend.skip)("stores and replaces a team policy", async () => {
     await teams.createTeam({ id: "policy", name: "Policy" });
     expect(await teams.getPolicy("policy")).toBeUndefined();

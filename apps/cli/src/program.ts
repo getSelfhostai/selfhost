@@ -519,6 +519,7 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       setExitCode: deps.setExitCode,
       configPath: deps.configPath ?? defaultConfigPath(),
       fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
+      ...(deps.ask ? { confirm: deps.ask } : {}),
       detect: () =>
         detectAgents({
           home: deps.home ?? homedir(),

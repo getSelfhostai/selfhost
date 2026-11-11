@@ -56,8 +56,10 @@ curl http://localhost:4400/v1/health
 ```
 
 The server applies database migrations on start, under a lock, before it listens. The stack
-speaks plain HTTP: on anything but a private network, set `SELFHOST_BIND=127.0.0.1` and
-`OTLP_BIND=127.0.0.1` in `.env` and put a TLS reverse proxy in front.
+speaks plain HTTP, so the API and the collector are published on 127.0.0.1 only by default:
+reach them from this server, or add `compose.tls.yml` (below) to serve them over HTTPS. On a
+private network where laptops connect directly, set `SELFHOST_BIND=0.0.0.0` and
+`OTLP_BIND=0.0.0.0` in `.env`.
 
 ## Connect agents
 
@@ -188,9 +190,10 @@ it, and is the only service published to the internet (80 and 443). Set in `.env
 COMPOSE_FILE=compose.yml:compose.tls.yml
 SELFHOST_DOMAIN=selfhost.example.com   # its DNS must point at this server
 SELFHOST_PUBLIC_URL=https://selfhost.example.com
-SELFHOST_BIND=127.0.0.1                # the API and the collector answer on this server only
-OTLP_BIND=127.0.0.1
 ```
+
+`SELFHOST_BIND` and `OTLP_BIND` stay at their default, 127.0.0.1, so the API and the collector
+answer on this server only and Caddy reaches them over the compose network.
 
 Caddy routes by path ([`Caddyfile`](./Caddyfile)): `/v1/*` to the API, behind its bearer
 tokens, so the CLI, hooks and the GitHub webhook work as before; `/otlp/*` to the collector's

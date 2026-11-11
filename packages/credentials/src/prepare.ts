@@ -21,6 +21,7 @@ import {
   providerKeyGaps,
   refOf,
   resolveSecret,
+  type SecretStores,
 } from "./secrets.js";
 import {
   type CredentialTarget,
@@ -46,8 +47,13 @@ export interface CredentialRun {
 }
 
 export interface CredentialDeps {
-  /** The server's environment: env: sources and the Vault and Infisical tokens. */
+  /**
+   * The server's environment: env: sources (SELFHOST_RUN_SECRET_* only) and, unless `stores` is
+   * given, where Vault and Infisical are and their tokens.
+   */
   env: NodeJS.ProcessEnv;
+  /** Default: storesFromEnv(env). Never from a policy. */
+  stores?: SecretStores;
   /** For Vault and Infisical. Default: the global fetch. */
   fetch?: typeof fetch;
   /** The GitHub App, to mint the run's repository token. Without it, no GitHub token. */
@@ -127,6 +133,24 @@ export function gatewayUrls(tool: GatewayClient["tool"], baseUrl: string) {
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /**
+ * Why a run may not start on its target: [egress] mode is enforce for the run's team and the
+ * target has no allow list of its own to hold it (a runtime that declares no egress control).
+ * undefined when it may, including in observe mode, where the gap is only reported.
+ */
+export function egressRefusal(
+  run: Pick<CredentialRun, "team" | "target" | "capabilities">,
+  config: Pick<ResolvedSelfhostConfig, "egress" | "teams">,
+): string | undefined {
+  const policy = egressPolicyOf(config, run.team);
+  if (policy?.mode !== "enforce") return undefined;
+  const unheld = egressFor(run.target, policy.allow, run.capabilities).gaps.find(
+    (gap) => gap.effect === "unenforced",
+  );
+  if (!unheld) return undefined;
+  return `[egress] mode is enforce for team ${run.team}, and ${run.target} cannot hold the allow list (${unheld.message}) Pick a runtime that enforces egress, or set [egress] mode = "observe" to run with the hooks' checks only.`;
+}
+
+/**
  * Gives a run its credentials and egress policy, from the composed policy for its team and
  * repository:
  *
@@ -194,6 +218,11 @@ export async function prepareCredentials(
   const literals = (): SecretLiteral[] => held.map(({ name, value }) => ({ name, value }));
   const masker = secretMasker(literals);
 
+  // Checked before anything is issued: an enforced allow list the target cannot hold refuses
+  // the run instead of letting it reach any host.
+  const refused = egressRefusal(run, config);
+  if (refused) throw new Error(`Credentials for run ${run.id}: ${refused}`);
+
   try {
     if (run.repo && deps.github) {
       const [owner = "", repo = ""] = run.repo.split("/");
@@ -257,7 +286,7 @@ export async function prepareCredentials(
       if (taken.has(secret.name)) continue;
       if (deps.gateway && (PROVIDER_KEY_NAMES as readonly string[]).includes(secret.name)) continue;
       if (secret.source === "github-app" || secret.source === "gateway") continue;
-      const value = await resolveSecret(secret, config, deps);
+      const value = await resolveSecret(secret, deps);
       held.push({
         name: secret.name,
         value,

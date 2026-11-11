@@ -69,7 +69,11 @@ const background =
     ? undefined
     : createBackground(ledger, {
         config,
-        runtime: serverRuntime(ledger, { env: process.env, log: (line) => console.log(line) }),
+        runtime: serverRuntime(ledger, {
+          env: process.env,
+          config,
+          log: (line) => console.log(line),
+        }),
         version: pkg.version,
         ...(github.app ? { github: github.app } : {}),
         ...(gateway ? { gateway } : {}),

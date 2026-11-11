@@ -70,7 +70,7 @@ export interface TeamRouteOptions {
 }
 
 export type PersonEnv = { Bindings: { person: Person; caller: PersonCaller } };
-type EventsEnv = { team: string };
+type EventsEnv = { team: string; person?: string };
 type BatchError = IngestEventsError["errors"][number];
 
 /** Routes that need no bearer token: /v1/join takes the invite code in the body instead. */
@@ -127,7 +127,10 @@ export function teamRoutes(
   // The ordinary events routes, limited to one team. Writes reach them only after their events
   // are stamped.
   const events = new Hono();
-  eventRoutes(events, ledger, { team: (c) => (c.env as EventsEnv).team });
+  eventRoutes(events, ledger, {
+    team: (c) => (c.env as EventsEnv).team,
+    person: (c) => (c.env as EventsEnv).person,
+  });
   events.onError(rethrow);
 
   const person = new Hono<PersonEnv>();
@@ -163,7 +166,7 @@ export function teamRoutes(
     return events.request(
       "/v1/events",
       { method: "POST", headers: { "content-type": "application/json" }, body: stamped.body },
-      { team: c.env.person.team } satisfies EventsEnv,
+      { team: c.env.person.team, person: c.env.person.id } satisfies EventsEnv,
     );
   });
 
@@ -212,7 +215,7 @@ export function teamRoutes(
     // Signed in at the proxy in front of the console: reads only, as the person.
     const email = bearer === undefined ? forwardedEmail(c, signin) : undefined;
     if (email !== undefined) {
-      const found = signedInPerson(c, email, await teams.peopleWithAccess(email));
+      const found = signedInPerson(c, email, await teams.peopleWithAccess(email), signin?.org);
       if (found instanceof Response) return found;
       return person.fetch(c.req.raw, { person: found, caller: personCaller(teams, found) });
     }
@@ -362,6 +365,16 @@ function laptopSystemRefusal(event: Record<string, unknown>): BatchError["field"
   return actor.id === LAPTOP_ALERT_ACTOR_ID ? undefined : "actor.id";
 }
 
+/**
+ * Kinds only the GitHub App's webhook writes: a reviewer's verdict and a pull request's merge or
+ * close. From a person token they would let an agent on a laptop approve its own pull request.
+ */
+const GITHUB_ONLY_KINDS: ReadonlySet<string> = new Set([
+  "review.submitted",
+  "pr.merged",
+  "pr.closed",
+]);
+
 const SYSTEM_REFUSALS: Record<string, string> = {
   "actor.kind": "A person token cannot write system events",
   source: "A person token writes system events from its own hook or CLI only",
@@ -396,6 +409,14 @@ export function stampEvents(
     const upgraded = upgradeEvent(value);
     const event = upgraded.ok ? upgraded.value : value;
     if (!isObject(event)) return event;
+    if (typeof event.kind === "string" && GITHUB_ONLY_KINDS.has(event.kind)) {
+      errors.push({
+        index,
+        field: "kind",
+        message: `A person token cannot write ${event.kind}: only the GitHub App's webhook records it`,
+      });
+      return event;
+    }
     const actor = event.actor ?? { kind: "person", id: person.id };
     if (isObject(actor) && actor.kind === "person" && actor.id !== person.id) {
       errors.push({

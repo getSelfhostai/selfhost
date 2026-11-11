@@ -9,6 +9,7 @@ import {
   isFinalRunState,
   type KillScope,
   type LedgerEvent,
+  PERSON_VERDICTS,
   type ResolvedBackgroundConfig,
   type RunHealth,
   type RunTrigger,
@@ -22,6 +23,7 @@ import {
   OUTPUT_LINES_PER_EVENT,
   outputEvent,
   pullOpenedEvent,
+  RUNNER_ACTOR_ID,
   triggeredEvent,
   updatedEvent,
   uuidv7,
@@ -49,6 +51,42 @@ import {
 
 /** The check run the tests-first gate posts on the pull request. */
 export const GATE_CHECK_NAME = "selfhost/tests-first";
+
+/**
+ * What `selfhost import --hook-events` may hand the run from the sandbox: the kinds the agent's
+ * hooks map to, and the guard's own records. Anything else (decisions, pull requests, reviews,
+ * credentials, run events) is not the sandbox's to write.
+ */
+export const HOOK_EVENT_KINDS: ReadonlySet<string> = new Set([
+  "session.started",
+  "session.ended",
+  "prompt.submitted",
+  "tool.called",
+  "tool.result",
+  "approval.requested",
+  "cost.recorded",
+  "policy.evaluated",
+  "egress.blocked",
+]);
+
+/** The guard's actor and decision.by on policy.evaluated, as the CLI writes them. */
+const GUARD_ACTOR_ID = "selfhost-policy";
+
+/** Text with the run's secrets masked, once its credentials are in. */
+const masked = (entry: { mask?: (text: string) => string }, text: string) =>
+  entry.mask ? entry.mask(text) : text;
+
+/** Every string in a JSON value, masked. */
+function maskStrings(value: unknown, mask: (text: string) => string): unknown {
+  if (typeof value === "string") return mask(value);
+  if (Array.isArray(value)) return value.map((item) => maskStrings(item, mask));
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, maskStrings(item, mask)]),
+    );
+  }
+  return value;
+}
 
 /** The sandbox outlives the run's own timeout by this much, so selfhost stops it first. */
 const SANDBOX_GRACE_MINUTES = 5;
@@ -78,6 +116,26 @@ export interface RunnerOptions {
   alert?: SendAlert;
   /** Model spend so far for a run: cost.recorded events carrying its run id. */
   modelCost?: (runId: string) => Promise<number>;
+  /**
+   * Why a team may not run on a repo, or undefined when it may: the server answers from the
+   * repos each team owns, so naming another team's repo does not get a write token for it.
+   * Checked for every trigger. Without it every repo the GitHub App reaches is allowed.
+   */
+  repoAccess?: (team: string, repo: string, org: string | undefined) => Promise<string | undefined>;
+  /**
+   * Revokes what a run a previous process left going still holds (its gateway key; a GitHub
+   * token's expiry is recorded), called by recover() for each such run once it is marked failed.
+   */
+  orphaned?: (run: BackgroundRun) => Promise<void>;
+  /**
+   * Why a run may not go on the runtime picked for it, or undefined when it may: the server
+   * refuses a runtime that cannot hold the team's enforced [egress] allow list.
+   */
+  admit?: (
+    run: BackgroundRun,
+    runtime: RuntimeAdapter,
+    config: Awaited<ReturnType<SettingsFor>>["config"],
+  ) => string | undefined;
   /** Registry lookups for the gate's dependency check. Without it they are skipped. */
   fetch?: Fetch;
   clock?: Clock;
@@ -236,7 +294,12 @@ export function createRunner(options: RunnerOptions): Runner {
     return out;
   }
 
-  /** Hook events from the sandbox's spool, mapped by the same selfhost CLI a laptop runs. */
+  /**
+   * Hook events from the sandbox's spool, mapped by the same selfhost CLI a laptop runs. The
+   * sandbox runs the agent's code, so its output is only trusted as far as hooks go: kinds a
+   * hook writes, as the run's person (or the runner) and agent, or as the policy engine for the
+   * guard's own records, tied to the run and with the run's secrets masked.
+   */
   async function hookEvents(entry: Live, prepared: Prepared): Promise<LedgerEvent[]> {
     const sandbox = entry.sandbox;
     if (!sandbox) return [];
@@ -251,8 +314,8 @@ export function createRunner(options: RunnerOptions): Runner {
       for (const line of result.stdout.split("\n")) {
         if (!line.trim().startsWith("{")) continue;
         try {
-          const event = JSON.parse(line) as LedgerEvent;
-          out.push({ ...event, team: entry.run.team, repo: entry.run.repo, run_id: entry.run.id });
+          const event = fromSandbox(entry, JSON.parse(line) as LedgerEvent);
+          if (event) out.push(event);
         } catch {
           // A line that is not an event is skipped.
         }
@@ -261,6 +324,39 @@ export function createRunner(options: RunnerOptions): Runner {
     } catch {
       return [];
     }
+  }
+
+  /** One event the sandbox printed, as the run may record it, or undefined when it may not. */
+  function fromSandbox(entry: Live, event: LedgerEvent): LedgerEvent | undefined {
+    if (event === null || typeof event !== "object" || !HOOK_EVENT_KINDS.has(event.kind)) {
+      return undefined;
+    }
+    const run = entry.run;
+    const guard = event.kind === "policy.evaluated" || event.kind === "egress.blocked";
+    const decision = event.decision;
+    if (decision && (PERSON_VERDICTS as readonly string[]).includes(decision.verdict)) {
+      return undefined;
+    }
+    const actor: LedgerEvent["actor"] = guard
+      ? { kind: "system", id: GUARD_ACTOR_ID }
+      : run.person
+        ? { kind: "person", id: run.person }
+        : { kind: "system", id: RUNNER_ACTOR_ID };
+    const mask = entry.mask ?? ((text: string) => text);
+    const masked = maskStrings(event, mask) as LedgerEvent;
+    return {
+      ...masked,
+      source: "hook",
+      actor,
+      agent: { ...(masked.agent ?? {}), vendor: AGENT_CLIS[run.agent].vendor },
+      ...(decision
+        ? { decision: { ...masked.decision, by: GUARD_ACTOR_ID } as LedgerEvent["decision"] }
+        : {}),
+      team: run.team,
+      ...(run.org ? { org: run.org } : {}),
+      repo: run.repo,
+      run_id: run.id,
+    };
   }
 
   async function costOf(entry: Live): Promise<BackgroundRun["cost"]> {
@@ -400,6 +496,8 @@ export function createRunner(options: RunnerOptions): Runner {
       if ("refused" in granted) throw new RunFailure(granted.refused);
       credentials = granted;
       entry.mask = granted.mask;
+      // Observe mode, or a weaker hold: reported. An enforced allow list the runtime cannot
+      // hold refused the run at start (admit) and again when its credentials were prepared.
       for (const gap of granted.gaps ?? []) log(`background: ${entry.run.id}: ${gap}`);
       await save(entry, { credential: granted.kind });
 
@@ -415,7 +513,10 @@ export function createRunner(options: RunnerOptions): Runner {
           if (!retryable || entry.run.attempt >= entry.run.max_attempts) {
             throw error;
           }
-          const reason = `Attempt ${entry.run.attempt} hit a runtime error: ${stop?.reason ?? message(error)}`;
+          const reason = masked(
+            entry,
+            `Attempt ${entry.run.attempt} hit a runtime error: ${stop?.reason ?? message(error)}`,
+          );
           log(`background: ${entry.run.id}: ${reason}`);
           await endSandbox(entry);
           entry.stop = undefined;
@@ -683,7 +784,9 @@ export function createRunner(options: RunnerOptions): Runner {
     });
     const cost = await costOf(entry);
     const now = clock.now();
-    const reason = outcome.state === "succeeded" ? null : outcome.reason;
+    // A reason can carry the agent's stderr, which can carry a secret: masked before it reaches
+    // the run record, the API, the ledger and notifications.
+    const reason = outcome.state === "succeeded" ? null : masked(entry, outcome.reason);
     const health = "health" in outcome && outcome.health ? outcome.health : entry.run.health;
     await save(entry, {
       state: outcome.state,
@@ -776,6 +879,10 @@ export function createRunner(options: RunnerOptions): Runner {
           );
         }
       }
+      const denied = await options.repoAccess?.(request.team, request.repo, org);
+      if (denied !== undefined) {
+        return refuse(request, { refused: denied, status: 403, code: "not_allowed" }, org);
+      }
       const kills = await store.activeKills({
         teams: [request.team],
         ...(org ? { orgs: [org] } : {}),
@@ -860,6 +967,10 @@ export function createRunner(options: RunnerOptions): Runner {
           { refused: noRuntime(request.team, adapter), status: 503, code: "no_runtime" },
           org,
         );
+      }
+      const inadmissible = options.admit?.(run, adapter, settings.config);
+      if (inadmissible !== undefined) {
+        return refuse(request, { refused: inadmissible, status: 403, code: "not_allowed" }, org);
       }
       run.runtime = adapter.kind;
       await store.create(run);
@@ -957,6 +1068,10 @@ export function createRunner(options: RunnerOptions): Runner {
         });
         const alert = alertFor(ended);
         await append([updatedEvent(ended, now), ...(alert ? [alertEvent(ended, alert, now)] : [])]);
+        // The process that held the run's credentials is gone, and with it the revoke at its end.
+        await options.orphaned?.(ended).catch((error) => {
+          log(`background: ${run.id}: revoking what it held failed: ${message(error)}`);
+        });
         recovered.push(run.id);
       }
       return recovered;

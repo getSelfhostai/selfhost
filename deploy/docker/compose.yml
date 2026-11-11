@@ -62,7 +62,7 @@ services:
       # An Apprise API server the team already runs (compose.notify.yml sets its own).
       SELFHOST_APPRISE_URL: ${SELFHOST_APPRISE_URL:-}
     ports:
-      - "${SELFHOST_BIND:-0.0.0.0}:${SELFHOST_PORT:-4400}:4400"
+      - "${SELFHOST_BIND:-127.0.0.1}:${SELFHOST_PORT:-4400}:4400"
     # Health check: HEALTHCHECK in the image, GET /v1/health.
     logging: *logging
 
@@ -94,8 +94,8 @@ services:
       - ./otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
       - collector-probe:/probe:ro
     ports:
-      - "${OTLP_BIND:-0.0.0.0}:${OTLP_GRPC_PORT:-4317}:4317"
-      - "${OTLP_BIND:-0.0.0.0}:${OTLP_HTTP_PORT:-4318}:4318"
+      - "${OTLP_BIND:-127.0.0.1}:${OTLP_GRPC_PORT:-4317}:4317"
+      - "${OTLP_BIND:-127.0.0.1}:${OTLP_HTTP_PORT:-4318}:4318"
     healthcheck:
       test:
         - CMD

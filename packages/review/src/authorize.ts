@@ -21,6 +21,29 @@ export interface Decider {
   trusted?: boolean;
 }
 
+/** Items an agent waits on for a person: only that person's people answer or snooze them. */
+const WAITING_KINDS: ReadonlySet<string> = new Set(["approval", "question"]);
+
+/**
+ * Why `decider` may not answer or snooze an approval or question item on a team server, or
+ * undefined when they may: the item's owners (the session's person unless routing named others),
+ * the person it was asked for, and the team's owners and admins. A teammate cannot let another
+ * person's agent go ahead, or hold it off.
+ */
+export function waitingRefusal(
+  item: Pick<ReviewItem, "kind" | "owners" | "requested_by">,
+  team: string,
+  decider: Decider,
+): string | undefined {
+  if (!WAITING_KINDS.has(item.kind)) return undefined;
+  const { by, role, trusted = false } = decider;
+  if (trusted || (role !== undefined && roleAllows(role, "policy.write"))) return undefined;
+  const id = by.toLowerCase();
+  const theirs = [...item.owners, ...(item.requested_by ? [item.requested_by] : [])];
+  if (theirs.some((person) => person.toLowerCase() === id)) return undefined;
+  return `This ${item.kind} is for ${theirs.length > 0 ? theirs.join(", ") : "the team's owners and admins"}: another person's waiting agent is answered by them or an owner or admin of team ${team}.`;
+}
+
 /**
  * Why `decider` may not give `verdict` on a team server's item, or undefined when they may. One
  * rule for every path an answer reaches the server by (the review item route, decision events
@@ -30,11 +53,13 @@ export interface Decider {
  *   person whose agent was blocked never approves their own unless the team's selfhost.toml sets
  *   [review] self_approve_exceptions = true. Denying one is always allowed.
  * - A proposal to add to the team's context (any answer) needs the owner or admin role.
+ * - An approval or question (any answer) is for its owners, its person and the team's owners
+ *   and admins (waitingRefusal).
  *
  * Items on one machine's own ledger (no team) are that person's to answer and never come here.
  */
 export function decisionRefusal(
-  item: Pick<ReviewItem, "kind" | "requested_by">,
+  item: Pick<ReviewItem, "kind" | "requested_by"> & Partial<Pick<ReviewItem, "owners">>,
   team: string,
   verdict: PersonVerdict,
   decider: Decider,
@@ -47,6 +72,8 @@ export function decisionRefusal(
     if (manages) return undefined;
     return `Answering a proposal to the team's context needs the owner or admin role in team ${team}; ${yourRole}.`;
   }
+  const waiting = waitingRefusal({ ...item, owners: item.owners ?? [] }, team, decider);
+  if (waiting !== undefined) return waiting;
   if (item.kind !== "exception" || (verdict !== "approve" && verdict !== "override")) {
     return undefined;
   }

@@ -24,6 +24,7 @@ import {
   type GatewayUsageReport,
   IssueGatewayKeyRequestSchema,
   type IssueGatewayKeyResponse,
+  isFinalRunState,
   type LedgerEvent,
   type ResolvedSelfhostConfig,
   ROUTER_TOOLS,
@@ -225,21 +226,22 @@ export function gatewayRoutes(router: Router, ledger: Ledger, gateway: Gateway |
           403,
         );
       }
-      if (kind === "run" && !body.run_id) {
+      if (kind === "run") {
+        // The runner mints each background run's key itself, capped, and revokes it when the
+        // run ends; a key minted here would have no cap and could replace a live run's key.
         return c.json(
-          apiError("invalid_request", "run_id: Expected the run a run key is for"),
-          400,
+          apiError(
+            "forbidden",
+            "Run keys are issued by the server to its background runs only. Ask for your own key (kind person), or a team key with an owner's or admin's token.",
+          ),
+          403,
         );
       }
       const refused = await authorize(c, caller, team, kind === "team" ? "settings.write" : "work");
       if (refused) return refused;
       const person = caller.kind === "person" ? caller.person.id : undefined;
-      const owner: KeyOwner = {
-        kind,
-        team,
-        ...(kind !== "team" && person ? { person } : {}),
-        ...(kind === "run" && body.run_id ? { run_id: body.run_id } : {}),
-      };
+      // A person key carries its person, so revoking them turns it off at the next sync.
+      const owner: KeyOwner = { kind, team, ...(kind === "person" && person ? { person } : {}) };
       try {
         const result = await issueKey(gateway.client, owner, await configOf(ledger, team), {
           ...(body.rotate ? { rotate: true } : {}),
@@ -334,6 +336,10 @@ export async function syncNow(
 ): Promise<GatewaySyncReport> {
   const result = await syncGateway(gateway.client, await teamInputs(ledger), {
     now,
+    runEnded: async (runId) => {
+      const run = await ledger.backgroundRuns.get(runId);
+      return !run || isFinalRunState(run.state);
+    },
     ...(gateway.fallbackProviders ? { fallbackProviders: gateway.fallbackProviders } : {}),
   });
   if (result.alerts.length > 0) {

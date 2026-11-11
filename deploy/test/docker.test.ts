@@ -160,6 +160,15 @@ describe("compose.yml", () => {
     });
   });
 
+  it("publishes the plain HTTP API and the collector on this server only unless told otherwise", () => {
+    expect(service("selfhost").ports).toEqual([
+      `\${SELFHOST_BIND:-127.0.0.1}:\${SELFHOST_PORT:-4400}:4400`,
+    ]);
+    for (const port of service("otel-collector").ports ?? []) {
+      expect(port.startsWith(`\${OTLP_BIND:-127.0.0.1}:`)).toBe(true);
+    }
+  });
+
   it("keeps Postgres data in a named volume, so upgrades and restarts keep events", () => {
     expect(service("postgres").volumes).toEqual(["postgres-data:/var/lib/postgresql/data"]);
     expect(Object.keys(compose.volumes)).toContain("postgres-data");
@@ -284,6 +293,29 @@ describe("backup, restore, upgrade and install scripts", () => {
       if (file !== "install.sh") {
         expect(text).toContain('compose() { (cd "$here" && docker compose "$@"); }');
       }
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "backup.sh writes a dump only its owner can read, whatever the caller's umask",
+    () => {
+      const work = mkdtempSync(join(tmpdir(), "selfhost-backup-"));
+      const bin = join(work, "bin");
+      execFileSync("mkdir", ["-p", bin]);
+      // A docker that prints a dump for pg_dump and a row count for psql.
+      writeFileSync(
+        join(bin, "docker"),
+        '#!/bin/sh\ncase "$*" in *pg_dump*) echo FAKE-DUMP;; *) echo "events=1";; esac\n',
+        { mode: 0o755 },
+      );
+      const file = join(work, "backups", "selfhost-test.dump");
+      execFileSync("sh", ["-c", `umask 022; sh "${join(DIR, "backup.sh")}" "${file}"`], {
+        env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` },
+        encoding: "utf8",
+      });
+      expect(readFileSync(file, "utf8")).toContain("FAKE-DUMP");
+      expect(statSync(file).mode & 0o777).toBe(0o600);
+      expect(statSync(join(work, "backups")).mode & 0o777).toBe(0o700);
     },
   );
 

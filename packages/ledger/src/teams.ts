@@ -415,6 +415,18 @@ export function createTeamStore(db: Database): TeamStore {
           );
           if (existing) return { refused: "existing_person" };
         }
+        // Someone revoked from the team (no token left there) comes back with the role an
+        // invite gives, not the one they had: re-inviting a removed owner by email must not make
+        // them an owner again. A team needs an owner, so the last one keeps the role.
+        await tx.query(
+          `UPDATE people p SET role = 'member', role_changed_at = now(), role_changed_by = 'invite'
+           WHERE p.team_id = $1 AND p.id = $2 AND p.role <> 'member'
+             AND NOT EXISTS (SELECT 1 FROM tokens k WHERE k.team_id = $1 AND k.person_id = $2
+               AND k.kind = 'person' AND k.revoked_at IS NULL)
+             AND EXISTS (SELECT 1 FROM people o WHERE o.team_id = $1 AND o.id <> $2
+               AND o.role = 'owner')`,
+          [team.id, person.id],
+        );
         await tx.query(
           `INSERT INTO people (team_id, id, name, role)
            SELECT $1::text, $2::text, $3::text, CASE WHEN EXISTS (SELECT 1 FROM people WHERE team_id = $1)

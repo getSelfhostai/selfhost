@@ -47,3 +47,5 @@ services:
   selfhost:
     environment:
       SELFHOST_SIGNIN_PROXY_SECRET: ${SELFHOST_SIGNIN_PROXY_SECRET:?Set SELFHOST_SIGNIN_PROXY_SECRET in .env}
+      # The org sign-in is for when an email is in teams of several orgs (default: its first).
+      SELFHOST_SIGNIN_ORG: ${SELFHOST_SIGNIN_ORG:-}

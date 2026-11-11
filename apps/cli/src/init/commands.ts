@@ -14,6 +14,7 @@ import { openLedger } from "@selfhost/ledger";
 import { guardrailChecks } from "@selfhost/policy";
 import { CONFIG_FILE_NAME, parseConfig } from "@selfhost/schema";
 import type { Command } from "commander";
+import pkg from "../../package.json" with { type: "json" };
 import {
   AGENT_ALIASES,
   type AgentsIo,
@@ -226,8 +227,9 @@ export const INSTALL_DOCS =
 /**
  * `selfhost hook {agent}` when selfhost is on PATH, as compiled managed settings call it.
  * Otherwise a command that finds selfhost each time the hook runs: `selfhost` on PATH by then,
- * else the node and script running now while both still exist, else `npx selfhostai` only when
- * SELFHOST_NPX=1 is set (the package is not on npm yet, so npx could not find it), else one line
+ * else the node and script running now while both still exist, else `npx selfhostai@<this
+ * version>` only when SELFHOST_NPX=1 is set (the package is on npm only after the first release,
+ * and the pinned version keeps npx from running whatever is published under the name), else one line
  * on stderr pointing at the install docs and exit 1, which agents show without blocking. So a
  * node version switch, which takes the node binary or the global install off PATH, does not
  * break the hooks silently.
@@ -243,13 +245,12 @@ export function hookCommand(which: Which | undefined): { command: string; warnin
   const command = [
     "if command -v selfhost >/dev/null 2>&1; then exec selfhost hook {agent};",
     `elif ${exists.join(" && ")}; then exec ${self.map(shellQuote).join(" ")} hook {agent};`,
-    `elif [ "$SELFHOST_NPX" = 1 ]; then exec npx -y selfhostai hook {agent};`,
+    `elif [ "$SELFHOST_NPX" = 1 ]; then exec npx -y selfhostai@${shellQuote(pkg.version)} hook {agent};`,
     `else echo 'selfhost hook: selfhost is not installed here (not on PATH, and not where selfhost init ran it). Install it: ${INSTALL_DOCS}' >&2; exit 1; fi`,
   ].join(" ");
   return {
     command,
-    warning:
-      "selfhost is not on PATH, so each hook looks for it when it runs: on PATH, then where it runs now. If neither is there the hook says so in one line and points at the install docs (SELFHOST_NPX=1 tries npx selfhostai instead). Install it (npm install -g selfhostai) and run selfhost init again for the plain selfhost hook command.",
+    warning: `selfhost is not on PATH, so each hook looks for it when it runs: on PATH, then where it runs now. If neither is there the hook says so in one line and points at the install docs (SELFHOST_NPX=1 tries npx selfhostai@${pkg.version} instead, after the first release). Install it (npm install -g selfhostai) and run selfhost init again for the plain selfhost hook command.`,
   };
 }
 

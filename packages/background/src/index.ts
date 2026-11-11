@@ -49,7 +49,12 @@ export {
   personForLogin,
   signWebhook,
   verifyWebhook,
+  WEBHOOK_DELIVERY_HEADER,
+  WEBHOOK_MAX_AGE_SECONDS,
   WEBHOOK_SIGNATURE_HEADER,
+  WEBHOOK_TIMESTAMP_HEADER,
+  type WebhookStamp,
+  webhookStampProblem,
 } from "./triggers.js";
 export {
   type ActiveKill,

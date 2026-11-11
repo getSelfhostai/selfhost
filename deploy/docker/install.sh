@@ -65,7 +65,9 @@ for key in $SECRETS; do
 done
 chmod 600 .env
 umask 022
+# Backups hold the whole database: the folder and each dump (backup.sh) are the owner's only.
 mkdir -p backups
+chmod 700 backups
 # compose.signin.yml mounts this file; an empty one lets nobody in by email.
 [ -f signin-emails.txt ] || : >signin-emails.txt
 case ":$(value COMPOSE_FILE .env):" in

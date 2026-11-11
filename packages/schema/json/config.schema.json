@@ -1125,12 +1125,12 @@
               "properties": {
                 "url": {
                   "pattern": "^https?://",
-                  "description": "The provider's API address: required for coder and opensandbox (the team's own server), optional for the hosted ones.",
+                  "description": "The provider's API address: required for coder and opensandbox (the team's own server), optional for the hosted ones. On a team server only the server's own selfhost.toml (SELFHOST_CONFIG) sets it; a team's stored policy cannot.",
                   "type": "string"
                 },
                 "api_key_env": {
                   "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-                  "description": "Environment variable on the server that holds the provider's API key: for modal, its token id. Unset uses the provider's usual name, such as E2B_API_KEY.",
+                  "description": "Environment variable on the server that holds the provider's API key: for modal, its token id. Unset uses the provider's usual name, such as E2B_API_KEY. On a team server only the server's own selfhost.toml (SELFHOST_CONFIG) sets it; a team's stored policy cannot.",
                   "type": "string"
                 },
                 "api_secret_env": {
@@ -1157,12 +1157,12 @@
               "properties": {
                 "url": {
                   "pattern": "^https?://",
-                  "description": "The provider's API address: required for coder and opensandbox (the team's own server), optional for the hosted ones.",
+                  "description": "The provider's API address: required for coder and opensandbox (the team's own server), optional for the hosted ones. On a team server only the server's own selfhost.toml (SELFHOST_CONFIG) sets it; a team's stored policy cannot.",
                   "type": "string"
                 },
                 "api_key_env": {
                   "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-                  "description": "Environment variable on the server that holds the provider's API key: for modal, its token id. Unset uses the provider's usual name, such as E2B_API_KEY.",
+                  "description": "Environment variable on the server that holds the provider's API key: for modal, its token id. Unset uses the provider's usual name, such as E2B_API_KEY. On a team server only the server's own selfhost.toml (SELFHOST_CONFIG) sets it; a team's stored policy cannot.",
                   "type": "string"
                 },
                 "api_secret_env": {
@@ -1189,12 +1189,12 @@
               "properties": {
                 "url": {
                   "pattern": "^https?://",
-                  "description": "The provider's API address: required for coder and opensandbox (the team's own server), optional for the hosted ones.",
+                  "description": "The provider's API address: required for coder and opensandbox (the team's own server), optional for the hosted ones. On a team server only the server's own selfhost.toml (SELFHOST_CONFIG) sets it; a team's stored policy cannot.",
                   "type": "string"
                 },
                 "api_key_env": {
                   "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-                  "description": "Environment variable on the server that holds the provider's API key: for modal, its token id. Unset uses the provider's usual name, such as E2B_API_KEY.",
+                  "description": "Environment variable on the server that holds the provider's API key: for modal, its token id. Unset uses the provider's usual name, such as E2B_API_KEY. On a team server only the server's own selfhost.toml (SELFHOST_CONFIG) sets it; a team's stored policy cannot.",
                   "type": "string"
                 },
                 "api_secret_env": {
@@ -1221,12 +1221,12 @@
               "properties": {
                 "url": {
                   "pattern": "^https?://",
-                  "description": "The provider's API address: required for coder and opensandbox (the team's own server), optional for the hosted ones.",
+                  "description": "The provider's API address: required for coder and opensandbox (the team's own server), optional for the hosted ones. On a team server only the server's own selfhost.toml (SELFHOST_CONFIG) sets it; a team's stored policy cannot.",
                   "type": "string"
                 },
                 "api_key_env": {
                   "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-                  "description": "Environment variable on the server that holds the provider's API key: for modal, its token id. Unset uses the provider's usual name, such as E2B_API_KEY.",
+                  "description": "Environment variable on the server that holds the provider's API key: for modal, its token id. Unset uses the provider's usual name, such as E2B_API_KEY. On a team server only the server's own selfhost.toml (SELFHOST_CONFIG) sets it; a team's stored policy cannot.",
                   "type": "string"
                 },
                 "api_secret_env": {
@@ -1253,12 +1253,12 @@
               "properties": {
                 "url": {
                   "pattern": "^https?://",
-                  "description": "The provider's API address: required for coder and opensandbox (the team's own server), optional for the hosted ones.",
+                  "description": "The provider's API address: required for coder and opensandbox (the team's own server), optional for the hosted ones. On a team server only the server's own selfhost.toml (SELFHOST_CONFIG) sets it; a team's stored policy cannot.",
                   "type": "string"
                 },
                 "api_key_env": {
                   "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-                  "description": "Environment variable on the server that holds the provider's API key: for modal, its token id. Unset uses the provider's usual name, such as E2B_API_KEY.",
+                  "description": "Environment variable on the server that holds the provider's API key: for modal, its token id. Unset uses the provider's usual name, such as E2B_API_KEY. On a team server only the server's own selfhost.toml (SELFHOST_CONFIG) sets it; a team's stored policy cannot.",
                   "type": "string"
                 },
                 "api_secret_env": {
@@ -1324,8 +1324,8 @@
               "description": "A secret the run's sandbox gets: the source as a string, or a table with from and an egress injection host.",
               "anyOf": [
                 {
-                  "pattern": "^(?:env:[A-Za-z_][A-Za-z0-9_]*|vault:[^#\\s]+#[^#\\s]+|infisical:(?:[^#\\s]+#)?[^#\\s/]+|github-app:repo)$",
-                  "description": "Where the value comes from: env:NAME (the server's environment), vault:<path>#<key> (HashiCorp Vault KV v2, path under [secrets.vault] mount), infisical:<path>#<key> or infisical:<key> (Infisical, in [secrets.infisical] project and environment), or github-app:repo (the run's repository token).",
+                  "pattern": "^(?:env:SELFHOST_RUN_SECRET_[A-Za-z0-9_]+|vault:[^#\\s]+#[^#\\s]+|infisical:(?:[^#\\s]+#)?[^#\\s/]+|github-app:repo)$",
+                  "description": "Where the value comes from: env:SELFHOST_RUN_SECRET_<NAME> (a variable of the server's environment with that prefix), vault:<path>#<key> (HashiCorp Vault KV v2, at the server's VAULT_ADDR), infisical:<path>#<key> or infisical:<key> (Infisical, in the server's INFISICAL_PROJECT_ID and INFISICAL_ENVIRONMENT), or github-app:repo (the run's repository token). Store addresses and tokens are set on the server only, never in selfhost.toml.",
                   "type": "string"
                 },
                 {
@@ -1336,8 +1336,8 @@
                   ],
                   "properties": {
                     "from": {
-                      "pattern": "^(?:env:[A-Za-z_][A-Za-z0-9_]*|vault:[^#\\s]+#[^#\\s]+|infisical:(?:[^#\\s]+#)?[^#\\s/]+|github-app:repo)$",
-                      "description": "Where the value comes from: env:NAME (the server's environment), vault:<path>#<key> (HashiCorp Vault KV v2, path under [secrets.vault] mount), infisical:<path>#<key> or infisical:<key> (Infisical, in [secrets.infisical] project and environment), or github-app:repo (the run's repository token).",
+                      "pattern": "^(?:env:SELFHOST_RUN_SECRET_[A-Za-z0-9_]+|vault:[^#\\s]+#[^#\\s]+|infisical:(?:[^#\\s]+#)?[^#\\s/]+|github-app:repo)$",
+                      "description": "Where the value comes from: env:SELFHOST_RUN_SECRET_<NAME> (a variable of the server's environment with that prefix), vault:<path>#<key> (HashiCorp Vault KV v2, at the server's VAULT_ADDR), infisical:<path>#<key> or infisical:<key> (Infisical, in the server's INFISICAL_PROJECT_ID and INFISICAL_ENVIRONMENT), or github-app:repo (the run's repository token). Store addresses and tokens are set on the server only, never in selfhost.toml.",
                       "type": "string"
                     },
                     "host": {
@@ -1358,67 +1358,6 @@
                   }
                 }
               ]
-            }
-          }
-        },
-        "vault": {
-          "additionalProperties": false,
-          "description": "HashiCorp Vault, read over its HTTP API.",
-          "type": "object",
-          "required": [
-            "url"
-          ],
-          "properties": {
-            "url": {
-              "pattern": "^https?://",
-              "description": "Vault's address, such as https://vault.acme.internal:8200.",
-              "type": "string"
-            },
-            "token_env": {
-              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-              "description": "Environment variable on the server that holds a Vault token that can read the paths. Default: VAULT_TOKEN.",
-              "type": "string"
-            },
-            "mount": {
-              "minLength": 1,
-              "description": "The KV version 2 secrets engine mount. Default: secret.",
-              "type": "string"
-            },
-            "namespace": {
-              "minLength": 1,
-              "description": "Vault Enterprise namespace, sent as X-Vault-Namespace.",
-              "type": "string"
-            }
-          }
-        },
-        "infisical": {
-          "additionalProperties": false,
-          "description": "Infisical, read over its HTTP API.",
-          "type": "object",
-          "required": [
-            "project_id",
-            "environment"
-          ],
-          "properties": {
-            "url": {
-              "pattern": "^https?://",
-              "description": "Infisical's address. Default: https://app.infisical.com.",
-              "type": "string"
-            },
-            "token_env": {
-              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-              "description": "Environment variable on the server that holds a machine identity access token. Default: INFISICAL_TOKEN.",
-              "type": "string"
-            },
-            "project_id": {
-              "minLength": 1,
-              "description": "The Infisical project (workspace) id.",
-              "type": "string"
-            },
-            "environment": {
-              "minLength": 1,
-              "description": "The environment slug, such as prod.",
-              "type": "string"
             }
           }
         },
@@ -1594,7 +1533,7 @@
               "type": "string"
             },
             "headers_env": {
-              "description": "Headers to send, by name, each read from an environment variable on the server (for API keys).",
+              "description": "Headers to send, by name, each read from an environment variable on the server (for API keys). A team server sends only variables named SELFHOST_RUN_SECRET_*, since a team's policy also names the endpoint.",
               "type": "object",
               "patternProperties": {
                 "^(.*)$": {
@@ -1631,12 +1570,12 @@
             },
             "url": {
               "pattern": "^https?://",
-              "description": "The provider's API address: required for coder and opensandbox (the team's own server), optional for the hosted ones.",
+              "description": "The provider's API address: required for coder and opensandbox (the team's own server), optional for the hosted ones. On a team server only the server's own selfhost.toml (SELFHOST_CONFIG) sets it; a team's stored policy cannot.",
               "type": "string"
             },
             "api_key_env": {
               "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-              "description": "Environment variable on the server that holds the provider's API key: for modal, its token id. Unset uses the provider's usual name, such as E2B_API_KEY.",
+              "description": "Environment variable on the server that holds the provider's API key: for modal, its token id. Unset uses the provider's usual name, such as E2B_API_KEY. On a team server only the server's own selfhost.toml (SELFHOST_CONFIG) sets it; a team's stored policy cannot.",
               "type": "string"
             },
             "api_secret_env": {
@@ -1808,6 +1747,14 @@
           "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
           "description": "Environment variable on the server that holds the secret signed webhooks are checked with. Unset: the webhook trigger is off.",
           "type": "string"
+        },
+        "webhook_senders": {
+          "description": "The person ids a signed webhook may start runs for: the people the bridge that holds the secret speaks for. A sender not on it is refused, so the secret alone does not let a bridge act as anyone. Empty: every signed webhook is refused.",
+          "type": "array",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          }
         },
         "github_label": {
           "minLength": 1,

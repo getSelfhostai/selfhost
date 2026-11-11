@@ -93,6 +93,8 @@ export interface ReviewListOptions {
   now?: () => Date;
   /** Only this team's items (events.team), as a person token sees them. Default: every item. */
   team?: string;
+  /** Only items of this org's teams, for what goes to one org's people. Default: every org. */
+  org?: string;
 }
 
 /** What refreshReviewList needs from a list it did not open. */
@@ -158,7 +160,10 @@ export function decisionSubject(stored: StoredItem) {
 export function openReviewList(ledger: Ledger, options: ReviewListOptions = {}): ReviewList {
   const db = databaseOf(ledger);
   const now = options.now ?? (() => new Date());
-  const scope: Scope = options.team === undefined ? {} : { team: options.team };
+  const scope: Scope = {
+    ...(options.team === undefined ? {} : { team: options.team }),
+    ...(options.org === undefined ? {} : { org: options.org }),
+  };
 
   /** Claims the item, waiting briefly while another answer is in flight. */
   async function claim(id: string): Promise<StoredItem> {

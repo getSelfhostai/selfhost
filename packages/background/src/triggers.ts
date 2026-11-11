@@ -132,23 +132,63 @@ export function personForLogin(
   return Object.entries(githubLogins).find(([, value]) => value.toLowerCase() === wanted)?.[0];
 }
 
-/** The header a signed webhook carries: `sha256=` and the HMAC-SHA256 of the body in hex. */
+/**
+ * The headers a signed webhook carries: when it was sent (Unix seconds), a delivery id the
+ * sender makes up once per request, and `sha256=` with the HMAC-SHA256 in hex of
+ * `<timestamp>.<delivery>.<body>`. The server takes each delivery id once and only within
+ * WEBHOOK_MAX_AGE_SECONDS of its timestamp, so a captured request cannot be sent again.
+ */
 export const WEBHOOK_SIGNATURE_HEADER = "x-selfhost-signature-256";
+export const WEBHOOK_TIMESTAMP_HEADER = "x-selfhost-timestamp";
+export const WEBHOOK_DELIVERY_HEADER = "x-selfhost-delivery";
+export const WEBHOOK_MAX_AGE_SECONDS = 300;
 
-export function signWebhook(secret: string, body: string): string {
-  return `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
+export interface WebhookStamp {
+  /** Unix seconds, as sent in WEBHOOK_TIMESTAMP_HEADER. */
+  timestamp: string;
+  /** WEBHOOK_DELIVERY_HEADER: 8 to 128 letters, digits, dots, dashes or underscores. */
+  delivery: string;
 }
 
-/** Whether `signature` signs `body` under `secret`. */
+const DELIVERY_PATTERN = /^[A-Za-z0-9._-]{8,128}$/;
+
+export function signWebhook(secret: string, body: string, stamp: WebhookStamp): string {
+  const signed = `${stamp.timestamp}.${stamp.delivery}.${body}`;
+  return `sha256=${createHmac("sha256", secret).update(signed).digest("hex")}`;
+}
+
+/** Whether `signature` signs `body` with this timestamp and delivery id under `secret`. */
 export function verifyWebhook(
   secret: string,
   body: string,
+  stamp: Partial<WebhookStamp>,
   signature: string | undefined,
 ): boolean {
-  if (!secret || !signature) return false;
-  const expected = Buffer.from(signWebhook(secret, body));
+  if (!secret || !signature || !stamp.timestamp || !stamp.delivery) return false;
+  const expected = Buffer.from(
+    signWebhook(secret, body, { timestamp: stamp.timestamp, delivery: stamp.delivery }),
+  );
   const given = Buffer.from(signature.trim());
   return expected.length === given.length && timingSafeEqual(expected, given);
+}
+
+/**
+ * Why a webhook's timestamp or delivery id is refused, or undefined when they are fine: the
+ * timestamp is Unix seconds within WEBHOOK_MAX_AGE_SECONDS of `now`, either way, and the
+ * delivery id has the expected form. Whether the id was seen before is the server's to check.
+ */
+export function webhookStampProblem(stamp: Partial<WebhookStamp>, now: Date): string | undefined {
+  if (!stamp.timestamp || !/^\d{1,12}$/.test(stamp.timestamp)) {
+    return `${WEBHOOK_TIMESTAMP_HEADER} must be the Unix time in seconds the request was sent`;
+  }
+  const age = Math.abs(now.getTime() / 1000 - Number(stamp.timestamp));
+  if (age > WEBHOOK_MAX_AGE_SECONDS) {
+    return `${WEBHOOK_TIMESTAMP_HEADER} is more than ${WEBHOOK_MAX_AGE_SECONDS / 60} minutes from the server's time`;
+  }
+  if (!stamp.delivery || !DELIVERY_PATTERN.test(stamp.delivery)) {
+    return `${WEBHOOK_DELIVERY_HEADER} must be a new id for each request: 8 to 128 letters, digits, dots, dashes or underscores`;
+  }
+  return undefined;
 }
 
 /** A schedule that fell due, with the minute it is for. */

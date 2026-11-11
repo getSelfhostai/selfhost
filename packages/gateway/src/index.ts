@@ -4,6 +4,7 @@ export { type IssueOptions, type IssueResult, issueKey } from "./issue.js";
 export { type LiteLLMOptions, litellmClient, litellmLimit, spendRowToPayload } from "./litellm.js";
 export {
   budgetMode,
+  DEFAULT_RUN_KEY_USD,
   keyMetadata,
   keyName,
   keySettings,

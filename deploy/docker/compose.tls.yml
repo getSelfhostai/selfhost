@@ -1,7 +1,7 @@
 # HTTPS for selfhost: Caddy gets a certificate for SELFHOST_DOMAIN and serves the API (/v1), the
 # agents' OpenTelemetry endpoint (/otlp) and the web console on ports 80 and 443. See Caddyfile.
-# Use it with COMPOSE_FILE=compose.yml:compose.tls.yml in .env, and set SELFHOST_BIND=127.0.0.1
-# and OTLP_BIND=127.0.0.1 there, so the API and the collector are not reachable from outside.
+# Use it with COMPOSE_FILE=compose.yml:compose.tls.yml in .env, and keep SELFHOST_BIND and
+# OTLP_BIND at their default, 127.0.0.1, so the API and the collector are not reachable from outside.
 # SELFHOST_DOMAIN must point at this server before Caddy can get the certificate.
 services:
   caddy:

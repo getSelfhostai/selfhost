@@ -24,7 +24,7 @@ import { findConfig } from "../find-config.js";
 import { plural, table } from "../format.js";
 import { repoDir } from "../scan/index.js";
 import type { Fetch } from "../team/client.js";
-import { localLayers, rememberRepo } from "./layers.js";
+import { localLayers, rememberRepo, trustedLayers } from "./layers.js";
 import { registerContextTeam } from "./team-commands.js";
 
 export interface ContextIo {
@@ -35,6 +35,11 @@ export interface ContextIo {
   /** ~/.selfhost/config.json: the org, team and personal layers sit next to it. */
   configPath: string;
   fetch: Fetch;
+  /**
+   * Asks a yes or no question on the terminal; undefined when nobody can answer (no TTY, --json),
+   * so new MCP servers from the org or team layer that run a command are left out.
+   */
+  confirm?: (question: string) => Promise<boolean>;
   /**
    * The agents found on this machine, for a first compile with no --agent. Default: none found,
    * so a first compile writes for every agent.
@@ -80,6 +85,8 @@ export interface ContextCompileReport {
   /** Files the compile would replace that selfhost did not write. Nothing is written then. */
   conflicts: Conflict[];
   warnings: string[];
+  /** Org or team MCP servers that run a command, left out because nobody allowed them here. */
+  skipped_mcp: string[];
   /** The lock that records what each agent received, or null when nothing was compiled. */
   lock: string | null;
 }
@@ -183,7 +190,13 @@ export async function contextCompile(
     : undefined;
   const out = options.out === undefined ? undefined : resolve(io.cwd, options.out);
   const check = options.check === true;
-  const local = options.layers === false ? { layers: [], errors: [] } : localLayers(io.configPath);
+  const pulled = options.layers === false ? { layers: [], errors: [] } : localLayers(io.configPath);
+  const trusted = await trustedLayers(
+    io.configPath,
+    pulled.layers,
+    options.json || check ? undefined : io.confirm,
+  );
+  const local = { layers: trusted.layers, errors: pulled.errors };
   const built =
     local.errors.length > 0
       ? ({ ok: false, errors: local.errors } as const)
@@ -211,6 +224,7 @@ export async function contextCompile(
     drift: built.ok ? built.plan.drift : [],
     conflicts: built.ok && !check ? built.plan.conflicts : [],
     warnings: built.ok ? built.warnings : [],
+    skipped_mcp: trusted.skipped.map((server) => server.label),
     lock: built.ok ? LOCK_PATH : null,
   };
   if (built.ok) {
@@ -231,6 +245,11 @@ export async function contextCompile(
     built.ok ? built.source.skills.map((skill) => [`skill:${skill.name}`, skill.version]) : [],
   );
   print(report, versions, io);
+  for (const server of trusted.skipped) {
+    io.write(
+      `Left out ${server.label}: it starts \`${server.command}\` on this machine. Run selfhost context compile on a terminal to allow it.`,
+    );
+  }
   return report;
 }
 

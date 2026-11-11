@@ -26,9 +26,17 @@ export const MIN_SECRET_LENGTH = 32;
 export interface SigninOptions {
   /** The secret Caddy sends with each signed-in request. */
   secret: string;
+  /**
+   * The org this sign-in is for (SELFHOST_SIGNIN_ORG). Person ids are unique within an org
+   * only, so an email in teams of several orgs signs in to this one.
+   */
+  org?: string;
 }
 
-/** SELFHOST_SIGNIN_PROXY_SECRET, checked; undefined when sign-in through a proxy is off. */
+/**
+ * SELFHOST_SIGNIN_PROXY_SECRET, checked, and SELFHOST_SIGNIN_ORG; undefined when sign-in
+ * through a proxy is off.
+ */
 export function signinFromEnv(env: NodeJS.ProcessEnv = process.env): SigninOptions | undefined {
   const secret = env.SELFHOST_SIGNIN_PROXY_SECRET?.trim();
   if (!secret) return undefined;
@@ -37,7 +45,8 @@ export function signinFromEnv(env: NodeJS.ProcessEnv = process.env): SigninOptio
       `SELFHOST_SIGNIN_PROXY_SECRET must be at least ${MIN_SECRET_LENGTH} characters (openssl rand -hex 32)`,
     );
   }
-  return { secret };
+  const org = env.SELFHOST_SIGNIN_ORG?.trim();
+  return org ? { secret, org } : { secret };
 }
 
 const digest = (value: string) => createHash("sha256").update(value).digest();
@@ -56,28 +65,25 @@ export function forwardedEmail(c: Context, options: SigninOptions | undefined): 
   return email || undefined;
 }
 
-/** The person a signed-in email stands for, or the 403 explaining why there is none. */
+/**
+ * The person a signed-in email stands for, or the 403 explaining why there is none. An email in
+ * teams of several orgs is the person of the sign-in's org (SELFHOST_SIGNIN_ORG), else of the
+ * org where it joined first: a later join elsewhere under the same id is someone else's org.
+ * `found` is oldest first, as peopleWithAccess lists it.
+ */
 export function signedInPerson(
   c: Context,
   email: string,
   found: { person: Person; org: string }[],
+  org?: string,
 ): Person | Response {
-  const orgs = new Set(found.map((entry) => entry.org));
-  const [first] = found;
+  const inOrg = org === undefined ? found : found.filter((entry) => entry.org === org);
+  const [first] = inOrg;
   if (!first) {
     return c.json(
       apiError(
         "forbidden",
         `You are signed in as ${email}, who has no access on this server. Ask a team admin for an invite for this email (selfhost team invite --email ${email}).`,
-      ),
-      403,
-    );
-  }
-  if (orgs.size > 1) {
-    return c.json(
-      apiError(
-        "forbidden",
-        `${email} is in teams of more than one org. Sign in to the console with a person token instead.`,
       ),
       403,
     );

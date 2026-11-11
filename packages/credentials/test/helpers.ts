@@ -27,11 +27,17 @@ export const VALUES = {
   anthropic: ["fake", "provider", "key", "9999"].join("-"),
 };
 
+/** The server's environment: the run secrets and where the stores are, with their tokens. */
 export const SERVER_ENV: NodeJS.ProcessEnv = {
-  SENTRY_DSN: VALUES.sentry,
+  SELFHOST_RUN_SECRET_SENTRY_DSN: VALUES.sentry,
+  SELFHOST_RUN_SECRET_ANTHROPIC_API_KEY: VALUES.anthropic,
+  VAULT_ADDR: "https://vault.acme.test:8200",
+  VAULT_NAMESPACE: "eng",
   VAULT_TOKEN: VALUES.vaultToken,
+  INFISICAL_URL: "https://infisical.acme.test",
+  INFISICAL_PROJECT_ID: "proj-acme",
+  INFISICAL_ENVIRONMENT: "ci",
   INFISICAL_TOKEN: VALUES.infisicalToken,
-  ANTHROPIC_API_KEY: VALUES.anthropic,
 };
 
 export interface StoreCall {

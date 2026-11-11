@@ -1,7 +1,8 @@
 // Sends a run to the selfhost server's signed webhook, POST /v1/background-runs/webhook. The
-// body is signed with SELFHOST_WEBHOOK_SECRET (the value of the variable [background]
-// webhook_secret_env names on the server), so the server knows it came from this bridge.
-import { createHmac } from "node:crypto";
+// time, a new delivery id and the body are signed with SELFHOST_WEBHOOK_SECRET (the value of the
+// variable [background] webhook_secret_env names on the server), so the server knows it came
+// from this bridge, now, and takes it once. The sender must be on [background] webhook_senders.
+import { createHmac, randomUUID } from "node:crypto";
 
 export async function forwardRun({ server, secret, team, repo, task, sender, ref, agent }) {
   const body = JSON.stringify({
@@ -12,10 +13,18 @@ export async function forwardRun({ server, secret, team, repo, task, sender, ref
     ...(ref ? { ref } : {}),
     ...(agent ? { agent } : {}),
   });
-  const signature = `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const delivery = randomUUID();
+  const signed = `${timestamp}.${delivery}.${body}`;
+  const signature = `sha256=${createHmac("sha256", secret).update(signed).digest("hex")}`;
   const response = await fetch(`${server.replace(/\/+$/, "")}/v1/background-runs/webhook`, {
     method: "POST",
-    headers: { "content-type": "application/json", "x-selfhost-signature-256": signature },
+    headers: {
+      "content-type": "application/json",
+      "x-selfhost-signature-256": signature,
+      "x-selfhost-timestamp": timestamp,
+      "x-selfhost-delivery": delivery,
+    },
     body,
   });
   const answer = await response.json().catch(() => ({}));

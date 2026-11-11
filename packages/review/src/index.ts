@@ -1,4 +1,4 @@
-export { type Decider, decisionRefusal } from "./authorize.js";
+export { type Decider, decisionRefusal, waitingRefusal } from "./authorize.js";
 export {
   actionsFor,
   deliveryOf,

@@ -53,6 +53,7 @@ export {
 export {
   MAX_ATTEMPTS,
   type NotifyStore,
+  notifyOrgs,
   notifyStore,
   publicTarget,
   SEND_RETENTION_DAYS,

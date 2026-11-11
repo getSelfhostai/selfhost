@@ -61,6 +61,11 @@ export interface AppendOptions {
    * laptop) the event body is kept as it is.
    */
   team?: string;
+  /**
+   * The person of that token. An event moves to the team that owns its repo only when this
+   * person is in that team; otherwise it stays in `team`.
+   */
+  person?: string;
 }
 
 export interface EventPage {
@@ -162,7 +167,7 @@ export function createLedger(db: Database, options: LedgerOptions = {}): Ledger 
       const valid = validateForAppend(events, eventSchemas);
       if (valid.length === 0) return { accepted: [], duplicates: [] };
       const writer = appendOptions.team;
-      const assigned = await orgs.assignTeams(db, valid, writer);
+      const assigned = await orgs.assignTeams(db, valid, writer, appendOptions.person);
       // A person token's events say which team they went to; other writers' bodies are kept.
       const bodies =
         writer === undefined

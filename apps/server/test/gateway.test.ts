@@ -154,15 +154,17 @@ describe("gateway keys", () => {
     expect((await caller(app, ben)("/v1/gateway/keys")).status).toBe(403);
     const team = await admin()("/v1/gateway/keys", "POST", { kind: "team", team: "platform" });
     expect(team.status).toBe(201);
-    const run = await caller(app, ben)("/v1/gateway/keys", "POST", {
-      kind: "run",
-      run_id: "run-1",
-    });
-    expect(((await run.json()) as IssueGatewayKeyResponse).key).toMatchObject({
-      kind: "run",
-      run_id: "run-1",
-      person: "ben@example.com",
-    });
+    // Run keys are the runner's: nobody mints one, or rotates a live run's, through the API.
+    for (const call of [caller(app, ben), admin()]) {
+      const run = await call("/v1/gateway/keys", "POST", {
+        kind: "run",
+        run_id: "run-1",
+        team: "platform",
+        rotate: true,
+      });
+      expect(run.status).toBe(403);
+    }
+    expect([...fake.keys.values()].some((k) => String(k.name).includes(":run:"))).toBe(false);
   });
 
   it("answers 404 without a gateway and 502 when the gateway refuses", async () => {

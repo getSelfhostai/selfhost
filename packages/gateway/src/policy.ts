@@ -74,9 +74,15 @@ export function teamLimits(config: ResolvedSelfhostConfig | undefined): BudgetLi
 }
 
 /**
+ * The cap of a background run's key when [budget] sets no run_usd, or does not set mode = hard:
+ * a run key always has one, so an agent in a sandbox cannot spend without a limit.
+ */
+export const DEFAULT_RUN_KEY_USD = 20;
+
+/**
  * What a key should look like under the team's policy. Person keys get [budget.person], run keys
- * [budget] run_usd, team keys no limit of their own (the team's limits cover them). A person key
- * whose person left the team is turned off.
+ * [budget] run_usd (DEFAULT_RUN_KEY_USD when unset, in any mode), team keys no limit of their own
+ * (the team's limits cover them). A person key whose person left the team is turned off.
  */
 export function keySettings(
   owner: KeyOwner,
@@ -87,8 +93,8 @@ export function keySettings(
   const hard = budgetMode(budget) === "hard";
   let budgets: BudgetLimit[] = [];
   if (hard && owner.kind === "person") budgets = periods(budget?.person);
-  if (hard && owner.kind === "run" && budget?.run_usd !== undefined) {
-    budgets = [{ period: "run", limit_usd: budget.run_usd }];
+  if (owner.kind === "run") {
+    budgets = [{ period: "run", limit_usd: budget?.run_usd ?? DEFAULT_RUN_KEY_USD }];
   }
   return {
     budgets,

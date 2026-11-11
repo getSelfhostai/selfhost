@@ -6,9 +6,12 @@ terminal.
 
 ## Install
 
+After the first release, with the version the release names (a pinned version never runs
+whatever else is published under the name):
+
 ```sh
-npx selfhostai init --dry-run   # show the person what would change; writes nothing
-npx selfhostai init
+npx selfhostai@<version> init --dry-run   # show the person what would change; writes nothing
+npx selfhostai@<version> init
 ```
 
 The npm package is not published yet. Until it is, from a clone of the repository:
@@ -80,7 +83,7 @@ in `~/.selfhost/spool` (readable by this user only) until the next import. With 
 - If `selfhost` is not on PATH, each hook looks for it when it runs: `selfhost` on PATH by then,
   else the node binary and script that ran init while both exist. If neither is there, the hook
   prints one line pointing at the install docs and exits 1 (agents show it without blocking);
-  `SELFHOST_NPX=1` in the agent's environment makes it run `npx -y selfhostai` instead, for when
-  the package is on npm.
+  `SELFHOST_NPX=1` in the agent's environment makes it run `npx -y selfhostai@<the version that
+  ran init>` instead, after the first release.
   `selfhost doctor` says when it is not on PATH. Install it globally and run `selfhost init`
   again for the plain `selfhost hook` command.

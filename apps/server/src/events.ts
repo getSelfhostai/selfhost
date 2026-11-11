@@ -41,6 +41,8 @@ export interface EventRouteOptions {
    * stored with this team and its reads see only this team's events.
    */
   team?: (c: Context) => string | undefined;
+  /** The person of that token, so a write naming another team's repo stays in their team. */
+  person?: (c: Context) => string | undefined;
 }
 
 function apiError(code: string, message: string): ApiError {
@@ -106,7 +108,11 @@ export function eventRoutes(app: Hono, ledger: Ledger, options: EventRouteOption
         return invalidEvents(c, [{ index: -1, field: "events", message }]);
       }
       try {
-        const result = await ledger.append(events, { team: options.team?.(c) });
+        const person = options.person?.(c);
+        const result = await ledger.append(events, {
+          team: options.team?.(c),
+          ...(person !== undefined ? { person } : {}),
+        });
         return c.json({
           accepted: result.accepted.length,
           duplicates: result.duplicates.length,

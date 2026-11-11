@@ -162,12 +162,19 @@ describe.each(BACKENDS)("cost per merged PR over the API on $name", (backend) =>
     const dora = as[DORA] as ReturnType<typeof caller>;
     expect((await lead("/v1/teams/web/repos", "POST", { remote: "acme/site" })).status).toBe(201);
     expect((await dora("/v1/teams/data/repos", "POST", { remote: "acme/etl" })).status).toBe(201);
+    // Merges come from the GitHub App's webhook, which writes with the server's own access; a
+    // person token cannot write them.
+    const fromGitHub = (event: LedgerEvent) => event.kind === "pr.merged";
     for (const [who, events] of [
       [lead, WEB_EVENTS],
       [dora, DATA_EVENTS],
     ] as const) {
-      const res = await who("/v1/events", "POST", { events });
+      const res = await who("/v1/events", "POST", {
+        events: events.filter((event) => !fromGitHub(event)),
+      });
       expect(res.status, await res.clone().text()).toBe(200);
+      const merges = await admin("/v1/events", "POST", { events: events.filter(fromGitHub) });
+      expect(merges.status, await merges.clone().text()).toBe(200);
     }
   });
 

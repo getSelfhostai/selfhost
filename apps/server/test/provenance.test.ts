@@ -123,7 +123,16 @@ describe("GET /v1/teams/{team}/provenance", () => {
               repo: "acme/api",
               links: { commit_sha: shas.money.slice(0, 7) },
             }),
-            // acme/site has no clone: its merged pull request is all the server knows.
+          ],
+        })
+      ).status,
+    ).toBe(200);
+    // acme/site has no clone: its merged pull request, from the GitHub App's webhook, is all the
+    // server knows.
+    expect(
+      (
+        await caller(app, TOKEN)("/v1/events", "POST", {
+          events: [
             event({
               kind: "pr.merged",
               source: "github",

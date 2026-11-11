@@ -218,6 +218,31 @@ describe.each(BACKENDS)("orgs, roles and repos on $name", (backend) => {
     });
 
     it.skipIf(backend.skip)(
+      "moves a person's event to the repo's team only when that person is in it",
+      async () => {
+        const { ledger } = store;
+        await store.ledger.orgs.createOrg({ id: "move", name: "Move" });
+        await teamWith("move-web", "move", ["vic@example.com"]);
+        await teamWith("move-data", "move", ["dora@example.com"]);
+        await store.ledger.orgs.addRepo("move-web", { repo: "acme/web", remote: "x" });
+        await teams.addPerson("move-web", "dora@example.com", "member", "vic@example.com");
+        // Someone outside move-web naming its repo stays in their own team; dora, added to
+        // move-web, writes into it.
+        const forged = makeEvent(7151, { repo: "acme/web", session_id: "move-run" });
+        await ledger.append([forged], { team: "move-data", person: "nobody@example.com" });
+        const outsider = makeEvent(7152, { repo: "acme/web" });
+        await ledger.append([outsider], { team: "move-data", person: "Nobody@Example.com" });
+        expect(await teamsOf([forged.id, outsider.id])).toEqual([
+          ["move-data", "move-data"],
+          ["move-data", "move-data"],
+        ]);
+        const member = makeEvent(7153, { repo: "acme/web" });
+        await ledger.append([member], { team: "move-data", person: "Dora@example.com" });
+        expect(await teamsOf([member.id])).toEqual([["move-web", "move-web"]]);
+      },
+    );
+
+    it.skipIf(backend.skip)(
       "uses only the writer's org, and an unambiguous repo for the admin token",
       async () => {
         const { ledger } = store;

@@ -59,6 +59,28 @@ function parsed(c: Context, files: ContextFile[], label: string) {
   );
 }
 
+/**
+ * MCP servers in a layer that start a program on every member's laptop, by name, with their
+ * settings: only an owner may add or change one, since it runs as each person who syncs.
+ */
+function commandServers(files: ContextFile[], label: string): Map<string, string> {
+  const read = readLayerFiles(files, label);
+  if (!read.ok) return new Map();
+  return new Map(
+    read.source.mcp
+      .filter((server) => server.spec.command !== undefined)
+      .map((server) => [server.name, JSON.stringify(server.spec)]),
+  );
+}
+
+/** The command-bearing MCP servers `next` adds or changes compared with `current`. */
+function newCommands(current: ContextFile[], next: ContextFile[], label: string): string[] {
+  const before = commandServers(current, label);
+  return [...commandServers(next, label)]
+    .filter(([name, spec]) => before.get(name) !== spec)
+    .map(([name]) => name);
+}
+
 /** The org and team layers with the team items the org layer replaces. */
 function conflictsOf(layers: ContextLayerInfo[]) {
   const sources: ContextLayer[] = [];
@@ -116,6 +138,14 @@ export function contextRoutes(
           state: "refused",
           by: answer.by,
           note: `Approved by ${answer.by}, who is not an owner or admin of team ${proposal.team}.`,
+        });
+      }
+      const runs = newCommands([], proposal.files, `personal:${proposal.person}`);
+      if (runs.length > 0 && !roleAllows(role, "roles")) {
+        return () => ({
+          state: "refused",
+          by: answer.by,
+          note: `Approved by ${answer.by}, but an MCP server that runs a command starts a program on every member's laptop, so only an owner of team ${proposal.team} approves it.`,
         });
       }
       return (current, org) => {
@@ -217,6 +247,20 @@ export function contextRoutes(
       if (!info) return c.json(apiError("not_found", `No team ${team}`), 404);
       const source = parsed(c, body.files, `team:${team}`);
       if (source instanceof Response) return source;
+      const current = (await context.getTeamContext(team))?.files ?? [];
+      const commands = newCommands(current, body.files, `team:${team}`);
+      if (commands.length > 0 && caller.kind === "person") {
+        const owner = await authorize(c, caller, team, "roles");
+        if (owner) {
+          return c.json(
+            apiError(
+              "forbidden",
+              `MCP servers that run a command (${commands.join(", ")}) start a program on every member's laptop, so only an owner of team ${team} adds or changes them.`,
+            ),
+            403,
+          );
+        }
+      }
       await context.setTeamContext(team, body.files);
       return c.json((await contextOf(info)) satisfies ContextResponse);
     },

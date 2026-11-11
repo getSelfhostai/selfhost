@@ -1,6 +1,11 @@
 import type { Ledger } from "@selfhost/ledger";
-import { isRefused, type RuntimeForOptions, runtimeFor } from "@selfhost/runtime";
-import type { LedgerEvent } from "@selfhost/schema";
+import {
+  isRefused,
+  type RuntimeConfig,
+  type RuntimeForOptions,
+  runtimeFor,
+} from "@selfhost/runtime";
+import type { LedgerEvent, RuntimeProvider } from "@selfhost/schema";
 import { sandboxSpans, sandboxSpendIn } from "@selfhost/spend";
 
 /** How far back the daily cap looks for sandboxes still running into today. */
@@ -27,6 +32,51 @@ export async function ledgerSandboxSpend(
   return sandboxSpendIn(sandboxSpans(events).values(), day.from, day.to, now, exclude);
 }
 
+/** The settings that say where a runtime is and which server variable holds its key. */
+const CONNECTION = ["url", "api_key_env", "api_secret_env"] as const;
+
+/**
+ * A team's [runtime] with each provider's url, api_key_env and api_secret_env replaced by the
+ * server's own (SELFHOST_CONFIG): a team's policy picks runtimes, templates and sizes, but never
+ * which server variable is read as a key, nor where that key is sent.
+ */
+export function serverConnections(
+  team: RuntimeConfig,
+  server: Pick<RuntimeConfig, "runtime" | "integrations"> | undefined,
+): RuntimeConfig {
+  const own = (kind: string): RuntimeProvider => {
+    const found = (server?.runtime?.providers as Record<string, RuntimeProvider> | undefined)?.[
+      kind
+    ];
+    const legacy = server?.integrations?.runtime;
+    const source = found ?? (legacy?.tool === kind ? legacy : undefined);
+    return Object.fromEntries(
+      CONNECTION.flatMap((field) =>
+        source?.[field] !== undefined ? [[field, source[field]]] : [],
+      ),
+    );
+  };
+  const providers = Object.fromEntries(
+    Object.entries(team.runtime?.providers ?? {}).map(([kind, settings]) => {
+      const rest = Object.fromEntries(
+        Object.entries(settings ?? {}).filter(
+          ([field]) => !(CONNECTION as readonly string[]).includes(field),
+        ),
+      );
+      return [kind, { ...rest, ...own(kind) }];
+    }),
+  );
+  for (const [kind, settings] of Object.entries(server?.runtime?.providers ?? {})) {
+    if (!(kind in providers) && settings) providers[kind] = own(kind);
+  }
+  const { runtime: _legacy, ...integrations } = team.integrations ?? {};
+  return {
+    ...team,
+    ...(team.integrations ? { integrations } : {}),
+    runtime: { ...(team.runtime ?? {}), providers } as RuntimeConfig["runtime"],
+  };
+}
+
 /**
  * The runtime seam for background runs on the server: runtime selection over the adapters with
  * the keys in the server's environment, sandbox lifecycle written to the ledger, and the team's
@@ -35,7 +85,11 @@ export async function ledgerSandboxSpend(
  */
 export function serverRuntime(
   ledger: Ledger,
-  options: Pick<RuntimeForOptions, "env" | "now" | "open"> & { log?: (line: string) => void },
+  options: Pick<RuntimeForOptions, "env" | "now" | "open"> & {
+    log?: (line: string) => void;
+    /** The server's own selfhost.toml: the only source of runtime urls and key variables. */
+    config?: Pick<RuntimeConfig, "runtime" | "integrations">;
+  },
 ) {
   const now = options.now ?? (() => new Date());
   const seam = runtimeFor({
@@ -50,8 +104,8 @@ export function serverRuntime(
         `background run ${run.id} for team ${run.team}: no runtime (${refusal.rule}). ${refusal.message}`,
       ),
   });
-  return async (...args: Parameters<typeof seam>) => {
-    const found = await seam(...args);
+  return async (...[run, config]: Parameters<typeof seam>) => {
+    const found = await seam(run, serverConnections(config, options.config));
     if (!isRefused(found) || found.refusal.rule !== "runtime.key") return found;
     // "Where selfhost runs" is the team server here, not the laptop that asked.
     const message = found.refusal.message.replace("where selfhost runs", "on the team server");

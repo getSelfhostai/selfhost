@@ -97,15 +97,60 @@ describe("[egress] and [secrets] in selfhost.toml", () => {
   it("refuses a header without a host and a format without {value}", () => {
     const parsed = parseConfig(`version = 1
 [secrets.env]
-A = { from = "env:A", header = "X-Key" }
-B = { from = "env:B", host = "api.acme.test", format = "Token" }
-SELFHOST_X = "env:X"
+A = { from = "env:SELFHOST_RUN_SECRET_A", header = "X-Key" }
+B = { from = "env:SELFHOST_RUN_SECRET_B", host = "api.acme.test", format = "Token" }
+SELFHOST_X = "env:SELFHOST_RUN_SECRET_X"
 `);
     expect(parsed.ok ? [] : parsed.errors.map((e) => e.field)).toEqual([
       "secrets.env.A.host",
       "secrets.env.B.format",
       "secrets.env.SELFHOST_X",
     ]);
+  });
+
+  it("refuses env: secrets outside SELFHOST_RUN_SECRET_*, which would hand any server variable to a sandbox", () => {
+    const parsed = parseConfig(`version = 1
+[secrets.env]
+ADMIN = "env:SELFHOST_TOKEN"
+APP_KEY = { from = "env:SELFHOST_GITHUB_PRIVATE_KEY", host = "api.acme.test" }
+OK = "env:SELFHOST_RUN_SECRET_OK"
+`);
+    expect(parsed.ok ? [] : parsed.errors).toEqual([
+      expect.objectContaining({
+        field: "secrets.env.ADMIN",
+        message: expect.stringContaining("SELFHOST_RUN_SECRET_*"),
+      }),
+      expect.objectContaining({
+        field: "secrets.env.APP_KEY",
+        message: expect.stringContaining("SELFHOST_RUN_SECRET_*"),
+      }),
+    ]);
+  });
+
+  it("refuses Vault and Infisical connection settings in a policy: they are the server's", () => {
+    const parsed = parseConfig(`version = 1
+[secrets.env]
+X = "vault:any#k"
+[secrets.vault]
+url = "https://attacker.example"
+token_env = "SELFHOST_TOKEN"
+[secrets.infisical]
+url = "https://attacker.example"
+project_id = "p"
+environment = "e"
+`);
+    expect(parsed.ok ? [] : parsed.errors).toEqual([
+      expect.objectContaining({
+        field: "secrets.vault",
+        message: expect.stringContaining("VAULT_ADDR"),
+      }),
+      expect.objectContaining({
+        field: "secrets.infisical",
+        message: expect.stringContaining("INFISICAL_URL"),
+      }),
+    ]);
+    // A store reference alone is fine: the server says where the store is.
+    expect(parseConfig('version = 1\n[secrets.env]\nX = "vault:any#k"\n').ok).toBe(true);
   });
 
   it("refuses a team egress list without an [egress] section", () => {

@@ -13,9 +13,19 @@ import {
   systemClock,
   triggeredEvent,
   verifyWebhook,
+  WEBHOOK_DELIVERY_HEADER,
   WEBHOOK_SIGNATURE_HEADER,
+  WEBHOOK_TIMESTAMP_HEADER,
+  webhookStampProblem,
 } from "@selfhost/background";
-import { type CredentialDeps, PROVIDER_KEY_NAMES, prepareCredentials } from "@selfhost/credentials";
+import {
+  type CredentialDeps,
+  credentialRevokedEvent,
+  egressRefusal,
+  PROVIDER_KEY_NAMES,
+  prepareCredentials,
+} from "@selfhost/credentials";
+import { keySettings } from "@selfhost/gateway";
 import type { GitHubApp } from "@selfhost/github";
 import { databaseOf, type Ledger } from "@selfhost/ledger";
 import { type Deliver, notifyStore } from "@selfhost/notify";
@@ -24,6 +34,7 @@ import {
   BackgroundRunsQuerySchema,
   type BackgroundRunsResponse,
   backgroundSettings,
+  type CredentialIssuedData,
   createValidator,
   DEFAULT_ORG_ID,
   FINAL_RUN_STATES,
@@ -32,6 +43,7 @@ import {
   KillRequestSchema,
   type KillResponse,
   type KillScope,
+  type LedgerEvent,
   type ResolvedSelfhostConfig,
   type RunCredentialKind,
   StartRunRequestSchema,
@@ -194,6 +206,106 @@ export function teamSettings(ledger: Ledger, defaults: ResolvedSelfhostConfig): 
   };
 }
 
+/**
+ * Which repos a team's runs may work on, for every trigger (the API, signed webhooks, schedules
+ * and GitHub comments): its own repos, and while its org has only this one team, a repo no team
+ * has claimed. A repo of another team is refused, so a member cannot get a write token for it by
+ * naming it; with several teams a repo must be claimed first (selfhost team repo add).
+ */
+export function repoAccess(
+  ledger: Ledger,
+): (team: string, repo: string, org: string | undefined) => Promise<string | undefined> {
+  return async (team, repo, org) => {
+    const inOrg = org ?? DEFAULT_ORG_ID;
+    const owner = await ledger.orgs.repoOwner(inOrg, repo);
+    if (owner) {
+      return owner.team === team
+        ? undefined
+        : `${repo} belongs to team ${owner.team}, not ${team}: start the run from that team`;
+    }
+    const teams = await ledger.teams.listTeams(inOrg);
+    if (teams.length <= 1) return undefined;
+    return `${repo} is not claimed by a team of org ${inOrg}: claim it for team ${team} first (selfhost team repo add)`;
+  };
+}
+
+/**
+ * Revokes what a run left going by a stopped process still holds, from its credential events:
+ * each credential issued to it with no credential.revoked yet. Its gateway key is turned off. A
+ * GitHub App token's value lived only in the stopped process, and GitHub revokes one only with
+ * the token itself, so its event records that it lives until the expiry GitHub gave it (at most
+ * an hour). Read-only secrets have nothing to revoke.
+ */
+export function orphanedCredentials(
+  ledger: Ledger,
+  settings: SettingsFor,
+  gateway: Gateway | undefined,
+): (run: BackgroundRun) => Promise<void> {
+  const db = databaseOf(ledger);
+  return async (run) => {
+    const rows = await db.query<{ body: unknown }>(
+      `SELECT body FROM events
+       WHERE kind IN ('credential.issued', 'credential.revoked') AND body ->> 'run_id' = $1
+       ORDER BY ts, id`,
+      [run.id],
+    );
+    const open = new Map<string, CredentialIssuedData>();
+    for (const row of rows) {
+      const event = (typeof row.body === "string" ? JSON.parse(row.body) : row.body) as LedgerEvent;
+      const data = event.data as CredentialIssuedData | undefined;
+      if (!data?.name) continue;
+      if (event.kind === "credential.issued") open.set(data.name, data);
+      else open.delete(data.name);
+    }
+    const events: LedgerEvent[] = [];
+    const at = new Date().toISOString();
+    const where = { id: run.id, team: run.team, repo: run.repo };
+    for (const data of open.values()) {
+      const revoked = {
+        credential: data.credential,
+        name: data.name,
+        source: data.source,
+        reason: "aborted" as const,
+        location: data.location,
+      };
+      if (data.credential === "gateway_key" && gateway) {
+        let error: string | undefined;
+        try {
+          const { config } = await settings(run.team);
+          const keys = (await gateway.client.keys()).filter(
+            (key) => key.kind === "run" && key.run_id === run.id && key.active,
+          );
+          for (const key of keys) {
+            await gateway.client.updateKey(key, { ...keySettings(key, config), active: false });
+          }
+        } catch (failure) {
+          error = failure instanceof Error ? failure.message : String(failure);
+        }
+        events.push(
+          credentialRevokedEvent(
+            where,
+            { ...revoked, ok: error === undefined, ...(error ? { error } : {}) },
+            at,
+          ),
+        );
+      } else if (data.credential === "github_app_token") {
+        events.push(
+          credentialRevokedEvent(
+            where,
+            {
+              ...revoked,
+              ok: false,
+              error: `The server stopped while it held the token, and GitHub revokes a token only with its value; it expires at ${data.expires_at ?? "the hour GitHub gave it"}`,
+            },
+            at,
+          ),
+        );
+      }
+    }
+    if (events.length > 0) await ledger.append(events);
+  };
+}
+
 /** Model spend so far for a run: its cost.recorded events, from the gateway key or the hooks. */
 export function runModelCost(ledger: Ledger): (runId: string) => Promise<number> {
   const db = databaseOf(ledger);
@@ -237,7 +349,8 @@ export function createBackground(ledger: Ledger, options: BackgroundServerOption
       ? {
           alert: async (run, alert) => {
             if (!run.person) return;
-            const store = notifyStore(databaseOf(ledger));
+            // The run's person in the run's org: the same id elsewhere is someone else.
+            const store = notifyStore(databaseOf(ledger), run.org ?? DEFAULT_ORG_ID);
             const link = options.publicUrl ? `\n${backgroundRunsUrl(options.publicUrl)}` : "";
             for (const target of await store.targets(run.person)) {
               const sent = await deliver.send(target.url, {
@@ -258,6 +371,13 @@ export function createBackground(ledger: Ledger, options: BackgroundServerOption
         }
       : {}),
     modelCost: runModelCost(ledger),
+    repoAccess: repoAccess(ledger),
+    orphaned: orphanedCredentials(ledger, settings, gateway),
+    admit: (run, runtime, config) =>
+      egressRefusal(
+        { team: run.team, target: runtime.kind, capabilities: runtime.capabilities },
+        config,
+      ),
     fetch: options.fetch ?? ((url, init) => fetch(url, init)),
     clock,
     selfhostVersion: options.version,
@@ -488,7 +608,8 @@ export function backgroundWebhookRoute(
     if (!team)
       return c.json(apiError("invalid_request", "team: Expected the team the run is for"), 400);
     const { config } = await background.settings(team);
-    const secretEnv = backgroundSettings(config).webhook_secret_env;
+    const settings = backgroundSettings(config);
+    const secretEnv = settings.webhook_secret_env;
     const secret = secretEnv ? background.env[secretEnv] : undefined;
     const trigger = {
       source: "webhook" as const,
@@ -496,7 +617,23 @@ export function backgroundWebhookRoute(
       person: null,
       ...(body.ref ? { ref: body.ref } : {}),
     };
-    if (!secret || !verifyWebhook(secret, text, c.req.header(WEBHOOK_SIGNATURE_HEADER))) {
+    const refused = async (reason: string, status: 401 | 403 | 409, code: string) => {
+      await ledger.append([
+        triggeredEvent(
+          { ...trigger, accepted: false, reason },
+          { team, repo: body.repo },
+          background.clock.now(),
+        ),
+      ]);
+      return c.json(apiError(code, reason), status);
+    };
+    const stamp = {
+      timestamp: c.req.header(WEBHOOK_TIMESTAMP_HEADER),
+      delivery: c.req.header(WEBHOOK_DELIVERY_HEADER),
+    };
+    const stale = webhookStampProblem(stamp, background.clock.now());
+    if (secret && stale) return refused(stale, 401, "invalid_signature");
+    if (!secret || !verifyWebhook(secret, text, stamp, c.req.header(WEBHOOK_SIGNATURE_HEADER))) {
       await ledger.append([
         triggeredEvent(
           {
@@ -513,9 +650,29 @@ export function backgroundWebhookRoute(
       return c.json(
         apiError(
           "invalid_signature",
-          `${WEBHOOK_SIGNATURE_HEADER} does not sign the body under the team's webhook secret`,
+          `${WEBHOOK_SIGNATURE_HEADER} does not sign the timestamp, delivery and body under the team's webhook secret`,
         ),
         401,
+      );
+    }
+    // The secret is the bridge's; it speaks only for the people the team listed for it.
+    const sender = body.sender.toLowerCase();
+    if (!settings.webhook_senders.some((person) => person.toLowerCase() === sender)) {
+      return refused(
+        `${body.sender} is not on [background] webhook_senders for team ${team}, so the webhook cannot start runs as them`,
+        403,
+        "not_allowed",
+      );
+    }
+    const claimed = await ledger.deliveries.claim(`background:${team}:${stamp.delivery}`, {
+      event: "selfhost.background_webhook",
+      now: background.clock.now(),
+    });
+    if (!claimed) {
+      return refused(
+        `Delivery ${stamp.delivery} was already taken: each request needs a new ${WEBHOOK_DELIVERY_HEADER}`,
+        409,
+        "duplicate_delivery",
       );
     }
     return answer(

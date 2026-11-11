@@ -1,5 +1,11 @@
 import type { Queryable } from "@selfhost/ledger";
-import type { NotifyCadence, NotifyKind, NotifySend, NotifyTarget } from "@selfhost/schema";
+import {
+  DEFAULT_ORG_ID,
+  type NotifyCadence,
+  type NotifyKind,
+  type NotifySend,
+  type NotifyTarget,
+} from "@selfhost/schema";
 import { maskUrl, serviceOf } from "./mask.js";
 
 /** A target as the store holds it. Only delivery reads `url`; nothing returns it. */
@@ -27,12 +33,24 @@ export function publicTarget(target: StoredTarget): NotifyTarget {
   };
 }
 
+/** Orgs where someone has a target, for the job to go through one at a time. */
+export async function notifyOrgs(db: Queryable): Promise<string[]> {
+  const rows = await db.query<{ org: string }>(
+    "SELECT DISTINCT org FROM notify_targets ORDER BY org",
+  );
+  return rows.map((row) => row.org);
+}
+
 /**
- * Notification targets, digest settings and the send record, in the ledger's database
- * (migration 0011). Person ids compare without case, as the review list's owners do.
+ * Notification targets, digest settings and the send record of the people of one org, in the
+ * ledger's database (migrations 0011 and 0014). Person ids are unique within an org only, so
+ * every read and write is for `org`; a laptop has just the default org. Person ids compare
+ * without case, as the review list's owners do.
  */
-export function notifyStore(db: Queryable) {
+export function notifyStore(db: Queryable, org: string = DEFAULT_ORG_ID) {
   return {
+    org,
+
     async targets(person: string): Promise<StoredTarget[]> {
       const rows = await db.query<{
         person: string;
@@ -40,16 +58,18 @@ export function notifyStore(db: Queryable) {
         url: string;
         created_at: unknown;
       }>(
-        "SELECT person, name, url, created_at FROM notify_targets WHERE lower(person) = lower($1) ORDER BY created_at, name",
-        [person],
+        `SELECT person, name, url, created_at FROM notify_targets
+         WHERE org = $2 AND lower(person) = lower($1) ORDER BY created_at, name`,
+        [person, org],
       );
       return rows.map((row) => ({ ...row, created_at: iso(row.created_at) }));
     },
 
-    /** Everyone with at least one target. */
+    /** Everyone in the org with at least one target. */
     async people(): Promise<string[]> {
       const rows = await db.query<{ person: string }>(
-        "SELECT DISTINCT person FROM notify_targets ORDER BY person",
+        "SELECT DISTINCT person FROM notify_targets WHERE org = $1 ORDER BY person",
+        [org],
       );
       return rows.map((row) => row.person);
     },
@@ -65,18 +85,18 @@ export function notifyStore(db: Queryable) {
       at?: Date,
     ): Promise<StoredTarget | undefined> {
       const [row] = await db.query<{ created_at: unknown }>(
-        `INSERT INTO notify_targets (person, name, url, created_at)
-         VALUES ($1, $2, $3, coalesce($4::timestamptz, now()))
+        `INSERT INTO notify_targets (org, person, name, url, created_at)
+         VALUES ($5, $1, $2, $3, coalesce($4::timestamptz, now()))
          ON CONFLICT DO NOTHING RETURNING created_at`,
-        [person, name, url, at?.toISOString() ?? null],
+        [person, name, url, at?.toISOString() ?? null, org],
       );
       return row ? { person, name, url, created_at: iso(row.created_at) } : undefined;
     },
 
     async removeTarget(person: string, name: string): Promise<boolean> {
       const rows = await db.query<{ name: string }>(
-        "DELETE FROM notify_targets WHERE lower(person) = lower($1) AND name = $2 RETURNING name",
-        [person, name],
+        "DELETE FROM notify_targets WHERE org = $3 AND lower(person) = lower($1) AND name = $2 RETURNING name",
+        [person, name, org],
       );
       return rows.length > 0;
     },
@@ -84,24 +104,24 @@ export function notifyStore(db: Queryable) {
     /** The person's own cadence, or undefined when they never picked one. */
     async digest(person: string): Promise<NotifyCadence | undefined> {
       const [row] = await db.query<{ digest: NotifyCadence | null }>(
-        "SELECT digest FROM notify_settings WHERE lower(person) = lower($1)",
-        [person],
+        "SELECT digest FROM notify_settings WHERE org = $2 AND lower(person) = lower($1)",
+        [person, org],
       );
       return row?.digest ?? undefined;
     },
 
     async setDigest(person: string, digest: NotifyCadence): Promise<void> {
       await db.query(
-        `INSERT INTO notify_settings (person, digest) VALUES ($1, $2)
-         ON CONFLICT (person) DO UPDATE SET digest = excluded.digest, updated_at = now()`,
-        [person, digest],
+        `INSERT INTO notify_settings (org, person, digest) VALUES ($3, $1, $2)
+         ON CONFLICT (org, person) DO UPDATE SET digest = excluded.digest, updated_at = now()`,
+        [person, digest, org],
       );
     },
 
     async record(person: string, send: NotifySend): Promise<void> {
       await db.query(
-        `INSERT INTO notify_sends (person, target, kind, subject, ok, error, sent_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7::timestamptz)`,
+        `INSERT INTO notify_sends (org, person, target, kind, subject, ok, error, sent_at)
+         VALUES ($8, $1, $2, $3, $4, $5, $6, $7::timestamptz)`,
         [
           person,
           send.target,
@@ -110,6 +130,7 @@ export function notifyStore(db: Queryable) {
           send.ok,
           send.error ?? null,
           send.at,
+          org,
         ],
       );
     },
@@ -121,9 +142,9 @@ export function notifyStore(db: Queryable) {
     async done(person: string, kind: NotifyKind, subject: string): Promise<Set<string>> {
       const rows = await db.query<{ target: string; sent: boolean; failures: number }>(
         `SELECT target, bool_or(ok) AS sent, count(*) FILTER (WHERE NOT ok)::int AS failures
-         FROM notify_sends WHERE lower(person) = lower($1) AND kind = $2 AND subject = $3
+         FROM notify_sends WHERE org = $4 AND lower(person) = lower($1) AND kind = $2 AND subject = $3
          GROUP BY target`,
-        [person, kind, subject],
+        [person, kind, subject, org],
       );
       return new Set(
         rows
@@ -143,8 +164,8 @@ export function notifyStore(db: Queryable) {
         sent_at: unknown;
       }>(
         `SELECT target, kind, subject, ok, error, sent_at FROM notify_sends
-         WHERE lower(person) = lower($1) ORDER BY sent_at DESC, id DESC LIMIT $2`,
-        [person, limit],
+         WHERE org = $3 AND lower(person) = lower($1) ORDER BY sent_at DESC, id DESC LIMIT $2`,
+        [person, limit, org],
       );
       return rows.map((row) => ({
         at: iso(row.sent_at),

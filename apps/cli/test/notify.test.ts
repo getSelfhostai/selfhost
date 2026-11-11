@@ -344,7 +344,10 @@ describe("pushes from selfhost import --watch on a solo laptop", () => {
         { timeout: 10_000 },
       );
       expect(refreshNow).toHaveBeenCalled();
-      expect(lines).toContain("Notifications: 1 sent, 0 failed.");
+      // The pass reports once it is done, a moment after the push went out.
+      await vi.waitFor(() => expect(lines).toContain("Notifications: 1 sent, 0 failed."), {
+        timeout: 5_000,
+      });
     } finally {
       await notifier.close();
       await inbox.close();

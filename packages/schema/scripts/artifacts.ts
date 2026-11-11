@@ -1092,16 +1092,18 @@ function openApiDocument(): Json {
           operationId: "webhookBackgroundRun",
           summary: "Start a run from a signed webhook (the Slack and Telegram bridges use it).",
           description:
-            "No bearer token: X-Selfhost-Signature-256, sha256= and the HMAC-SHA256 of the body in hex under the secret in the server variable [background] webhook_secret_env names, is the credential. A missing or wrong signature starts nothing and is recorded as a refused run.triggered event. sender is the person the bridge mapped the message to; the same checks as POST /v1/background-runs apply.",
+            "No bearer token: X-Selfhost-Signature-256, sha256= and the HMAC-SHA256 in hex of `<X-Selfhost-Timestamp>.<X-Selfhost-Delivery>.<body>` under the secret in the server variable [background] webhook_secret_env names, is the credential. X-Selfhost-Timestamp is the Unix time in seconds, within 5 minutes of the server's; X-Selfhost-Delivery is a new id for each request, taken once. A missing or wrong signature, an old timestamp or a repeated delivery starts nothing and is recorded as a refused run.triggered event. sender is the person the bridge mapped the message to and must be on [background] webhook_senders; the same checks as POST /v1/background-runs apply.",
           security: [],
           requestBody: { required: true, content: jsonContent("WebhookRunRequest") },
           responses: {
             "202": { description: "Started.", content: jsonContent("BackgroundRun") },
             "400": errorResponse("Invalid body, or no team."),
-            "401": errorResponse("The signature does not match, or webhooks are off for the team."),
-            "403": errorResponse("The sender may not start runs."),
+            "401": errorResponse(
+              "The signature does not match, the timestamp is too old, or webhooks are off for the team.",
+            ),
+            "403": errorResponse("The sender is not on webhook_senders or may not start runs."),
             "404": errorResponse("Background runs are off on this server."),
-            "409": errorResponse("A kill switch is on."),
+            "409": errorResponse("A kill switch is on, or the delivery id was used before."),
             "429": errorResponse("A run limit is reached."),
             "503": errorResponse("No runtime is set up for the team."),
           },
@@ -1169,7 +1171,7 @@ function openApiDocument(): Json {
           operationId: "issueGatewayKey",
           summary: "Issue a gateway key and return its value, once.",
           description:
-            "A person key goes only to its person, with their person token. A team key needs the owner or admin role, or the admin token. A run key needs anyone in the team. The value is in this answer only; selfhost keeps no copy.",
+            "A person key goes only to its person, with their person token. A team key needs the owner or admin role, or the admin token. A run key is refused (403): the server issues each background run its own key, capped at [budget] run_usd, and revokes it when the run ends. The value is in this answer only; selfhost keeps no copy.",
           requestBody: { required: true, content: jsonContent("IssueGatewayKeyRequest") },
           responses: {
             "201": { description: "Key issued.", content: jsonContent("IssueGatewayKeyResponse") },

@@ -6,6 +6,8 @@
 # Usage: ./backup.sh [file]
 #   file defaults to backups/selfhost-<UTC time>.dump next to this script.
 set -eu
+# A dump holds every event, notification target and policy: readable by its owner only.
+umask 077
 
 here=$(cd "$(dirname "$0")" && pwd)
 # Run from this folder so .env applies, with the files its COMPOSE_FILE lists (compose.yml alone
@@ -20,6 +22,7 @@ mkdir -p "$(dirname "$file")"
 # Written to a temporary name first, so a failed dump never looks like a good backup.
 compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom' \
   >"$file.partial"
+chmod 600 "$file.partial"
 mv "$file.partial" "$file"
 
 rows=$(printf '%s\n' "$ROWS_SQL" |

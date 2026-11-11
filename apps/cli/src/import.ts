@@ -389,11 +389,16 @@ function describeSync(sync: SyncReport): string[] {
 }
 
 function describeRepos(pulled: Pick<SyncReport, "context_repos">): string[] {
-  return (pulled.context_repos ?? []).map((repo) =>
+  return (pulled.context_repos ?? []).flatMap((repo) => [
     repo.error
       ? `The team's context changed, but ${repo.root} was not compiled again: ${repo.error}`
       : `The team's context changed: compiled ${repo.root} again (${repo.changed} files changed).`,
-  );
+    ...(repo.skipped_mcp?.length
+      ? [
+          `Left out ${repo.skipped_mcp.join(", ")}: MCP servers that run a command on this machine. Run selfhost context compile in ${repo.root} to review them.`,
+        ]
+      : []),
+  ]);
 }
 
 function describeLaptop({ laptop }: Pick<SyncReport, "laptop">): string[] {

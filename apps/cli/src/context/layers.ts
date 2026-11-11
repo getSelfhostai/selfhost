@@ -1,4 +1,5 @@
-import { existsSync, readdirSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   applyContextPlan,
@@ -97,6 +98,96 @@ export async function pullContext(
   };
 }
 
+/**
+ * An MCP server in the org or team layer that starts a program on this machine. A sync pulls
+ * those layers, so one of these runs here only once the person said yes to it.
+ */
+export interface CommandServer {
+  /** `team:web mcp:db`, for messages. */
+  label: string;
+  /** The command and its arguments, as the agent would start it. */
+  command: string;
+  /** Changes when the server's settings change, so a changed one is asked about again. */
+  fingerprint: string;
+}
+
+const approvedPath = (configPath: string) =>
+  join(contextLayersDir(configPath), "approved-mcp-commands.json");
+
+function readApproved(configPath: string): Set<string> {
+  try {
+    const parsed = JSON.parse(readFileSync(approvedPath(configPath), "utf8")) as unknown;
+    return new Set(Array.isArray(parsed) ? parsed.filter((x) => typeof x === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function writeApproved(configPath: string, approved: Set<string>): void {
+  mkdirSync(contextLayersDir(configPath), { recursive: true });
+  writeFileSync(approvedPath(configPath), `${JSON.stringify([...approved].sort(), null, 2)}\n`, {
+    mode: 0o600,
+  });
+}
+
+const fingerprintOf = (layer: ContextLayer, server: ContextLayer["source"]["mcp"][number]) =>
+  createHash("sha256")
+    .update(JSON.stringify([layer.kind, layer.name, server.name, server.spec]))
+    .digest("hex");
+
+/** The pulled layers' MCP servers that run a command. The person's own layer is theirs. */
+export function commandServers(layers: readonly ContextLayer[]): CommandServer[] {
+  return layers
+    .filter((layer) => layer.kind === "org" || layer.kind === "team")
+    .flatMap((layer) =>
+      layer.source.mcp
+        .filter((server) => server.spec.command !== undefined)
+        .map((server) => ({
+          label: `${layer.kind}:${layer.name} mcp:${server.name}`,
+          command: [server.spec.command, ...(server.spec.args ?? [])].join(" "),
+          fingerprint: fingerprintOf(layer, server),
+        })),
+    );
+}
+
+/**
+ * The layers with every org or team MCP server that runs a command the person has not said yes
+ * to taken out. With `confirm` (a terminal) each new one is asked about, and a yes is kept for
+ * next time; without it (a sync, a script) new ones are skipped and listed.
+ */
+export async function trustedLayers(
+  configPath: string,
+  layers: ContextLayer[],
+  confirm?: (question: string) => Promise<boolean>,
+): Promise<{ layers: ContextLayer[]; skipped: CommandServer[] }> {
+  const approved = readApproved(configPath);
+  const pending = commandServers(layers).filter((server) => !approved.has(server.fingerprint));
+  if (pending.length === 0) return { layers, skipped: [] };
+  const skipped: CommandServer[] = [];
+  let added = false;
+  for (const server of pending) {
+    const yes = confirm
+      ? await confirm(
+          `${server.label} starts \`${server.command}\` on this machine whenever an agent loads it. Allow it? [y/N] `,
+        )
+      : false;
+    if (yes) {
+      approved.add(server.fingerprint);
+      added = true;
+    } else {
+      skipped.push(server);
+    }
+  }
+  if (added) writeApproved(configPath, approved);
+  const out = new Set(skipped.map((server) => server.fingerprint));
+  const kept = layers.map((layer) => {
+    if (layer.kind !== "org" && layer.kind !== "team") return layer;
+    const mcp = layer.source.mcp.filter((server) => !out.has(fingerprintOf(layer, server)));
+    return { ...layer, source: { ...layer.source, mcp } };
+  });
+  return { layers: kept, skipped };
+}
+
 /** One repository a sync compiled again with the layers it pulled. */
 export interface RepoCompile {
   root: string;
@@ -104,6 +195,8 @@ export interface RepoCompile {
   changed: number;
   /** Why nothing was written there. */
   error?: string;
+  /** Org or team MCP servers that run a command, left out until the person allows them. */
+  skipped_mcp?: string[];
 }
 
 /**
@@ -115,7 +208,11 @@ export async function compileRepos(
   configPath: string,
   roots: readonly string[],
 ): Promise<RepoCompile[]> {
-  const { layers, errors } = localLayers(configPath);
+  const local = localLayers(configPath);
+  const errors = local.errors;
+  // A sync asks nobody: a new MCP server that runs a command waits for selfhost context compile.
+  const { layers, skipped } = await trustedLayers(configPath, local.layers);
+  const skippedMcp = skipped.map((server) => server.label);
   const results: RepoCompile[] = [];
   for (const root of roots) {
     if (!existsSync(root)) continue;
@@ -135,7 +232,11 @@ export async function compileRepos(
     } else {
       applyContextPlan(root, built.plan);
       const changed = built.plan.files.filter((file) => file.action !== "unchanged").length;
-      results.push({ root, changed });
+      results.push({
+        root,
+        changed,
+        ...(skippedMcp.length > 0 ? { skipped_mcp: skippedMcp } : {}),
+      });
     }
   }
   return results;

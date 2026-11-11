@@ -41,7 +41,7 @@ describe("prepareCredentials", () => {
       { name: "ANTHROPIC_AUTH_TOKEN", from: "gateway:run" },
       { name: "OPENAI_API_KEY", from: "gateway:run" },
       { name: "DATABASE_URL", from: "vault:acme-api/ci#database_url" },
-      { name: "SENTRY_DSN", from: "env:SENTRY_DSN" },
+      { name: "SENTRY_DSN", from: "env:SELFHOST_RUN_SECRET_SENTRY_DSN" },
       { name: "STRIPE_KEY", from: "infisical:/payments#STRIPE_KEY" },
     ]);
     // The provider key the repository declared never reaches the sandbox: the gateway key does.
@@ -49,7 +49,9 @@ describe("prepareCredentials", () => {
     expect(JSON.stringify(prepared.env)).not.toContain(VALUES.anthropic);
     expect(prepared.env.DATABASE_URL).toBe(VALUES.database);
     expect(prepared.env.STRIPE_KEY).toBe(VALUES.stripe);
-    expect(prepared.resolve({ name: "SENTRY_DSN", from: "env:SENTRY_DSN" })).toBe(VALUES.sentry);
+    expect(
+      prepared.resolve({ name: "SENTRY_DSN", from: "env:SELFHOST_RUN_SECRET_SENTRY_DSN" }),
+    ).toBe(VALUES.sentry);
 
     const minted = gh.fake.requests.find((r) => r.path === "/app/installations/42/access_tokens");
     expect(minted?.body).toEqual({
@@ -310,7 +312,7 @@ describe("without a gateway or a GitHub App", () => {
     const stores = fakeStores();
     const config = policy(`version = 1
 [secrets.env]
-ANTHROPIC_API_KEY = "env:ANTHROPIC_API_KEY"
+ANTHROPIC_API_KEY = "env:SELFHOST_RUN_SECRET_ANTHROPIC_API_KEY"
 `);
     const prepared = await prepareCredentials({ id: "r", team: "t", target: "daytona" }, config, {
       env: SERVER_ENV,
@@ -329,11 +331,67 @@ ANTHROPIC_API_KEY = "env:ANTHROPIC_API_KEY"
   it("fails on an env source the server does not have", async () => {
     const config = policy(`version = 1
 [secrets.env]
-TOKEN = "env:NOT_SET_ANYWHERE"
+TOKEN = "env:SELFHOST_RUN_SECRET_NOT_SET"
 `);
     await expect(
       prepareCredentials({ id: "r", team: "t", target: "e2b" }, config, { env: {} }),
-    ).rejects.toThrow("Credentials for run r: env:NOT_SET_ANYWHERE: not set on the server");
+    ).rejects.toThrow(
+      "Credentials for run r: env:SELFHOST_RUN_SECRET_NOT_SET: not set on the server",
+    );
+  });
+});
+
+describe("what a policy can make the server read", () => {
+  const ADMIN = ["admin", "token", "0123"].join("-");
+
+  it("refuses an env: source outside SELFHOST_RUN_SECRET_*, even past the schema", async () => {
+    // As a stored config object that skipped parseConfig would carry it.
+    const config = {
+      ...policy("version = 1\n"),
+      secrets: { env: { STOLEN: "env:SELFHOST_TOKEN" } },
+    };
+    await expect(
+      prepareCredentials({ id: "r", team: "t", target: "e2b" }, config, {
+        env: { SELFHOST_TOKEN: ADMIN },
+      }),
+    ).rejects.toThrow(
+      "env:SELFHOST_TOKEN: env: secrets read only server variables named SELFHOST_RUN_SECRET_*",
+    );
+  });
+
+  it("reaches Vault and Infisical only where the server's environment says, never a policy's url or token variable", async () => {
+    const calls: string[] = [];
+    const fetch: typeof globalThis.fetch = async (input, init) => {
+      calls.push(
+        `${String(input)} ${JSON.stringify(Object.fromEntries(new Headers(init?.headers)))}`,
+      );
+      return Response.json({ data: { data: { k: "v" } } });
+    };
+    // A policy object carrying the old connection tables, as one stored before they were removed.
+    const config = {
+      ...policy('version = 1\n[secrets.env]\nV = "vault:any#k"\n'),
+      secrets: {
+        env: { V: "vault:any#k" },
+        vault: { url: "https://attacker.example", token_env: "SELFHOST_TOKEN" },
+      },
+    } as unknown as ReturnType<typeof policy>;
+    await expect(
+      prepareCredentials({ id: "r", team: "t", target: "e2b" }, config, {
+        env: { SELFHOST_TOKEN: ADMIN },
+        fetch,
+      }),
+    ).rejects.toThrow("vault:any#k: VAULT_ADDR is not set on the server");
+    expect(calls).toEqual([]);
+
+    const prepared = await prepareCredentials({ id: "r", team: "t", target: "e2b" }, config, {
+      env: { SELFHOST_TOKEN: ADMIN, VAULT_ADDR: "https://vault.acme.test", VAULT_TOKEN: "vt" },
+      fetch,
+    });
+    expect(prepared.env.V).toBe("v");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain("https://vault.acme.test/v1/secret/data/any");
+    expect(calls[0]).not.toContain("attacker.example");
+    expect(calls[0]).not.toContain(ADMIN);
   });
 });
 

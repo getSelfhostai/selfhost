@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { PTY_BOOTSTRAP } from "../src/adapters/coder.js";
 import {
   CONFORMANCE_CHECKS,
   coderRuntime,
@@ -104,6 +105,12 @@ describe("conformance", () => {
     );
     const skipped = report.checks.filter((check) => check.status === "skip").map((c) => c.name);
     expect(skipped).toEqual(["list.labels", "snapshot"]);
+    // Commands and their environment go over the socket, never in a URL.
+    expect(coder.urls.length).toBeGreaterThan(0);
+    for (const url of coder.urls) {
+      expect(new URL(url).searchParams.get("command")).toBe(PTY_BOOTSTRAP);
+    }
+    expect(coder.urls.join("\n")).not.toContain("SELFHOST_CONFORMANCE");
   });
 
   it("reports a failing adapter instead of throwing, and still stops the sandbox", async () => {

@@ -22,6 +22,11 @@ export interface SyncOptions {
   /** [integrations.router] providers of the server's own config, for teams that set none. */
   fallbackProviders?: string[];
   now?: () => Date;
+  /**
+   * Whether a background run is over (or unknown). Its run key is turned off; without it, run
+   * keys are only ever turned off here, never on.
+   */
+  runEnded?: (runId: string) => Promise<boolean>;
 }
 
 export interface SyncResult {
@@ -102,10 +107,18 @@ export async function syncGateway(
     const input = byTeam.get(key.team);
     // A team selfhost no longer has keeps its keys as they are.
     if (!input) continue;
-    const wanted = keySettings(key, input.config, {
+    let wanted = keySettings(key, input.config, {
       inTeam: key.person === undefined || input.people.includes(key.person),
       ...(options.fallbackProviders ? { fallbackProviders: options.fallbackProviders } : {}),
     });
+    if (key.kind === "run") {
+      // A run key is revoked when its run ends and its value may still be in the sandbox: the
+      // sync never turns it back on, and turns off the key of a run that is over.
+      const ended =
+        !key.active ||
+        (key.run_id !== undefined && (await options.runEnded?.(key.run_id).catch(() => false)));
+      if (ended) wanted = { ...wanted, active: false };
+    }
     const held = {
       ...wanted,
       budgets: client.held(wanted.budgets),

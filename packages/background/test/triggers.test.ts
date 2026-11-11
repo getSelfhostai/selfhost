@@ -10,6 +10,7 @@ import {
   signWebhook,
   toolCallsIn,
   verifyWebhook,
+  webhookStampProblem,
 } from "../src/index.js";
 
 const ROOT = join(import.meta.dirname, "../../..");
@@ -82,15 +83,35 @@ describe("GitHub triggers", () => {
 });
 
 describe("signed webhooks", () => {
-  it("accepts only the body the secret signed", () => {
+  const stamp = { timestamp: "1794189600", delivery: "d-0001-abcd" };
+
+  it("accepts only the body, time and delivery id the secret signed", () => {
     const body = JSON.stringify({ task: "x", repo: "acme/web", sender: "alice@example.com" });
-    const signature = signWebhook("s3cret", body);
+    const signature = signWebhook("s3cret", body, stamp);
     expect(signature).toMatch(/^sha256=[0-9a-f]{64}$/);
-    expect(verifyWebhook("s3cret", body, signature)).toBe(true);
-    expect(verifyWebhook("s3cret", `${body} `, signature)).toBe(false);
-    expect(verifyWebhook("other", body, signature)).toBe(false);
-    expect(verifyWebhook("s3cret", body, undefined)).toBe(false);
-    expect(verifyWebhook("", body, signature)).toBe(false);
+    expect(verifyWebhook("s3cret", body, stamp, signature)).toBe(true);
+    expect(verifyWebhook("s3cret", `${body} `, stamp, signature)).toBe(false);
+    expect(verifyWebhook("other", body, stamp, signature)).toBe(false);
+    expect(verifyWebhook("s3cret", body, stamp, undefined)).toBe(false);
+    expect(verifyWebhook("", body, stamp, signature)).toBe(false);
+    // A replay with a fresh timestamp or delivery id no longer matches.
+    expect(verifyWebhook("s3cret", body, { ...stamp, timestamp: "1794193200" }, signature)).toBe(
+      false,
+    );
+    expect(verifyWebhook("s3cret", body, { ...stamp, delivery: "d-0002-abcd" }, signature)).toBe(
+      false,
+    );
+    expect(verifyWebhook("s3cret", body, {}, signature)).toBe(false);
+  });
+
+  it("takes a timestamp only within five minutes of now, and a delivery id of the expected form", () => {
+    const now = new Date(1794189600 * 1000);
+    expect(webhookStampProblem(stamp, now)).toBeUndefined();
+    expect(webhookStampProblem(stamp, new Date(now.getTime() + 299_000))).toBeUndefined();
+    expect(webhookStampProblem(stamp, new Date(now.getTime() + 301_000))).toMatch(/5 minutes/);
+    expect(webhookStampProblem(stamp, new Date(now.getTime() - 3_600_000))).toMatch(/5 minutes/);
+    expect(webhookStampProblem({ delivery: stamp.delivery }, now)).toMatch(/Unix time/);
+    expect(webhookStampProblem({ ...stamp, delivery: "short" }, now)).toMatch(/new id/);
   });
 });
 

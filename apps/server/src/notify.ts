@@ -20,6 +20,7 @@ import {
 import {
   AddNotifyTargetRequestSchema,
   createValidator,
+  DEFAULT_ORG_ID,
   type LedgerEvent,
   type NotifySendsResponse,
   type NotifySettings,
@@ -76,10 +77,15 @@ export function serverDirectory(
   }
 
   return {
-    async settingsFor(person): Promise<NotifySettingsInForce | undefined> {
-      const [first] = await teams.peopleWithAccess(person);
+    async settingsFor(person, org): Promise<NotifySettingsInForce | undefined> {
+      const [first] = (await teams.peopleWithAccess(person)).filter((a) => a.org === org);
       if (!first) return undefined;
       return (await configOf(first.person.team)).notify;
+    },
+
+    async orgOf(team) {
+      if (team === null) return DEFAULT_ORG_ID;
+      return (await teams.getTeam(team))?.org ?? DEFAULT_ORG_ID;
     },
 
     async unowned(team) {
@@ -91,11 +97,11 @@ export function serverDirectory(
 
     budgetOwners,
 
-    async spendDigest(person, now) {
-      const [first] = await teams.peopleWithAccess(person);
-      if (!first) return undefined;
+    async spendDigest(person, org, now) {
+      const access = await teams.peopleWithAccess(person);
+      if (!access.some((a) => a.org === org)) return undefined;
       const owned: { team: string; config: ResolvedSelfhostConfig }[] = [];
-      for (const { team } of await teams.memberships(first.org, person)) {
+      for (const { team } of await teams.memberships(org, person)) {
         const policy = await configOf(team);
         if (!policy.budget) continue;
         if ((await budgetOwners(team)).some((owner) => sameId(owner, person))) {
@@ -103,7 +109,7 @@ export function serverDirectory(
         }
       }
       if (owned.length === 0) return undefined;
-      return spendDigestOf(ledger, first.org, owned, now);
+      return spendDigestOf(ledger, org, owned, now);
     },
   };
 }
@@ -211,21 +217,23 @@ export interface NotifyRouteOptions {
  * A person's own notification settings, with their person token: GET /v1/notify, POST and
  * DELETE /v1/notify/targets, PUT /v1/notify/digest, POST /v1/notify/test and GET
  * /v1/notify/sends. Target URLs go in and never come back out: answers show their service and a
- * masked form, and the send record names targets only.
+ * masked form, and the send record names targets only. Everything is the person's in the org of
+ * their token: the same id in another org is another person.
  */
 export function notifyRoutes(
   person: Hono<PersonEnv>,
   ledger: Ledger,
   options: NotifyRouteOptions = {},
 ): void {
-  const store = notifyStore(databaseOf(ledger));
+  const db = databaseOf(ledger);
   const directory = serverDirectory(ledger, options.config);
   const now = options.now ?? (() => new Date());
   const small = limit(SMALL_BODY_BYTES);
 
-  async function settings(id: string): Promise<NotifySettings> {
+  async function settings(id: string, org: string): Promise<NotifySettings> {
+    const store = notifyStore(db, org);
     const own = await store.digest(id);
-    const inForce = await directory.settingsFor(id);
+    const inForce = await directory.settingsFor(id, org);
     return {
       person: id,
       targets: (await store.targets(id)).map(publicTarget),
@@ -236,8 +244,10 @@ export function notifyRoutes(
   }
 
   const who = (c: Context<PersonEnv>) => c.env.person.id;
+  const orgOf = async (c: Context<PersonEnv>) => (await c.env.caller.scope()).org;
+  const storeOf = async (c: Context<PersonEnv>) => notifyStore(db, await orgOf(c));
 
-  person.get("/v1/notify", async (c) => c.json(await settings(who(c))));
+  person.get("/v1/notify", async (c) => c.json(await settings(who(c), await orgOf(c))));
 
   person.post("/v1/notify/targets", small, async (c) => {
     const body = await readBody(c, addTargetBody);
@@ -246,9 +256,11 @@ export function notifyRoutes(
     const problem = urlProblem(url);
     if (problem) return c.json(apiError("invalid_request", `url: ${problem}`), 400);
     const id = who(c);
+    const { org, memberships } = await c.env.caller.scope();
+    const store = notifyStore(db, org);
     if (!isHostedService(url)) {
-      const access = await ledger.teams.peopleWithAccess(id);
-      if (!access.some((a) => a.person.role === "owner" || a.person.role === "admin")) {
+      // A role in this org: an owner elsewhere under the same id is someone else.
+      if (!memberships.some((m) => m.role === "owner" || m.role === "admin")) {
         return c.json(
           apiError(
             "forbidden",
@@ -272,23 +284,25 @@ export function notifyRoutes(
     if (taken.has(name) || !(await store.addTarget(id, name, url, now()))) {
       return c.json(apiError("target_exists", `You already have a target named ${name}.`), 409);
     }
-    return c.json(await settings(id), 201);
+    return c.json(await settings(id, org), 201);
   });
 
   person.delete("/v1/notify/targets/:name", async (c) => {
     const id = who(c);
     const name = c.req.param("name");
+    const store = await storeOf(c);
     if (!(await store.removeTarget(id, name))) {
       return c.json(apiError("not_found", `You have no target named ${name}.`), 404);
     }
-    return c.json(await settings(id));
+    return c.json(await settings(id, store.org));
   });
 
   person.put("/v1/notify/digest", small, async (c) => {
     const body = await readBody(c, digestBody);
     if (body instanceof Response) return body;
+    const store = await storeOf(c);
     await store.setDigest(who(c), body.digest);
-    return c.json(await settings(who(c)));
+    return c.json(await settings(who(c), store.org));
   });
 
   person.post("/v1/notify/test", small, async (c) => {
@@ -304,6 +318,7 @@ export function notifyRoutes(
       );
     }
     const id = who(c);
+    const store = await storeOf(c);
     const targets = await store.targets(id);
     if (body.name !== undefined && !targets.some((t) => t.name === body.name)) {
       return c.json(apiError("not_found", `You have no target named ${body.name}.`), 404);
@@ -314,7 +329,15 @@ export function notifyRoutes(
         404,
       );
     }
-    const sends = await sendTest(ledger, id, options.deliver, testMessage(id), now(), body.name);
+    const sends = await sendTest(
+      ledger,
+      id,
+      options.deliver,
+      testMessage(id),
+      now(),
+      body.name,
+      store.org,
+    );
     return c.json({ sends } satisfies NotifyTestResponse);
   });
 
@@ -324,6 +347,7 @@ export function notifyRoutes(
     if (!Number.isInteger(count) || count < 1 || count > 200) {
       return c.json(apiError("invalid_query", "limit: Expected an integer from 1 to 200"), 400);
     }
+    const store = await storeOf(c);
     return c.json({ sends: await store.sends(who(c), count) } satisfies NotifySendsResponse);
   });
 }

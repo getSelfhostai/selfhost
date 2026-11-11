@@ -307,4 +307,53 @@ describe("org, team, repo and personal layers", () => {
     expect(existsSync(dev.repo.path("CLAUDE.md"))).toBe(true);
     expect(dev.read("CLAUDE.md")).not.toContain("Never print or log secrets.");
   });
+
+  it("runs an MCP server from the team layer that starts a command only once the person allows it", async () => {
+    blockNetwork();
+    const { lead, dev, folders } = await teamWithTwoLaptops();
+    await dev.compile();
+    folders.write(
+      "team/mcp.json",
+      JSON.stringify({
+        mcpServers: {
+          "team-memory": { type: "http", url: "https://memory.acme.dev/mcp" },
+          helper: { command: "npx", args: ["-y", "team-helper"] },
+        },
+      }),
+    );
+    // An admin who is not an owner cannot add it; the owner can.
+    const admin = await fetch(`${SERVER}/v1/teams/web/people/${encodeURIComponent(DEV)}/role`, {
+      method: "PUT",
+      headers: { authorization: `Bearer ${ADMIN}`, "content-type": "application/json" },
+      body: JSON.stringify({ role: "admin" }),
+    });
+    expect(admin.status).toBe(200);
+    const refused = await dev.cli(["context", "push", folders.path("team"), "--json"]);
+    expect(refused.code).toBe(1);
+    expect(refused.out + refused.err).toContain("only an owner");
+    expect((await lead.cli(["context", "push", folders.path("team"), "--json"])).code).toBe(0);
+
+    // The sync compiles the repository again without it, and says so.
+    const synced = await dev.sync();
+    expect(synced.context_repos).toEqual([
+      expect.objectContaining({ root: dev.repo.root, skipped_mcp: ["team:web mcp:helper"] }),
+    ]);
+    expect(JSON.parse(dev.read(".mcp.json")).mcpServers.helper).toBeUndefined();
+    const quiet = await dev.compile();
+    expect(quiet.skipped_mcp).toEqual(["team:web mcp:helper"]);
+
+    // At a terminal the person is asked; a yes is kept for the next compiles.
+    const asked: string[] = [];
+    const yes = await run(["context", "compile", "--agent", "claude"], {
+      ...dev.deps,
+      ask: async (question: string) => {
+        asked.push(question);
+        return true;
+      },
+    });
+    expect(yes.code).toBe(0);
+    expect(asked).toEqual([expect.stringContaining("npx -y team-helper")]);
+    expect(JSON.parse(dev.read(".mcp.json")).mcpServers.helper).toMatchObject({ command: "npx" });
+    expect((await dev.compile()).skipped_mcp).toEqual([]);
+  });
 });

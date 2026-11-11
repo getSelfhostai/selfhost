@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   BUDGET_SPENT_ALERT,
   bifrostClient,
+  DEFAULT_RUN_KEY_USD,
   issueKey,
   litellmClient,
   maskKeys,
@@ -127,6 +128,39 @@ describe("Bifrost keys and budgets", () => {
       expires_at: "2026-11-06T12:00:00.000Z",
       delete_after_expire: true,
     });
+  });
+
+  it("caps a run key even without a hard budget", async () => {
+    const { fake, client } = bifrost();
+    await issueKey(client, { kind: "run", team: "platform", run_id: "run-soft" }, ALERT);
+    const create = fake.calls.find((c) => c.path === "/api/governance/virtual-keys");
+    expect(create?.body).toMatchObject({
+      budgets: [{ max_limit: DEFAULT_RUN_KEY_USD, reset_duration: "1Y" }],
+    });
+  });
+
+  it("never turns a revoked run key back on, and turns off the key of a run that ended", async () => {
+    const { fake, client } = bifrost();
+    const ended = await issueKey(client, { kind: "run", team: "platform", run_id: "run-1" }, HARD);
+    const live = await issueKey(client, { kind: "run", team: "platform", run_id: "run-2" }, HARD);
+    const going = await issueKey(client, { kind: "run", team: "platform", run_id: "run-3" }, HARD);
+    if (!("issued" in ended) || !("issued" in live) || !("issued" in going))
+      throw new Error("no key");
+    // run-1's key was revoked when the run ended; run-2 ended while the server was down.
+    await client.updateKey(ended.issued.key, { budgets: [], providers: [], active: false });
+    const inputs = [{ team: "platform", config: HARD, people: [] }];
+    await syncGateway(client, inputs, {
+      now: () => NOW,
+      runEnded: async (id) => id !== "run-3",
+    });
+    const active = async (id: string) => (await client.keys()).find((k) => k.run_id === id)?.active;
+    expect(await active("run-1")).toBe(false);
+    expect(await active("run-2")).toBe(false);
+    expect(await active("run-3")).toBe(true);
+    // Without knowing which runs ended, a sync still only ever turns run keys off.
+    await syncGateway(client, inputs, { now: () => NOW });
+    expect(await active("run-1")).toBe(false);
+    expect(fake.keys.size).toBe(3);
   });
 
   it("syncs idempotently: changes what differs, turns off people who left, then nothing", async () => {

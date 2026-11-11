@@ -1,11 +1,12 @@
 import { databaseOf, type Ledger } from "@selfhost/ledger";
 import { isSnoozed, openReviewList } from "@selfhost/review";
-import type {
-  LedgerEvent,
-  NotifyCadence,
-  NotifyConfig,
-  NotifyKind,
-  ReviewItem,
+import {
+  DEFAULT_ORG_ID,
+  type LedgerEvent,
+  type NotifyCadence,
+  type NotifyConfig,
+  type NotifyKind,
+  type ReviewItem,
 } from "@selfhost/schema";
 import type { Deliver, Message } from "./apprise.js";
 import { digestWindow, spendDigestWindow } from "./cadence.js";
@@ -18,7 +19,7 @@ import {
   spendAlertMessage,
   spendDigestMessage,
 } from "./message.js";
-import { type NotifyStore, notifyStore } from "./store.js";
+import { type NotifyStore, notifyOrgs, notifyStore } from "./store.js";
 
 /** [notify] with its defaults applied. */
 export type NotifySettingsInForce = Required<NotifyConfig>;
@@ -33,16 +34,21 @@ export const NOTIFY_DEFAULTS: NotifySettingsInForce = {
 /** Who gets what, from the team server's teams and policies, or the laptop's one person. */
 export interface Directory {
   /**
-   * [notify] in force for a person; undefined when they no longer have access (every token
-   * revoked), so nothing more is sent to them.
+   * [notify] in force for a person of an org; undefined when they no longer have access there
+   * (every token revoked), so nothing more is sent to them.
    */
-  settingsFor(person: string): Promise<NotifySettingsInForce | undefined>;
+  settingsFor(person: string, org: string): Promise<NotifySettingsInForce | undefined>;
   /** Who is pushed an item an agent waits on when the item has no owner. team is null on a laptop. */
   unowned(team: string | null): Promise<string[]>;
   /** Who gets a team's budget alerts. */
   budgetOwners(team: string | null): Promise<string[]>;
-  /** The budget owner's daily spend digest; undefined when the person owns no budget. */
-  spendDigest?(person: string, now: Date): Promise<SpendDigest | undefined>;
+  /** The budget owner's daily spend digest in an org; undefined when they own no budget there. */
+  spendDigest?(person: string, org: string, now: Date): Promise<SpendDigest | undefined>;
+  /**
+   * The org a team is in, so an item or alert reaches only that org's people: person ids are
+   * unique within an org only. Default: every team is in the default org, as on a laptop.
+   */
+  orgOf?(team: string | null): Promise<string>;
 }
 
 export interface NotifyOptions {
@@ -125,15 +131,59 @@ async function alertsSince(ledger: Ledger, from: Date): Promise<LedgerEvent[]> {
  */
 export async function runNotify(ledger: Ledger, options: NotifyOptions): Promise<NotifyResult> {
   const db = databaseOf(ledger);
-  const store = notifyStore(db);
-  const { now, deliver, directory, consoleUrl } = options;
   const result: NotifyResult = { sent: 0, failed: 0 };
+  const orgs = await notifyOrgs(db);
+  if (orgs.length === 0) return result;
+  const orgOf = options.directory.orgOf ?? (async () => DEFAULT_ORG_ID);
+  const waiting = await db.query<{ body: unknown; team: string | null }>(
+    `SELECT body, team FROM review_items
+     WHERE state = 'open' AND blocking AND created_at >= $1::timestamptz
+     ORDER BY created_at, id`,
+    [new Date(options.now.getTime() - INSTANT_WINDOW_MS).toISOString()],
+  );
+  const alerts = await alertsSince(ledger, new Date(options.now.getTime() - SPEND_WINDOW_MS));
+  const inOrg = new Map<string | null, Promise<string>>();
+  const orgOfTeam = (team: string | null) => {
+    let found = inOrg.get(team);
+    if (!found) {
+      found = orgOf(team);
+      inOrg.set(team, found);
+    }
+    return found;
+  };
+  for (const org of orgs) {
+    const raised = {
+      waiting: await filterAsync(waiting, async (row) => (await orgOfTeam(row.team)) === org),
+      alerts: await filterAsync(alerts, async (e) => (await orgOfTeam(e.team ?? null)) === org),
+    };
+    await notifyOrg(ledger, options, notifyStore(db, org), raised, result);
+  }
+  await notifyStore(db).prune(options.now);
+  return result;
+}
+
+async function filterAsync<T>(values: T[], keep: (value: T) => Promise<boolean>): Promise<T[]> {
+  const kept: T[] = [];
+  for (const value of values) if (await keep(value)) kept.push(value);
+  return kept;
+}
+
+/** One org's pass: its people with targets get what was raised in its teams. */
+async function notifyOrg(
+  ledger: Ledger,
+  options: NotifyOptions,
+  store: NotifyStore,
+  raised: { waiting: { body: unknown; team: string | null }[]; alerts: LedgerEvent[] },
+  result: NotifyResult,
+): Promise<void> {
+  const { now, deliver, directory, consoleUrl } = options;
+  const org = store.org;
   const people: { person: string; settings: NotifySettingsInForce }[] = [];
   for (const person of await store.people()) {
-    const settings = await directory.settingsFor(person);
+    const settings = await directory.settingsFor(person, org);
     if (settings) people.push({ person, settings });
   }
-  if (people.length === 0) return result;
+  if (people.length === 0) return;
   const byLower = new Map(people.map(({ person }) => [person.toLowerCase(), person]));
   const withTargets = (names: Iterable<string>) => [
     ...new Set(
@@ -153,13 +203,7 @@ export async function runNotify(ledger: Ledger, options: NotifyOptions): Promise
   // Instant pushes, oldest first: items agents wait on and budget alerts, in the order they
   // were raised. Each target gets only what was raised after it was added.
   const pushes: { at: string; order: string; push: () => Promise<void> }[] = [];
-  const waiting = await db.query<{ body: unknown; team: string | null }>(
-    `SELECT body, team FROM review_items
-     WHERE state = 'open' AND blocking AND created_at >= $1::timestamptz
-     ORDER BY created_at, id`,
-    [new Date(now.getTime() - INSTANT_WINDOW_MS).toISOString()],
-  );
-  for (const row of waiting) {
+  for (const row of raised.waiting) {
     const item = json<ReviewItem>(row.body);
     pushes.push({
       at: item.created_at,
@@ -172,9 +216,8 @@ export async function runNotify(ledger: Ledger, options: NotifyOptions): Promise
     });
   }
 
-  const alerts = await alertsSince(ledger, new Date(now.getTime() - SPEND_WINDOW_MS));
   // A laptop's own alerts are for that laptop; on a team server they arrive with its history.
-  const spendAlerts = alerts.filter(
+  const spendAlerts = raised.alerts.filter(
     (event) => isSpendAlert(event) && (options.solo === true || event.source !== "cli"),
   );
   for (const event of spendAlerts) {
@@ -197,7 +240,10 @@ export async function runNotify(ledger: Ledger, options: NotifyOptions): Promise
   );
   for (const { push } of pushes) await push();
 
-  const list = openReviewList(ledger, { now: () => now });
+  const list = openReviewList(ledger, {
+    now: () => now,
+    ...(directory.orgOf ? { org } : {}),
+  });
   for (const { person, settings } of people) {
     const cadence: NotifyCadence = (await store.digest(person)) ?? settings.digest;
     const window = digestWindow(cadence, now, settings.digest_hour);
@@ -226,7 +272,7 @@ export async function runNotify(ledger: Ledger, options: NotifyOptions): Promise
         "spend_digest",
         spend.key,
         async () => {
-          const digest = await spendDigest(person, now);
+          const digest = await spendDigest(person, org, now);
           return digest && !isEmptyDigest(digest)
             ? spendDigestMessage(digest, consoleUrl)
             : undefined;
@@ -235,8 +281,6 @@ export async function runNotify(ledger: Ledger, options: NotifyOptions): Promise
       );
     }
   }
-  await store.prune(now);
-  return result;
 }
 
 /** How far a target's creation may follow an item's or alert's raised time and still get it. */
@@ -296,8 +340,9 @@ export async function sendTest(
   message: Message,
   now: Date,
   name?: string,
+  org: string = DEFAULT_ORG_ID,
 ) {
-  const store = notifyStore(databaseOf(ledger));
+  const store = notifyStore(databaseOf(ledger), org);
   const targets = (await store.targets(person)).filter(
     (target) => name === undefined || target.name === name,
   );

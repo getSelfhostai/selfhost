@@ -3,6 +3,7 @@ import {
   createValidator,
   type ResolvedSelfhostConfig,
   type ReviewItem,
+  RUN_SECRET_ENV_PREFIX,
   RunQuerySchema,
   roleAllows,
 } from "@selfhost/schema";
@@ -115,6 +116,19 @@ export const TRACE_EXPORT_INTERVAL_MS = 60_000;
 /** The longest wait between passes after the tracer kept failing. */
 export const TRACE_EXPORT_MAX_BACKOFF_MS = 30 * 60_000;
 
+/**
+ * The server variables a team's [integrations.tracer] headers_env reads that a team server does
+ * not send: any outside SELFHOST_RUN_SECRET_*, since the team's policy also names the tracer's
+ * address. A team with any of them has its runs left unexported.
+ */
+export function unsafeTracerHeaders(
+  config: Pick<ResolvedSelfhostConfig, "integrations">,
+): string[] {
+  return Object.values(config.integrations.tracer?.headers_env ?? {}).filter(
+    (variable) => !variable.startsWith(RUN_SECRET_ENV_PREFIX),
+  );
+}
+
 export interface TraceExportJobOptions {
   config?: ResolvedSelfhostConfig;
   /** Default: every minute. */
@@ -141,13 +155,28 @@ export function startTraceExportJob(
 ): TraceExportJob {
   const { intervalMs = TRACE_EXPORT_INTERVAL_MS, log = console.log } = options;
   const configOf = teamConfig(ledger, options.config);
+  const warned = new Set<string>();
+  // A team's policy names the tracer's address, so the server variables it reads into headers
+  // are limited as env: secrets are: otherwise a team could send the admin token to any host.
+  const settingsFor = async (team: string) => {
+    const config = await configOf(team);
+    const unsafe = unsafeTracerHeaders(config);
+    if (unsafe.length === 0) return exportSettings(config);
+    if (!warned.has(team)) {
+      warned.add(team);
+      log(
+        `traces: team ${team}'s [integrations.tracer] headers_env reads ${unsafe.join(", ")}; on a team server only ${RUN_SECRET_ENV_PREFIX}* variables are sent, so its runs are not exported`,
+      );
+    }
+    return undefined;
+  };
   let failures = 0;
   let timer: NodeJS.Timeout | undefined;
   let stopped = false;
   let running: Promise<ExportResult | undefined> | undefined;
   const run = () => {
     running ??= exportTraces(ledger, {
-      settingsFor: async (team) => exportSettings(await configOf(team)),
+      settingsFor,
       ...(options.now ? { now: options.now() } : {}),
     })
       .then(

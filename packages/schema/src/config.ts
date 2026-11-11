@@ -111,6 +111,22 @@ export const RUNTIME_VARIABLES = {
 export type RuntimeVariable = keyof typeof RUNTIME_VARIABLES;
 export const RUNTIME_VARIABLE_PREFIX = "SELFHOST_";
 
+/**
+ * The only server variables an env: secret may read. Anyone who can write a team's policy picks
+ * the names, so a prefix keeps the server's own settings (its admin token, the GitHub App key,
+ * store tokens) out of every sandbox.
+ */
+export const RUN_SECRET_ENV_PREFIX = "SELFHOST_RUN_SECRET_";
+
+/**
+ * Secret store connections are the server's, set in its environment. A policy only names paths
+ * in them, so it cannot point the server's token at another host.
+ */
+export const SECRET_STORE_SETTINGS = {
+  vault: "VAULT_ADDR, VAULT_TOKEN, VAULT_NAMESPACE and SELFHOST_VAULT_MOUNT",
+  infisical: "INFISICAL_URL, INFISICAL_TOKEN, INFISICAL_PROJECT_ID and INFISICAL_ENVIRONMENT",
+} as const;
+
 const RUN_NAME_PATTERN = "^[A-Za-z0-9][A-Za-z0-9 _-]*$";
 const ENV_NAME_PATTERN = "^[A-Za-z_][A-Za-z0-9_]*$";
 
@@ -465,12 +481,12 @@ const HttpUrl = (description: string) => Type.String({ pattern: "^https?://", de
 const RUNTIME_CONNECTION_FIELDS = {
   url: Type.Optional(
     HttpUrl(
-      "The provider's API address: required for coder and opensandbox (the team's own server), optional for the hosted ones.",
+      "The provider's API address: required for coder and opensandbox (the team's own server), optional for the hosted ones. On a team server only the server's own selfhost.toml (SELFHOST_CONFIG) sets it; a team's stored policy cannot.",
     ),
   ),
   api_key_env: Type.Optional(
     EnvName(
-      "Environment variable on the server that holds the provider's API key: for modal, its token id. Unset uses the provider's usual name, such as E2B_API_KEY.",
+      "Environment variable on the server that holds the provider's API key: for modal, its token id. Unset uses the provider's usual name, such as E2B_API_KEY. On a team server only the server's own selfhost.toml (SELFHOST_CONFIG) sets it; a team's stored policy cannot.",
     ),
   ),
   api_secret_env: Type.Optional(
@@ -917,7 +933,7 @@ export const IntegrationsSchema = Type.Object(
               EnvName("Environment variable that holds the header value."),
               {
                 description:
-                  "Headers to send, by name, each read from an environment variable on the server (for API keys).",
+                  "Headers to send, by name, each read from an environment variable on the server (for API keys). A team server sends only variables named SELFHOST_RUN_SECRET_*, since a team's policy also names the endpoint.",
               },
             ),
           ),
@@ -1017,7 +1033,7 @@ export const SECRET_FORMAT_PLACEHOLDER = "{value}";
 const SecretSource = Type.String({
   pattern: SECRET_SOURCE_PATTERN,
   description:
-    "Where the value comes from: env:NAME (the server's environment), vault:<path>#<key> (HashiCorp Vault KV v2, path under [secrets.vault] mount), infisical:<path>#<key> or infisical:<key> (Infisical, in [secrets.infisical] project and environment), or github-app:repo (the run's repository token).",
+    "Where the value comes from: env:SELFHOST_RUN_SECRET_<NAME> (a variable of the server's environment with that prefix), vault:<path>#<key> (HashiCorp Vault KV v2, at the server's VAULT_ADDR), infisical:<path>#<key> or infisical:<key> (Infisical, in the server's INFISICAL_PROJECT_ID and INFISICAL_ENVIRONMENT), or github-app:repo (the run's repository token). Store addresses and tokens are set on the server only, never in selfhost.toml.",
 });
 
 export const SecretDeclarationSchema = Type.Union(
@@ -1061,40 +1077,6 @@ export const SecretsSchema = Type.Object(
         description:
           "Environment variable inside the run's sandbox to where its value comes from. Values are read at run start, go only into that run's sandbox and are masked in the ledger and logs.",
       }),
-    ),
-    vault: Type.Optional(
-      Type.Object(
-        {
-          url: HttpUrl("Vault's address, such as https://vault.acme.internal:8200."),
-          token_env: Type.Optional(
-            EnvName(
-              "Environment variable on the server that holds a Vault token that can read the paths. Default: VAULT_TOKEN.",
-            ),
-          ),
-          mount: Type.Optional(
-            NonEmpty({ description: "The KV version 2 secrets engine mount. Default: secret." }),
-          ),
-          namespace: Type.Optional(
-            NonEmpty({ description: "Vault Enterprise namespace, sent as X-Vault-Namespace." }),
-          ),
-        },
-        { additionalProperties: false, description: "HashiCorp Vault, read over its HTTP API." },
-      ),
-    ),
-    infisical: Type.Optional(
-      Type.Object(
-        {
-          url: Type.Optional(HttpUrl("Infisical's address. Default: https://app.infisical.com.")),
-          token_env: Type.Optional(
-            EnvName(
-              "Environment variable on the server that holds a machine identity access token. Default: INFISICAL_TOKEN.",
-            ),
-          ),
-          project_id: NonEmpty({ description: "The Infisical project (workspace) id." }),
-          environment: NonEmpty({ description: "The environment slug, such as prod." }),
-        },
-        { additionalProperties: false, description: "Infisical, read over its HTTP API." },
-      ),
     ),
     github_permissions: Type.Optional(
       Type.Record(Type.String({ pattern: "^[a-z_]+$" }), StringEnum(["read", "write"] as const), {
@@ -1888,13 +1870,6 @@ function secretsErrors(secrets: Secrets): SegmentError[] {
         message: `Names that start with ${RUNTIME_VARIABLE_PREFIX} are set by selfhost for each run`,
       });
     }
-    const from = typeof declared === "string" ? declared : declared.from;
-    if (from.startsWith("vault:") && !secrets.vault) {
-      errors.push({ segments: at(), message: "A vault: secret needs [secrets.vault]" });
-    }
-    if (from.startsWith("infisical:") && !secrets.infisical) {
-      errors.push({ segments: at(), message: "An infisical: secret needs [secrets.infisical]" });
-    }
     if (typeof declared === "string") continue;
     if (declared.host === undefined && (declared.header ?? declared.format) !== undefined) {
       errors.push({ segments: at("host"), message: "header and format need host" });
@@ -1909,12 +1884,56 @@ function secretsErrors(secrets: Secrets): SegmentError[] {
   return errors;
 }
 
+/**
+ * What a policy may not make the server read, said plainly before the schema's pattern errors:
+ * [secrets.vault] and [secrets.infisical] (the server's own settings now), and env: secrets
+ * outside SELFHOST_RUN_SECRET_*.
+ */
+function secretSourceErrors(value: unknown): SegmentError[] {
+  const secrets =
+    value !== null && typeof value === "object"
+      ? (value as { secrets?: unknown }).secrets
+      : undefined;
+  if (secrets === null || typeof secrets !== "object") return [];
+  const errors: SegmentError[] = (
+    Object.keys(SECRET_STORE_SETTINGS) as (keyof typeof SECRET_STORE_SETTINGS)[]
+  )
+    .filter((store) => store in secrets)
+    .map((store) => ({
+      segments: ["secrets", store],
+      message: `The ${store} address, token and settings are the server's (${SECRET_STORE_SETTINGS[store]}), not a policy's: remove [secrets.${store}] and keep only the ${store}: references`,
+    }));
+  const env = (secrets as { env?: unknown }).env;
+  if (env === null || typeof env !== "object") return errors;
+  for (const [name, declared] of Object.entries(env)) {
+    const from =
+      typeof declared === "string"
+        ? declared
+        : declared !== null && typeof declared === "object"
+          ? (declared as { from?: unknown }).from
+          : undefined;
+    if (typeof from !== "string" || !from.startsWith("env:")) continue;
+    const variable = from.slice(4);
+    if (variable.startsWith(RUN_SECRET_ENV_PREFIX)) continue;
+    errors.push({
+      segments: ["secrets", "env", name],
+      message: `env: secrets read only server variables named ${RUN_SECRET_ENV_PREFIX}*: set ${RUN_SECRET_ENV_PREFIX}${variable} on the server and write env:${RUN_SECRET_ENV_PREFIX}${variable}`,
+    });
+  }
+  return errors;
+}
+
 function check(
   value: unknown,
   options?: ParseOptions,
 ): { config?: ResolvedSelfhostConfig; errors: SegmentError[]; warnings?: string[] } {
   const withDefaults = Value.Default(SelfhostConfigSchema, Value.Clone(value));
-  const errors = schemaErrors(configCheck(), withDefaults);
+  const stores = secretSourceErrors(value);
+  const taken = new Set(stores.map((e) => formatField(e.segments)));
+  const errors = [
+    ...stores,
+    ...schemaErrors(configCheck(), withDefaults).filter((e) => !taken.has(formatField(e.segments))),
+  ];
   if (errors.length > 0) return { errors };
   const config = withDefaults as ResolvedSelfhostConfig;
   const semantic = semanticErrors(config, options);

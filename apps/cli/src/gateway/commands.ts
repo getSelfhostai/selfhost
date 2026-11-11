@@ -73,7 +73,6 @@ interface TeamOption {
 
 export interface ConnectOptions {
   rotate?: boolean;
-  run?: string;
   /** Print the settings to paste instead of writing them. */
   print?: boolean;
   /** claude-code: print a managed settings drop-in instead. */
@@ -447,18 +446,10 @@ async function holdKey(
 ): Promise<HeldKey> {
   const team = client(io);
   try {
-    const issued = await team.issueGatewayKey({
-      ...(options.run ? { kind: "run" as const, run_id: options.run } : {}),
-      ...(options.rotate ? { rotate: true } : {}),
-    });
+    const issued = await team.issueGatewayKey(options.rotate ? { rotate: true } : {});
     return { ...issued, reused: false };
   } catch (error) {
     if ((error as { code?: string }).code !== "key_exists") throw error;
-  }
-  if (options.run) {
-    throw new Error(
-      `Run ${options.run} has a gateway key already, and its value was shown once when it was issued. Run again with --rotate for a new value; the old one stops working.`,
-    );
   }
   const stored = readStoredKey(scope(io).home, membership);
   if (stored) {
@@ -514,7 +505,7 @@ function laptopNotes(files: AppliedChange[], io: GatewayIo): string[] {
   return notes;
 }
 
-function printConnect(report: ConnectReport, io: GatewayIo, run: boolean): ConnectReport {
+function printConnect(report: ConnectReport, io: GatewayIo): ConnectReport {
   const { write } = io;
   const home = scope(io).home;
   for (const warning of report.warnings) write(`Warning: ${warning}`);
@@ -526,9 +517,7 @@ function printConnect(report: ConnectReport, io: GatewayIo, run: boolean): Conne
     } else {
       write(`Gateway key ${report.key.name}. ${limits}`);
       write(
-        run
-          ? "Its value is shown this once; selfhost keeps no copy. It is not a provider key."
-          : `Its value is shown here and kept only on this laptop, in ${tilde(gatewayKeyPath(home), home)} (mode 600), so every agent you connect uses this one key. It is not a provider key.`,
+        `Its value is shown here and kept only on this laptop, in ${tilde(gatewayKeyPath(home), home)} (mode 600), so every agent you connect uses this one key. It is not a provider key.`,
       );
     }
     write("");
@@ -556,7 +545,7 @@ function done(report: ConnectReport, options: ConnectOptions, io: GatewayIo): Co
     io.write(JSON.stringify(report, null, 2));
     return report;
   }
-  return printConnect(report, io, options.run !== undefined);
+  return printConnect(report, io);
 }
 
 const empty = (
@@ -604,8 +593,7 @@ export async function gatewayConnect(
   if (options.managed && agent !== "claude-code") {
     throw new Error("--managed is for claude-code: other agents have no managed env settings");
   }
-  // A run's key expires in a day: it goes in that run's environment, not in a config file.
-  const writes = id !== null && !options.print && !options.managed && !options.run;
+  const writes = id !== null && !options.print && !options.managed;
   const { home, platform } = scope(io);
 
   if (writes && id) {
@@ -639,9 +627,7 @@ export async function gatewayConnect(
 
   const membership = membershipOf(io);
   // The person's key is shared by every agent connected here: a new value goes into all of them.
-  const others = options.run
-    ? []
-    : connectedAgents(home).filter((other) => !(writes && other === id));
+  const others = connectedAgents(home).filter((other) => !(writes && other === id));
   if (options.rotate && others.length > 0) {
     const stuck = others.flatMap((other) =>
       blocking(planConnect(other, PLACEHOLDER, io)).map(
@@ -656,7 +642,7 @@ export async function gatewayConnect(
   }
 
   const held = await holdKey(options, io, membership, others);
-  if (!options.run && !held.reused) storeKey(home, membership, held);
+  if (!held.reused) storeKey(home, membership, held);
   const { spec, note: modelsNote } = await specFor(agent, held, io);
   const kit = options.managed
     ? claudeManagedKit(spec, platform)
@@ -848,7 +834,6 @@ export function registerGateway(
     )
     .argument("<agent>", "claude-code, codex, opencode, goose or env")
     .option("--rotate", "replace your key's value; the old one stops working")
-    .option("--run <id>", "a key for one background run instead, which expires after 24 hours")
     .option("--print", "print the settings to paste instead of writing them")
     .option(
       "--managed",

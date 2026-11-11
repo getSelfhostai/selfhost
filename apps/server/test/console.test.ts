@@ -202,9 +202,39 @@ describe("console sign-in through a proxy", () => {
     expect(((await res.json()) as MeResponse).person?.id).toBe("alice@example.com");
   });
 
+  it("signs an email in teams of two orgs in to the sign-in's org, else the one it joined first", async () => {
+    const admin = caller(appWith(), TOKEN);
+    await admin("/v1/orgs", "POST", { name: "other" });
+    const elsewhere = (await (
+      await admin("/v1/teams", "POST", { name: "Elsewhere", org: "other" })
+    ).json()) as CreateTeamResponse;
+    // Someone else's org, joined later under alice's id.
+    await appWith().request("/v1/join", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ invite: elsewhere.invite, person: "alice@example.com" }),
+    });
+    const me = async (app: ReturnType<typeof appWith>) => {
+      const res = await app.request("/v1/me", { headers: signedIn("alice@example.com") });
+      expect(res.status).toBe(200);
+      return ((await res.json()) as MeResponse).person?.team;
+    };
+    expect(await me(appWith())).toBe("web");
+    const forOther = createApp({
+      version: "test",
+      ledger,
+      token: TOKEN,
+      signin: { secret: SECRET, org: "other" },
+    });
+    expect(await me(forOther)).toBe("elsewhere");
+  });
+
   it("needs a long secret to turn on", () => {
     expect(signinFromEnv({})).toBeUndefined();
     expect(signinFromEnv({ SELFHOST_SIGNIN_PROXY_SECRET: SECRET })).toEqual({ secret: SECRET });
+    expect(
+      signinFromEnv({ SELFHOST_SIGNIN_PROXY_SECRET: SECRET, SELFHOST_SIGNIN_ORG: "acme" }),
+    ).toEqual({ secret: SECRET, org: "acme" });
     expect(() => signinFromEnv({ SELFHOST_SIGNIN_PROXY_SECRET: "short" })).toThrow(/at least 32/);
   });
 });

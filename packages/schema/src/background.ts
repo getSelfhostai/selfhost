@@ -407,6 +407,12 @@ export const BackgroundConfigSchema = Type.Object(
           "Environment variable on the server that holds the secret signed webhooks are checked with. Unset: the webhook trigger is off.",
       }),
     ),
+    webhook_senders: Type.Optional(
+      Type.Array(NonEmpty(), {
+        description:
+          "The person ids a signed webhook may start runs for: the people the bridge that holds the secret speaks for. A sender not on it is refused, so the secret alone does not let a bridge act as anyone. Empty: every signed webhook is refused.",
+      }),
+    ),
     github_label: Type.Optional(
       NonEmpty({
         default: "selfhost",
@@ -454,6 +460,7 @@ export function backgroundSettings(config: {
     stall_minutes: section.stall_minutes ?? 10,
     loop_repeats: section.loop_repeats ?? 6,
     heartbeat_seconds: section.heartbeat_seconds ?? 30,
+    webhook_senders: section.webhook_senders ?? [],
     github_label: section.github_label ?? "selfhost",
     github_command: section.github_command ?? "/selfhost run",
     schedules: section.schedules ?? [],

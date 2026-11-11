@@ -1,5 +1,9 @@
 import type { SecretRef } from "@selfhost/runtime";
-import type { CredentialSource, ResolvedSelfhostConfig, Secrets } from "@selfhost/schema";
+import {
+  type CredentialSource,
+  type ResolvedSelfhostConfig,
+  RUN_SECRET_ENV_PREFIX,
+} from "@selfhost/schema";
 import type { CredentialTarget, EnforcementGap, SecretPlan } from "./translate.js";
 
 /** A secret declared in [secrets.env], parsed. */
@@ -13,10 +17,72 @@ export interface DeclaredSecret {
 const DEFAULT_HEADER = "Authorization";
 const DEFAULT_FORMAT = "Bearer {value}";
 
-export const DEFAULT_VAULT_TOKEN_ENV = "VAULT_TOKEN";
 export const DEFAULT_VAULT_MOUNT = "secret";
 export const DEFAULT_INFISICAL_URL = "https://app.infisical.com";
-export const DEFAULT_INFISICAL_TOKEN_ENV = "INFISICAL_TOKEN";
+
+/** HashiCorp Vault as the server reaches it. */
+export interface VaultSettings {
+  url: string;
+  token: string;
+  mount: string;
+  namespace?: string;
+}
+
+/** Infisical as the server reaches it. */
+export interface InfisicalSettings {
+  url: string;
+  token: string;
+  projectId: string;
+  environment: string;
+}
+
+/**
+ * The secret stores, from the server's own environment only. A team's or a repository's policy
+ * names paths in them and never their address or token, so it cannot send the server's token,
+ * or any other server variable, to a host of its choosing.
+ */
+export interface SecretStores {
+  vault?: VaultSettings;
+  infisical?: InfisicalSettings;
+}
+
+const read = (env: NodeJS.ProcessEnv, name: string) => env[name]?.trim() || undefined;
+
+/**
+ * Vault from VAULT_ADDR, VAULT_TOKEN, VAULT_NAMESPACE and SELFHOST_VAULT_MOUNT; Infisical from
+ * INFISICAL_URL, INFISICAL_TOKEN, INFISICAL_PROJECT_ID and INFISICAL_ENVIRONMENT. A store with
+ * no address (Vault) or no project (Infisical) is not set up.
+ */
+export function storesFromEnv(env: NodeJS.ProcessEnv): SecretStores {
+  const vaultUrl = read(env, "VAULT_ADDR");
+  const vaultToken = read(env, "VAULT_TOKEN");
+  const namespace = read(env, "VAULT_NAMESPACE");
+  const projectId = read(env, "INFISICAL_PROJECT_ID");
+  const environment = read(env, "INFISICAL_ENVIRONMENT");
+  const infisicalToken = read(env, "INFISICAL_TOKEN");
+  return {
+    ...(vaultUrl
+      ? {
+          vault: {
+            url: vaultUrl,
+            token: vaultToken ?? "",
+            mount: read(env, "SELFHOST_VAULT_MOUNT") ?? DEFAULT_VAULT_MOUNT,
+            ...(namespace ? { namespace } : {}),
+          },
+        }
+      : {}),
+    ...(projectId && environment
+      ? {
+          infisical: {
+            url: read(env, "INFISICAL_URL") ?? DEFAULT_INFISICAL_URL,
+            token: infisicalToken ?? "",
+            projectId,
+            environment,
+          },
+        }
+      : {}),
+  };
+}
 
 export function sourceOf(from: string): CredentialSource {
   const scheme = from.slice(0, from.indexOf(":"));
@@ -59,8 +125,10 @@ export class SecretResolveError extends Error {
 }
 
 export interface ResolveDeps {
-  /** The server's environment: env: sources and the stores' tokens. */
+  /** The server's environment: env: sources (SELFHOST_RUN_SECRET_* only) and, by default, the stores. */
   env: NodeJS.ProcessEnv;
+  /** Default: storesFromEnv(env). */
+  stores?: SecretStores;
   fetch?: typeof fetch;
 }
 
@@ -72,8 +140,7 @@ function splitRef(ref: string): { path: string; key: string } {
     : { path: ref.slice(0, hash), key: ref.slice(hash + 1) };
 }
 
-function storeToken(env: NodeJS.ProcessEnv, name: string, store: string): string {
-  const token = env[name]?.trim();
+function storeToken(token: string, name: string, store: string): string {
   if (!token) throw new SecretResolveError(`${store}: ${name} is not set on the server`);
   return token;
 }
@@ -97,15 +164,11 @@ async function getJson(
 const trimSlash = (url: string) => url.replace(/\/+$/, "");
 
 /** A value from HashiCorp Vault's KV version 2 engine: GET /v1/<mount>/data/<path>. */
-async function fromVault(
-  ref: string,
-  settings: NonNullable<Secrets["vault"]>,
-  deps: ResolveDeps,
-): Promise<string> {
+async function fromVault(ref: string, settings: VaultSettings, deps: ResolveDeps): Promise<string> {
   const { path, key } = splitRef(ref);
   const what = `vault:${ref}`;
-  const token = storeToken(deps.env, settings.token_env ?? DEFAULT_VAULT_TOKEN_ENV, "Vault");
-  const mount = (settings.mount ?? DEFAULT_VAULT_MOUNT).replace(/^\/+|\/+$/g, "");
+  const token = storeToken(settings.token, "VAULT_TOKEN", "Vault");
+  const mount = settings.mount.replace(/^\/+|\/+$/g, "");
   const url = `${trimSlash(settings.url)}/v1/${mount}/data/${path.replace(/^\/+/, "")}`;
   const body = (await getJson(
     deps.fetch ?? fetch,
@@ -124,22 +187,18 @@ async function fromVault(
 /** A value from Infisical: GET /api/v4/secrets/<name>?projectId&environment&secretPath. */
 async function fromInfisical(
   ref: string,
-  settings: NonNullable<Secrets["infisical"]>,
+  settings: InfisicalSettings,
   deps: ResolveDeps,
 ): Promise<string> {
   const { path, key } = splitRef(ref);
   const what = `infisical:${ref}`;
-  const token = storeToken(
-    deps.env,
-    settings.token_env ?? DEFAULT_INFISICAL_TOKEN_ENV,
-    "Infisical",
-  );
+  const token = storeToken(settings.token, "INFISICAL_TOKEN", "Infisical");
   const query = new URLSearchParams({
-    projectId: settings.project_id,
+    projectId: settings.projectId,
     environment: settings.environment,
     secretPath: path.startsWith("/") ? path : `/${path}`,
   });
-  const url = `${trimSlash(settings.url ?? DEFAULT_INFISICAL_URL)}/api/v4/secrets/${encodeURIComponent(key)}?${query}`;
+  const url = `${trimSlash(settings.url)}/api/v4/secrets/${encodeURIComponent(key)}?${query}`;
   const body = (await getJson(
     deps.fetch ?? fetch,
     url,
@@ -152,12 +211,12 @@ async function fromInfisical(
 }
 
 /**
- * Reads one declared secret's value from env, Vault or Infisical. github-app: and gateway:
+ * Reads one declared secret's value from the server's environment (SELFHOST_RUN_SECRET_*
+ * only), Vault or Infisical, each as the server is set up to reach it. github-app: and gateway:
  * values are issued per run, not read, so they are not resolved here.
  */
 export async function resolveSecret(
   secret: Pick<DeclaredSecret, "from">,
-  config: Pick<ResolvedSelfhostConfig, "secrets">,
   deps: ResolveDeps,
 ): Promise<string> {
   const colon = secret.from.indexOf(":");
@@ -165,6 +224,12 @@ export async function resolveSecret(
   const ref = secret.from.slice(colon + 1);
   switch (scheme) {
     case "env": {
+      // Checked here too: a config that did not go through parseConfig never saw the schema.
+      if (!ref.startsWith(RUN_SECRET_ENV_PREFIX)) {
+        throw new SecretResolveError(
+          `env:${ref}: env: secrets read only server variables named ${RUN_SECRET_ENV_PREFIX}*`,
+        );
+      }
       const value = deps.env[ref];
       if (value === undefined || value === "") {
         throw new SecretResolveError(`env:${ref}: not set on the server`);
@@ -172,14 +237,17 @@ export async function resolveSecret(
       return value;
     }
     case "vault": {
-      const settings = config.secrets?.vault;
-      if (!settings) throw new SecretResolveError(`vault:${ref}: [secrets.vault] is not set`);
+      const settings = (deps.stores ?? storesFromEnv(deps.env)).vault;
+      if (!settings)
+        throw new SecretResolveError(`vault:${ref}: VAULT_ADDR is not set on the server`);
       return fromVault(ref, settings, deps);
     }
     case "infisical": {
-      const settings = config.secrets?.infisical;
+      const settings = (deps.stores ?? storesFromEnv(deps.env)).infisical;
       if (!settings) {
-        throw new SecretResolveError(`infisical:${ref}: [secrets.infisical] is not set`);
+        throw new SecretResolveError(
+          `infisical:${ref}: INFISICAL_PROJECT_ID and INFISICAL_ENVIRONMENT are not set on the server`,
+        );
       }
       return fromInfisical(ref, settings, deps);
     }

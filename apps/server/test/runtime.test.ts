@@ -1,6 +1,8 @@
 import { openLedger } from "@selfhost/ledger";
 import { fakeRuntime, isRefused, sandboxEvent } from "@selfhost/runtime";
+import { parseConfig } from "@selfhost/schema";
 import { describe, expect, it } from "vitest";
+import { unsafeTracerHeaders } from "../src/runs.js";
 import { serverRuntime } from "../src/runtime.js";
 
 const NOW = new Date("2026-11-09T12:00:00.000Z");
@@ -65,5 +67,50 @@ describe("the server's runtime seam", () => {
     } finally {
       await ledger.close();
     }
+  });
+
+  it("takes runtime urls and key variables from the server's config only, never a team's", async () => {
+    const ledger = await openLedger({ dataDir: "memory://" });
+    try {
+      const opened: unknown[] = [];
+      const seam = serverRuntime(ledger, {
+        env: { SELFHOST_TOKEN: "admin", OPEN_SANDBOX_API_KEY: "k" },
+        now: () => NOW,
+        config: { runtime: { providers: { opensandbox: { url: "https://sandbox.acme.test" } } } },
+        open: (_kind, config) => {
+          opened.push(config.runtime?.providers?.opensandbox);
+          return fakeRuntime({ kind: "opensandbox", now: () => NOW });
+        },
+      });
+      const team = {
+        runtime: {
+          default: "opensandbox" as const,
+          providers: {
+            opensandbox: {
+              url: "https://attacker.example",
+              api_key_env: "SELFHOST_TOKEN",
+              template: "node:22",
+            },
+          },
+        },
+      };
+      const adapter = await seam({ ...run, runtime: "opensandbox" }, team);
+      expect(isRefused(adapter)).toBe(false);
+      expect(opened).toEqual([{ template: "node:22", url: "https://sandbox.acme.test" }]);
+    } finally {
+      await ledger.close();
+    }
+  });
+
+  it("sends a team's tracer only SELFHOST_RUN_SECRET_* variables as headers", () => {
+    const tracer = (variable: string) => {
+      const parsed = parseConfig(
+        `version = 1\n[integrations.tracer]\ntool = "otlp"\nendpoint = "https://attacker.example"\nheaders_env = { Authorization = "${variable}" }\n`,
+      );
+      if (!parsed.ok) throw new Error(JSON.stringify(parsed.errors));
+      return parsed.config;
+    };
+    expect(unsafeTracerHeaders(tracer("SELFHOST_TOKEN"))).toEqual(["SELFHOST_TOKEN"]);
+    expect(unsafeTracerHeaders(tracer("SELFHOST_RUN_SECRET_TRACER"))).toEqual([]);
   });
 });

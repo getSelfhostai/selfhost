@@ -349,7 +349,9 @@ How people sign in to it:
   it in `X-Selfhost-Proxy-Secret` with the signed-in email in `X-Selfhost-Email`. Only then, and
   only for GET requests under `/v1` with no bearer token, does the server read as the person
   whose id is that email (ignoring case) and who still holds a person token; anyone else gets
-  403. The proxy must drop both headers from what clients send. Writes always need a token.
+  403. Person ids are unique within an org only, so an email in teams of several orgs reads as
+  its person in `SELFHOST_SIGNIN_ORG` when that is set, else in the org it joined first. The
+  proxy must drop both headers from what clients send. Writes always need a token.
 
 ## GitHub App
 
@@ -615,9 +617,13 @@ turns into a `stuck_run` item for the run's owner; the owner's notification targ
   target, reason? }` stops every run in scope and refuses new ones; `DELETE
   /v1/background-runs/kill?scope&target` clears it. Who used each switch is kept.
 - `POST /v1/background-runs/webhook`: a run from a signed webhook, `X-Selfhost-Signature-256:
-  sha256=<HMAC of the body>` under the secret in the variable `[background] webhook_secret_env`
-  names. The Slack and Telegram bridges in [`examples/run-triggers`](../../examples/run-triggers)
-  post here; they are not part of the server.
+  sha256=<HMAC of "<timestamp>.<delivery>.<body>">` under the secret in the variable
+  `[background] webhook_secret_env` names, with `X-Selfhost-Timestamp` (Unix seconds, within 5
+  minutes of the server's clock) and `X-Selfhost-Delivery` (a new id per request, taken once), so
+  a captured request cannot be sent again. The sender must be on `[background] webhook_senders`:
+  the secret speaks only for those people. The Slack and Telegram bridges in
+  [`examples/run-triggers`](../../examples/run-triggers) post here; they are not part of the
+  server.
 - GitHub: a `/selfhost run [--agent codex] <task>` comment on an issue or pull request, or the
   `[background] github_label` on an issue, starts a run for the sender, mapped to a person
   through `[review] github_logins`; the App answers on the issue either way.
@@ -670,28 +676,32 @@ pnpm --filter @selfhost/server start   # runs the build
 
 Environment:
 
-| Variable                           | Default            | Meaning                                                                                                             |
-| ---------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| `PORT`                             | `4400`             | Port to listen on.                                                                                                  |
-| `HOST`                             | `127.0.0.1`        | Address to bind.                                                                                                    |
-| `DATABASE_URL`                     | unset              | `postgres://` URL. Unset uses the embedded database.                                                                |
-| `SELFHOST_DATA_DIR`                | `~/.selfhost/data` | Embedded database and token file.                                                                                   |
-| `SELFHOST_TOKEN`                   | unset              | API token. Unset uses or creates `<data dir>/token`.                                                                |
-| `SELFHOST_CONFIG`                  | unset              | `selfhost.toml` with the defaults for events with no team policy: `[ledger]`, `[[redaction]]`, `[review]`.          |
-| `SELFHOST_RETENTION_SWEEP`         | `daily`            | `off` keeps every event instead of deleting expired ones daily.                                                     |
-| `SELFHOST_REVIEW_REFRESH`          | `15s`              | `off` stops building review items and timing out approvals on this server.                                          |
-| `SELFHOST_TRACE_EXPORT`            | `1m`               | `off` stops sending finished runs to each team's `[integrations.tracer]` from this server.                          |
-| `SELFHOST_CACHE_ALERTS`            | `1m`               | `off` stops raising prompt cache alerts for sessions whose hit rate collapsed, from this server.                    |
-| `SELFHOST_APPRISE_URL`             | unset              | Apprise API server notifications go through (`compose.notify.yml`: `http://apprise:8000`). Unset sends none.        |
-| `SELFHOST_NOTIFY`                  | `1m`               | `off` stops sending notifications from this server, when another one sends them from the same database.             |
-| `SELFHOST_GITHUB_APP_ID`           | unset              | GitHub App id. With the key and secret, turns on `POST /v1/github/webhooks`.                                        |
-| `SELFHOST_GITHUB_PRIVATE_KEY`      | unset              | The App's private key (PEM, or one line with `\n` escapes).                                                         |
-| `SELFHOST_GITHUB_PRIVATE_KEY_FILE` | unset              | Path to the App's .pem, instead of `SELFHOST_GITHUB_PRIVATE_KEY`.                                                   |
-| `SELFHOST_GITHUB_WEBHOOK_SECRET`   | unset              | The App's webhook secret.                                                                                           |
-| `SELFHOST_GITHUB_TEAM`             | unset              | Team whose stored `selfhost.toml` sets `[review]` for GitHub, and whose review items pick the owner.                |
-| `SELFHOST_PUBLIC_URL`              | unset              | This server's URL as people reach it, for brief links and the receipts' OIDC audience. Unset: the request's origin. |
-| `SELFHOST_GITHUB_OIDC_ISSUER`      | GitHub's           | Issuer of the CI OIDC tokens `POST /v1/receipts` accepts; set it on GitHub Enterprise Server.                       |
-| `SELFHOST_CONSOLE`                 | on                 | `off` serves `/v1` only, no web console at `/`.                                                                     |
-| `SELFHOST_CONSOLE_DIR`             | unset              | The built console to serve at `/`. Unset uses the one built into the server.                                        |
-| `SELFHOST_SIGNIN_PROXY_SECRET`     | unset              | Turns on console sign-in through a proxy that sends it with the signed-in email. See [Console](#console).           |
-| `SELFHOST_GIT_CLONES`              | unset              | Folder of clones at `<owner>/<name>` (lower case), read for provenance and module revert rates.                     |
+| Variable                           | Default            | Meaning                                                                                                                         |
+| ---------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                             | `4400`             | Port to listen on.                                                                                                              |
+| `HOST`                             | `127.0.0.1`        | Address to bind.                                                                                                                |
+| `DATABASE_URL`                     | unset              | `postgres://` URL. Unset uses the embedded database.                                                                            |
+| `SELFHOST_DATA_DIR`                | `~/.selfhost/data` | Embedded database and token file.                                                                                               |
+| `SELFHOST_TOKEN`                   | unset              | API token. Unset uses or creates `<data dir>/token`.                                                                            |
+| `SELFHOST_CONFIG`                  | unset              | `selfhost.toml` with the defaults for events with no team policy: `[ledger]`, `[[redaction]]`, `[review]`.                      |
+| `SELFHOST_RETENTION_SWEEP`         | `daily`            | `off` keeps every event instead of deleting expired ones daily.                                                                 |
+| `SELFHOST_REVIEW_REFRESH`          | `15s`              | `off` stops building review items and timing out approvals on this server.                                                      |
+| `SELFHOST_TRACE_EXPORT`            | `1m`               | `off` stops sending finished runs to each team's `[integrations.tracer]` from this server.                                      |
+| `SELFHOST_CACHE_ALERTS`            | `1m`               | `off` stops raising prompt cache alerts for sessions whose hit rate collapsed, from this server.                                |
+| `SELFHOST_APPRISE_URL`             | unset              | Apprise API server notifications go through (`compose.notify.yml`: `http://apprise:8000`). Unset sends none.                    |
+| `SELFHOST_NOTIFY`                  | `1m`               | `off` stops sending notifications from this server, when another one sends them from the same database.                         |
+| `SELFHOST_GITHUB_APP_ID`           | unset              | GitHub App id. With the key and secret, turns on `POST /v1/github/webhooks`.                                                    |
+| `SELFHOST_GITHUB_PRIVATE_KEY`      | unset              | The App's private key (PEM, or one line with `\n` escapes).                                                                     |
+| `SELFHOST_GITHUB_PRIVATE_KEY_FILE` | unset              | Path to the App's .pem, instead of `SELFHOST_GITHUB_PRIVATE_KEY`.                                                               |
+| `SELFHOST_GITHUB_WEBHOOK_SECRET`   | unset              | The App's webhook secret.                                                                                                       |
+| `SELFHOST_GITHUB_TEAM`             | unset              | Team whose stored `selfhost.toml` sets `[review]` for GitHub, and whose review items pick the owner.                            |
+| `SELFHOST_PUBLIC_URL`              | unset              | This server's URL as people reach it, for brief links and the receipts' OIDC audience. Unset: the request's origin.             |
+| `SELFHOST_GITHUB_OIDC_ISSUER`      | GitHub's           | Issuer of the CI OIDC tokens `POST /v1/receipts` accepts; set it on GitHub Enterprise Server.                                   |
+| `SELFHOST_CONSOLE`                 | on                 | `off` serves `/v1` only, no web console at `/`.                                                                                 |
+| `SELFHOST_CONSOLE_DIR`             | unset              | The built console to serve at `/`. Unset uses the one built into the server.                                                    |
+| `SELFHOST_SIGNIN_PROXY_SECRET`     | unset              | Turns on console sign-in through a proxy that sends it with the signed-in email. See [Console](#console).                       |
+| `SELFHOST_SIGNIN_ORG`              | unset              | The org console sign-in is for, when an email is in teams of several orgs. Unset: the org it joined first.                      |
+| `SELFHOST_RUN_SECRET_*`            | unset              | Values `env:` secrets in a team's `[secrets.env]` may read for background runs; no other server variable can be.                |
+| `VAULT_ADDR`, `VAULT_TOKEN`        | unset              | Vault for `vault:` secrets, with `VAULT_NAMESPACE` and `SELFHOST_VAULT_MOUNT` (default `secret`). Never set by a policy.        |
+| `INFISICAL_PROJECT_ID`             | unset              | Infisical for `infisical:` secrets, with `INFISICAL_ENVIRONMENT`, `INFISICAL_TOKEN` and `INFISICAL_URL`. Never set by a policy. |
+| `SELFHOST_GIT_CLONES`              | unset              | Folder of clones at `<owner>/<name>` (lower case), read for provenance and module revert rates.                                 |

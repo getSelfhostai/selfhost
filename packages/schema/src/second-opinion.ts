@@ -86,6 +86,10 @@ export function secondOpinionPull(event: Pick<LedgerEvent, "links" | "target">) 
 /** The second opinion a review.submitted event holds, or undefined for any other event. */
 export function secondOpinionOf(event: LedgerEvent): SecondOpinion | undefined {
   if (event.kind !== SECOND_OPINION_EVENT_KIND) return undefined;
+  // Only the GitHub webhook writes opinions, as the reviewer's system actor; a person token's
+  // events are refused at the API, and one a laptop forwards carries data.sent_by.
+  if (event.source !== "github" || event.actor.kind !== "system") return undefined;
+  if (event.data?.sent_by !== undefined) return undefined;
   const checked = dataValidator.validate(event.data?.second_opinion);
   if (!checked.ok) return undefined;
   return { ...checked.value, at: new Date(event.ts).toISOString(), event_id: event.id };
