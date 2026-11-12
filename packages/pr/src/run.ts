@@ -170,6 +170,18 @@ export function runAgent(run: Run | undefined): AgentRef | undefined {
 }
 
 /**
+ * The actor of the pull request events (pr.opened, pr.merged, pr.closed) the selfhost GitHub
+ * App's webhook records on a run: what GitHub did to its pull request, not what the run did, so
+ * they are not part of the run read for a brief.
+ */
+export const GITHUB_APP_ACTOR = "selfhost-github-app";
+
+const fromGitHubApp = (event: LedgerEvent) =>
+  event.actor.kind === "system" &&
+  event.actor.id === GITHUB_APP_ACTOR &&
+  event.kind.startsWith("pr.");
+
+/**
  * The run behind a change: sessions whose commits are in it (commit.created events, or the
  * sessions readCommits matched by session link, file and time), with every event they recorded,
  * their tool calls and the guardrail hits on them. Undefined when no session made the commits.
@@ -206,7 +218,9 @@ export async function readRun(
   for (const session of ids) {
     const cwd = await sessionCwd(ledger, session, cwds);
     const own: LedgerEvent[] = [];
-    for await (const event of ledgerEvents(ledger, { session })) own.push(event);
+    for await (const event of ledgerEvents(ledger, { session })) {
+      if (!fromGitHubApp(event)) own.push(event);
+    }
     own.sort((a, b) => compare(a.ts, b.ts) || compare(a.id, b.id));
     for (const event of own) {
       // Calls outside the repository count too: an outside effect rarely touches it.

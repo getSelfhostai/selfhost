@@ -778,7 +778,10 @@ agents run on each hook event. It reads the payload from stdin (the last argumen
 `codex-notify`), appends one line `{agent, received_at, payload}` to
 `~/.selfhost/spool/hooks-<UTC day>.jsonl` with a single append, and exits 0 even when that fails.
 Tool output and file contents (`tool_response`, and Cursor's `output` and `content`) are
-dropped. It never opens the ledger, since the embedded database takes one process at a time and
+dropped, except the pull request URL a shell `gh pr create` (or a `git push` GitHub answers with
+an open pull request) printed, kept as `pr_url` and imported as `links.pr_url` on the call's
+`tool.result`: the run's link to its pull request, which the run view lists and `selfhost share`
+posts on (the team server records `pr.opened` itself, from the GitHub App). It never opens the ledger, since the embedded database takes one process at a time and
 agents run hooks concurrently. Pre-tool events also get an answer on stdout (see
 [Guardrails](#guardrails-selfhost-guard)); every other event prints nothing, except Cursor's
 `beforeSubmitPrompt`, which gets `{"continue":true}` because Cursor reads a silent hook as a

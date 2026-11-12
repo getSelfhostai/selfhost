@@ -140,6 +140,20 @@ function trigger(labelEvents: boolean): string {
   return `on:\n  pull_request:\n    types: ${types}`;
 }
 
+/**
+ * The workflow's concurrency: a newer push to the pull request cancels the review of the older
+ * one. A `labeled` event runs in a group of its own label, so the App labeling a pull request
+ * seconds after it opens (its risk label, then its agent label) never cancels the review the
+ * opening started: the job's `if` skips most label events, but concurrency is applied first.
+ */
+function concurrency(prefix: string, labelEvents: boolean): string {
+  const action = "github.event.action == 'labeled'";
+  const lane = labelEvents
+    ? `-\${{ ${action} && format('label-{0}', github.event.label.name) || 'change' }}`
+    : "";
+  return `concurrency:\n  group: ${prefix}-\${{ github.event.pull_request.number }}${lane}\n  cancel-in-progress: true`;
+}
+
 function jobCondition(
   pullRequests: ReviewerPullRequests,
   options: ReviewerSetupOptions,
@@ -193,9 +207,7 @@ function prAgent(options: ReviewerSetupOptions, pullRequests: ReviewerPullReques
   ])}
 name: PR-Agent review
 ${trigger(pullRequests === "agent")}
-concurrency:
-  group: selfhost-pr-agent-\${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+${concurrency("selfhost-pr-agent", pullRequests === "agent")}
 permissions:
   contents: read
   issues: write
@@ -300,9 +312,7 @@ function claudeCodeAction(
   ])}
 name: Claude Code review
 ${trigger(labelEvents)}
-concurrency:
-  group: selfhost-claude-review-\${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+${concurrency("selfhost-claude-review", labelEvents)}
 permissions:
   contents: read
   issues: read

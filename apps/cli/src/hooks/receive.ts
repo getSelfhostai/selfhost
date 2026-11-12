@@ -84,6 +84,11 @@ export interface SpoolLine {
   payload: unknown;
   /** Set on pre-tool events. */
   guard?: GuardRecord;
+  /**
+   * The pull request a shell call opened or pushed to, read from its output before the output
+   * is dropped: the run's link to it (see pullRequestUrl).
+   */
+  pr_url?: string;
 }
 
 /**
@@ -124,10 +129,49 @@ function parsePayload(text: string): Record<string, unknown> {
   return payload as Record<string, unknown>;
 }
 
+/** A pull request on github.com, as `gh pr create` prints it; not a /pull/new/ link. */
+export const PULL_REQUEST_URL = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/;
+
+/** Shell commands whose output names the pull request they opened or pushed to. */
+const PULL_COMMAND = /\bgh\s+pr\s+create\b|\bgit\s+push\b/;
+
+const textOf = (value: unknown): string =>
+  typeof value === "string"
+    ? value
+    : Array.isArray(value)
+      ? value.filter((part) => typeof part === "string").join(" ")
+      : "";
+
+/**
+ * The pull request a finished shell call opened, from its output: `gh pr create` prints the new
+ * pull request's URL, and `git push` to a branch with one open shows it in GitHub's remote
+ * message. Undefined for anything else.
+ */
+export function pullRequestUrl(payload: Record<string, unknown>): string | undefined {
+  if (payload.hook_event_name !== "PostToolUse") return undefined;
+  const input = payload.tool_input;
+  const command =
+    typeof input === "string"
+      ? input
+      : typeof input === "object" && input !== null
+        ? textOf((input as Record<string, unknown>).command) ||
+          textOf((input as Record<string, unknown>).cmd)
+        : "";
+  if (!PULL_COMMAND.test(command)) return undefined;
+  const response = payload.tool_response;
+  const output =
+    typeof response === "object" && response !== null
+      ? ["stdout", "stderr", "output"]
+          .map((key) => textOf((response as Record<string, unknown>)[key]))
+          .join("\n")
+      : textOf(response);
+  return PULL_REQUEST_URL.exec(output)?.[0];
+}
+
 /**
  * Appends one payload to the spool. Tool output and file contents (tool_response, and Cursor's
  * output and content) are replaced with null: the ledger never reads them, and they can be large
- * or hold secrets.
+ * or hold secrets. Only the pull request URL a shell call printed is kept, as pr_url.
  */
 export function appendToSpool(
   dir: string,
@@ -137,12 +181,14 @@ export function appendToSpool(
   guard?: GuardRecord,
 ) {
   const payload = typeof text === "string" ? parsePayload(text) : { ...text };
+  const prUrl = pullRequestUrl(payload);
   for (const field of DROPPED_FIELDS) if (field in payload) payload[field] = null;
   const line: SpoolLine = {
     agent,
     received_at: now.toISOString(),
     payload,
     ...(guard ? { guard } : {}),
+    ...(prUrl ? { pr_url: prUrl } : {}),
   };
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   appendFileSync(spoolFile(dir, line.received_at), `${JSON.stringify(line)}\n`, { mode: 0o600 });

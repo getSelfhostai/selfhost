@@ -388,17 +388,22 @@ function laptopSystemRefusal(event: Record<string, unknown>): BatchError["field"
 }
 
 /**
- * Kinds only the server writes: a reviewer's verdict and a pull request's merge or close, from
- * the GitHub App's webhook, and a pull request opened, from a background run. From a person token
- * they would let an agent on a laptop approve its own pull request, or open an agent PR item with
- * the risk score and tests-first result it likes. No laptop path writes them: the CLI's PR
- * attribution reads pull requests for its reports and keeps them out of the ledger.
+ * Kinds only the server writes: a reviewer's verdict and an agent pull request's opening, merge
+ * or close, from the GitHub App's webhook (for agent pull requests in claimed repositories), and
+ * a pull request opened by a background run. From a person token they would let an agent on a
+ * laptop approve its own pull request, or open an agent PR item with the risk score and
+ * tests-first result it likes. No laptop path writes them: the CLI's PR attribution reads pull
+ * requests for its reports and keeps them out of the ledger, and the hook records the pull
+ * request a run opened as a link (links.pr_url on the call's tool.result), not as pr.opened.
  */
 const SERVER_ONLY_KINDS: ReadonlyMap<string, string> = new Map([
   ["review.submitted", "only the GitHub App's webhook records it"],
   ["pr.merged", "only the GitHub App's webhook records it"],
   ["pr.closed", "only the GitHub App's webhook records it"],
-  ["pr.opened", "only the server records it, for the pull requests its background runs open"],
+  [
+    "pr.opened",
+    "only the server records it, from the GitHub App's webhook and for the pull requests its background runs open",
+  ],
 ]);
 
 const SYSTEM_REFUSALS: Record<string, string> = {

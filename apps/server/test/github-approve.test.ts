@@ -2,8 +2,8 @@ import { generateKeyPairSync } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Webhooks } from "@octokit/webhooks";
-import { createGitHubApp } from "@selfhost/github";
-import { FakeGitHub } from "@selfhost/github/testing";
+import { createGitHubApp, STATUSES_UNREADABLE } from "@selfhost/github";
+import { FakeGitHub, type FakeGitHubOptions } from "@selfhost/github/testing";
 import { stableEventId } from "@selfhost/ledger";
 import { openReviewList, refreshReviewList } from "@selfhost/review";
 import {
@@ -16,7 +16,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { GITHUB_WEBHOOK_PATH } from "../src/github.js";
 import { AUTO_APPROVE_DRY_RUN_ALERT, secondOpinionOf } from "../src/github-approve.js";
 import type { RiskAssessment } from "../src/github-pull.js";
-import { startTestServer, type TestServer } from "./helpers.js";
+import { claimRepos, startTestServer, type TestServer } from "./helpers.js";
 
 const FIXTURES = join(import.meta.dirname, "..", "..", "..", "fixtures");
 const REPO = "acme/acme-api";
@@ -73,8 +73,8 @@ afterEach(async () => {
 
 let deliveries = 0;
 
-async function harness(toml = AUTO) {
-  const github = new FakeGitHub();
+async function harness(toml = AUTO, fake: FakeGitHubOptions = {}) {
+  const github = new FakeGitHub(fake);
   const pull = github.addPull(REPO, 101, {
     author: "alice",
     title: PULL.title,
@@ -123,6 +123,7 @@ async function harness(toml = AUTO) {
     providers: { risk: async () => state.risk },
   });
   open.push(server);
+  await claimRepos(server.ledger, [REPO]);
   // The agent's session made the head commit: its run, with no guardrail hits yet.
   await server.ledger.append([
     event({ kind: "commit.created", links: { commit_sha: HEAD }, repo: REPO }),
@@ -253,6 +254,19 @@ describe("auto-approve through the GitHub App", () => {
     ]);
     expect(h.reviewWrites()).toHaveLength(1);
     expect((await h.records()).decisions).toHaveLength(1);
+  });
+
+  // The App's documented permissions once lacked "Commit statuses: read": the combined status
+  // answered 403 on every delivery and require_green_checks failed with every check green.
+  it("counts the check runs alone, and says so, when the App may not read commit statuses", async () => {
+    const h = await harness(`${AUTO}dry_run = false\nrequire_green_checks = true\n`, {
+      noStatusesPermission: true,
+    });
+    await h.deliver("pull_request.opened");
+    expect(h.reviewWrites()).toHaveLength(1);
+    const text = h.github.checkRuns.find((r) => r.name === "selfhost/review")?.output.text;
+    expect(text).toContain(`1 check passed on the head commit (${STATUSES_UNREADABLE})`);
+    expect((await h.records()).decisions[0]?.decision?.reason).toContain(STATUSES_UNREADABLE);
   });
 
   it("ignores finished check suites while auto-approve is off", async () => {

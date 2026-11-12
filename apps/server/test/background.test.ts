@@ -25,7 +25,9 @@ import { createApp } from "../src/app.js";
 import {
   allTeams,
   BACKGROUND_WEBHOOK_PATH,
+  commentReason,
   createBackground,
+  githubRunTrigger,
   runModelCost,
   startScheduleJob,
   teamSettings,
@@ -366,6 +368,67 @@ describe("background runs over HTTP", () => {
           expect.objectContaining({ source: "github_comment", sender: "octocat", accepted: true }),
         ],
       ]),
+    );
+  });
+
+  it("starts no run from a /selfhost run comment on a repository the team did not claim", async () => {
+    const h = await harness();
+    // The App also covers the public product repo; SELFHOST_GITHUB_TEAM (web) never claimed it.
+    const payload = JSON.parse(
+      readFileSync(join(WEBHOOKS, "issue_comment.created.run.json"), "utf8").replaceAll(
+        "acme/acme-api",
+        "getselfhostai/selfhost",
+      ),
+    );
+    payload.repository = {
+      ...payload.repository,
+      name: "selfhost",
+      owner: { login: "getselfhostai" },
+    };
+    const text = JSON.stringify(payload);
+    const res = await h.server.request(GITHUB_WEBHOOK_PATH, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-github-delivery": "d-unclaimed",
+        "x-github-event": "issue_comment",
+        "x-hub-signature-256": await signer.sign(text),
+      },
+      body: text,
+    });
+    expect(await res.json()).toMatchObject({
+      handled: false,
+      skipped:
+        "getselfhostai/selfhost is not claimed by team web: add it with selfhost team repo add for GitHub deliveries to act on it",
+    });
+    expect(await h.ledger.backgroundRuns.list()).toEqual([]);
+    expect(h.github.requests).toEqual([]);
+    // Called directly (as another path would), the trigger refuses it too, with no reply.
+    const direct = await githubRunTrigger(
+      h.ledger,
+      h.background,
+      "issue_comment",
+      payload,
+      "web",
+      async () => true,
+    );
+    expect(direct).toEqual({
+      refused:
+        "getselfhostai/selfhost is not claimed by team web: add it with selfhost team repo add",
+    });
+    expect(h.github.requests).toEqual([]);
+  });
+
+  it("answers a refused comment with one period and no flag a comment cannot pass", () => {
+    expect(
+      commentReason(
+        "No runtime for team web (runtime.default): The task names no runtime and none is set: name one with --runtime, or set [runtime] default.",
+      ),
+    ).toBe(
+      "No runtime for team web (runtime.default): The task names no runtime and none is set: set [runtime] default in the team's selfhost.toml (a comment cannot name a runtime).",
+    );
+    expect(commentReason("mallory is not mapped to a selfhost person")).toBe(
+      "mallory is not mapped to a selfhost person.",
     );
   });
 

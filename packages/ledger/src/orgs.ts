@@ -67,6 +67,8 @@ export interface OrgStore {
   listRepos(team: string): Promise<TeamRepo[]>;
   /** The team that owns a repo in an org. */
   repoOwner(org: string, repo: string): Promise<TeamRepo | undefined>;
+  /** Every team that claimed a repo (owner/name, any case), one per org, by org. */
+  repoClaims(repo: string): Promise<TeamRepo[]>;
   getRepoPolicy(org: string, repo: string): Promise<string | undefined>;
   setRepoPolicy(org: string, repo: string, text: string): Promise<void>;
   /**
@@ -248,6 +250,14 @@ export function createOrgStore(db: Database): OrgStore {
         [org, repo],
       );
       return row ? toRepo(row) : undefined;
+    },
+
+    async repoClaims(repo) {
+      const rows = await db.query<RepoRow>(
+        `SELECT ${REPO_COLUMNS} FROM team_repos WHERE repo = $1 ORDER BY org_id`,
+        [repo.toLowerCase()],
+      );
+      return rows.map(toRepo);
     },
 
     async getRepoPolicy(org, repo) {

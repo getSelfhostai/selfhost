@@ -73,6 +73,11 @@ export interface RefreshResult {
    * decider may not give, so the item stays as it was. Only set when there are some.
    */
   refused?: RefusedDecision[];
+  /**
+   * The pull request URLs of `pr` items this refresh escalated to another route, so whoever
+   * shows the route on GitHub (the review request) can push it now. Only set when there are some.
+   */
+  escalated?: string[];
 }
 
 /** A decision event the refresh did not apply to its item, and why. */
@@ -615,7 +620,7 @@ async function escalate(tx: Queryable, run: Run): Promise<void> {
       ...(codeowners ? { codeowners } : {}),
     };
     const input = routeInput(item, stored.paths, stored.tool ? { tool: stored.tool } : {});
-    const { routing } = escalateRoute(
+    const { routing, escalated } = escalateRoute(
       config,
       input,
       { owners: item.owners, route: item.route },
@@ -627,7 +632,12 @@ async function escalate(tx: Queryable, run: Run): Promise<void> {
       route: routing.route,
       updated_at: run.now.toISOString(),
     };
-    if (await updateItem(tx, { ...stored, item: next })) run.result.updated += 1;
+    if (await updateItem(tx, { ...stored, item: next })) {
+      run.result.updated += 1;
+      if (escalated && item.kind === "pr" && item.url) {
+        run.result.escalated = [...(run.result.escalated ?? []), item.url];
+      }
+    }
   }
 }
 

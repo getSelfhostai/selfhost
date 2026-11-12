@@ -8,7 +8,8 @@ import { startCacheAlertJob } from "./cache-alerts.js";
 import { findConsoleDir } from "./console.js";
 import { loadExceptionKeys } from "./exception-keys.js";
 import { gatewayFromEnv, startGatewayJob } from "./gateway.js";
-import { githubAppFromEnv, githubConfig } from "./github.js";
+import { githubAppFromEnv, githubConfig, pullSync, resyncPulls } from "./github.js";
+import { appCodeowners } from "./github-review.js";
 import { notifyFromEnv, startNotifyJob } from "./notify.js";
 import { clonesUnder } from "./provenance.js";
 import { serverConfig, startRetentionJob } from "./retention.js";
@@ -101,6 +102,16 @@ if (background && process.env.SELFHOST_BACKGROUND_RECOVER !== "off") {
     console.log(`background runs: ${recovered.length} left from the last start marked failed`);
 }
 
+// One pull request sync for webhook deliveries and for escalations the review list makes, so
+// the two take turns on a pull request instead of racing.
+const pulls = github.app
+  ? pullSync(github.app, ledger, {
+      ...github,
+      ...(clones ? { clones } : {}),
+      ...(background ? { background } : {}),
+    })
+  : undefined;
+
 // Set once the jobs below start: an agent that starts to wait wakes the review refresh, and a
 // refresh that raises a budget alert wakes the notify pass. Any refresh that files an item, on
 // any path (the job, an agent's ask_human through MCP), wakes the notify pass itself (see
@@ -117,7 +128,7 @@ const server = serve(
       token,
       config,
       exceptionKeys,
-      github,
+      github: { ...github, ...(pulls ? { pulls } : {}) },
       ...(web ? { console: web } : {}),
       ...(signin ? { signin } : {}),
       ...(clones ? { clones } : {}),
@@ -151,6 +162,14 @@ const retention =
     ? undefined
     : startRetentionJob(ledger, { days: config.ledger.retention_days });
 
+const resync =
+  github.app && pulls
+    ? resyncPulls(github.app, ledger, pulls, {
+        ...(githubTeam ? { team: githubTeam } : {}),
+        server: publicUrl ?? `http://${hostname}:${port}`,
+      })
+    : undefined;
+
 // SELFHOST_REVIEW_REFRESH=off stops building review items from new events and timing out
 // approvals, for installs where another server does it against the same database.
 const reviews =
@@ -160,7 +179,14 @@ const reviews =
         config,
         gateway: gateway !== undefined,
         changed: () => wakeups.notify?.(),
-        ...(clones ? { codeowners: clonesCodeowners(clones) } : {}),
+        // CODEOWNERS from the clones, else through the GitHub App, as its pull request sync reads it.
+        ...(clones
+          ? { codeowners: clonesCodeowners(clones) }
+          : github.app
+            ? { codeowners: appCodeowners(github.app) }
+            : {}),
+        // An escalated pull request's new review request goes to GitHub now.
+        ...(resync ? { escalated: (urls: string[]) => void resync(urls) } : {}),
       });
 
 // SELFHOST_TRACE_EXPORT=off stops sending finished runs to each team's [integrations.tracer],

@@ -24,6 +24,8 @@
       { "file": "webhooks/pull_request.opened.json", "case": "alice opens pull request 101 from a claude/ branch: an agent pull request, at head 5786c5c9." },
       { "file": "webhooks/pull_request.synchronize.json", "case": "A push moves pull request 101 to head b2e4f6a8; it already carries selfhost:risk-low and selfhost:agent-claude-code." },
       { "file": "webhooks/pull_request.labeled.json", "case": "carol adds selfhost:risk-medium to pull request 101 by hand." },
+      { "file": "webhooks/pull_request.closed.merged.json", "case": "bob merges Claude Code pull request 101 (merge commit 9f1c2e3d)." },
+      { "file": "webhooks/pull_request.closed.json", "case": "alice closes Claude Code pull request 101 without merging it." },
       { "file": "webhooks/pull_request.opened.person.json", "case": "bob opens plain pull request 106: no agent, so nothing is synced." },
       { "file": "webhooks/reviewers/pull_request_review.submitted.coderabbit.json", "case": "coderabbitai[bot] reviews Claude Code pull request 101 (commented): 2 actionable comments and 1 outside the diff (Major), plus a Minor nitpick that does not count." },
       { "file": "webhooks/reviewers/coderabbit-review-comments.json", "case": "GET /repos/acme/acme-api/pulls/101/reviews/9301/comments: the inline comments of that review, one Critical and one Minor." },

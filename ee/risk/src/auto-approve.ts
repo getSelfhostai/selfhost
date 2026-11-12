@@ -28,6 +28,8 @@ export interface AutoApproveInputs {
   files: readonly string[];
   /** Every check run and commit status on the head commit, selfhost's own left out. */
   checks?: readonly { name: string; state: HeadCheckState }[];
+  /** Which checks could not be read, such as commit statuses: said with the checks step. */
+  checksNote?: string;
   /** Guardrail hits of the agent's run, from the ledger. Undefined when no run was recorded. */
   guardrails?: readonly GuardrailHit[];
   secondOpinion?: SecondOpinion;
@@ -113,17 +115,20 @@ function pathsStep(
 function checksStep(
   checks: AutoApproveInputs["checks"],
   required: boolean,
+  note?: string,
 ): Pick<AutoApproveStep, "passed" | "detail"> {
   if (!required) return { passed: true, detail: "Green checks not required" };
+  const step = (passed: boolean, detail: string) => ({
+    passed,
+    detail: note ? `${detail} (${note})` : detail,
+  });
   if (!checks) return { passed: false, detail: "The head commit's checks could not be read" };
-  if (checks.length === 0) {
-    return { passed: false, detail: "No checks have reported on the head commit" };
-  }
+  if (checks.length === 0) return step(false, "No checks have reported on the head commit");
   const failed = checks.filter((check) => check.state === "failed").map((check) => check.name);
-  if (failed.length > 0) return { passed: false, detail: `Failed: ${listed(failed)}` };
+  if (failed.length > 0) return step(false, `Failed: ${listed(failed)}`);
   const pending = checks.filter((check) => check.state === "pending").map((check) => check.name);
-  if (pending.length > 0) return { passed: false, detail: `Still running: ${listed(pending)}` };
-  return { passed: true, detail: `${plural(checks.length, "check")} passed on the head commit` };
+  if (pending.length > 0) return step(false, `Still running: ${listed(pending)}`);
+  return step(true, `${plural(checks.length, "check")} passed on the head commit`);
 }
 
 function guardrailsStep(
@@ -198,7 +203,10 @@ export function autoApproveVerdict(
     { check: "waits", ...waitsStep(inputs.waits) },
     { check: "risk", ...riskStep(inputs.risk, auto.max_risk) },
     { check: "paths", ...pathsStep(inputs.files, config) },
-    { check: "checks", ...checksStep(inputs.checks, auto.require_green_checks) },
+    {
+      check: "checks",
+      ...checksStep(inputs.checks, auto.require_green_checks, inputs.checksNote),
+    },
     { check: "guardrails", ...guardrailsStep(inputs.guardrails) },
     { check: "second_opinion", ...secondOpinionStep(inputs.secondOpinion, config) },
   ];

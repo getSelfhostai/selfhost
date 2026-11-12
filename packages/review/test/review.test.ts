@@ -828,7 +828,12 @@ escalate_after_minutes = 60
       expect((await all(list))[0]?.route?.escalates_at).toBe(at(NOW, 30));
 
       setNow(at(NOW, 31));
-      expect(await refresh()).toEqual({ created: 0, updated: 1 });
+      // The escalated pull request is named, so its review request on GitHub can follow now.
+      expect(await refresh()).toEqual({
+        created: 0,
+        updated: 1,
+        escalated: ["https://github.com/acme/api/pull/42"],
+      });
       const [second] = await all(list);
       expect(second?.owners).toEqual(["backup-dba@example.com", "dba@example.com"]);
       expect(second?.route).toMatchObject({
@@ -845,7 +850,11 @@ escalate_after_minutes = 60
       expect((await all(list))[0]?.route?.id).toBe("db-backup");
 
       setNow(at(NOW, 92));
-      expect(await refresh()).toEqual({ created: 0, updated: 1 });
+      expect(await refresh()).toEqual({
+        created: 0,
+        updated: 1,
+        escalated: ["https://github.com/acme/api/pull/42"],
+      });
       const [third] = await all(list);
       expect(third?.owners).toEqual([
         "lead@example.com",

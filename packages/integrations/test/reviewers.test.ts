@@ -119,6 +119,26 @@ describe("reviewer setup", () => {
     expect(setup.secrets.map((secret) => secret.name)).toEqual(["ANTHROPIC_API_KEY"]);
   });
 
+  // The App labels a pull request seconds after it opens. With one concurrency group per pull
+  // request, the labeled run (skipped by its if) still cancelled the review the opening started.
+  it("never lets a label event cancel the review a push started", () => {
+    const withApp = { ...OPTIONS, appBot: "acme-selfhost[bot]" };
+    for (const tool of ["pr-agent", "claude-code-action"] as const) {
+      const workflow = parseYaml(only(reviewerSetup(tool, withApp)));
+      const group: string = workflow.concurrency.group;
+      expect(group).toContain(
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: a GitHub Actions expression, kept as written.
+        "${{ github.event.pull_request.number }}-${{ github.event.action == 'labeled' && format('label-{0}', github.event.label.name) || 'change' }}",
+      );
+      expect(workflow.concurrency["cancel-in-progress"]).toBe(true);
+      // Without label events in the trigger, one group per pull request is enough.
+      const plain = parseYaml(
+        only(reviewerSetup(tool, { ...withApp, settings: { pull_requests: "all" } })),
+      );
+      expect(plain.concurrency.group).not.toContain("labeled");
+    }
+  });
+
   it("refuses a secret that holds one person's subscription login", () => {
     for (const tool of ["claude-code-action", "pr-agent"] as const) {
       expect(() =>

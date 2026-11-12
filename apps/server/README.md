@@ -413,7 +413,23 @@ setup is reported at start by variable name. It needs no bearer token: the reque
   skipped) on an open pull request that [`@selfhost/attribution`](../../packages/attribution/README.md)
   ties to an agent (attribution lines and session links in the body, an agent account as author,
   an agent branch prefix) is synced. Draft pull requests get labels and the check, and the review
-  request once they are ready.
+  request once they are ready. The sync also records `pr.opened` for the pull request once (and
+  again after a reopen), as the system actor `selfhost-github-app` with source `server`, linked to
+  the run behind it (the session that made its commits, else the one whose `gh pr create` the hook
+  saw) and carrying its risk score and changed files: the review list opens its `pr` item from
+  it, second opinions and escalation attach to that item, the run view lists the pull request,
+  and `selfhost share` posts on it. When a route's `escalate_after_minutes` passes, the refresh
+  syncs the pull request again at once, so the new route's review request reaches GitHub without
+  waiting for the next delivery.
+- `pull_request` with action `closed` on an agent pull request records `pr.merged` or
+  `pr.closed` (the same actor and run), which closes its review item; nothing is read from
+  GitHub.
+- Only repositories a team claimed with `selfhost team repo add` are acted on (with
+  `SELFHOST_GITHUB_TEAM`, that team's own): every other delivery answers `handled: false` with
+  the reason, before any GitHub call or ledger write, whatever its event.
+- The check says whom GitHub kept after the review request: GitHub accepts a request for a team
+  without access to the repository (201) and keeps nothing, so the check says so and that
+  account is not asked again on later deliveries.
 - Each `X-GitHub-Delivery` id is handled once. The id is stored before the sync (table
   `github_deliveries`, migration `0005_github_deliveries.sql`, kept 7 days); the same delivery
   again answers `{ delivery, handled: false, duplicate: true }` without a single GitHub call. A
@@ -577,14 +593,21 @@ capped by the action); bodies over 2 MB are refused. On GitHub Enterprise Server
    `openssl rand -hex 32`.
 2. Repository permissions: Checks read and write, Pull requests read and write, Issues read and
    write (labels and comments on pull requests), Contents read-only (changed manifests for the
-   risk score and the brief), Metadata read-only. Proof receipts need nothing more.
+   risk score and the brief, and CODEOWNERS for routes that name `codeowners`), Commit statuses
+   read-only (CI that reports statuses rather than check runs, for auto-approve's
+   `require_green_checks`), Metadata read-only. Proof receipts need nothing more. Without Commit
+   statuses, auto-approve counts check runs alone and says so in its reason.
 3. Subscribe to the **Pull request** event, to **Check suite** for auto-approve, and for second
    opinions from an AI reviewer to **Pull request review**, **Issue comment** and **Check run**.
 4. Generate a private key, and set `SELFHOST_GITHUB_APP_ID`, `SELFHOST_GITHUB_PRIVATE_KEY_FILE`
    (or `SELFHOST_GITHUB_PRIVATE_KEY`) and `SELFHOST_GITHUB_WEBHOOK_SECRET` on the server, plus
    `SELFHOST_GITHUB_TEAM` on a team server.
-5. Install the App on the repositories, and add `[review] github_logins` and `github_team` to
-   `selfhost.toml`. The team to request must have access to the repository.
+5. Install the App on the repositories, claim each one for its team with `selfhost team repo
+   add`, and add `[review] github_logins` and `github_team` to `selfhost.toml`. Deliveries from
+   a repository no team claimed (with `SELFHOST_GITHUB_TEAM`, one that team did not claim) are
+   answered `handled: false` and get nothing: no labels, checks, briefs, approvals or runs. The
+   team to request must have access to the repository: GitHub accepts a request for a team
+   without access and keeps nothing, which the check says, and selfhost does not ask again.
 
 ## Traces and the run view
 

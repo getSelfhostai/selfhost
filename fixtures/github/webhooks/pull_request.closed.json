@@ -1,0 +1,84 @@
+{
+  "action": "closed",
+  "number": 101,
+  "pull_request": {
+    "url": "https://api.github.com/repos/acme/acme-api/pulls/101",
+    "id": 2700000101,
+    "node_id": "PR_101",
+    "html_url": "https://github.com/acme/acme-api/pull/101",
+    "number": 101,
+    "state": "closed",
+    "locked": false,
+    "title": "Add per-key rate limiting",
+    "user": {
+      "login": "alice",
+      "id": 5100001,
+      "node_id": "U_5100001",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5100001?v=4",
+      "url": "https://api.github.com/users/alice",
+      "html_url": "https://github.com/alice",
+      "type": "User",
+      "site_admin": false
+    },
+    "body": "Adds a token bucket per API key.",
+    "created_at": "2026-10-05T09:00:00Z",
+    "updated_at": "2026-10-06T15:20:00Z",
+    "closed_at": "2026-10-06T15:20:00Z",
+    "merged_at": null,
+    "draft": false,
+    "head": {
+      "label": "acme:claude/add-rate-limit",
+      "ref": "claude/add-rate-limit",
+      "sha": "5786c5c9d81ca4218b7e44bf0007f5580f66c489"
+    },
+    "base": {
+      "label": "acme:main",
+      "ref": "main",
+      "sha": "c3b8739bdcca2b4e2f5bdead2a8f238916813446"
+    },
+    "labels": [],
+    "requested_reviewers": [],
+    "requested_teams": [],
+    "author_association": "MEMBER",
+    "merged": false,
+    "commits": 1,
+    "additions": 90,
+    "deletions": 30,
+    "changed_files": 2,
+    "merge_commit_sha": null,
+    "merged_by": null
+  },
+  "repository": {
+    "id": 810000001,
+    "node_id": "R_810000001",
+    "name": "acme-api",
+    "full_name": "acme/acme-api",
+    "private": true,
+    "owner": {
+      "login": "acme",
+      "id": 5000001,
+      "node_id": "U_5000001",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5000001?v=4",
+      "url": "https://api.github.com/users/acme",
+      "html_url": "https://github.com/acme",
+      "type": "Organization",
+      "site_admin": false
+    },
+    "html_url": "https://github.com/acme/acme-api",
+    "default_branch": "main"
+  },
+  "sender": {
+    "login": "alice",
+    "id": 5100001,
+    "node_id": "U_5100001",
+    "avatar_url": "https://avatars.githubusercontent.com/u/5100001?v=4",
+    "url": "https://api.github.com/users/alice",
+    "html_url": "https://github.com/alice",
+    "type": "User",
+    "site_admin": false
+  },
+  "installation": {
+    "id": 61000001,
+    "node_id": "MDIzOkludGVncmF0aW9uSW5zdGFsbGF0aW9uNjEwMDAwMDE="
+  }
+}

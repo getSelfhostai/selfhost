@@ -103,6 +103,16 @@ export interface FakeGitHubOptions {
    * for one outside answers 422. Default: any name.
    */
   repositoriesOf?: (installationId: number) => string[];
+  /**
+   * The App was installed without "Commit statuses: read": GET .../commits/{ref}/status
+   * answers 403, as GitHub does then.
+   */
+  noStatusesPermission?: boolean;
+  /**
+   * Team slugs GitHub accepts a review request for (201) but does not keep, as it does for a
+   * team without access to the repository or one the App cannot see.
+   */
+  droppedTeams?: string[];
 }
 
 /** The head commit of pull requests opened through the fake. */
@@ -135,7 +145,7 @@ export class FakeGitHub {
   readonly checkRuns: FakeCheckRun[] = [];
   /** Requests no route served. */
   readonly unknown: FakeRequest[] = [];
-  /** Raw file bodies by `owner/repo@ref:path`. */
+  /** Raw file bodies by `owner/repo@ref:path`, ref `HEAD` when a read names none. */
   readonly contents = new Map<string, string>();
   /** Commit statuses by commit SHA. */
   readonly statuses = new Map<string, FakeStatus[]>();
@@ -307,6 +317,9 @@ export class FakeGitHub {
     }
     match = /^\/repos\/[^/]+\/[^/]+\/commits\/([^/]+)\/status$/.exec(path);
     if (match && method === "GET") {
+      if (this.options.noStatusesPermission) {
+        return json(403, { message: "Resource not accessible by integration" });
+      }
       const statuses = this.statuses.get(match[1] as string) ?? [];
       const state = statuses.every((status) => status.state === "success")
         ? statuses.length > 0
@@ -326,7 +339,9 @@ export class FakeGitHub {
     }
     match = /^\/repos\/([^/]+)\/([^/]+)\/contents\/(.+)$/.exec(path);
     if (match && method === "GET") {
-      const body = this.contents.get(`${match[1]}/${match[2]}@${request.query.ref}:${match[3]}`);
+      const body = this.contents.get(
+        `${match[1]}/${match[2]}@${request.query.ref ?? "HEAD"}:${match[3]}`,
+      );
       if (body === undefined) return notFound();
       return new Response(body, { status: 200, headers: { "content-type": "text/plain" } });
     }
@@ -458,9 +473,17 @@ export class FakeGitHub {
             "Reviews may only be requested from collaborators. One or more of the users or teams you specified is not a collaborator.",
         });
       }
+      const dropped = (this.options.droppedTeams ?? []).map((slug) => slug.toLowerCase());
       pull.requestedUsers.push(...reviewers);
-      pull.requestedTeams.push(...team_reviewers);
-      return json(201, { number: 0 });
+      pull.requestedTeams.push(
+        ...team_reviewers.filter((slug) => !dropped.includes(slug.toLowerCase())),
+      );
+      // GitHub answers with the pull request, its requests as they now stand.
+      return json(201, {
+        number: 0,
+        requested_reviewers: pull.requestedUsers.map((login) => ({ login, type: "User" })),
+        requested_teams: pull.requestedTeams.map((slug) => ({ slug, name: slug })),
+      });
     }
     if (rest === "reviews" && method === "GET") {
       return json(

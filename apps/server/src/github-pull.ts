@@ -4,6 +4,7 @@ import {
   type DesiredState,
   type Octokit,
   REVIEW_CHECK_NAME,
+  type ReviewRequestOutcome,
   type RiskLevel,
 } from "@selfhost/github";
 import type { ResolvedSelfhostConfig, ReviewRoute } from "@selfhost/schema";
@@ -160,6 +161,40 @@ export function chooseReviewers(
   return { users: [], teams: [], note: `${why} and [review] github_team is not set.` };
 }
 
+/**
+ * The check's review sentence after the request, from what GitHub kept: the choice's own note
+ * when it kept everything, else who has a request and who GitHub accepted but did not keep (a
+ * team without access to the repository, a login that is not a collaborator) or refused.
+ */
+export function requestNote(
+  choice: ReviewerChoice,
+  pull: Pick<AgentPull, "owner">,
+  outcome: ReviewRequestOutcome | undefined,
+): string {
+  if (!outcome) return choice.note;
+  const named = (who: { users: string[]; teams: string[] }) => [
+    ...who.users.map((user) => `@${user}`),
+    ...who.teams.map((team) => `@${pull.owner}/${team}`),
+  ];
+  const lost = named(outcome.dropped);
+  const refused = outcome.refused ? named(outcome.refused) : [];
+  if (lost.length === 0 && refused.length === 0) return choice.note;
+  const kept = named(outcome.requested);
+  return [
+    kept.length > 0
+      ? `Review requested from ${kept.join(", ")}.`
+      : "No review is requested on GitHub.",
+    ...(lost.length > 0
+      ? [
+          `GitHub accepted the review request for ${lost.join(", ")} but did not keep it (a team needs access to this repository, a person must be a collaborator), so it is not asked again.`,
+        ]
+      : []),
+    ...(refused.length > 0
+      ? [`GitHub refused the review request for ${refused.join(", ")}: ${outcome.refused?.message}`]
+      : []),
+  ].join(" ");
+}
+
 /** `failure` only on high risk with `[review] block_merge_on_high`; `neutral` passes otherwise. */
 export function checkConclusion(
   risk: RiskAssessment | undefined,
@@ -187,7 +222,15 @@ const agentName = (agent: AgentRef) =>
 export async function desiredPull(
   ctx: PullContext,
   providers: GitHubProviders,
-): Promise<{ desired: DesiredState; autoApproval?: AutoApproval }> {
+): Promise<{
+  desired: DesiredState;
+  autoApproval?: AutoApproval;
+  risk?: RiskAssessment;
+  /** Who is asked to review, when anyone is (not on a draft). */
+  reviewers?: ReviewerChoice;
+  /** The check summary with another review sentence, such as what GitHub kept. */
+  summaryWith: (note: string) => string;
+}> {
   const { pull, agent, config } = ctx;
   const risk = await providers.risk(ctx);
   const owner = await providers.owner({ ...ctx, risk });
@@ -198,12 +241,14 @@ export async function desiredPull(
   const conclusion = checkConclusion(risk, config.review);
 
   const lead = brief?.summary ?? `Pull request by ${agentName(agent)}, opened by @${pull.author}.`;
-  const summary = [
-    lead,
-    ...(risk?.summary ? [risk.summary] : []),
-    `${pull.draft ? "Draft: no review is requested until it is ready." : reviewers.note}${mergeNote(risk, conclusion)}`,
-    ...(autoApproval ? [autoApproval.summary] : []),
-  ].join("\n\n");
+  const summaryWith = (note: string) =>
+    [
+      lead,
+      ...(risk?.summary ? [risk.summary] : []),
+      `${pull.draft ? "Draft: no review is requested until it is ready." : note}${mergeNote(risk, conclusion)}`,
+      ...(autoApproval ? [autoApproval.summary] : []),
+    ].join("\n\n");
+  const summary = summaryWith(reviewers.note);
   const briefText = brief?.body.replaceAll(brief.marker, "").trim();
   const text = [
     ...(briefText ? [briefText] : []),
@@ -224,7 +269,13 @@ export async function desiredPull(
     ...(brief ? { brief: { body: brief.body, marker: brief.marker } } : {}),
     ...(autoApproval?.approve ? { approve: autoApproval.approve } : {}),
   };
-  return { desired, ...(autoApproval ? { autoApproval } : {}) };
+  return {
+    desired,
+    ...(autoApproval ? { autoApproval } : {}),
+    ...(risk ? { risk } : {}),
+    ...(pull.draft ? {} : { reviewers }),
+    summaryWith,
+  };
 }
 
 /** What the pull request should show; see desiredPull. */

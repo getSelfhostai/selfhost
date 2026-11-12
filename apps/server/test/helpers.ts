@@ -97,3 +97,20 @@ export function caller(app: Hono, token: string) {
       }),
     );
 }
+
+/**
+ * Claims repositories (owner/name) for a team, made when missing, as `selfhost team repo add`
+ * does: GitHub deliveries from a repository no team claimed are not acted on.
+ */
+export async function claimRepos(ledger: Ledger, repos: string[], team = "repo-owners") {
+  if (!(await ledger.teams.getTeam(team))) {
+    await ledger.teams.createTeam({ id: team, name: team });
+  }
+  for (const repo of repos) {
+    const added = await ledger.orgs.addRepo(team, {
+      repo: repo.toLowerCase(),
+      remote: `github.com/${repo.toLowerCase()}`,
+    });
+    if (!added || "taken" in added) throw new Error(`Could not claim ${repo} for ${team}`);
+  }
+}

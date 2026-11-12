@@ -4,18 +4,33 @@ import {
   type GitHubApp,
   githubAppEnv,
   type PullRequestEvent,
+  type Reviewers,
+  type ReviewRequestOutcome,
+  requestReviews,
   type SyncResult,
   syncPullRequest,
 } from "@selfhost/github";
 import { type ReviewerDelivery, reviewerDelivery } from "@selfhost/integrations";
 import type { Ledger } from "@selfhost/ledger";
-import { type ApiError, parseConfig, type ResolvedSelfhostConfig } from "@selfhost/schema";
+import {
+  type ApiError,
+  DEFAULT_ORG_ID,
+  parseConfig,
+  type ResolvedSelfhostConfig,
+} from "@selfhost/schema";
 import type { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { type Background, githubRunTrigger } from "./background.js";
 import { autoApprover, recordAutoApproval } from "./github-approve.js";
-import { type AgentPull, desiredPull, type GitHubProviders } from "./github-pull.js";
-import { pullReads } from "./github-reads.js";
+import { recordPullClosed, recordPullOpened } from "./github-prs.js";
+import {
+  type AgentPull,
+  desiredPull,
+  type GitHubProviders,
+  type RiskAssessment,
+  requestNote,
+} from "./github-pull.js";
+import { type PullReads, pullReads } from "./github-reads.js";
 import { reviewBrief, reviewOwner, reviewRoute, reviewRouting } from "./github-review.js";
 import { backgroundRunTests, eeRisk } from "./github-risk.js";
 import {
@@ -28,6 +43,9 @@ import {
 import type { GitClones } from "./provenance.js";
 
 export const GITHUB_WEBHOOK_PATH = "/v1/github/webhooks";
+
+/** Pull requests whose dropped review requests are remembered, newest kept. */
+const DROPPED_REQUESTS_KEPT = 5000;
 
 /** GitHub caps webhook payloads at 25 MB. */
 const MAX_WEBHOOK_BYTES = 25 * 1024 * 1024;
@@ -65,6 +83,11 @@ export interface GitHubRouteOptions {
   now?: () => Date;
   /** Background runs, which `/selfhost run` comments and the run label start. */
   background?: Background;
+  /**
+   * The pull request sync to use, shared with what else re-syncs pull requests (escalation).
+   * Default: one of the route's own.
+   */
+  pulls?: PullSync;
 }
 
 /** What POST /v1/github/webhooks answers to a verified delivery. */
@@ -94,6 +117,52 @@ export function errorLine(error: unknown): string {
   const status = (error as { status?: unknown }).status;
   const first = error.message.split("\n")[0] ?? "";
   return `${error.name}${typeof status === "number" ? ` ${status}` : ""}: ${first}`;
+}
+
+/** owner/name of the repository a delivery is from, in lower case, when it names one. */
+export function deliveryRepo(payload: unknown): string | undefined {
+  const repository = (
+    payload as {
+      repository?: { full_name?: unknown; name?: unknown; owner?: { login?: unknown } };
+    } | null
+  )?.repository;
+  if (!repository) return undefined;
+  if (typeof repository.full_name === "string" && repository.full_name.includes("/")) {
+    return repository.full_name.toLowerCase();
+  }
+  const owner = repository.owner?.login;
+  return typeof owner === "string" && typeof repository.name === "string"
+    ? `${owner}/${repository.name}`.toLowerCase()
+    : undefined;
+}
+
+/**
+ * Why selfhost does not act on a repository, or undefined when it does. The App is often
+ * installed on more repositories than any team claimed (every repo of an org, public ones
+ * included), and those must get no labels, checks, briefs, approvals or runs. With `team`
+ * (SELFHOST_GITHUB_TEAM) the repository must be that team's; without it, some team's.
+ */
+export async function unclaimedRepo(
+  ledger: Pick<Ledger, "orgs" | "teams">,
+  team: string | undefined,
+  repo: string,
+): Promise<string | undefined> {
+  const add = "selfhost team repo add";
+  if (!team) {
+    const claims = await ledger.orgs.repoClaims(repo);
+    return claims.length > 0
+      ? undefined
+      : `${repo} is not claimed by any team: add it with ${add} for GitHub deliveries to act on it`;
+  }
+  const info = await ledger.teams.getTeam(team);
+  if (!info) return `team ${team} (SELFHOST_GITHUB_TEAM) does not exist`;
+  const owner = await ledger.orgs.repoOwner(info.org ?? DEFAULT_ORG_ID, repo);
+  if (!owner) {
+    return `${repo} is not claimed by team ${team}: add it with ${add} for GitHub deliveries to act on it`;
+  }
+  return owner.team === team
+    ? undefined
+    : `${repo} belongs to team ${owner.team}, not ${team} (SELFHOST_GITHUB_TEAM)`;
 }
 
 /** The agent pull request a delivery is about, or why it is not acted on. */
@@ -189,6 +258,14 @@ export function agentPullOf(owner: string, repo: string, pr: PullRequestFields):
   };
 }
 
+/** What a sync wrote, and what it read on the way, for the pull request's ledger events. */
+export interface PullSynced extends SyncResult {
+  pull: AgentPull;
+  agent: AgentRef;
+  reads: PullReads;
+  risk?: RiskAssessment;
+}
+
 /** Keeps agent pull requests on GitHub in step with what selfhost knows about them. */
 export interface PullSync {
   /** Runs `work` after every earlier sync of the same pull request, so two never race. */
@@ -198,7 +275,7 @@ export interface PullSync {
    * review request and, under [review.auto_approve], the approval of one open agent pull
    * request, then records what auto-approve did. Not queued: call it inside `serial`.
    */
-  sync(installation: number, pull: AgentPull, agent: AgentRef, server: string): Promise<SyncResult>;
+  sync(installation: number, pull: AgentPull, agent: AgentRef, server: string): Promise<PullSynced>;
   /** The selfhost.toml in use for deliveries. */
   config(): Promise<ResolvedSelfhostConfig>;
 }
@@ -229,31 +306,72 @@ export function pullSync(
   };
   const config = options.config ?? (async () => DEFAULT_CONFIG);
   const queued = queue();
+  // Review requests GitHub accepted but did not keep, by pull request: GitHub answers 201 to a
+  // request for a team without access to the repository and keeps nothing, so asking on every
+  // delivery would only repeat it. Forgotten on restart, which asks once more.
+  const dropped = new Map<string, Reviewers>();
+  const remember = (key: string, lost: Reviewers) => {
+    const before = dropped.get(key) ?? { users: [], teams: [] };
+    const merged = {
+      users: [...new Set([...before.users, ...lost.users])],
+      teams: [...new Set([...before.teams, ...lost.teams])],
+    };
+    dropped.delete(key);
+    if (merged.users.length > 0 || merged.teams.length > 0) dropped.set(key, merged);
+    for (const old of dropped.keys()) {
+      if (dropped.size <= DROPPED_REQUESTS_KEPT) break;
+      dropped.delete(old);
+    }
+  };
   return {
     serial: (installation, where, work) => queued(`${installation}/${where}`, work),
     config,
     async sync(installation, pull, agent, server) {
       const octokit = github.installation(installation);
       const reads = pullReads(octokit, pull, agent, ledger);
-      const { desired, autoApproval } = await desiredPull(
+      const planned = await desiredPull(
         { octokit, pull, agent, config: await config(), reads, server },
         providers,
       );
-      const result = await syncPullRequest(
-        octokit,
-        {
-          owner: pull.owner,
-          repo: pull.repo,
-          number: pull.number,
-          headSha: pull.headSha,
-          author: pull.author,
-        },
-        desired,
-      );
+      const { autoApproval } = planned;
+      const ref = {
+        owner: pull.owner,
+        repo: pull.repo,
+        number: pull.number,
+        headSha: pull.headSha,
+        author: pull.author,
+      };
+      // Reviews are asked for first, so the check says whom GitHub kept, not whom selfhost asked.
+      const { reviewers: wanted, ...desired } = planned.desired;
+      let outcome: ReviewRequestOutcome | undefined;
+      if (wanted) {
+        const key = pullKey(pull);
+        const skip = dropped.get(key);
+        outcome = await requestReviews(octokit, ref, { ...wanted, ...(skip ? { skip } : {}) });
+        remember(key, outcome.dropped);
+        if (desired.check && planned.reviewers) {
+          desired.check = {
+            ...desired.check,
+            summary: planned.summaryWith(requestNote(planned.reviewers, pull, outcome)),
+          };
+        }
+      }
+      const synced: PullSynced = {
+        ...(await syncPullRequest(octokit, ref, desired)),
+        pull,
+        agent,
+        reads,
+        ...(planned.risk ? { risk: planned.risk } : {}),
+      };
+      if (outcome) {
+        synced.reviewers = outcome;
+        if (outcome.refused) synced.refused.unshift(outcome.refused);
+        if (outcome.write) synced.writes.unshift(outcome.write);
+      }
       if (autoApproval) {
         await recordAutoApproval(ledger, options.team, { pull }, autoApproval, options.now);
       }
-      return result;
+      return synced;
     },
   };
 }
@@ -276,9 +394,15 @@ function queue() {
  * POST /v1/github/webhooks, for the selfhost GitHub App. It needs no bearer token: the
  * X-Hub-Signature-256 signature, checked with the App's webhook secret, is the credential.
  *
+ * Only repositories a team claimed are acted on (with SELFHOST_GITHUB_TEAM, that team's): a
+ * delivery from any other repository the App is installed on answers `handled: false` with the
+ * reason, before any GitHub call or ledger write.
+ *
  * pull_request deliveries (opened, reopened, synchronize, ready_for_review, and labeled by a
  * person) on open agent pull requests sync the risk and agent labels, the selfhost/review check
- * run, the brief comment, the review request and, under [review.auto_approve], the approval.
+ * run, the brief comment, the review request and, under [review.auto_approve], the approval, and
+ * record pr.opened for the pull request once (again after a reopen). closed deliveries record
+ * pr.merged or pr.closed, and read nothing from GitHub.
  * pull_request_review, issue_comment and check_run deliveries carrying a verdict from the team's
  * AI reviewer (PR-Agent, the Claude Code action, CodeRabbit) on an agent pull request are
  * recorded as review.submitted events and sync the pull request again, so its risk counts the
@@ -302,8 +426,9 @@ export function githubRoutes(
     );
     return undefined;
   }
-  const pulls = pullSync(github, ledger, options);
+  const pulls = options.pulls ?? pullSync(github, ledger, options);
   const log = options.log ?? console.log;
+  const now = options.now ?? (() => new Date());
   const installed = github;
 
   /**
@@ -375,6 +500,16 @@ export function githubRoutes(
         payload = JSON.parse(body);
       } catch {
         return c.json(apiError("invalid_webhook", "Expected a JSON body"), 400);
+      }
+
+      // Before anything that reads GitHub or writes the ledger: a repository no team claimed
+      // gets nothing, whatever the event.
+      const repo = deliveryRepo(payload);
+      const unclaimed = repo
+        ? await unclaimedRepo(ledger, options.team, repo)
+        : "no repository in the payload";
+      if (unclaimed) {
+        return c.json({ delivery, handled: false, skipped: unclaimed } satisfies WebhookResponse);
       }
 
       if (options.background) {
@@ -496,6 +631,31 @@ export function githubRoutes(
         );
       }
 
+      if (event === "pull_request" && (payload as PullRequestEvent).action === "closed") {
+        if (!(await ledger.deliveries.claim(delivery, { event }))) {
+          return c.json({ delivery, handled: false, duplicate: true } satisfies WebhookResponse);
+        }
+        try {
+          const closed = await recordPullClosed(ledger, options.team, payload, now());
+          if ("skip" in closed) {
+            return c.json({
+              delivery,
+              handled: false,
+              skipped: closed.skip,
+            } satisfies WebhookResponse);
+          }
+          log(`github: delivery ${delivery} pull_request.closed ${closed.where}: ${closed.kind}`);
+          return c.json({ delivery, handled: true, writes: 0 } satisfies WebhookResponse);
+        } catch (error) {
+          await ledger.deliveries.release(delivery);
+          log(`github: delivery ${delivery} pull_request.closed failed: ${errorLine(error)}`);
+          return c.json(
+            apiError("ledger_write_failed", "Could not record the closed pull request"),
+            500,
+          );
+        }
+      }
+
       const target = agentPull(event, payload);
       if ("skip" in target) {
         return c.json({ delivery, handled: false, skipped: target.skip } satisfies WebhookResponse);
@@ -507,11 +667,19 @@ export function githubRoutes(
       const { pull, installation, agent } = target;
       const where = pullKey(pull);
       const server = options.publicUrl ?? new URL(c.req.url).origin;
+      const createdAt = (payload as { pull_request?: { created_at?: string } }).pull_request
+        ?.created_at;
       let result: SyncResult;
       try {
-        result = await pulls.serial(installation, where, () =>
-          pulls.sync(installation, pull, agent, server),
-        );
+        result = await pulls.serial(installation, where, async () => {
+          const synced = await pulls.sync(installation, pull, agent, server);
+          // The ledger's own record of the agent pull request, for its review item and run.
+          await recordPullOpened(ledger, options.team, synced, {
+            ...(createdAt ? { createdAt } : {}),
+            now: now(),
+          });
+          return synced;
+        });
       } catch (error) {
         await ledger.deliveries.release(delivery);
         log(`github: delivery ${delivery} for ${where} failed: ${errorLine(error)}`);
@@ -532,6 +700,53 @@ export function githubRoutes(
     },
   );
   return pulls;
+}
+
+/**
+ * Syncs agent pull requests again by URL, outside a webhook delivery: when the review list
+ * escalates a pull request's item, its new route's review request goes to GitHub now. A pull
+ * request in a repository the team did not claim, or with no App installation, closed or not an
+ * agent's, is left alone. Failures are logged, one line each.
+ */
+export function resyncPulls(
+  github: GitHubApp,
+  ledger: Ledger,
+  pulls: PullSync,
+  options: { team?: string; server: string; log?: (line: string) => void },
+): (urls: readonly string[]) => Promise<void> {
+  const log = options.log ?? console.log;
+  return async (urls) => {
+    for (const url of new Set(urls)) {
+      const match = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(url);
+      if (!match) continue;
+      const [, owner = "", repo = "", number = ""] = match;
+      try {
+        if (await unclaimedRepo(ledger, options.team, `${owner}/${repo}`.toLowerCase())) continue;
+        const installation = await github.repoInstallation(owner, repo);
+        if (installation === undefined) continue;
+        const octokit = github.installation(installation);
+        const { data: pr } = await octokit.rest.pulls.get({
+          owner,
+          repo,
+          pull_number: Number(number),
+        });
+        if (pr.state !== "open") continue;
+        const found = webhookPullAgent({
+          user: pr.user,
+          body: pr.body,
+          head: { ref: pr.head.ref },
+        });
+        if (!found) continue;
+        const pull = agentPullOf(owner, repo, pr);
+        const result = await pulls.serial(installation, pullKey(pull), () =>
+          pulls.sync(installation, pull, found.agent, options.server),
+        );
+        log(`github: ${pullKey(pull)} escalated: ${result.writes.length} changes`);
+      } catch (error) {
+        log(`github: could not sync escalated ${url}: ${errorLine(error)}`);
+      }
+    }
+  };
 }
 
 /**

@@ -42,8 +42,11 @@ export interface DesiredState {
    */
   labels: { risk?: RiskLevel; agent?: string };
   check?: DesiredCheck;
-  /** Logins and team slugs to request reviews from, added to any already requested. */
-  reviewers?: { users: string[]; teams: string[] };
+  /**
+   * Logins and team slugs to request reviews from, added to any already requested. Those in
+   * `skip` were asked before and not kept by GitHub, so they are not asked again.
+   */
+  reviewers?: { users: string[]; teams: string[]; skip?: { users: string[]; teams: string[] } };
   /** The review brief comment, found again by `marker`, which `body` should contain. */
   brief?: { body: string; marker: string };
   /**
@@ -75,6 +78,8 @@ export interface SyncResult {
   writes: SyncWrite[];
   /** Review requests GitHub answered with 422. Nothing else is skipped. */
   refused: RefusedReviewRequest[];
+  /** What GitHub kept of the review request, when one was wanted. */
+  reviewers?: ReviewRequestOutcome;
 }
 
 const lower = (value: string) => value.toLowerCase();
@@ -199,21 +204,49 @@ async function syncCheck(
   writes.push({ action: "update_check", id: existing.id });
 }
 
-async function syncReviewers(
+/** Review requests by kind: logins and team slugs. */
+export interface Reviewers {
+  users: string[];
+  teams: string[];
+}
+
+/** What GitHub did with a review request, read back from GitHub. */
+export interface ReviewRequestOutcome {
+  /** Of the accounts wanted, those with a request on the pull request now, or who reviewed. */
+  requested: Reviewers;
+  /**
+   * Accounts GitHub accepted a request for (201) but did not keep, as it does for a team
+   * without access to the repository; also those `skip` named, which are not asked again.
+   */
+  dropped: Reviewers;
+  /** The request GitHub answered with 422. */
+  refused?: RefusedReviewRequest;
+  /** The request made, naming the accounts GitHub kept. None when nothing new was kept. */
+  write?: SyncWrite;
+}
+
+const none = (): Reviewers => ({ users: [], teams: [] });
+
+/**
+ * Asks for reviews from the accounts in `reviewers` that have no request yet (and, for people,
+ * have not reviewed), then reads back what GitHub kept. Accounts in `skip` (asked before and
+ * not kept) are not asked again: GitHub answers such a request 201 every time and keeps nothing.
+ */
+export async function requestReviews(
   octokit: Octokit,
   pr: PullRequestRef,
-  reviewers: NonNullable<DesiredState["reviewers"]>,
-  result: SyncResult,
-) {
+  reviewers: Reviewers & { skip?: Reviewers },
+): Promise<ReviewRequestOutcome> {
   const author = pr.author ? lower(pr.author) : undefined;
   const users = [...new Set(reviewers.users)].filter((login) => lower(login) !== author);
   const teams = [...new Set(reviewers.teams)];
-  if (users.length === 0 && teams.length === 0) return;
+  const outcome: ReviewRequestOutcome = { requested: none(), dropped: none() };
+  if (users.length === 0 && teams.length === 0) return outcome;
 
   const pull = { owner: pr.owner, repo: pr.repo, pull_number: pr.number };
-  const { data: requested } = await octokit.rest.pulls.listRequestedReviewers(pull);
-  const haveUsers = new Set(requested.users.map((user) => lower(user.login)));
-  const haveTeams = new Set(requested.teams.map((team) => lower(team.slug)));
+  const { data: current } = await octokit.rest.pulls.listRequestedReviewers(pull);
+  const haveUsers = new Set(current.users.map((user) => lower(user.login)));
+  const haveTeams = new Set(current.teams.map((team) => lower(team.slug)));
   if (users.some((login) => !haveUsers.has(lower(login)))) {
     // GitHub drops a request once the person reviews; asking again would undo their review.
     const reviews = await octokit.paginate(octokit.rest.pulls.listReviews, {
@@ -222,25 +255,77 @@ async function syncReviewers(
     });
     for (const review of reviews) if (review.user) haveUsers.add(lower(review.user.login));
   }
-  const newUsers = users.filter((login) => !haveUsers.has(lower(login)));
-  const newTeams = teams.filter((slug) => !haveTeams.has(lower(slug)));
-  if (newUsers.length === 0 && newTeams.length === 0) return;
+  const skipUsers = new Set((reviewers.skip?.users ?? []).map(lower));
+  const skipTeams = new Set((reviewers.skip?.teams ?? []).map(lower));
+  outcome.requested = {
+    users: users.filter((login) => haveUsers.has(lower(login))),
+    teams: teams.filter((slug) => haveTeams.has(lower(slug))),
+  };
+  const missingUsers = users.filter((login) => !haveUsers.has(lower(login)));
+  const missingTeams = teams.filter((slug) => !haveTeams.has(lower(slug)));
+  outcome.dropped = {
+    users: missingUsers.filter((login) => skipUsers.has(lower(login))),
+    teams: missingTeams.filter((slug) => skipTeams.has(lower(slug))),
+  };
+  const newUsers = missingUsers.filter((login) => !skipUsers.has(lower(login)));
+  const newTeams = missingTeams.filter((slug) => !skipTeams.has(lower(slug)));
+  if (newUsers.length === 0 && newTeams.length === 0) return outcome;
+  let answer: { requested_reviewers?: unknown; requested_teams?: unknown };
   try {
-    await octokit.rest.pulls.requestReviewers({
-      ...pull,
-      reviewers: newUsers,
-      team_reviewers: newTeams,
-    });
+    answer = (
+      await octokit.rest.pulls.requestReviewers({
+        ...pull,
+        reviewers: newUsers,
+        team_reviewers: newTeams,
+      })
+    ).data as typeof answer;
   } catch (error) {
     if (statusOf(error) !== 422) throw error;
-    result.refused.push({
+    outcome.refused = {
       users: newUsers,
       teams: newTeams,
       message: (error instanceof Error && error.message.split("\n")[0]) || "Unprocessable",
-    });
-    return;
+    };
+    return outcome;
   }
-  result.writes.push({ action: "request_reviewers", users: newUsers, teams: newTeams });
+  // The answer is the pull request with its requests as they now stand; read them again when
+  // it does not carry them.
+  let nowUsers: Set<string>;
+  let nowTeams: Set<string>;
+  if (Array.isArray(answer?.requested_reviewers) && Array.isArray(answer?.requested_teams)) {
+    nowUsers = new Set(
+      (answer.requested_reviewers as { login?: string }[]).map((user) => lower(user.login ?? "")),
+    );
+    nowTeams = new Set(
+      (answer.requested_teams as { slug?: string }[]).map((team) => lower(team.slug ?? "")),
+    );
+  } else {
+    const { data: after } = await octokit.rest.pulls.listRequestedReviewers(pull);
+    nowUsers = new Set(after.users.map((user) => lower(user.login)));
+    nowTeams = new Set(after.teams.map((team) => lower(team.slug)));
+  }
+  const keptUsers = newUsers.filter((login) => nowUsers.has(lower(login)));
+  const keptTeams = newTeams.filter((slug) => nowTeams.has(lower(slug)));
+  outcome.requested.users.push(...keptUsers);
+  outcome.requested.teams.push(...keptTeams);
+  outcome.dropped.users.push(...newUsers.filter((login) => !nowUsers.has(lower(login))));
+  outcome.dropped.teams.push(...newTeams.filter((slug) => !nowTeams.has(lower(slug))));
+  if (keptUsers.length > 0 || keptTeams.length > 0) {
+    outcome.write = { action: "request_reviewers", users: keptUsers, teams: keptTeams };
+  }
+  return outcome;
+}
+
+async function syncReviewers(
+  octokit: Octokit,
+  pr: PullRequestRef,
+  reviewers: NonNullable<DesiredState["reviewers"]>,
+  result: SyncResult,
+) {
+  const outcome = await requestReviews(octokit, pr, reviewers);
+  result.reviewers = outcome;
+  if (outcome.refused) result.refused.push(outcome.refused);
+  if (outcome.write) result.writes.push(outcome.write);
 }
 
 /** The bot comment holding `marker`, as found and kept in place by `syncComment`. */
@@ -347,21 +432,42 @@ export interface HeadCheck {
 
 const PASSING = new Set(["success", "neutral", "skipped"]);
 
+/** What readHeadChecks found on a head commit. */
+export interface HeadChecks {
+  checks: HeadCheck[];
+  /**
+   * Set when part of them could not be read, saying which: commit statuses need the App's
+   * "Commit statuses: read" permission, and without it only check runs count.
+   */
+  note?: string;
+}
+
+/** Why statuses were left out, when the App may not read them. */
+export const STATUSES_UNREADABLE =
+  'Commit statuses could not be read (the App lacks "Commit statuses: read"), so only check runs count';
+
 /**
  * Every check run and commit status on the head commit, with selfhost's own checks (names
- * starting `selfhost/`) left out. A check suite re-run shows its newest run per name.
+ * starting `selfhost/`) left out. A check suite re-run shows its newest run per name. When
+ * GitHub refuses the statuses (403: the App was installed without "Commit statuses: read"), the
+ * check runs alone are returned, with a note saying so, instead of failing the read.
  */
 export async function readHeadChecks(
   octokit: Octokit,
   pr: Pick<PullRequestRef, "owner" | "repo" | "headSha">,
-): Promise<HeadCheck[]> {
+): Promise<HeadChecks> {
   const where = { owner: pr.owner, repo: pr.repo, ref: pr.headSha };
   const runs = await octokit.paginate(octokit.rest.checks.listForRef, {
     ...where,
     filter: "latest",
     per_page: 100,
   });
-  const { data: combined } = await octokit.rest.repos.getCombinedStatusForRef(where);
+  let statuses: { context: string; state: string }[] | undefined;
+  try {
+    statuses = (await octokit.rest.repos.getCombinedStatusForRef(where)).data.statuses ?? [];
+  } catch (error) {
+    if (statusOf(error) !== 403) throw error;
+  }
   const checks: HeadCheck[] = [];
   for (const run of runs) {
     if (run.name.startsWith("selfhost/")) continue;
@@ -373,13 +479,13 @@ export async function readHeadChecks(
           : "failed";
     checks.push({ name: run.name, state });
   }
-  for (const status of combined.statuses ?? []) {
+  for (const status of statuses ?? []) {
     if (status.context.startsWith("selfhost/")) continue;
     const state =
       status.state === "success" ? "passed" : status.state === "pending" ? "pending" : "failed";
     checks.push({ name: status.context, state });
   }
-  return checks;
+  return statuses ? { checks } : { checks, note: STATUSES_UNREADABLE };
 }
 
 /**

@@ -18,7 +18,7 @@ import {
 import { afterEach, describe, expect, it } from "vitest";
 import { GITHUB_WEBHOOK_PATH } from "../src/github.js";
 import { ledgerSecondOpinions } from "../src/github-second-opinion.js";
-import { startTestServer, type TestServer } from "./helpers.js";
+import { claimRepos, startTestServer, type TestServer } from "./helpers.js";
 
 const WEBHOOKS = join(import.meta.dirname, "..", "..", "..", "fixtures", "github", "webhooks");
 const REPO = "acme/acme-api";
@@ -77,6 +77,7 @@ async function harness(toml = 'version = 1\n[integrations.reviewer]\ntool = "cod
     log: (line) => lines.push(line),
   });
   open.push(server);
+  await claimRepos(server.ledger, [REPO]);
   return {
     server,
     github,

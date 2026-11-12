@@ -138,6 +138,93 @@ describe("selfhost hook", () => {
   });
 });
 
+describe("the pull request a shell call opened", () => {
+  const now = new Date("2026-10-10T12:00:00Z");
+  const person = "dev@example.com";
+  const bash = (command: string, stdout: string, stderr = "") => ({
+    ...JSON.parse(payload("claude-code", "PostToolUse")),
+    tool_name: "Bash",
+    tool_input: { command, description: "Open the pull request" },
+    tool_response: { stdout, stderr, interrupted: false, isImage: false },
+  });
+
+  it("keeps the URL gh pr create printed, drops the output, and links the run to it", async () => {
+    const home = tempDir("pr-home");
+    const dir = spoolDir({ HOME: home.root }) ?? "";
+    const url = "https://github.com/acme/acme-api/pull/142";
+    appendToSpool(
+      dir,
+      "claude",
+      bash('gh pr create --title "Rate limits" --body-file /tmp/body.md', `${url}\n`),
+      now,
+    );
+    // GitHub names the open pull request in its remote message to a git push.
+    appendToSpool(
+      dir,
+      "claude",
+      {
+        ...bash(
+          "git push origin claude/rate-limits",
+          "",
+          "remote: View pull request for claude/rate-limits:\nremote:   https://github.com/acme/acme-api/pull/143\n",
+        ),
+        tool_use_id: "toolu_push",
+      },
+      now,
+    );
+    // A new branch's push names only a /pull/new/ link: no pull request yet.
+    appendToSpool(
+      dir,
+      "claude",
+      {
+        ...bash(
+          "git push -u origin claude/next",
+          "",
+          "remote: Create a pull request for 'claude/next' on GitHub by visiting:\nremote:   https://github.com/acme/acme-api/pull/new/claude/next\n",
+        ),
+        tool_use_id: "toolu_new",
+      },
+      now,
+    );
+    // Other commands that print a pull request URL are not where it was opened.
+    appendToSpool(
+      dir,
+      "claude",
+      {
+        ...bash("echo see https://github.com/acme/acme-api/pull/9", url),
+        tool_use_id: "toolu_echo",
+      },
+      now,
+    );
+    const lines = spoolLines(dir);
+    expect(lines.map((line) => line.pr_url)).toEqual([
+      url,
+      "https://github.com/acme/acme-api/pull/143",
+      undefined,
+      undefined,
+    ]);
+    expect(lines.every((line) => line.payload.tool_response === null)).toBe(true);
+
+    const ledger = await openLedger({ dataDir: "memory://" });
+    try {
+      await drainSpool(ledger, dir, { person, now });
+      const results = (await ledger.query({ kind: "tool.result" })).events;
+      expect(results.map((event) => event.links?.pr_url).sort()).toEqual([
+        url,
+        "https://github.com/acme/acme-api/pull/143",
+        undefined,
+        undefined,
+      ]);
+      // A link on the run, never the server's pr.opened.
+      expect((await ledger.query({ kind: "pr.opened" })).events).toEqual([]);
+      const linked = results.find((event) => event.links?.pr_url === url);
+      expect(linked?.session_id).toBe("665bce74-4bdc-4164-8bb1-cc4246de2400");
+    } finally {
+      await ledger.close();
+    }
+  });
+});
+
 describe("spool drain", () => {
   const now = new Date("2026-10-10T12:00:00Z");
   const person = "dev@example.com";

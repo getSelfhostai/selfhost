@@ -395,6 +395,11 @@ export interface ReviewRefreshJobOptions {
    * go out now instead of at the next notify pass.
    */
   changed?: () => void;
+  /**
+   * Called with the pull request URLs of `pr` items a refresh escalated, so their review request
+   * on GitHub follows now instead of at the pull request's next webhook delivery.
+   */
+  escalated?: (urls: string[]) => void;
   /** Default: every 15 seconds. */
   intervalMs?: number;
   /** Where the job reports. Default: console.log. */
@@ -500,6 +505,7 @@ export function startReviewRefreshJob(
             log(`review list: ${result.created} new, ${result.updated} changed`);
           }
           if (result.created > 0 || raised > 0) options.changed?.();
+          if (result.escalated?.length) options.escalated?.(result.escalated);
           return result;
         },
         (error: unknown) => {

@@ -6,18 +6,53 @@ import {
   renderBrief,
   summarizeBrief,
 } from "@selfhost/brief";
+import type { GitHubApp } from "@selfhost/github";
 import type { Ledger } from "@selfhost/ledger";
 import {
   CODEOWNERS_PATHS,
   type CodeOwners,
   openReviewList,
   parseCodeOwners,
+  type RefreshOptions,
   type Routing,
   routeItem,
 } from "@selfhost/review";
 import { CODEOWNERS_TARGET } from "@selfhost/schema";
 import { loadReceipt } from "./ee.js";
 import type { GitHubProviders, PullContext, RiskAssessment } from "./github-pull.js";
+
+/**
+ * CODEOWNERS of a repository (owner/name) read through the GitHub App's installation on it, at
+ * its default branch, where pull requests usually merge: the `codeowners` target of
+ * [[review.routes]] on the items the review list builds, for a server with no clones
+ * (SELFHOST_GIT_CLONES), as the GitHub sync reads it. undefined when the App is not installed
+ * there or the repository has none.
+ */
+export function appCodeowners(
+  github: Pick<GitHubApp, "repoInstallation" | "installation">,
+): NonNullable<RefreshOptions["codeowners"]> {
+  return async (repo) => {
+    const [owner, name, ...rest] = repo.split("/");
+    if (!owner || !name || rest.length > 0) return undefined;
+    const installation = await github.repoInstallation(owner, name);
+    if (installation === undefined) return undefined;
+    const octokit = github.installation(installation);
+    for (const path of CODEOWNERS_PATHS) {
+      try {
+        const { data } = await octokit.rest.repos.getContent({
+          owner,
+          repo: name,
+          path,
+          mediaType: { format: "raw" },
+        });
+        if (typeof data === "string") return data;
+      } catch {
+        // GitHub reads the first of these that exists.
+      }
+    }
+    return undefined;
+  };
+}
 
 /** The CODEOWNERS of the pull request's repository at its base commit, read through the App. */
 async function codeownersAt(ctx: PullContext): Promise<CodeOwners | undefined> {

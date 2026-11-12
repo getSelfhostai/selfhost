@@ -690,6 +690,21 @@ export function backgroundWebhookRoute(
 }
 
 /**
+ * A refusal as a reply on GitHub: one closing period, and no command line flag the comment
+ * cannot pass (a comment names an agent with --agent, never a runtime).
+ */
+export function commentReason(reason: string): string {
+  const text = reason
+    .replace(
+      /name one with --runtime, or set \[runtime\] default/,
+      "set [runtime] default in the team's selfhost.toml (a comment cannot name a runtime)",
+    )
+    .trim()
+    .replace(/\.+$/, "");
+  return `${text}.`;
+}
+
+/**
  * A GitHub delivery that asks for a run (`/selfhost run` comment, or the run label on an issue):
  * maps the sender to a person through [review] github_logins, starts the run and answers on the
  * issue either way. undefined when the delivery asks for no run, so the caller handles it.
@@ -707,8 +722,19 @@ export async function githubRunTrigger(
   const repo = (
     payload as { repository?: { full_name?: string } }
   )?.repository?.full_name?.toLowerCase();
-  const owner =
-    team ?? (repo ? (await ledger.orgs.repoOwner(DEFAULT_ORG_ID, repo))?.team : undefined);
+  if (!repo) return undefined;
+  // SELFHOST_GITHUB_TEAM names the team, but only for its own repos: the App can be installed
+  // on repositories the team never claimed, and a comment there must not start the team's run.
+  const org = team ? ((await ledger.teams.getTeam(team))?.org ?? DEFAULT_ORG_ID) : DEFAULT_ORG_ID;
+  const claimed = (await ledger.orgs.repoOwner(org, repo))?.team;
+  if (team && claimed !== team) {
+    return {
+      refused: claimed
+        ? `${repo} belongs to team ${claimed}, not ${team} (SELFHOST_GITHUB_TEAM)`
+        : `${repo} is not claimed by team ${team}: add it with selfhost team repo add`,
+    };
+  }
+  const owner = team ?? claimed;
   if (!owner) return undefined;
   const { config } = await background.settings(owner);
   const found = githubRunRequest(event, payload, backgroundSettings(config));
@@ -725,7 +751,7 @@ export async function githubRunTrigger(
   });
   const reply =
     "refused" in result
-      ? `selfhost did not start a run: ${result.refused}.`
+      ? `selfhost did not start a run: ${commentReason(result.refused)}`
       : `selfhost started background run \`${result.run.id}\` (${result.run.agent}) on branch \`${result.run.branch}\`. Follow it with \`selfhost tail --run ${result.run.id}\`.`;
   await background.github?.comment(found.repo, found.number, reply).catch((error) => {
     background.log(

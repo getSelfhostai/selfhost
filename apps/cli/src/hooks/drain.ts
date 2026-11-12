@@ -27,6 +27,7 @@ import {
   type GuardRecord,
   type HookAgent,
   type McpSpoolLine,
+  PULL_REQUEST_URL,
   SPOOL_FILE_PATTERN,
   type SpoolLine,
 } from "./receive.js";
@@ -251,6 +252,17 @@ function mapLine(
     const cwd = typeof payload?.cwd === "string" && payload.cwd !== "" ? payload.cwd : undefined;
     const repo = cwd && repoOf ? repoOf(cwd) : undefined;
     const events = MAPPERS[agent](line.payload, { ...ctx, ts, ...(repo ? { repo } : {}) });
+    // The pull request the call opened links the run to it: the run view lists it, and
+    // selfhost share posts on it. pr.opened itself stays the server's (the GitHub App's).
+    const prUrl =
+      typeof line.pr_url === "string" ? PULL_REQUEST_URL.exec(line.pr_url)?.[0] : undefined;
+    if (prUrl) {
+      for (const [index, event] of events.entries()) {
+        if (event.kind === "tool.result") {
+          events[index] = { ...event, links: { ...event.links, pr_url: prUrl } };
+        }
+      }
+    }
     if (line.guard) {
       const toolEvent = events.find((event) => event.kind === "tool.called");
       const decision = guardEvent(agent, line.payload, line.guard, toolEvent, ts, repo);

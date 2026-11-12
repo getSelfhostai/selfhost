@@ -101,7 +101,8 @@ export function autoApprover(
           ? { risk: { level: ctx.risk.level, score: ctx.risk.score } }
           : {}),
         files,
-        ...(checks ? { checks } : {}),
+        ...(checks ? { checks: checks.checks } : {}),
+        ...(checks?.note ? { checksNote: checks.note } : {}),
         ...(change.run
           ? { guardrails: change.run.guardrails.map(({ event: _event, ...hit }) => hit) }
           : {}),

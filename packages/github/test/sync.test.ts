@@ -9,7 +9,9 @@ import {
   type PullRequestRef,
   REVIEW_CHECK_NAME,
   readHeadChecks,
+  requestReviews,
   riskLabel,
+  STATUSES_UNREADABLE,
   syncComment,
   syncPullRequest,
 } from "../src/index.js";
@@ -87,7 +89,11 @@ describe("syncPullRequest", () => {
 
     const writesBefore = github.writes.length;
     const second = await syncPullRequest(octokit, pr, desired());
-    expect(second).toEqual({ writes: [], refused: [] });
+    expect(second).toEqual({
+      writes: [],
+      refused: [],
+      reviewers: { requested: { users: ["bob"], teams: [] }, dropped: { users: [], teams: [] } },
+    });
     expect(github.writes).toHaveLength(writesBefore);
     expect(github.unknown).toEqual([]);
   });
@@ -198,6 +204,30 @@ describe("syncPullRequest", () => {
       "create_check",
       "create_comment",
     ]);
+  });
+
+  // In a real install GitHub answered 201 to a request for @org/selfhost-sandbox-reviewers and
+  // kept nothing (the team had no access to the repository); every later sync asked again.
+  it("reads back what GitHub kept, and does not ask again for what it dropped", async () => {
+    github = new FakeGitHub({ droppedTeams: ["sandbox-reviewers"] });
+    github.addPull(REPO, 101, { author: "alice" });
+    octokit = new Octokit({ auth: FAKE_INSTALLATION_TOKEN, request: { fetch: github.fetch } });
+    const wanted = { users: ["bob"], teams: ["sandbox-reviewers"] };
+    const first = await requestReviews(octokit, pr, wanted);
+    expect(first).toEqual({
+      requested: { users: ["bob"], teams: [] },
+      dropped: { users: [], teams: ["sandbox-reviewers"] },
+      write: { action: "request_reviewers", users: ["bob"], teams: [] },
+    });
+    expect(github.pull(REPO, 101).requestedTeams).toEqual([]);
+
+    const before = github.writes.length;
+    const again = await requestReviews(octokit, pr, { ...wanted, skip: first.dropped });
+    expect(again).toEqual({
+      requested: { users: ["bob"], teams: [] },
+      dropped: { users: [], teams: ["sandbox-reviewers"] },
+    });
+    expect(github.writes).toHaveLength(before);
   });
 
   it("fails on other GitHub errors", async () => {
@@ -342,12 +372,38 @@ describe("readHeadChecks", () => {
       { context: "netlify", state: "success" },
       { context: "selfhost/receipt", state: "pending" },
     ]);
-    expect(await readHeadChecks(octokit, pr)).toEqual([
-      { name: "ci / test", state: "passed" },
-      { name: "ci / lint", state: "passed" },
-      { name: "ci / e2e", state: "pending" },
-      { name: "ci / deploy-preview", state: "failed" },
-      { name: "netlify", state: "passed" },
-    ]);
+    expect(await readHeadChecks(octokit, pr)).toEqual({
+      checks: [
+        { name: "ci / test", state: "passed" },
+        { name: "ci / lint", state: "passed" },
+        { name: "ci / e2e", state: "pending" },
+        { name: "ci / deploy-preview", state: "failed" },
+        { name: "netlify", state: "passed" },
+      ],
+    });
+  });
+
+  // The documented App permissions once left out "Commit statuses: read": GitHub answered the
+  // combined status 403 on every delivery, and require_green_checks never passed.
+  it("reads the check runs alone, saying so, when GitHub refuses the commit statuses", async () => {
+    github.checkRuns.push({
+      id: 1,
+      name: "ci / test",
+      head_sha: HEAD,
+      external_id: null,
+      status: "completed",
+      conclusion: "success",
+      output: { title: null, summary: null, text: null },
+    });
+    const refusing = new FakeGitHub({ noStatusesPermission: true });
+    refusing.checkRuns.push(...github.checkRuns);
+    const limited = new Octokit({
+      auth: FAKE_INSTALLATION_TOKEN,
+      request: { fetch: refusing.fetch },
+    });
+    expect(await readHeadChecks(limited, pr)).toEqual({
+      checks: [{ name: "ci / test", state: "passed" }],
+      note: STATUSES_UNREADABLE,
+    });
   });
 });

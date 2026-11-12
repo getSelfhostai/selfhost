@@ -11,7 +11,14 @@ export {
   readPullRequest,
 } from "./pull.js";
 export { type LocalChange, parseChangeTarget, type ReadChangeOptions, readChange } from "./read.js";
-export { ledgerEvents, readRun, runGuardrails, sessionCwd, sessionHints } from "./run.js";
+export {
+  GITHUB_APP_ACTOR,
+  ledgerEvents,
+  readRun,
+  runGuardrails,
+  sessionCwd,
+  sessionHints,
+} from "./run.js";
 export {
   isTestFile,
   skipMarker,
