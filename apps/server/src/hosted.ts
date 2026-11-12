@@ -27,7 +27,7 @@ import { teamId } from "./ids.js";
  * The hosted team server: SELFHOST_MODE=hosted on the same server and image as a self-hosted
  * install. What changes is configuration only:
  *
- * - Every org is isolated with Postgres row-level security (migration 0021): a person token's
+ * - Every org is isolated with Postgres row-level security (migration 0019): a person token's
  *   request runs with selfhost.org set to its org, so a query can neither read nor write another
  *   org's rows, whatever the route does. Each org has its own key for the secrets kept at rest.
  * - People sign in with GitHub or Google. The first sign-in of an email that is in no org makes

@@ -786,7 +786,7 @@ a database); `SELFHOST_BACKGROUND=off` turns background runs off.
 differences in configuration only (`src/hosted.ts`). A self-hosted server (`SELFHOST_MODE`
 unset or `self-hosted`) does not change.
 
-- **Org isolation.** Migration `0021_hosted_tenancy` turns on Postgres row-level security on every
+- **Org isolation.** Migration `0019_hosted_tenancy` turns on Postgres row-level security on every
   table that holds an org's rows (orgs, teams, people, tokens, events, review items, repos,
   notifications, handoffs, exception grants, background runs and kill switches, context
   proposals, ROI baselines, receipts, org keys). A person token's request runs with

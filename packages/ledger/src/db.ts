@@ -52,7 +52,7 @@ export async function connect(options: ConnectOptions = {}): Promise<Database> {
   return connectPglite(resolveDataDir(options.dataDir));
 }
 
-/** Sets the org the row-level security policies of migration 0021 show, for this transaction. */
+/** Sets the org the row-level security policies of migration 0019 show, for this transaction. */
 const SET_ORG = "SELECT set_config('selfhost.org', $1, true)";
 
 function connectPostgres(url: string): Database {

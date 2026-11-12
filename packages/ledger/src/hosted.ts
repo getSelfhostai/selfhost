@@ -108,7 +108,7 @@ export async function rowSecurityProblem(db: Database): Promise<string | undefin
  * Makes row-level security bind the server's own role on a hosted server: checks it is no
  * superuser and has no BYPASSRLS (rowSecurityProblem), then turns on FORCE ROW LEVEL SECURITY
  * on every table of the schema that has policies, so they bind the tables' owner, which the
- * server is. Migration 0021 leaves FORCE off, so a self-hosted install does not change. The
+ * server is. Migration 0019 leaves FORCE off, so a self-hosted install does not change. The
  * message says what to do; undefined when it is done.
  */
 export async function enforceRowSecurity(db: Database): Promise<string | undefined> {

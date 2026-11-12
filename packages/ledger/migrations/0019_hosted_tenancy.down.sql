@@ -1,4 +1,4 @@
--- Rolls back 0021_hosted_tenancy.sql: no row-level security, no per-org keys or seat limits.
+-- Rolls back 0019_hosted_tenancy.sql: no row-level security, no per-org keys or seat limits.
 -- Notification targets a hosted server sealed with an org key stay sealed and stop delivering.
 DROP POLICY receipts_org ON receipts;
 ALTER TABLE receipts NO FORCE ROW LEVEL SECURITY;

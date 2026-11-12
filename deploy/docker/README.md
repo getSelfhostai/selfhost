@@ -468,7 +468,7 @@ Settings, all in `compose.hosted.yml`:
   it runs, managed Postgres with backups and point-in-time recovery, alerting, log retention and
   who is on call are not set up.
 - **Security review of tenant isolation and key handling** (dev). Before launch: the
-  row-level security policies of migration 0021 (tables without one hold no org's rows:
+  row-level security policies of migration 0019 (tables without one hold no org's rows:
   `run_repos`, `review_signals`, `review_progress`, `github_deliveries`,
   `github_dropped_reviewers`), the server's own jobs that run with no org scope, the org key
   wrapping and the rotation of `SELFHOST_HOSTED_SECRET_KEY` (not built), the sign-in flow

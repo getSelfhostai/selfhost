@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 /**
  * The org the current request acts for, on a hosted server (SELFHOST_MODE=hosted). On Postgres,
  * every query made while a scope is set runs in a transaction that sets selfhost.org first, and
- * the row-level security policies of migration 0021 then show and accept only that org's rows.
+ * the row-level security policies of migration 0019 then show and accept only that org's rows.
  * With no scope (a self-hosted install, the admin token, the server's own jobs) the policies
  * let every row through, as before.
  */
