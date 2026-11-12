@@ -166,6 +166,21 @@ describe("prepareCredentials", () => {
     }
   });
 
+  it("lets the runtime adapter read every issued value through the spec, not only env: refs", async () => {
+    const { deps } = setup();
+    const prepared = await prepareCredentials(RUN, POLICY, deps);
+    const own = { name: "CI_TOKEN", from: "env:CI_TOKEN" };
+    const spec = prepared.spec({ timeoutMinutes: 30, secrets: [own] });
+    for (const ref of prepared.secrets) {
+      expect(await spec.resolveSecret?.(ref)).toBe(prepared.env[ref.name]);
+    }
+    expect(await spec.resolveSecret?.({ name: "GITHUB_TOKEN", from: "env:GITHUB_TOKEN" })).toBe(
+      undefined,
+    );
+    // A secret of the base spec is left to the adapter's own resolver.
+    expect(await spec.resolveSecret?.(own)).toBe(undefined);
+  });
+
   it("records credential.issued events that validate and carry no value", async () => {
     const { deps, recorded } = setup();
     const prepared = await prepareCredentials(RUN, POLICY, deps);

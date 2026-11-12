@@ -306,6 +306,21 @@ export function orphanedCredentials(
   };
 }
 
+/**
+ * Appends a run's events under the run's team (event.team), as the runtime's events are. Left to
+ * repo ownership, a run on a repo no team claimed would be stored with no team, and its failure
+ * would reach neither the team's review list nor its person's.
+ */
+async function appendUnderRunTeam(ledger: Ledger, events: LedgerEvent[]) {
+  const byTeam = new Map<string | undefined, LedgerEvent[]>();
+  for (const event of events) {
+    const list = byTeam.get(event.team);
+    if (list) list.push(event);
+    else byTeam.set(event.team, [event]);
+  }
+  for (const [team, list] of byTeam) await ledger.append(list, team ? { team } : {});
+}
+
 /** Model spend so far for a run: its cost.recorded events, from the gateway key or the hooks. */
 export function runModelCost(ledger: Ledger): (runId: string) => Promise<number> {
   const db = databaseOf(ledger);
@@ -332,15 +347,13 @@ export function createBackground(ledger: Ledger, options: BackgroundServerOption
       env: options.env ?? process.env,
       ...(options.github ? { github: options.github } : {}),
       ...(gateway ? { gateway: { client: gateway.client, baseUrl: gateway.baseUrl } } : {}),
-      record: async (events) => {
-        await ledger.append(events);
-      },
+      record: (events) => appendUnderRunTeam(ledger, events),
       now: () => clock.now(),
     });
   const deliver = options.deliver;
   const runner = createRunner({
     store: ledger.backgroundRuns,
-    events: { append: (events) => ledger.append(events) },
+    events: { append: (events) => appendUnderRunTeam(ledger, events) },
     runtime: options.runtime ?? (() => undefined),
     settings,
     credentials,

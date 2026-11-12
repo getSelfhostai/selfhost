@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { ExecOptions, ExecResult, SandboxSpec, SecretRef } from "../types.js";
 
 /** Label every sandbox selfhost creates carries, so list and the reaper only see its own. */
@@ -29,27 +30,52 @@ export function envSecrets(env: Readonly<Record<string, string | undefined>>): S
   };
 }
 
-/** The spec's secrets as name to value, for providers that take them as environment variables. */
+/**
+ * The spec's secrets as name to value, for providers that take them as environment variables:
+ * from the spec's own resolver (the run's issued credentials) first, then the adapter's.
+ */
 export async function secretValues(
   spec: SandboxSpec,
   resolve: SecretResolver,
 ): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
-  for (const ref of spec.secrets ?? []) out[ref.name] = await resolve(ref);
+  for (const ref of spec.secrets ?? []) {
+    out[ref.name] = (await spec.resolveSecret?.(ref)) ?? (await resolve(ref));
+  }
   return out;
 }
 
-/** Labels to attach: the spec's plus the managed label. */
+/** Labels to attach: the spec's plus the managed label, with values every provider accepts. */
 export function labelsOf(spec: SandboxSpec): Record<string, string> {
-  return { ...spec.labels, [MANAGED_LABEL.key]: MANAGED_LABEL.value };
+  return providerLabels({ ...spec.labels, [MANAGED_LABEL.key]: MANAGED_LABEL.value });
 }
 
-/** Whether `have` holds every label in `want`. */
+/** A Kubernetes label value: at most 63 characters, alphanumeric at both ends, then - _ . inside. */
+const LABEL_VALUE = /^(?:[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?)?$/;
+
+/**
+ * A label value in the strictest form a provider takes: OpenSandbox (and anything on Kubernetes)
+ * refuses a value like an email address. A value that already fits is kept; any other becomes
+ * `h-` and a hash of it, the same every time, so a list by that label still finds the sandbox.
+ * The value itself stays in the ledger (the run's person and team on the run and its sandbox
+ * events), never in the provider's labels.
+ */
+export function labelValue(value: string): string {
+  if (LABEL_VALUE.test(value)) return value;
+  return `h-${createHash("sha256").update(value).digest("hex").slice(0, 32)}`;
+}
+
+/** Labels with every value as labelValue writes it, for create calls and list filters alike. */
+export function providerLabels(labels: Readonly<Record<string, string>>): Record<string, string> {
+  return Object.fromEntries(Object.entries(labels).map(([key, value]) => [key, labelValue(value)]));
+}
+
+/** Whether `have`, as a provider stores it, holds every label in `want`. */
 export function labelsMatch(
   have: Readonly<Record<string, string>> | undefined,
   want: Readonly<Record<string, string>> | undefined,
 ): boolean {
-  return Object.entries(want ?? {}).every(([key, value]) => have?.[key] === value);
+  return Object.entries(want ?? {}).every(([key, value]) => have?.[key] === labelValue(value));
 }
 
 /** One argument for sh, in single quotes. */
@@ -224,7 +250,7 @@ export async function loadSdk<T>(name: string, version: string): Promise<T> {
     const code = (error as { code?: string }).code;
     if (code === "ERR_MODULE_NOT_FOUND" || code === "MODULE_NOT_FOUND") {
       throw new Error(
-        `This runtime needs the ${name} package, which is not installed. Install it next to selfhost: npm install ${name}@${version}`,
+        `This runtime needs the ${name} package, which is not installed. Install it next to selfhost: npm install ${name}@${version} (the selfhost server's Docker image already includes every runtime's package).`,
       );
     }
     throw error;

@@ -102,6 +102,44 @@ describe("the server's runtime seam", () => {
     }
   });
 
+  it("says a missing url goes in the server's config or environment, and takes it from there", async () => {
+    const ledger = await openLedger({ dataDir: "memory://" });
+    try {
+      const team = {
+        runtime: {
+          default: "opensandbox" as const,
+          providers: { opensandbox: { url: "http://opensandbox:8090" } },
+        },
+      };
+      const refusing = serverRuntime(ledger, { env: {}, now: () => NOW });
+      const refused = await refusing({ ...run, runtime: "opensandbox" }, team);
+      if (!isRefused(refused)) throw new Error("expected a refusal");
+      expect(refused.refusal.message).toMatch(
+        /^Set url in \[runtime\.providers\.opensandbox\] of the server's own selfhost\.toml \(the file SELFHOST_CONFIG names in the server's environment\), or SELFHOST_RUNTIME_OPENSANDBOX_URL in the server's environment, such as http:\/\/localhost:8080\./,
+      );
+      expect(refused.refusal.message).toContain(
+        "Team web's policy sets one, which the team server ignores",
+      );
+
+      const opened: unknown[] = [];
+      const seam = serverRuntime(ledger, {
+        env: {
+          SELFHOST_RUNTIME_OPENSANDBOX_URL: "http://opensandbox:8090",
+          OPEN_SANDBOX_API_KEY: "k",
+        },
+        now: () => NOW,
+        open: (_kind, config) => {
+          opened.push(config.runtime?.providers?.opensandbox);
+          return fakeRuntime({ kind: "opensandbox", now: () => NOW });
+        },
+      });
+      expect(isRefused(await seam({ ...run, runtime: "opensandbox" }, {}))).toBe(false);
+      expect(opened).toEqual([{ url: "http://opensandbox:8090" }]);
+    } finally {
+      await ledger.close();
+    }
+  });
+
   it("sends a team's tracer only the team's own SELFHOST_RUN_SECRET_<TEAM>__* variables as headers", () => {
     const tracer = (variable: string) => {
       const parsed = parseConfig(

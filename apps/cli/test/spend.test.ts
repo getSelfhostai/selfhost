@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Ledger, mapOtelLogs, openLedger } from "@selfhost/ledger";
+import { sandboxEvent } from "@selfhost/runtime";
 import {
   type CreateTeamResponse,
   EVENT_SCHEMA,
@@ -302,6 +303,36 @@ describe("selfhost spend in a team", () => {
         body: JSON.stringify({ events: [cost(1.5, 2), cost(2.25, 30)] }),
       });
       expect(synced.status).toBe(200);
+      // A background run's sandbox, still running 25 minutes after its run ended.
+      const minutesAgo = (minutes: number) => new Date(now.getTime() - minutes * 60_000);
+      const sandbox = await app.request("/v1/events", {
+        method: "POST",
+        headers: { authorization: `Bearer ${dev}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          events: [
+            {
+              ...sandboxEvent(
+                "sandbox.started",
+                { runtime: "e2b", sandbox_id: "sbx-1", usd_per_hour: 0.1656, billing: "reserved" },
+                { run_id: "run-7", owner: "dev@example.com" },
+                minutesAgo(60),
+              ),
+              // The run's owner sends it here; the runner itself writes it as the system.
+              actor: { kind: "person", id: "dev@example.com" },
+            },
+            {
+              id: "01930c4e-2f1a-7b2c-9d3e-0000000000ee",
+              schema: EVENT_SCHEMA,
+              ts: minutesAgo(25).toISOString(),
+              source: "hook",
+              kind: "session.ended",
+              actor: { kind: "agent", id: "run-7" },
+              run_id: "run-7",
+            },
+          ],
+        }),
+      });
+      expect(sandbox.status, await sandbox.clone().text()).toBe(200);
 
       const server = "https://selfhost.acme.example.com";
       const dir = mkdtempSync(join(tmpdir(), "selfhost-spend-team-"));
@@ -325,6 +356,25 @@ describe("selfhost spend in a team", () => {
       expect(lines[0]).toMatch(/^Spend of team web on https:\/\/selfhost\.acme\.example\.com/);
       expect(lines.join("\n")).toContain("dev@example.com");
       expect(lines.join("\n")).not.toContain("Run selfhost import first");
+      // The sandbox section local mode prints, from the server's GET /v1/teams/web/sandboxes.
+      expect(report.sandboxes.team).toBe("web");
+      expect(report.sandboxes.windows[0]?.by_runtime[0]).toMatchObject({
+        runtime: "e2b",
+        sandboxes: 1,
+      });
+      expect(report.sandboxes.leftovers).toMatchObject([
+        { sandbox_id: "sbx-1", run_id: "run-7", stopped_at: null },
+      ]);
+      const text = lines.join("\n");
+      expect(text).toContain(
+        "Sandboxes of background runs: idle is billed time with no command running",
+      );
+      expect(text).toMatch(
+        /\n {2}e2b sbx-1 {2}run run-7 {2}25 min after it ended .*, still running/,
+      );
+      const json: string[] = [];
+      await runSpend({ since: "7d", json: true }, { ...io, write: (line) => json.push(line) });
+      expect(JSON.parse(json.join("\n")).sandboxes).toEqual(report.sandboxes);
 
       // Request types are a laptop's own: the server has none, so --by names --local.
       await expect(runSpend({ by: "request_type" }, io)).rejects.toThrow(/--local/);

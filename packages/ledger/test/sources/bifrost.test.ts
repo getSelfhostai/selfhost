@@ -97,3 +97,66 @@ describe("Bifrost gateway request logs", () => {
     expect(() => mapBifrostLog({ id: "x", status: "success" })).toThrow("timestamp");
   });
 });
+
+describe("Bifrost 2.4 request logs", () => {
+  const logs = (readJson("sources", "gateway", "bifrost-2.4-logs.json") as { logs: unknown[] })
+    .logs;
+  const [written, refused, curl, provider] = logs.map((log) => mapBifrostLog(log));
+
+  it("records the cache writes of a write-only request, with no cache reads", () => {
+    expect(written?.[0]).toMatchObject({
+      kind: "cost.recorded",
+      team: "web",
+      cost: {
+        input_tokens: 10,
+        output_tokens: 46,
+        cache_read_tokens: 0,
+        cache_write_tokens: 30734,
+        usd: 0.0386575,
+      },
+    });
+  });
+
+  it("reads a budget refusal with no error details from its content summary", () => {
+    for (const events of [refused, curl]) {
+      expect(events).toHaveLength(1);
+      const result = validateEvent(events?.[0]);
+      expect(result.ok ? [] : result.errors).toEqual([]);
+    }
+    expect(refused?.[0]).toMatchObject({
+      kind: "alert.raised",
+      actor: { kind: "person", id: "alice@example.com" },
+      team: "web",
+      session_id: "0c1b4732-5f16-4a3e-8776-96cedd495215",
+      data: {
+        alert: "gateway_budget_exceeded",
+        error_type: "budget_exceeded",
+        error: "budget exceeded: 0.0387 >= 0.0100 dollars",
+      },
+    });
+    // Only the phrase is kept, never the rest of the summary.
+    expect(curl?.[0]?.data).toMatchObject({
+      alert: "gateway_budget_exceeded",
+      error: "budget exceeded",
+    });
+    expect(JSON.stringify(curl)).not.toContain("ping");
+  });
+
+  it("takes a 402 from Bifrost as a budget refusal, but not a provider's own 402", () => {
+    expect(provider?.[0]?.data).toMatchObject({
+      alert: "model_request_failed",
+      status_code: 402,
+      error: "Your credit balance is too low",
+    });
+    const gateway = mapBifrostLog({
+      ...(logs[3] as Record<string, unknown>),
+      content_summary: "",
+      error_details: { is_bifrost_error: true, status_code: 402, error: { message: "Over" } },
+    });
+    expect(gateway[0]?.data).toMatchObject({
+      alert: "gateway_budget_exceeded",
+      error_type: "budget_exceeded",
+      status_code: 402,
+    });
+  });
+});

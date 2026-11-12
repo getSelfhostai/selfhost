@@ -378,6 +378,11 @@ export async function prepareCredentials(
         ...base,
         env: { ...base.env, ...plainEnv },
         secrets: [...(base.secrets ?? []).filter((s) => !(s.name in env)), ...refs],
+        // The adapter reads the issued values from here: its own resolver knows only env:.
+        resolveSecret: async (ref) =>
+          refs.some((own) => own.name === ref.name && own.from === ref.from)
+            ? env[ref.name]
+            : base.resolveSecret?.(ref),
         ...(egressPolicy ? { egress: egressPolicy } : {}),
         labels: { ...base.labels, "selfhost-run": run.id, "selfhost-team": run.team },
       };

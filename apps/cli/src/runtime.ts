@@ -353,7 +353,15 @@ function printReap(report: ReapReport, runtimes: number, write: (line: string) =
   for (const error of report.errors)
     write(`${error.runtime}: could not list sandboxes: ${error.message}`);
   if (report.leftovers.length === 0) {
-    write(`No sandbox is running more than ${report.leftover_minutes} minutes past its run.`);
+    // A runtime that could not be listed may still have sandboxes running: say so, not "none".
+    const failed = new Set(report.errors.map((error) => error.runtime));
+    if (failed.size >= runtimes) {
+      write("Could not tell whether any sandbox is left running: no runtime could be listed.");
+    } else {
+      write(
+        `No sandbox is running more than ${report.leftover_minutes} minutes past its run${failed.size > 0 ? ` on the runtimes that could be listed; ${[...failed].join(", ")} could not be` : ""}.`,
+      );
+    }
     return;
   }
   write(report.dry_run ? `Left running (dry run, nothing stopped):` : `Left running:`);

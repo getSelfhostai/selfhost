@@ -196,6 +196,23 @@ describe("background run lifecycle", () => {
     ]);
   });
 
+  it("records the sandbox on the run before it is ready, hashes an email label and tells claude it is sandboxed", async () => {
+    const h = harness();
+    const create = h.runtime.create.bind(h.runtime);
+    const recorded: (string | null | undefined)[] = [];
+    h.runtime.create = async (spec) => {
+      await spec.onCreated?.("provider-1");
+      recorded.push((await h.store.get(spec.labels?.selfhost_run ?? ""))?.sandbox_id);
+      return create(spec);
+    };
+    const final = await started(await h.runner.start(h.request())).done;
+    expect(final.state).toBe("succeeded");
+    expect(recorded).toEqual(["provider-1"]);
+    const sandbox = [...h.runtime.sandboxes.values()][0];
+    expect(sandbox?.spec.labels?.selfhost_person).toMatch(/^h-[0-9a-f]{32}$/);
+    expect(h.agentStarts[0]?.options.env).toMatchObject({ IS_SANDBOX: "1" });
+  });
+
   it("fails after the last retry", async () => {
     const h = harness({ createFailures: 5 });
     const final = await started(await h.runner.start(h.request())).done;

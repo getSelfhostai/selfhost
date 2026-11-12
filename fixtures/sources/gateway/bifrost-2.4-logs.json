@@ -1,0 +1,113 @@
+{
+  "logs": [
+    {
+      "id": "f75d3cda-2214-42dd-b632-1d168ae81864",
+      "parent_request_id": "",
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5",
+      "status": "success",
+      "object": "responses_stream",
+      "timestamp": "2026-11-12T06:18:45.187Z",
+      "created_at": "2026-11-12T06:18:45.187Z",
+      "number_of_retries": 0,
+      "fallback_index": 0,
+      "latency": 1307,
+      "cost": 0.0386575,
+      "virtual_key_id": "vk-test-alice",
+      "virtual_key_name": "selfhost:person:web:alice@example.com",
+      "session_id": "cb922d6e-0f1b-498e-bfe0-de3c2c0bb80e",
+      "user_agent": "claude-cli/2.1.197 (external, sdk-cli)",
+      "stream": true,
+      "token_usage": {
+        "prompt_tokens": 30744,
+        "prompt_tokens_details": { "cached_read_tokens": 0, "cached_write_tokens": 30734 },
+        "completion_tokens": 46,
+        "total_tokens": 30790
+      },
+      "error_details": null,
+      "content_summary": "",
+      "metadata": {
+        "selfhost_kind": "person",
+        "selfhost_team": "web",
+        "selfhost_person": "alice@example.com"
+      }
+    },
+    {
+      "id": "bedb476d-a749-40a9-9f5a-d6db9b8005bc",
+      "parent_request_id": "",
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5",
+      "status": "error",
+      "object": "responses_stream",
+      "timestamp": "2026-11-12T06:18:57.217Z",
+      "created_at": "2026-11-12T06:18:57.217Z",
+      "number_of_retries": 0,
+      "fallback_index": 0,
+      "latency": 0,
+      "cost": 0,
+      "virtual_key_id": "vk-test-alice",
+      "virtual_key_name": "selfhost:person:web:alice@example.com",
+      "session_id": "0c1b4732-5f16-4a3e-8776-96cedd495215",
+      "user_agent": "claude-cli/2.1.197 (external, sdk-cli)",
+      "stream": true,
+      "token_usage": null,
+      "error_details": null,
+      "content_summary": "Budget exceeded: vk_model_config * budget exceeded: 0.0387 >= 0.0100 dollars",
+      "metadata": {
+        "selfhost_kind": "person",
+        "selfhost_team": "web",
+        "selfhost_person": "alice@example.com"
+      }
+    },
+    {
+      "id": "3bc5f325-da48-4d82-aa7e-a28bf3509088",
+      "parent_request_id": "",
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5",
+      "status": "error",
+      "object": "responses",
+      "timestamp": "2026-11-12T06:18:57.262Z",
+      "created_at": "2026-11-12T06:18:57.262Z",
+      "number_of_retries": 0,
+      "fallback_index": 0,
+      "latency": 1,
+      "cost": 0,
+      "virtual_key_id": "vk-test-alice",
+      "virtual_key_name": "selfhost:person:web:alice@example.com",
+      "user_agent": "curl/8.7.1",
+      "stream": false,
+      "token_usage": null,
+      "error_details": null,
+      "content_summary": "ping budget exceeded",
+      "metadata": {
+        "selfhost_kind": "person",
+        "selfhost_team": "web",
+        "selfhost_person": "alice@example.com"
+      }
+    },
+    {
+      "id": "5c63c961-065a-443d-9b1f-b4f198514950",
+      "parent_request_id": "",
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5",
+      "status": "error",
+      "object": "responses",
+      "timestamp": "2026-11-12T06:16:51.099Z",
+      "created_at": "2026-11-12T06:16:51.099Z",
+      "number_of_retries": 0,
+      "fallback_index": 0,
+      "latency": 10,
+      "cost": 0,
+      "user_agent": "curl/8.7.1",
+      "stream": false,
+      "token_usage": null,
+      "error_details": {
+        "is_bifrost_error": false,
+        "status_code": 402,
+        "error": { "type": "invalid_request_error", "message": "Your credit balance is too low" }
+      },
+      "content_summary": "ping budget exceeded",
+      "metadata": {}
+    }
+  ]
+}

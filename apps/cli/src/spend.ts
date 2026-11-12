@@ -302,6 +302,8 @@ export interface TeamSpendReport {
   usage: Pick<UsageResponse, "rows" | "total" | "teams">;
   /** GET /v1/budget: this month's spend and every budget that applies to this person. */
   budget: BudgetResponse;
+  /** GET /v1/teams/{team}/sandboxes: the team's sandbox cost, as `sandboxes` in local mode. */
+  sandboxes: SandboxWasteResponse;
 }
 
 /** The dimensions the team server groups by; request types are read on a laptop only. */
@@ -368,6 +370,7 @@ function printTeamReport(report: TeamSpendReport, write: (line: string) => void)
     );
   }
   write("Request types and cache tips come from this machine's ledger: selfhost spend --local.");
+  printSandboxes(report.sandboxes, write);
 }
 
 /** Team mode: spend and budgets from the team server, as `selfhost inbox` reads its list. */
@@ -381,9 +384,10 @@ async function runTeamSpend(
   const by = teamBy(options.by);
   const client = new TeamClient(membership.server, membership.token, io.fetch ?? fetch);
   const range = { from: since.toISOString(), to: now.toISOString() };
-  const [usage, budget] = await Promise.all([
+  const [usage, budget, sandboxes] = await Promise.all([
     client.usage({ ...range, group_by: by.join(",") }),
     client.budget(),
+    client.sandboxes(membership.team),
   ]);
   const report: TeamSpendReport = {
     schema: "selfhost.team_spend/v1",
@@ -393,6 +397,7 @@ async function runTeamSpend(
     by,
     usage: { rows: usage.rows, total: usage.total, teams: usage.teams },
     budget,
+    sandboxes,
   };
   if (options.json) io.write(JSON.stringify(report, null, 2));
   else printTeamReport(report, io.write);

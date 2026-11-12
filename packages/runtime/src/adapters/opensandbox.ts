@@ -10,6 +10,7 @@ import {
   labelsOf,
   loadSdk,
   MANAGED_LABEL,
+  providerLabels,
   ranOutOfTime,
   secretValues,
   timedOutResult,
@@ -56,6 +57,10 @@ export interface OpenSandboxBox {
     readBytes(path: string): Promise<Uint8Array>;
   };
   getInfo(): Promise<OpenSandboxInfo>;
+  waitUntilReady(opts: {
+    readyTimeoutSeconds: number;
+    pollingIntervalMillis: number;
+  }): Promise<void>;
   credentialVault: { create(request: never): Promise<unknown> };
   kill(): Promise<void>;
   close(): Promise<void>;
@@ -76,6 +81,31 @@ const DEFAULT_IMAGE = "node:22-bookworm";
 const CPU_TAG = "selfhost-cpu";
 const MEMORY_TAG = "selfhost-memory-gib";
 const LIVE_STATES = ["Creating", "Running", "Pausing", "Paused", "Resuming"];
+/**
+ * How long creating a sandbox may take, by default: the server answers the create call only once
+ * the container (and its egress sidecar) is up, which takes far longer than the SDK's 30-second
+ * request timeout on a cold image. [runtime.providers.opensandbox] create_timeout_seconds sets it.
+ */
+export const OPENSANDBOX_CREATE_TIMEOUT_SECONDS = 600;
+
+/**
+ * Joins the SDK's output messages back into the text the command printed. The server sends one
+ * message per line without its line break, so each message that did not end one is followed by a
+ * break when the next message comes. Fed message by message, it gives the chunks to stream.
+ */
+export function outputJoiner(): (text: string) => string {
+  let open = false;
+  return (text) => {
+    const out = `${open ? "\n" : ""}${text}`;
+    open = !text.endsWith("\n");
+    return out;
+  };
+}
+
+const joined = (messages: readonly { text: string }[]) => {
+  const next = outputJoiner();
+  return messages.map((message) => next(message.text)).join("");
+};
 
 /** OpenSandbox's states, mapped to the contract's. */
 export function openSandboxState(state: string): SandboxState {
@@ -115,6 +145,8 @@ export function openSandboxRuntime(options: AdapterOptions<OpenSandboxSdk>): Run
     domain: openSandboxApi(options.settings.url ?? "http://localhost:8080"),
     ...(options.credentials.key ? { apiKey: options.credentials.key } : {}),
   };
+  const createTimeout =
+    options.settings.create_timeout_seconds ?? OPENSANDBOX_CREATE_TIMEOUT_SECONDS;
   const manager = async () => (await load()).SandboxManager.create({ connectionConfig });
   const stopped = new Map<string, number>();
   const logs = new Map<string, LogBuffer>();
@@ -144,6 +176,8 @@ export function openSandboxRuntime(options: AdapterOptions<OpenSandboxSdk>): Run
         log.push(`$ ${command}`);
         const timeoutMs = execOptions.timeoutMs;
         const begun = Date.now();
+        const stdoutLine = outputJoiner();
+        const stderrLine = outputJoiner();
         const answer = await withTimeout(
           box.commands.run(
             command,
@@ -153,16 +187,16 @@ export function openSandboxRuntime(options: AdapterOptions<OpenSandboxSdk>): Run
               ...(timeoutMs ? { timeoutSeconds: Math.max(1, Math.ceil(timeoutMs / 1000)) } : {}),
             },
             {
-              onStdout: (message) => emit(execOptions, log, "stdout", message.text),
-              onStderr: (message) => emit(execOptions, log, "stderr", message.text),
+              onStdout: (message) => emit(execOptions, log, "stdout", stdoutLine(message.text)),
+              onStderr: (message) => emit(execOptions, log, "stderr", stderrLine(message.text)),
             },
           ),
           timeoutMs ? timeoutMs + 5000 : undefined,
         );
         if ("timedOut" in answer) return timedOutResult();
         const execution = answer.value;
-        const stdout = execution.logs.stdout.map((message) => message.text).join("");
-        const stderr = execution.logs.stderr.map((message) => message.text).join("");
+        const stdout = joined(execution.logs.stdout);
+        const stderr = joined(execution.logs.stderr);
         const exitCode = execution.exitCode ?? (execution.error ? 1 : 0);
         if (timeoutMs && exitCode !== 0 && ranOutOfTime(begun, timeoutMs)) {
           return timedOutResult(stdout, stderr);
@@ -220,7 +254,10 @@ export function openSandboxRuntime(options: AdapterOptions<OpenSandboxSdk>): Run
       const ref = spec.image ?? options.settings.template ?? DEFAULT_IMAGE;
       const env = { ...spec.env, ...(await secretValues(spec, options.secrets)) };
       const box = await sdk.Sandbox.create({
-        connectionConfig,
+        // The create call itself waits for the container, so it gets the long timeout.
+        connectionConfig: { ...connectionConfig, requestTimeoutSeconds: createTimeout },
+        // Readiness is awaited below, once the sandbox's id is recorded.
+        skipHealthCheck: true,
         ...(ref.startsWith("snapshot:") ? { snapshotId: ref.slice(9) } : { image: ref }),
         timeoutSeconds: spec.timeoutMinutes * 60,
         resource: { cpu: String(size.cpu), memory: `${size.memoryGiB}Gi` },
@@ -241,13 +278,18 @@ export function openSandboxRuntime(options: AdapterOptions<OpenSandboxSdk>): Run
         ...spec.native?.create,
         ...(spec.native?.credentialVault ? { credentialProxy: { enabled: true } } : {}),
       });
-      if (spec.native?.credentialVault) {
-        try {
+      try {
+        await spec.onCreated?.(box.id);
+        await box.waitUntilReady({
+          readyTimeoutSeconds: createTimeout,
+          pollingIntervalMillis: 1000,
+        });
+        if (spec.native?.credentialVault) {
           await box.credentialVault.create(spec.native.credentialVault as never);
-        } catch (error) {
-          await box.kill();
-          throw error;
         }
+      } catch (error) {
+        await box.kill().catch(() => undefined);
+        throw error;
       }
       const sandbox = wrap(box, await box.getInfo());
       if (spec.repo) {
@@ -278,7 +320,7 @@ export function openSandboxRuntime(options: AdapterOptions<OpenSandboxSdk>): Run
         for (let page = 1; ; page++) {
           const answer = await admin.listSandboxInfos({
             states: LIVE_STATES,
-            metadata: { ...labels, [MANAGED_LABEL.key]: MANAGED_LABEL.value },
+            metadata: providerLabels({ ...labels, [MANAGED_LABEL.key]: MANAGED_LABEL.value }),
             page,
             pageSize: 100,
           });

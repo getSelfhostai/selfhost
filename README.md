@@ -58,6 +58,12 @@ sudo ./install.sh               # generates the secrets left empty in .env, then
 curl http://localhost:4400/v1/health
 ```
 
+`install.sh` pulls `ghcr.io/getselfhostai/selfhost` without logging in, so the image must be
+public; for a private one, `docker login ghcr.io` first or set `SELFHOST_IMAGE` (see
+[`deploy/docker`](./deploy/docker/README.md#install-on-a-clean-linux-server)). Background runs
+need the runtime's url and key in the server's `.env` or its own `selfhost.toml`, never a team's
+policy: see [background runs](./deploy/docker/README.md#background-runs).
+
 [`deploy/docker`](./deploy/docker/README.md) covers HTTPS, sign-in, upgrades, backups and restores.
 The npm package is the CLI only; it has no server in it. To run the server without Docker, clone
 the repository at the release tag (`v<version>`) and build it with Node 20 and pnpm, with or
@@ -88,8 +94,9 @@ npm audit signatures                               # in a project that installed
 - The review list (`selfhost inbox`, `selfhost review list`), the decision log (`selfhost
   decide`, `selfhost decisions`), spend and budgets (`selfhost spend`), the MCP server for agents
   (`selfhost mcp`) and the web console (`selfhost console`).
-- Team mode: `selfhost up` sets up a server, `selfhost team init` and `selfhost join` connect
-  laptops to it, and `selfhost team policy push` sets the team's policy.
+- Team mode: `selfhost up` sets up a server, `selfhost team init` (on that server unless
+  `--server` names another) and `selfhost join` connect laptops to it, and `selfhost team
+  policy push` sets the team's policy.
 
 ### What selfhost can and cannot enforce, per agent
 

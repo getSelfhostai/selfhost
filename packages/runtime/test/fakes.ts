@@ -321,6 +321,15 @@ export function fakeModal(cloud: Cloud): ModalSdk {
   };
 }
 
+/** Output as OpenSandbox's server sends it: each line a message, its line break dropped. */
+const outputLines = (text: string) =>
+  text === ""
+    ? []
+    : text
+        .replace(/\n$/, "")
+        .split("\n")
+        .map((line) => ({ text: line }));
+
 export function fakeOpenSandbox(cloud: Cloud): OpenSandboxSdk {
   const info = (box: CloudBox): OpenSandboxInfo => ({
     id: box.id,
@@ -338,11 +347,14 @@ export function fakeOpenSandbox(cloud: Cloud): OpenSandboxSdk {
           ...(opts.timeoutSeconds ? { timeoutMs: opts.timeoutSeconds * 1000 } : {}),
         });
         if (result.timedOut) await delay((opts.timeoutSeconds ?? 0) * 1000);
-        if (result.stdout) handlers.onStdout?.({ text: result.stdout });
-        if (result.stderr) handlers.onStderr?.({ text: result.stderr });
+        // Like the server: one message per output line, without its line break.
+        const stdout = outputLines(result.stdout);
+        const stderr = outputLines(result.stderr);
+        for (const message of stdout) handlers.onStdout?.(message);
+        for (const message of stderr) handlers.onStderr?.(message);
         const exitCode = result.timedOut ? 137 : result.exitCode;
         return {
-          logs: { stdout: [{ text: result.stdout }], stderr: [{ text: result.stderr }] },
+          logs: { stdout, stderr },
           exitCode,
           ...(exitCode !== 0 ? { error: { name: "CommandError", value: String(exitCode) } } : {}),
         };
@@ -368,6 +380,9 @@ export function fakeOpenSandbox(cloud: Cloud): OpenSandboxSdk {
     async getInfo() {
       return info(box);
     },
+    async waitUntilReady() {
+      cloud.live(box.id);
+    },
     credentialVault: {
       async create(request: never) {
         box.params.credentialVault = request;
@@ -382,6 +397,14 @@ export function fakeOpenSandbox(cloud: Cloud): OpenSandboxSdk {
   return {
     Sandbox: {
       async create(opts) {
+        // The server's own check, as it answers a value Kubernetes would refuse.
+        for (const value of Object.values((opts.metadata as Record<string, string>) ?? {})) {
+          if (!/^(?:[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?)?$/.test(value)) {
+            throw new Error(
+              `Metadata value '${value}' is invalid: must be 63 characters or less, start/end with an alphanumeric character, and contain only alphanumeric, '-', '_', or '.' characters.`,
+            );
+          }
+        }
         const resource = opts.resource as { cpu: string; memory: string };
         const box = cloud.add((opts.metadata as Record<string, string>) ?? {}, opts, {
           cpu: Number(resource.cpu),

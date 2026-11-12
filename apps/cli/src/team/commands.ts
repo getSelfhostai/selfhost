@@ -12,7 +12,7 @@ import { pullContext } from "../context/layers.js";
 import { plural } from "../format.js";
 import { type PersonFrom, personSource } from "../import.js";
 import { describeManaged } from "../policy/managed.js";
-import { deploymentToken } from "../up/record.js";
+import { deploymentToken, latestDeployment } from "../up/record.js";
 import { type Fetch, serverUrl, TeamApiError, TeamClient } from "./client.js";
 import {
   clearMembership,
@@ -244,12 +244,21 @@ export function needTeam(team: string | undefined, command: string): string {
   return team;
 }
 
-/** Creates a team on the server with the admin token and prints the command to share. */
+/**
+ * Creates a team on the server with the admin token and prints the command to share. The server
+ * is --server, else the one `selfhost up` saved last.
+ */
 export async function teamInit(
-  options: JsonOption & { server: string; name?: string; token?: string; inviteTtl?: string },
+  options: JsonOption & { server?: string; name?: string; token?: string; inviteTtl?: string },
   io: TeamIo,
 ): Promise<TeamInitReport> {
-  const server = serverUrl(options.server);
+  const url = options.server ?? latestDeployment(io.configPath)?.server;
+  if (!url) {
+    throw new Error(
+      "team init needs the team server: pass --server <url>, or set one up first with selfhost up",
+    );
+  }
+  const server = serverUrl(url);
   const token = adminToken(options, io, server);
   if (!token) {
     throw new Error("team init needs the server's admin token: pass --token or set SELFHOST_TOKEN");
@@ -737,7 +746,10 @@ export function registerTeam(
   team
     .command("init")
     .description("create a team on a selfhost server and print the invite to share")
-    .requiredOption("--server <url>", "the selfhost server, like https://selfhost.example.com")
+    .option(
+      "--server <url>",
+      "the selfhost server, like https://selfhost.example.com (default: the one selfhost up set up last)",
+    )
     .option("--name <team>", "team name", "default")
     .option(
       "--invite-ttl <duration>",

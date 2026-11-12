@@ -89,8 +89,12 @@ export const sshLogin = (target: SshTarget) =>
 export const rootShell = (sudo: boolean) => (sudo ? "sudo -n sh -s" : "sh -s");
 const runner = (target: SshTarget) => rootShell(target.user !== "root");
 
-/** What install.sh prints when it finds an earlier install's .env. */
-const EXISTING_INSTALL = "selfhost: kept the secrets already in .env";
+/**
+ * What install.sh prints when the Postgres volume already holds an earlier install's database.
+ * Secrets kept in .env alone do not count: a first run that failed before Postgres started
+ * leaves them, with no database and no team.
+ */
+export const EXISTING_INSTALL = "selfhost: found the database of an earlier install";
 
 export const ssh: ProviderDriver = {
   describe(plan, userData) {

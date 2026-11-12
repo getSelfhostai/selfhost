@@ -50,6 +50,7 @@ import type {
   RunResponse,
   RunShareRequest,
   RunShareResponse,
+  SandboxWasteResponse,
   SetIntegrationRequest,
   StartRunRequest,
   TailQuery,
@@ -145,6 +146,14 @@ export class TeamClient {
   /** The budgets that apply to this token in its team, with the month's spend (GET /v1/budget). */
   budget(): Promise<BudgetResponse> {
     return this.call("GET", "/v1/budget");
+  }
+
+  /**
+   * A team's sandbox cost: idle share per runtime for 7 and 30 days, sandboxes left running past
+   * their run, and each run's sandbox cost (GET /v1/teams/{team}/sandboxes).
+   */
+  sandboxes(team: string): Promise<SandboxWasteResponse> {
+    return this.call("GET", `/v1/teams/${encodeURIComponent(team)}/sandboxes`);
   }
 
   me(): Promise<MeResponse> {

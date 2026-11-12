@@ -286,4 +286,60 @@ describe("selfhost runtime reap", () => {
       await ledger.close();
     }
   });
+
+  it("reports a runtime it could not list, and never says no sandbox is running", async () => {
+    const dir = repo();
+    const ledger = await openLedger({ dataDir: "memory://" });
+    try {
+      const broken = (kind: string) => ({
+        ...shell(() => NOW),
+        kind,
+        list: async () => {
+          throw new Error("401 Unauthorized");
+        },
+      });
+      const run = async (openAdapter: (kind: string) => unknown) => {
+        const lines: string[] = [];
+        let code = 0;
+        const report = await runRuntimeReap(
+          { dryRun: true },
+          {
+            env: { E2B_API_KEY: "k" },
+            cwd: dir.root,
+            write: (line: string) => lines.push(line),
+            setExitCode: (value: number) => {
+              code = value;
+            },
+            now: () => NOW,
+            openAdapter: openAdapter as (kind: string) => RuntimeAdapter,
+          },
+          ledger,
+        );
+        return { report, text: lines.join("\n"), code };
+      };
+
+      // Every runtime in use failed to list: nothing is known about what runs.
+      const all = await run(broken);
+      expect(all.code).toBe(1);
+      expect(all.report.errors.map((error) => error.runtime).sort()).toEqual([
+        "e2b",
+        "opensandbox",
+      ]);
+      expect(all.text).toContain("e2b: could not list sandboxes: 401 Unauthorized");
+      expect(all.text).toContain(
+        "Could not tell whether any sandbox is left running: no runtime could be listed.",
+      );
+      expect(all.text).not.toContain("No sandbox is running");
+
+      // One failed, the other listed nothing left over: the claim names the one it covers.
+      const one = await run((kind) => (kind === "e2b" ? broken(kind) : shell(() => NOW)));
+      expect(one.code).toBe(1);
+      expect(one.text.split("\n")).toEqual([
+        "e2b: could not list sandboxes: 401 Unauthorized",
+        "No sandbox is running more than 15 minutes past its run on the runtimes that could be listed; e2b could not be.",
+      ]);
+    } finally {
+      await ledger.close();
+    }
+  });
 });

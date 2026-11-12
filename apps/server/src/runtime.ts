@@ -1,6 +1,8 @@
+import type { Env } from "@selfhost/integrations";
 import type { Ledger } from "@selfhost/ledger";
 import {
   isRefused,
+  RUNTIME_KINDS,
   type RuntimeConfig,
   type RuntimeForOptions,
   runtimeFor,
@@ -36,6 +38,13 @@ export async function ledgerSandboxSpend(
 const CONNECTION = ["url", "api_key_env", "api_secret_env"] as const;
 
 /**
+ * The server variable that gives a runtime's url when the server's selfhost.toml sets none, for
+ * installs (Docker Compose) that configure the server through its environment:
+ * SELFHOST_RUNTIME_OPENSANDBOX_URL, SELFHOST_RUNTIME_CODER_URL, and so on.
+ */
+export const runtimeUrlEnv = (kind: string) => `SELFHOST_RUNTIME_${kind.toUpperCase()}_URL`;
+
+/**
  * A team's [runtime] with each provider's url, api_key_env and api_secret_env replaced by the
  * server's own (SELFHOST_CONFIG): a team's policy picks runtimes, templates and sizes, but never
  * which server variable is read as a key, nor where that key is sent.
@@ -43,6 +52,7 @@ const CONNECTION = ["url", "api_key_env", "api_secret_env"] as const;
 export function serverConnections(
   team: RuntimeConfig,
   server: Pick<RuntimeConfig, "runtime" | "integrations"> | undefined,
+  env: Env = {},
 ): RuntimeConfig {
   const own = (kind: string): RuntimeProvider => {
     const found = (server?.runtime?.providers as Record<string, RuntimeProvider> | undefined)?.[
@@ -50,11 +60,13 @@ export function serverConnections(
     ];
     const legacy = server?.integrations?.runtime;
     const source = found ?? (legacy?.tool === kind ? legacy : undefined);
-    return Object.fromEntries(
-      CONNECTION.flatMap((field) =>
-        source?.[field] !== undefined ? [[field, source[field]]] : [],
+    const url = source?.url ?? (env[runtimeUrlEnv(kind)]?.trim() || undefined);
+    return Object.fromEntries([
+      ...(url ? [["url", url]] : []),
+      ...CONNECTION.flatMap((field) =>
+        field !== "url" && source?.[field] !== undefined ? [[field, source[field]]] : [],
       ),
-    );
+    ]);
   };
   const providers = Object.fromEntries(
     Object.entries(team.runtime?.providers ?? {}).map(([kind, settings]) => {
@@ -68,6 +80,9 @@ export function serverConnections(
   );
   for (const [kind, settings] of Object.entries(server?.runtime?.providers ?? {})) {
     if (!(kind in providers) && settings) providers[kind] = own(kind);
+  }
+  for (const kind of RUNTIME_KINDS) {
+    if (!(kind in providers) && env[runtimeUrlEnv(kind)]?.trim()) providers[kind] = own(kind);
   }
   const { runtime: _legacy, ...integrations } = team.integrations ?? {};
   return {
@@ -105,10 +120,23 @@ export function serverRuntime(
       ),
   });
   return async (...[run, config]: Parameters<typeof seam>) => {
-    const found = await seam(run, serverConnections(config, options.config));
+    const found = await seam(run, serverConnections(config, options.config, options.env));
     if (!isRefused(found) || found.refusal.rule !== "runtime.key") return found;
     // "Where selfhost runs" is the team server here, not the laptop that asked.
-    const message = found.refusal.message.replace("where selfhost runs", "on the team server");
+    let message = found.refusal.message.replace("where selfhost runs", "on the team server");
+    // A missing url: say where a team server reads it, since a team's policy cannot set it.
+    const kind = message.startsWith("Set url ")
+      ? RUNTIME_KINDS.find((k) => message.includes(`runs ${k} sandboxes`))
+      : undefined;
+    if (kind) {
+      const example = /such as (\S+?)\.?(?: |$)/.exec(message)?.[1];
+      const rest = message.slice(message.indexOf(". ") + 2);
+      const ignored =
+        config.runtime?.providers?.[kind]?.url !== undefined
+          ? ` Team ${run.team}'s policy sets one, which the team server ignores: only the server's own config or environment says where its keys go.`
+          : "";
+      message = `Set url in [runtime.providers.${kind}] of the server's own selfhost.toml (the file SELFHOST_CONFIG names in the server's environment), or ${runtimeUrlEnv(kind)} in the server's environment${example ? `, such as ${example}` : ""}.${ignored} ${rest}`;
+    }
     return { refusal: { ...found.refusal, message } };
   };
 }

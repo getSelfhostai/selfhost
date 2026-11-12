@@ -79,7 +79,7 @@ export interface Deployed {
   ssh: string;
   /** Whether commands on the server need sudo. */
   sudo: boolean;
-  /** The server already ran selfhost: install.sh kept its secrets, and no team is created. */
+  /** The server already ran selfhost: install.sh found its database, and no team is created. */
   existingInstall: boolean;
 }
 

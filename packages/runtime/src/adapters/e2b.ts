@@ -9,6 +9,7 @@ import {
   loadSdk,
   MANAGED_LABEL,
   pollLogs,
+  providerLabels,
   secretValues,
   timedOutResult,
 } from "./common.js";
@@ -222,6 +223,7 @@ export function e2bRuntime(options: AdapterOptions<E2BSdk>): RuntimeAdapter {
           ...spec.native?.create,
         },
       );
+      await spec.onCreated?.(box.sandboxId);
       const sandbox = wrap(box, await box.getInfo());
       if (spec.repo) {
         const cloned = await sandbox.exec(cloneCommand(spec.repo));
@@ -247,7 +249,7 @@ export function e2bRuntime(options: AdapterOptions<E2BSdk>): RuntimeAdapter {
       const pages = sdk.Sandbox.list({
         ...connection,
         query: {
-          metadata: { ...labels, [MANAGED_LABEL.key]: MANAGED_LABEL.value },
+          metadata: providerLabels({ ...labels, [MANAGED_LABEL.key]: MANAGED_LABEL.value }),
           state: ["running", "paused"],
         },
       });

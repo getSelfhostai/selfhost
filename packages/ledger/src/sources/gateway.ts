@@ -164,15 +164,32 @@ const BIFROST_LIMIT_ALERTS: Record<string, string> = {
 };
 
 /**
+ * Bifrost 2.4 logs a refusal of its governance with error_details null; the reason is only in
+ * content_summary, as in "Budget exceeded: vk_model_config * budget exceeded: 0.0387 >= 0.0100
+ * dollars". Only the matched phrase is kept, never the rest of the summary.
+ */
+const BIFROST_BUDGET_AMOUNTS = /budget exceeded:\s*[\d.]+\s*>=?\s*[\d.]+\s*dollars/i;
+const BIFROST_BUDGET_TEXT = /\bbudget exceeded\b/i;
+
+/** The phrase of a governance budget refusal in a log that carries no error details. */
+function budgetRefusal(entry: Json): string | undefined {
+  if (entry.error_details !== null && entry.error_details !== undefined) return undefined;
+  const summary = str(entry.content_summary);
+  if (!summary) return undefined;
+  return BIFROST_BUDGET_AMOUNTS.exec(summary)?.[0] ?? BIFROST_BUDGET_TEXT.exec(summary)?.[0];
+}
+
+/**
  * One request log from Bifrost's GET /api/logs (a LogEntry). A successful request maps to
  * cost.recorded, a failed one to alert.raised: gateway_budget_exceeded or gateway_rate_limited
- * when Bifrost refused it under a limit, model_request_failed otherwise. A request still in
- * progress maps to nothing; it is read again once it finishes.
+ * when Bifrost refused it under a limit (by error type, a 402, or the budget phrase of a log with
+ * no error details), model_request_failed otherwise. A request still in progress maps to
+ * nothing; it is read again once it finishes.
  *
  * Who and which team come from the metadata selfhost puts on each virtual key (selfhost_person,
  * selfhost_team, selfhost_run), which Bifrost copies onto every log entry of the key; the agent
  * from the request's user-agent, else from the key's selfhost_agent. Message bodies are never
- * read.
+ * read, and content_summary only for the budget phrase.
  */
 export function mapBifrostLog(entry: unknown, ctx: SourceContext = {}): LedgerEvent[] {
   if (!isObject(entry)) {
@@ -227,16 +244,22 @@ export function mapBifrostLog(entry: unknown, ctx: SourceContext = {}): LedgerEv
     const details = isObject(entry.error_details) ? entry.error_details : {};
     const inner = isObject(details.error) ? details.error : {};
     const type = str(details.type) ?? str(inner.type);
-    const message = str(inner.message);
+    const statusCode = num(details.status_code);
+    // 402 is how Bifrost refuses a request over a budget; a provider's own 402 is not the gateway's.
+    const refusal = budgetRefusal(entry);
+    const budget = (statusCode === 402 && details.is_bifrost_error !== false) || !!refusal;
+    const message = str(inner.message) ?? refusal;
     return [
       buildEvent(ctx, {
         ...base,
         kind: "alert.raised",
         data: {
           ...data,
-          alert: (type && BIFROST_LIMIT_ALERTS[type]) ?? "model_request_failed",
-          error_type: type,
-          status_code: num(details.status_code),
+          alert:
+            (type && BIFROST_LIMIT_ALERTS[type]) ??
+            (budget ? "gateway_budget_exceeded" : "model_request_failed"),
+          error_type: type ?? (budget ? "budget_exceeded" : undefined),
+          status_code: statusCode,
           error: message ? summarize(message) : undefined,
         },
       }),

@@ -50,7 +50,6 @@ if [ -f .env.next ]; then
         kept=yes
       fi
     done
-    # selfhost up reads this line to know the server ran selfhost before.
     if [ -n "$kept" ]; then say "kept the secrets already in .env"; fi
   fi
   mv .env.next .env
@@ -111,6 +110,20 @@ install_docker() {
 if ! docker compose version >/dev/null 2>&1; then install_docker; fi
 if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
   systemctl enable --now docker >/dev/null 2>&1 || true
+fi
+# Else a stopped daemon shows up below as an image that cannot be pulled.
+tries=0
+until err=$(docker info 2>&1 >/dev/null); do
+  tries=$((tries + 1))
+  [ "$tries" -le 15 ] || die "the Docker daemon does not answer: $(echo "$err" | tail -n 1). Start it (systemctl start docker) and run install.sh again."
+  sleep 2
+done
+
+# selfhost up reads this line. Kept secrets alone do not count: a run can fail before Postgres starts.
+project=$(value COMPOSE_PROJECT_NAME .env)
+pg=$(docker volume inspect -f '{{.Mountpoint}}' "${project:-selfhost}_postgres-data" 2>/dev/null || true)
+if [ -n "$pg" ] && [ -n "$(find "$pg" -maxdepth 3 -name PG_VERSION 2>/dev/null)" ]; then
+  say "found the database of an earlier install"
 fi
 
 image="$(value SELFHOST_IMAGE .env)"

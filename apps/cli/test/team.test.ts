@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TeamApiError, TeamClient } from "../src/team/client.js";
 import { RemoteWriter } from "../src/team/remote-writer.js";
 import { syncingWriter } from "../src/team/sync.js";
+import { type DeploymentRecord, saveDeployment } from "../src/up/record.js";
 import { blockNetwork } from "./network.js";
 import { run, tempDir } from "./run.js";
 
@@ -238,6 +239,38 @@ describe("team init and join", () => {
     expect(JSON.parse(readFileSync(configPath, "utf8"))).toEqual({
       telemetry: { agent_count: false },
     });
+  });
+
+  it("team init defaults to the server and admin token selfhost up saved last", async () => {
+    const server = await teamServer();
+    const { configPath } = laptop();
+    const deps = { configPath, fetch: server.fetch, env: {} };
+
+    const none = await run(["team", "init", "--json"], deps);
+    expect(none.code).toBe(1);
+    expect(parse(none.out).error).toBe(
+      "team init needs the team server: pass --server <url>, or set one up first with selfhost up",
+    );
+
+    const deployment = (url: string, token: string | null): DeploymentRecord => ({
+      server: url,
+      provider: "ssh",
+      created_at: "2026-11-12T10:00:00.000Z",
+      ip: null,
+      domain: new URL(url).host,
+      region: null,
+      size: null,
+      ssh: "ssh root@team.test",
+      stack_dir: "/opt/selfhost/deploy/docker",
+      admin_token: token,
+      resources: [],
+    });
+    saveDeployment(configPath, deployment("https://old.test", "old-token"));
+    saveDeployment(configPath, deployment(SERVER, ADMIN));
+    const init = await run(["team", "init", "--name", "Saved", "--json"], deps);
+    expect(init.code).toBe(0);
+    expect(parse(init.out)).toMatchObject({ server: SERVER, team: { id: "saved" } });
+    expect(server.calls).toEqual([`POST ${SERVER}/v1/teams`]);
   });
 
   it("changes no files when the invite is refused or the token is missing", async () => {

@@ -47,6 +47,11 @@ chmod 600 .env
 docker compose up -d
 ```
 
+The server image is pulled from `ghcr.io/getselfhostai/selfhost` without logging in, which works
+only while that package is public on GitHub. For a private image, log in first with a token that
+has `read:packages` (`echo "$TOKEN" | docker login ghcr.io -u <github user> --password-stdin`),
+or set `SELFHOST_IMAGE` in `.env` to an image you host.
+
 [`install.sh`](#installsh) does the same as root, and installs Docker first when it is missing.
 To build the server from source instead, clone the repository, run the same steps in
 `deploy/docker`, and start it with `docker compose up -d --build`.
@@ -263,6 +268,31 @@ AWS_REGION=eu-central-1        # VERTEX_REGION and VERTEX_CREDENTIALS
   `[integrations.router]` in the server's `selfhost.toml` (`SELFHOST_CONFIG`), which wins. The
   same keys, budgets and usage work there, with one budget window per key and team (the
   shortest is enforced, the others alert) and fallbacks left to LiteLLM's own router settings.
+
+## Background runs
+
+A background run works in a sandbox on the team's runtime (E2B, Daytona, Modal, Coder, or the
+team's own OpenSandbox server), on the team's own account. The image already includes each
+runtime's SDK. What the server needs comes from the server alone: a team's stored policy picks
+the runtime, template and size, but never the url or the variable a key is read from, so a url in
+`selfhost team policy push` is ignored for those. Set them in `.env`, which `compose.yml` passes
+to the server, then run `docker compose up -d` (or `install.sh`) again:
+
+```sh
+# the team's own OpenSandbox server, reachable from the selfhost container
+SELFHOST_RUNTIME_OPENSANDBOX_URL=http://opensandbox.internal:8090
+OPEN_SANDBOX_API_KEY=...
+# or a hosted runtime: its key only
+E2B_API_KEY=...
+```
+
+`SELFHOST_RUNTIME_CODER_URL` and `CODER_SESSION_TOKEN`, `DAYTONA_API_KEY`, and `MODAL_TOKEN_ID`
+with `MODAL_TOKEN_SECRET` work the same way. A url on `localhost` means the selfhost container
+itself, not the server. For more than the url and key (`api_key_env`, `template`,
+`usd_per_hour`, `create_timeout_seconds`), write the server's own `selfhost.toml` with
+`[runtime.providers.<name>]` in `./config` next to `compose.yml`, which is mounted read-only at
+`/config`, and set `SELFHOST_CONFIG=/config/selfhost.toml`; its url wins over the variable. Until a
+runtime is set, starting a run answers 503 with the setting that is missing and where it goes.
 
 ## Notifications
 
