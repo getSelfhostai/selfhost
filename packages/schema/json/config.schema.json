@@ -353,7 +353,8 @@
                     "quality",
                     "policy_report",
                     "context_promotion",
-                    "security"
+                    "security",
+                    "overlap"
                   ]
                 }
               },
@@ -1843,6 +1844,11 @@
                   "opencode",
                   "goose"
                 ]
+              },
+              "owner": {
+                "minLength": 1,
+                "description": "Person id who owns the schedule's runs: their review items, errors and budget items go to them. Default: the first person in [review] fallback.",
+                "type": "string"
               }
             }
           }
@@ -1864,6 +1870,76 @@
           "maximum": 50,
           "default": 10,
           "description": "How many of the run's last turns the handoff summarizes.",
+          "type": "integer"
+        }
+      }
+    },
+    "agents": {
+      "description": "Named agents by name: lowercase letters, digits, - and _. Each needs an owner.",
+      "type": "object",
+      "patternProperties": {
+        "^(.*)$": {
+          "additionalProperties": false,
+          "description": "A long-lived agent the team runs itself, with a name, a human owner, the paths it owns, a budget and the tools it may use. Its hooks run with SELFHOST_AGENT_NAME set to the name, so its events are recorded with the agent as the actor.",
+          "type": "object",
+          "required": [
+            "owner"
+          ],
+          "properties": {
+            "owner": {
+              "minLength": 1,
+              "description": "Person id of the human who answers for the agent: they own its runs, and its review items, budget items and errors on its paths go to them.",
+              "type": "string"
+            },
+            "paths": {
+              "description": "Globs of the files the agent owns, relative to the repository root. Review items and errors on them go to the owner before [[review.routes]] and [review.owners].",
+              "type": "array",
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "daily_usd": {
+              "exclusiveMinimum": 0,
+              "description": "What the agent may spend in a UTC day. Going over raises a budget item for the owner.",
+              "type": "number"
+            },
+            "tools": {
+              "description": "Names or globs of the tools the agent may call. Empty or absent allows every tool. A call to another tool fires the rule agents.<name>.tools.",
+              "type": "array",
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "model": {
+              "minLength": 1,
+              "description": "The model the agent runs on unless its run asks for another.",
+              "type": "string"
+            },
+            "mode": {
+              "default": "observe",
+              "description": "observe records a call outside tools; enforce blocks it where hooks run. Default: observe.",
+              "type": "string",
+              "enum": [
+                "observe",
+                "enforce"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "presence": {
+      "additionalProperties": false,
+      "description": "Presence: who is working where right now (selfhost who).",
+      "type": "object",
+      "properties": {
+        "idle_minutes": {
+          "minimum": 1,
+          "maximum": 1440,
+          "default": 30,
+          "description": "A run counts as active from its first event until it ends or has had no event for this long. Default: 30.",
           "type": "integer"
         }
       }

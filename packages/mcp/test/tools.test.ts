@@ -13,6 +13,7 @@ import {
   MCP_RESPONSE_TOKEN_BUDGET,
   type McpItemStatus,
   type PolicyResponse,
+  type PresenceResponse,
   type ReviewItemsPage,
 } from "@selfhost/schema";
 import contract from "@selfhost/schema/mcp-tools.json" with { type: "json" };
@@ -179,6 +180,43 @@ describe("file history", () => {
       [OTHER, false, "c"],
       [ME, true, "b"],
     ]);
+  });
+});
+
+describe("who", () => {
+  it("lists the active runs and the file two of them edit, as GET /v1/presence does", async () => {
+    await ledger.append([
+      toolCall({ path: "src/app.ts", session: "mine", minutesAgo: 10, repo: "acme/api" }),
+      toolCall({
+        path: "src/app.ts",
+        session: "theirs",
+        person: OTHER,
+        minutesAgo: 3,
+        repo: "acme/api",
+      }),
+      toolCall({
+        path: "src/old.ts",
+        session: "gone",
+        person: OTHER,
+        minutesAgo: 90,
+        repo: "acme/api",
+      }),
+    ]);
+    const { result, error } = await call<PresenceResponse>(client, "who");
+    expect(error).toBeUndefined();
+    expect(result.idle_minutes).toBe(30);
+    expect(result.runs.map((run) => [run.id, run.person, run.owner])).toEqual([
+      ["theirs", OTHER, OTHER],
+      ["mine", ME, ME],
+    ]);
+    expect(result.overlaps).toEqual([
+      expect.objectContaining({ repo: "acme/api", file: "src/app.ts", runs: ["mine", "theirs"] }),
+    ]);
+    const wide = await call<PresenceResponse>(client, "who", {
+      idle_minutes: 120,
+      repo: "acme/api",
+    });
+    expect(wide.result.runs.map((run) => run.id)).toContain("gone");
   });
 });
 

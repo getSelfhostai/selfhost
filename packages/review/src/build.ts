@@ -15,6 +15,7 @@ import {
   type RouteInput,
   type Routing,
   routeByDefaults,
+  routeByNamedAgent,
   routeByRules,
 } from "./routing.js";
 import type { Draft } from "./signals.js";
@@ -180,7 +181,7 @@ function budgetRoute(owners: readonly string[], named: boolean): Routing | undef
 export function routeInput(
   item: Pick<ReviewItem, "kind" | "repo" | "why" | "risk">,
   paths: readonly string[],
-  extra: { person?: string; team?: string; tool?: string },
+  extra: { person?: string; team?: string; tool?: string; namedAgent?: string },
 ): RouteInput {
   return {
     paths,
@@ -191,6 +192,7 @@ export function routeInput(
     ...(extra.person ? { person: extra.person } : {}),
     ...(extra.team ? { team: extra.team } : {}),
     ...(extra.tool ? { tool: extra.tool } : {}),
+    ...(extra.namedAgent ? { namedAgent: extra.namedAgent } : {}),
   };
 }
 
@@ -238,6 +240,7 @@ function routed(
     person,
     team: draft.team,
     tool: draft.tool,
+    ...(draft.namedAgent ? { namedAgent: draft.namedAgent } : {}),
   });
   const rules = routeByRules(ctx.config, input, routeContext(item, ctx, now, person));
   const budget =
@@ -250,8 +253,20 @@ function routed(
     item.kind === "security" && ctx.approvers !== undefined
       ? securityRoute(ctx.approvers, person)
       : undefined;
+  // An overlap warning is for the one owner it names, whatever the routes say.
+  const overlap: Routing | undefined =
+    item.kind === "overlap" && person
+      ? { owners: [person], route: { step: "owner", from: "the owner of the run" } }
+      : undefined;
+  // Named agents' owners come before the team's routes; exceptions keep to the approvers.
+  const named =
+    item.kind === "exception" || item.kind === "security" || item.kind === "overlap"
+      ? undefined
+      : routeByNamedAgent(ctx.config, input);
   const { owners, route } =
     security ??
+    overlap ??
+    named ??
     rules ??
     budget ??
     (item.kind === "exception" && ctx.approvers !== undefined

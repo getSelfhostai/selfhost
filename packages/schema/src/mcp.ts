@@ -15,6 +15,7 @@ import {
 } from "./api.js";
 import { DateTime, NonEmpty, RepoSlug, StringEnum, Uuidv7 } from "./common.js";
 import { AgentRefSchema, VerdictSchema } from "./event.js";
+import { PresenceQuerySchema, PresenceResponseSchema } from "./presence.js";
 import { REVIEW_ITEM_KINDS, REVIEW_ITEM_STATES } from "./review-item.js";
 
 export const MCP_TOOLS_SCHEMA = "selfhost.mcp_tools/v1";
@@ -339,6 +340,14 @@ export const MCP_TOOLS: readonly McpToolDefinition[] = [
     readOnly: true,
     inputSchema: ActiveOnFileQuerySchema,
     outputSchema: ActiveOnFileResponseSchema,
+  },
+  {
+    name: "who",
+    description:
+      "Who (people and named agents) is working right now on which repo, branch and files, who owns each run, and which files two runs are both editing. Check it before starting on a file another run is editing.",
+    readOnly: true,
+    inputSchema: PresenceQuerySchema,
+    outputSchema: PresenceResponseSchema,
   },
   {
     name: "ask_human",

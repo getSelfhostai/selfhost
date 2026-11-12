@@ -153,6 +153,8 @@ describe("GET /v1/runs/{run_id}", () => {
       model: "claude-sonnet-4-5",
       person: "lead@example.com",
       owner: "lead@example.com",
+      owner_via: "person",
+      named_agent: null,
       team: "web",
       repo: "acme/api",
       started_at: "2026-10-12T09:00:00.000Z",

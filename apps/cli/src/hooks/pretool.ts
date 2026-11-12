@@ -10,6 +10,7 @@ import {
 import {
   executionLocation,
   formatConfigError,
+  NAMED_AGENT_ENV,
   parseConfig,
   type ResolvedSelfhostConfig,
   SELFHOST_DECISION_RULE_ID,
@@ -313,7 +314,8 @@ export async function checkPreToolCall(
     failures.push(policy.failure);
     io.writeError(`selfhost hook: ${policy.failure}`);
   }
-  const toolCall = toToolCall(call, root);
+  const named = io.env[NAMED_AGENT_ENV]?.trim();
+  const toolCall = { ...toToolCall(call, root), ...(named ? { namedAgent: named } : {}) };
   const decision = await checkToolCall(policy.config, toolCall, {
     env: io.env,
     realpath,

@@ -76,6 +76,7 @@ export {
   type RouteInput,
   type Routing,
   routeByDefaults,
+  routeByNamedAgent,
   routeByRules,
   routeItem,
 } from "./routing.js";

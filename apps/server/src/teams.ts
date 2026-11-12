@@ -42,6 +42,7 @@ import { createOrgRoute, orgRoutes } from "./orgs.js";
 import { peopleRoutes } from "./people.js";
 import { policyRoutes } from "./policy.js";
 import { policyObservedRoutes } from "./policy-observe.js";
+import { presenceRoutes } from "./presence.js";
 import { type ProvenanceRouteOptions, provenanceRoutes } from "./provenance.js";
 import { roiRoutes } from "./roi.js";
 import { type RunRouteOptions, runRoutes } from "./runs.js";
@@ -369,6 +370,7 @@ function sharedRoutes(
   provenanceRoutes(router, ledger, { ...provenance, ...(now ? { now } : {}) });
   runRoutes(router, ledger, { ...runs, ...(now ? { now } : {}) });
   tailRoutes(router, ledger, { ...runs, ...(now ? { now } : {}) });
+  presenceRoutes(router, ledger, { ...runs, ...(now ? { now } : {}) });
   gatewayRoutes(router, ledger, gateway);
   backgroundRoutes(router, ledger, background);
   handoffRoutes(router, ledger, { ...handoffs, ...(now ? { now } : {}) });

@@ -2,6 +2,7 @@ import { type Static, Type } from "@sinclair/typebox";
 import { DateTime, StringEnum } from "./common.js";
 import { AgentRefSchema, LedgerEventSchema } from "./event.js";
 import { RunHandoffSchema } from "./handoff.js";
+import { RUN_OWNER_SOURCES } from "./presence.js";
 import { SecondOpinionSchema } from "./second-opinion.js";
 import { CACHE_HIT_RATE_TEXT } from "./usage.js";
 
@@ -30,7 +31,16 @@ export const RunSummarySchema = Type.Object(
     model: NullableText("The model most of the run's requests went to, or null."),
     person: NullableText("The person the run worked for, or null when not known."),
     owner: NullableText(
-      "The person who holds the run now: the new owner of its newest handoff, else person.",
+      "The one human who answers for the run: the new owner of its newest handoff, else the owner of the named agent that wrote it, else person, else who started it (or the schedule's owner), else the first person in [review] fallback.",
+    ),
+    owner_via: Type.Optional(
+      Type.Union([StringEnum(RUN_OWNER_SOURCES), Type.Null()], {
+        description:
+          "Where owner came from: handoff, named_agent, person, trigger, schedule or fallback.",
+      }),
+    ),
+    named_agent: Type.Optional(
+      NullableText("The [agents.<name>] whose events these are, or null."),
     ),
     team: NullableText("The team the run belongs to, or null on a laptop ledger."),
     repo: NullableText("Repository as owner/name, or null when not known."),

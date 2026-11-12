@@ -1,4 +1,6 @@
 import type {
+  EventsPage,
+  LedgerEvent,
   PolicyCoverageResponse,
   PolicyObservedResponse,
   PolicyObservedRule,
@@ -17,7 +19,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { can } from "@/lib/access";
 import { getJson, getOptional, query, send } from "@/lib/api";
 import { useConsole } from "@/lib/console-context";
-import { agentName, formatCount, plural } from "@/lib/format";
+import { agentName, formatCount, formatShare, formatTime, plural } from "@/lib/format";
 import { COVERAGE_VENDORS, GUARDRAILS, modeLabel } from "@/lib/labels";
 import { useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
@@ -39,6 +41,81 @@ interface Loaded {
   policy: PolicyResponse | null;
   coverage: PolicyCoverageResponse | null;
   observed: PolicyObservedResponse | null;
+  learned: EventsPage | null;
+}
+
+/** One agent, model and module's revert signal: its newest risk.learned event. */
+export interface LearnedRow {
+  key: string;
+  title: string;
+  state: "proposed" | "cleared";
+  detail: string;
+  at: string;
+  reverts: number;
+}
+
+const num = (value: unknown) => (typeof value === "number" ? value : 0);
+
+/**
+ * The newest risk.learned event per repository, agent, model and module, newest first. A
+ * proposed one raises the risk score once a person approves its review item.
+ */
+export function learnedRows(events: LedgerEvent[]): LearnedRow[] {
+  const rows = new Map<string, LearnedRow>();
+  const sorted = [...events].sort((a, b) => b.ts.localeCompare(a.ts));
+  for (const event of sorted) {
+    const data = event.data ?? {};
+    const module = typeof data.module === "string" ? data.module : undefined;
+    if (!module || (data.state !== "proposed" && data.state !== "cleared")) continue;
+    const key = `${event.repo ?? ""}\n${event.agent?.vendor ?? ""}\n${event.model ?? ""}\n${module}`;
+    if (rows.has(key)) continue;
+    const bad = num(data.reverted) + num(data.reworked);
+    const agent = `${agentName(event.agent?.vendor)}${event.model ? ` (${event.model})` : ""}`;
+    rows.set(key, {
+      key,
+      title: `${agent} in ${event.repo ? `${event.repo} ` : ""}${module}`,
+      state: data.state,
+      detail: `${bad} of ${plural(num(data.pulls), "merged pull request")} reverted or reworked within ${num(data.days)} days (${formatShare(num(data.rate))}), threshold ${formatShare(num(data.threshold))}.`,
+      at: event.ts,
+      reverts: Array.isArray(data.evidence) ? data.evidence.length : 0,
+    });
+  }
+  return [...rows.values()];
+}
+
+function LearnedSection({ events }: { events: LedgerEvent[] }) {
+  const rows = learnedRows(events);
+  return (
+    <Section
+      title="Learned from reverts"
+      description="Agent pull requests reverted, or whose lines were changed again, within [review] revert_window_days of their merge, per agent, model and module. A signal raises the risk score of new pull requests only after a person approves it on the Review screen."
+    >
+      {rows.length === 0 ? (
+        <Empty title="No agent, model or module is above [review] revert_rate_threshold." />
+      ) : (
+        <div className="space-y-3">
+          {rows.map((row) => (
+            <Card key={row.key} className="gap-2 py-4" data-testid="learned">
+              <CardContent className="space-y-1 px-4 text-sm">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium">{row.title}</span>
+                  <Badge variant={row.state === "proposed" ? "default" : "outline"}>
+                    {row.state === "proposed" ? "Above threshold" : "Back under threshold"}
+                  </Badge>
+                </div>
+                <p>{row.detail}</p>
+                <p className="text-muted-foreground">
+                  {row.state === "proposed"
+                    ? `Since ${formatTime(row.at)}, from ${plural(row.reverts, "revert or rework", "reverts and reworks")}. Approve or deny it on the Review screen.`
+                    : `Since ${formatTime(row.at)}. It no longer adds to the risk score.`}
+                </p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </Section>
+  );
 }
 
 /** Every rule of the team's policy with its mode and action after the team's overrides. */
@@ -254,12 +331,16 @@ export function RulesScreen() {
   const { me, team } = useConsole();
   const loaded = useApi<Loaded>(team ? `rules:${team}` : null, async (signal) => {
     const q = query({ team });
-    const [policy, coverage, observed] = await Promise.all([
+    const [policy, coverage, observed, learned] = await Promise.all([
       getOptional<PolicyResponse>(`/v1/policy${q}`, signal),
       getOptional<PolicyCoverageResponse>(`/v1/policy/coverage${q}`, signal),
       getOptional<PolicyObservedResponse>(`/v1/policy/observed${q}`, signal),
+      getOptional<EventsPage>(
+        `/v1/events${query({ kind: "risk.learned", team, limit: 200 })}`,
+        signal,
+      ).catch(() => null),
     ]);
-    return { policy, coverage, observed };
+    return { policy, coverage, observed, learned };
   });
   const [busy, setBusy] = useState<string>();
   const [confirming, setConfirming] = useState<string>();
@@ -454,6 +535,7 @@ export function RulesScreen() {
             </div>
           </Section>
           <RoutingSection policy={policy} />
+          {data?.learned ? <LearnedSection events={data.learned.events} /> : null}
         </>
       ) : null}
     </>

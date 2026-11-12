@@ -11,6 +11,8 @@ import type {
   McpEventQuery,
   McpPolicyQuery,
   PolicyResponse,
+  PresenceQuery,
+  PresenceResponse,
   RecordDecisionInput,
   RequestExceptionInput,
   ReviewItem,
@@ -50,6 +52,8 @@ export interface McpData {
   decisions(query: McpDecisionQuery): Promise<DecisionsPage>;
   /** tool.called events on a file or folder, newest first. */
   fileCalls(query: FileCallsQuery): Promise<LedgerEvent[]>;
+  /** Who is working where right now, in the teams the person can read. */
+  presence(query: PresenceQuery): Promise<PresenceResponse>;
   /** One item the person can read. */
   item(id: string): Promise<ReviewItem>;
   /** Opens a question item and returns it. */

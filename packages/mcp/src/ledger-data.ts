@@ -1,5 +1,12 @@
 import { randomBytes } from "node:crypto";
-import { fileCalls, type Ledger, LedgerQueryError, LedgerValidationError } from "@selfhost/ledger";
+import {
+  databaseOf,
+  fileCalls,
+  type Ledger,
+  LedgerQueryError,
+  LedgerValidationError,
+  readPresence,
+} from "@selfhost/ledger";
 import {
   AlreadyAnsweredError,
   decisionRefusal,
@@ -18,6 +25,7 @@ import {
   EVENT_SCHEMA,
   type EventSource,
   type LedgerEvent,
+  presenceIdleMinutes,
   type RequestExceptionInput,
   type ResolvedSelfhostConfig,
   type ReviewItem,
@@ -267,6 +275,18 @@ export function ledgerData(options: LedgerDataOptions): Omit<McpData, "policy" |
           ...(teams ? { teams } : {}),
           ...(query.repo ? { repo: query.repo } : {}),
           ...(query.from ? { from: query.from } : {}),
+        });
+      }),
+
+    presence: (query) =>
+      run(async (ledger) => {
+        const teams = await teamsFor(query.team);
+        return readPresence(databaseOf(ledger), {
+          now: options.now(),
+          idleMinutes: query.idle_minutes ?? presenceIdleMinutes(options.config),
+          teams: teams ?? null,
+          ...(query.repo ? { repo: query.repo } : {}),
+          configFor: async () => options.config,
         });
       }),
 

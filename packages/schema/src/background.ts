@@ -305,6 +305,12 @@ export const ScheduleSchema = Type.Object(
     agent: Type.Optional(
       StringEnum(BACKGROUND_AGENTS, { description: "Default: [background] agent." }),
     ),
+    owner: Type.Optional(
+      NonEmpty({
+        description:
+          "Person id who owns the schedule's runs: their review items, errors and budget items go to them. Default: the first person in [review] fallback.",
+      }),
+    ),
   },
   { additionalProperties: false, description: "A run started on a schedule, with the team's key." },
 );

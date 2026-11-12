@@ -1,4 +1,10 @@
-import { type AgentRef, currentOwner, type LedgerEvent, type RunSummary } from "@selfhost/schema";
+import {
+  type AgentRef,
+  type LedgerEvent,
+  type OwnershipConfig,
+  type RunSummary,
+  runOwnership,
+} from "@selfhost/schema";
 import {
   type CacheTipOptions,
   cacheTips,
@@ -52,7 +58,14 @@ export function tokensOf(event: LedgerEvent): number {
 export function summarizeRun(
   id: string,
   events: readonly LedgerEvent[],
-  options: { now: Date; team?: string | null; idleMs?: number; cacheTip?: CacheTipOptions },
+  options: {
+    now: Date;
+    team?: string | null;
+    idleMs?: number;
+    cacheTip?: CacheTipOptions;
+    /** The run's selfhost.toml, for named agent and schedule owners and [review] fallback. */
+    config?: OwnershipConfig;
+  },
 ): RunSummary {
   const sorted = [...events].sort((a, b) => time(a) - time(b) || a.id.localeCompare(b.id));
   const costs = runCosts(sorted);
@@ -64,12 +77,15 @@ export function summarizeRun(
   const [cache] = sessionCaches(costs.map((e) => ({ ...e, session_id: id })));
   const tip = cache && options.cacheTip ? cacheTips([cache], options.cacheTip)[0] : undefined;
   const person = sorted.find((e) => e.actor.kind === "person")?.actor.id ?? null;
+  const ownership = runOwnership(sorted, options.config);
   return {
     id,
     agent,
     model: mostCommon(costs.map((e) => e.model)) ?? sorted.find((e) => e.model)?.model ?? null,
     person,
-    owner: currentOwner(sorted, person),
+    owner: ownership.owner,
+    owner_via: ownership.via,
+    named_agent: ownership.named_agent,
     team: options.team ?? mostCommon(sorted.map((e) => e.team)) ?? null,
     repo: sorted.find((e) => e.repo)?.repo ?? null,
     started_at: sorted[0]?.ts ?? options.now.toISOString(),

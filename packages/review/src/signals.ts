@@ -1,7 +1,9 @@
 import { decisionPaths } from "@selfhost/ledger";
 import {
   type AgentVendor,
+  EDIT_OVERLAP_ALERT,
   type LedgerEvent,
+  namedAgentOf,
   REDACTED,
   type ReviewItemKind,
   type ReviewWhy,
@@ -43,6 +45,8 @@ export interface Draft {
   person?: string;
   /** Team name on the event, matched against [teams]. */
   team?: string;
+  /** The [agents.<name>] that wrote the signal: its items go to that agent's owner. */
+  namedAgent?: string;
   url?: string;
 }
 
@@ -61,6 +65,7 @@ const ALERT_KINDS: Record<string, ReviewItemKind> = {
   quality: "quality",
   quality_alarm: "quality",
   grant_unverified: "security",
+  [EDIT_OVERLAP_ALERT]: "overlap",
 };
 
 /**
@@ -144,10 +149,12 @@ function strings(value: unknown): string[] {
 }
 
 function base(event: LedgerEvent) {
+  const named = namedAgentOf(event.actor);
   return {
     paths: decisionPaths(event),
     person: eventPerson(event),
     ...(event.team ? { team: event.team } : {}),
+    ...(named ? { namedAgent: named } : {}),
     ...(event.links?.run_url ? { url: event.links.run_url } : {}),
   };
 }
@@ -407,8 +414,10 @@ function fromAlert(event: LedgerEvent): Draft | undefined {
   if (kind === "security" && event.source !== "server") return undefined;
   const message = text(data.message);
   const agent = agentName(event);
+  const named = text(data.named_agent);
   const common = {
     ...base(event),
+    ...(named ? { namedAgent: named } : {}),
     kind,
     scored: false,
     blocking: false,
@@ -482,6 +491,30 @@ function fromAlert(event: LedgerEvent): Draft | undefined {
         reasons: [failed ? "A run failed or stopped making progress" : "A run hit errors"],
       };
     }
+    case "overlap": {
+      // One item per owner warned: data.owner is the person it is for.
+      const person = personId(data.owner);
+      const file = text(data.file);
+      const runs = strings(data.runs);
+      return {
+        ...common,
+        paths: file ? [file] : [],
+        dedupeKey: `overlap:${event.repo ?? ""}:${file ?? ""}:${[...runs].sort().join(",")}:${person ?? ""}`,
+        title: title(
+          message ??
+            `${runs.length || "Several"} active runs are editing ${file ?? "the same file"}${event.repo ? ` in ${event.repo}` : ""}`,
+        ),
+        why: {
+          signal,
+          text:
+            text(data.reason) ??
+            "Another active run in the same repo edited this file. Agree who goes first before either opens a pull request.",
+        },
+        score: 55,
+        reasons: ["Two runs are editing the same file at once"],
+        ...(person ? { person } : {}),
+      };
+    }
     case "security": {
       // The person whose laptop sent the allow: the item is about them, never for them.
       const person = personId(data.person);
@@ -512,6 +545,90 @@ function fromAlert(event: LedgerEvent): Draft | undefined {
       };
     }
   }
+}
+
+/** At most this many reverts and reworks are listed in a learned signal's brief. */
+const LEARNED_EVIDENCE_LISTED = 10;
+
+function evidenceLine(entry: Record<string, unknown>): string | undefined {
+  const url = text(entry.pr_url);
+  if (!url) return undefined;
+  const kind = entry.kind === "revert" ? "Reverted" : "Reworked";
+  const by = text(entry.by_pr) ?? text(entry.by_commit);
+  const days = typeof entry.days_after_merge === "number" ? entry.days_after_merge : undefined;
+  const run = text(entry.session);
+  const reason = text(entry.reason);
+  return [
+    `- ${kind}: ${url}`,
+    by ? ` by ${by}` : "",
+    days !== undefined ? `, ${days} days after the merge` : "",
+    run ? ` (run ${run})` : "",
+    reason ? `. Why: ${reason}` : "",
+  ].join("");
+}
+
+/**
+ * risk.learned with state proposed: an agent and model's merged pull requests in one module were
+ * reverted or reworked above [review] revert_rate_threshold. Its item id is in links.item_id, and
+ * approving the item is what lets the risk score count it; nothing changes before. A cleared
+ * signal opens nothing.
+ */
+function fromLearnedRisk(event: LedgerEvent): Draft | undefined {
+  const data = event.data ?? {};
+  const id = event.links?.item_id?.toLowerCase();
+  const module = text(data.module);
+  if (data.state !== "proposed" || !id || !UUIDV7.test(id) || !module || !event.agent) {
+    return undefined;
+  }
+  const agent = `${AGENT_NAMES[event.agent.vendor]}${event.model ? ` (${event.model})` : ""}`;
+  const pulls = typeof data.pulls === "number" ? data.pulls : 0;
+  const bad =
+    (typeof data.reverted === "number" ? data.reverted : 0) +
+    (typeof data.reworked === "number" ? data.reworked : 0);
+  const days = typeof data.days === "number" ? data.days : undefined;
+  const where = event.repo ? `${event.repo} ${module}` : module;
+  const evidence = (Array.isArray(data.evidence) ? data.evidence : [])
+    .filter(
+      (entry): entry is Record<string, unknown> => entry !== null && typeof entry === "object",
+    )
+    .map(evidenceLine)
+    .filter((line): line is string => line !== undefined);
+  const listed = evidence.slice(0, LEARNED_EVIDENCE_LISTED);
+  const suggestion = text(data.suggestion);
+  const brief = [
+    `${bad} of ${pulls} merged pull requests by ${agent} in ${where} were reverted or reworked${days ? ` within ${days} days of their merge` : ""}.`,
+    ...(listed.length > 0
+      ? [
+          "",
+          ...listed,
+          ...(evidence.length > listed.length
+            ? [`- and ${evidence.length - listed.length} more`]
+            : []),
+        ]
+      : []),
+    "",
+    `Approving raises the risk score of new pull requests by ${agent} that touch ${module}. Denying leaves the score as it is.`,
+    ...(suggestion ? ["", `To go further, by hand: ${suggestion}`] : []),
+  ].join("\n");
+  const { person: _person, ...common } = base(event);
+  return {
+    ...common,
+    paths: strings(data.files),
+    kind: "quality",
+    id,
+    dedupeKey: `learned:${event.repo ?? ""}:${event.agent.vendor}:${event.model ?? ""}:${module}`,
+    title: title(`${agent} pull requests in ${where} keep being reverted`),
+    why: {
+      signal: "risk.learned",
+      text: `${bad} of ${pulls} merged pull requests were reverted or reworked, above [review] revert_rate_threshold. Approve to raise the risk of new ones; nothing changes until a person does.`,
+    },
+    score: 40,
+    reasons: ["Agent pull requests here were reverted or reworked after merge"],
+    scored: false,
+    blocking: false,
+    timesOut: false,
+    brief,
+  };
 }
 
 /** The dedupe key of a pull request's `pr` item: one open item per PR URL in a team scope. */
@@ -559,6 +676,8 @@ export function draftFor(event: LedgerEvent): Draft | undefined {
       return fromAlert(event);
     case "pr.opened":
       return fromPullRequest(event);
+    case "risk.learned":
+      return fromLearnedRisk(event);
     default:
       return undefined;
   }

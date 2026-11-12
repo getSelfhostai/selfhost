@@ -170,6 +170,7 @@ export async function readRun(
       run: summarizeRun(runId, visible, {
         now: options.now,
         team,
+        config,
         cacheTip: {
           floor: config.alerts.cache_hit_floor ?? 0.5,
           minUsd: config.alerts.cache_tip_usd ?? 5,

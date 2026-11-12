@@ -94,6 +94,10 @@ import {
   PolicyObservedRuleSchema,
   PolicyQuerySchema,
   PolicyResponseSchema,
+  PresenceOverlapSchema,
+  PresenceQuerySchema,
+  PresenceResponseSchema,
+  PresenceRunSchema,
   ProvenanceAgentRowSchema,
   ProvenanceModuleRowSchema,
   ProvenancePersonRowSchema,
@@ -336,6 +340,9 @@ const COMPONENT_SCHEMAS: ReadonlyArray<readonly [name: string, schema: TSchema]>
   ["HandoffsResponse", HandoffsResponseSchema],
   ["TakeoverResponse", TakeoverResponseSchema],
   ["TailResponse", TailResponseSchema],
+  ["PresenceRun", PresenceRunSchema],
+  ["PresenceOverlap", PresenceOverlapSchema],
+  ["PresenceResponse", PresenceResponseSchema],
   ["BackgroundRun", BackgroundRunSchema],
   ["BackgroundRunsResponse", BackgroundRunsResponseSchema],
   ["StartRunRequest", StartRunRequestSchema],
@@ -1304,6 +1311,24 @@ function openApiDocument(): Json {
           responses: {
             "200": { description: "What landed.", content: jsonContent("TailResponse") },
             "400": errorResponse("Invalid query or cursor."),
+            ...authErrors,
+            "403": forbiddenResponse,
+          },
+        },
+      },
+      "/v1/presence": {
+        get: {
+          operationId: "getPresence",
+          summary:
+            "Who (people and named agents) is working right now on which repo, branch and files, and who owns each run.",
+          description: `${ROLE_NOTE.read} A run is active from its first event until its session ends (or its background run finishes) or it has had no event for idle_minutes. A person token sees the teams of its org it can read; the admin token sees every team and runs with no team. overlaps lists files two active runs in one repo both edited; the team server also warns each of their owners with an overlap item. selfhost who and the MCP tool who give the same answer.`,
+          parameters: queryParameters(PresenceQuerySchema),
+          responses: {
+            "200": {
+              description: "Who is working where.",
+              content: jsonContent("PresenceResponse"),
+            },
+            "400": errorResponse("Invalid query."),
             ...authErrors,
             "403": forbiddenResponse,
           },

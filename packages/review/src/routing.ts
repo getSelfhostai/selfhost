@@ -27,6 +27,8 @@ export interface RouteInput {
   ruleId?: string;
   /** The tool an approval or exception waits on. */
   tool?: string;
+  /** The [agents.<name>] whose run raised the item. */
+  namedAgent?: string;
 }
 
 /** What routing knows besides selfhost.toml, which depends on where it runs. */
@@ -283,6 +285,33 @@ export function routeByRules(
 ): Routing | undefined {
   const winner = checks(config, input, ctx).find((check) => check.matched && !check.empty);
   return winner ? routingOf(winner, ctx) : undefined;
+}
+
+/**
+ * Named agents ([agents.<name>]) come before the team's routing: an item on a file a named
+ * agent owns goes to that agent's owner, else an item a named agent's run raised goes to its
+ * owner. Undefined when neither applies.
+ */
+export function routeByNamedAgent(
+  config: Pick<ResolvedSelfhostConfig, "agents">,
+  input: Pick<RouteInput, "paths" | "namedAgent">,
+): Routing | undefined {
+  const paths = input.paths.map(normalizePath);
+  for (const [name, agent] of Object.entries(config.agents ?? {})) {
+    const glob = (agent.paths ?? []).find((g) => paths.some((path) => globMatches(g, path)));
+    if (glob !== undefined) {
+      return {
+        owners: [agent.owner],
+        route: { step: "owner", from: `[agents.${name}] paths ${JSON.stringify(glob)}` },
+      };
+    }
+  }
+  const named = input.namedAgent ? config.agents?.[input.namedAgent] : undefined;
+  if (!named) return undefined;
+  return {
+    owners: [named.owner],
+    route: { step: "owner", from: `[agents.${input.namedAgent}] owner` },
+  };
 }
 
 /**
