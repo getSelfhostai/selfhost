@@ -64,6 +64,12 @@ export const EVENT_KINDS = [
   "sandbox.stopped",
   // Run handoff (src/handoff.ts), added 2026-11-11.
   "run.handed_off",
+  // Learning from reverts, added 2026-11-12: a merged agent pull request reverted, or its lines
+  // changed again by a later pull request, within [review] revert_window_days of its merge, and
+  // a revert rate per agent, model and module crossing [review] revert_rate_threshold.
+  "pr.reverted",
+  "pr.reworked",
+  "risk.learned",
 ] as const;
 
 export const ACTOR_KINDS = ["person", "agent", "system"] as const;

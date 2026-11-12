@@ -822,10 +822,13 @@ describe("the agent pull request in the ledger", () => {
       expect.objectContaining({ pr: PR_142.html_url, action: "created" }),
     ]);
 
-    // The merge reads nothing from GitHub, closes the item and shows on the run.
+    // The merge reads only the pull request's files (the lines it added, for learning from
+    // reverts), writes nothing on GitHub, closes the item and shows on the run.
     const requests = h.github.requests.length;
     expect((await h.deliver(closed142(true))).json).toMatchObject({ handled: true, writes: 0 });
-    expect(h.github.requests).toHaveLength(requests);
+    expect(h.github.requests.slice(requests).map((r) => `${r.method} ${r.path}`)).toEqual([
+      `GET /repos/${REPO}/pulls/142/files`,
+    ]);
     expect((await h.deliver(closed142(true))).json).toMatchObject({ handled: true });
     expect((await prEvents(h)).map((e) => [e.kind, e.session_id])).toEqual([
       ["pr.opened", SESSION],

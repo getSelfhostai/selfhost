@@ -202,3 +202,59 @@ describe("review routing settings", () => {
     expect(screen.queryByRole("button", { name: /route/i })).toBeNull();
   });
 });
+
+describe("learned from reverts", () => {
+  const learned = (state: string, ts: string, extra: Record<string, unknown> = {}) => ({
+    id: `0193a000-0000-7000-8000-${ts.slice(8, 10)}${state === "proposed" ? "01" : "02"}00000000`,
+    schema: "selfhost.event/v1",
+    ts,
+    source: "server",
+    kind: "risk.learned",
+    actor: { kind: "system", id: "selfhost-github-app" },
+    agent: { vendor: "codex" },
+    model: "gpt-5-codex",
+    repo: "acme/api",
+    data: {
+      state,
+      module: "apps/server",
+      pulls: 8,
+      reverted: 2,
+      reworked: 1,
+      rate: 0.375,
+      threshold: 0.25,
+      days: 14,
+      evidence: [{}, {}, {}],
+      ...extra,
+    },
+  });
+
+  it("lists the newest signal per agent, model and module, and says approval happens in Review", async () => {
+    const server = mockServer(
+      routes({
+        "GET /v1/events": {
+          events: [
+            learned("proposed", "2026-11-06T10:00:00.000Z"),
+            learned("cleared", "2026-11-02T10:00:00.000Z"),
+            learned("cleared", "2026-11-05T10:00:00.000Z", { module: "web" }),
+          ],
+        },
+      }),
+    );
+    renderConsole(MEMBER, "?screen=rules");
+    const cards = await screen.findAllByTestId("learned");
+    expect(cards).toHaveLength(2);
+    const first = within(cards[0] as HTMLElement);
+    expect(first.getByText("Codex (gpt-5-codex) in acme/api apps/server")).toBeTruthy();
+    expect(first.getByText("Above threshold")).toBeTruthy();
+    expect(
+      first.getByText(
+        "3 of 8 merged pull requests reverted or reworked within 14 days (37.5%), threshold 25%.",
+      ),
+    ).toBeTruthy();
+    expect(first.getByText(/Approve or deny it on the Review screen/)).toBeTruthy();
+    expect(within(cards[1] as HTMLElement).getByText("Back under threshold")).toBeTruthy();
+    const call = server.calls.find((c) => c.path === "/v1/events");
+    expect(call?.url.searchParams.get("kind")).toBe("risk.learned");
+    expect(call?.url.searchParams.get("team")).toBe("web");
+  });
+});

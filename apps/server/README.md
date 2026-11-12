@@ -426,8 +426,10 @@ setup is reported at start by variable name. It needs no bearer token: the reque
   session, the review item gets the run, and the pull request is synced again so its brief has
   the trace.
 - `pull_request` with action `closed` on an agent pull request records `pr.merged` or
-  `pr.closed` (the same actor and run), which closes its review item; nothing is read from
-  GitHub.
+  `pr.closed` (the same actor and run), which closes its review item. A merge reads the pull
+  request's files once, for the lines it added (see [learning from reverts](#learning-from-reverts)).
+- `pull_request` closed as merged by anyone, and `push` to the default branch, are checked for
+  reverts and reworks of agent pull requests (see [learning from reverts](#learning-from-reverts)).
 - Only repositories a team claimed with `selfhost team repo add` are acted on (with
   `SELFHOST_GITHUB_TEAM`, that team's own): every other delivery answers `handled: false` with
   the reason, before any GitHub call or ledger write, whatever its event. The log gets one line
@@ -597,6 +599,51 @@ GitHub App, or in a build without ee/. A receipt is a few kilobytes (log tails a
 capped by the action); bodies over 2 MB are refused. On GitHub Enterprise Server set
 `SELFHOST_GITHUB_OIDC_ISSUER` to `https://<host>/_services/token`.
 
+### Learning from reverts
+
+When an agent pull request is reverted or its lines are changed again soon after it merged, the
+server links that back to the pull request and, once it keeps happening, proposes a higher risk
+for that agent, model and module. It uses the team's own GitHub history and ledger only, and
+makes no model call. Without ee/ in the build nothing is recorded.
+
+- **Lines.** An agent pull request's merge reads its files once (one paginated call) and keeps
+  the lines it added, by file, on its `pr.merged` event (`data.lines`, at most 300 files).
+- **Reverts.** A merged pull request whose description names an agent pull request the way
+  GitHub's revert button does (`Reverts owner/repo#142`), or whose commits or description say
+  `This reverts commit <sha>` of its merge commit, or whose title is `Revert "<title>"` of one,
+  records `pr.reverted` on the original. A `push` to the default branch with such a commit does
+  the same (`data.via` `revert_commit`), with no GitHub call. The commits are read only when the
+  title says Revert and the description names nothing.
+- **Reworks.** Any other merged pull request, by a person or an agent, that changes or deletes
+  lines an agent pull request added records `pr.reworked` on that one (`data.files`,
+  `data.lines`). Lines are compared by their numbers at the agent pull request's merge and at the
+  later pull request's base, so other changes to the file in between can shift them. Its files
+  are read only when an agent pull request with recorded lines merged in the window before it.
+- **The window.** Only reverts and reworks within `[review] revert_window_days` (default 14) of
+  the agent pull request's merge count; later ones record nothing.
+- **What each one names.** The original pull request (`links.pr_url`, `target`), its agent,
+  model, run (`session_id`, `run_id`), the merge time and `days_after_merge`, who merged or
+  pushed the revert (`actor`, by GitHub login), the revert or later pull request (`data.by_pr`)
+  and, for a revert, the reason its description gives once GitHub's own lines are taken out
+  (`data.reason`, at most 500 characters). The person behind the original is its run's. Each is
+  recorded once per original pull request (and per later pull request for a rework).
+- **Rates.** After each one, and after each agent merge, the rate per agent, model and module
+  (`[review] modules`, else top folders, as for module revert rates) is read again over the last
+  90 days of agent merges: reverted or reworked pull requests over merged ones. When it rises
+  above `[review] revert_rate_threshold` (default 25%) with at least 5 merges, a `risk.learned`
+  event with `data.state` `proposed` is recorded, with the rate, the threshold, the counts, the
+  evidence (each `pr.reverted` and `pr.reworked` event id with its pull requests, run, days and
+  reason) and a suggested `selfhost.toml` change. When it falls back to the threshold or under,
+  `risk.learned` with `data.state` `cleared` is recorded. Each threshold change is one event, so
+  a weekly report can list them from the ledger (`GET /v1/events?kind=risk.learned`).
+- **A person decides.** A proposed signal opens a `quality` review item with the evidence.
+  Nothing changes until a person approves it; then new pull requests from that agent and model
+  that touch the module score higher (the `learned_reverts` input of the
+  [risk score](../../ee/risk/README.md#inputs)) until the signal clears. Denied or unanswered
+  signals add nothing, and the suggested `selfhost.toml` change is never applied by selfhost.
+- The console's Rules screen lists each signal under "Learned from reverts"; the run view lists
+  the `pr.reverted` and `pr.reworked` events of the run that made the pull request.
+
 ### Registering the App
 
 1. Create a GitHub App (organization settings, Developer settings, GitHub Apps). Webhook URL:
@@ -608,8 +655,9 @@ capped by the action); bodies over 2 MB are refused. On GitHub Enterprise Server
    read-only (CI that reports statuses rather than check runs, for auto-approve's
    `require_green_checks`), Metadata read-only. Proof receipts need nothing more. Without Commit
    statuses, auto-approve counts check runs alone and says so in its reason.
-3. Subscribe to the **Pull request** event, to **Check suite** for auto-approve, and for second
-   opinions from an AI reviewer to **Pull request review**, **Issue comment** and **Check run**.
+3. Subscribe to the **Pull request** event, to **Check suite** for auto-approve, to **Push** for
+   reverts pushed straight to the default branch, and for second opinions from an AI reviewer to
+   **Pull request review**, **Issue comment** and **Check run**.
 4. Generate a private key, and set `SELFHOST_GITHUB_APP_ID`, `SELFHOST_GITHUB_PRIVATE_KEY_FILE`
    (or `SELFHOST_GITHUB_PRIVATE_KEY`) and `SELFHOST_GITHUB_WEBHOOK_SECRET` on the server, plus
    `SELFHOST_GITHUB_TEAM` on a team server.

@@ -9,6 +9,7 @@ import {
 import type { LedgerEvent, SecondOpinion } from "@selfhost/schema";
 import { loadRisk } from "./ee.js";
 import type { GitHubProviders, PullContext } from "./github-pull.js";
+import type { LearnedLookup } from "./github-reverts.js";
 import type { GitClones } from "./provenance.js";
 
 type RiskModule = NonNullable<Awaited<ReturnType<typeof loadRisk>>>;
@@ -106,6 +107,8 @@ export function eeRisk(
   secondOpinions?: (url: string) => Promise<SecondOpinion[]>,
   /** The tests-first gate of the background run that opened the pull request, if one did. */
   gateTests?: GateTests,
+  /** Revert signals a person approved for the agent, model and touched modules. */
+  learned?: LearnedLookup,
 ): GitHubProviders["risk"] {
   let loaded: Promise<RiskModule | undefined> | undefined;
   return async (ctx) => {
@@ -120,6 +123,13 @@ export function eeRisk(
     const modules = await cloneModuleReverts(clones, ctx, files, risk.REVERT_WINDOW_DAYS, {
       ...(ledger ? { ledger } : {}),
     });
+    const approved = learned
+      ? await learned(
+          `${ctx.pull.owner}/${ctx.pull.repo}`,
+          ctx.agent,
+          touchedModules(files, settingsFromConfig(ctx.config)),
+        )
+      : [];
     const opinions = await secondOpinions?.(ctx.pull.url);
     const tests = await gateTests?.(ctx.pull.url);
     const reviewer = ctx.config.integrations.reviewer;
@@ -139,6 +149,7 @@ export function eeRisk(
         : {}),
       ...(problem ? {} : { dependencies: newDependencies(manifests) }),
       ...(typeof modules === "string" ? {} : { modules }),
+      ...(approved.length > 0 ? { learned: approved } : {}),
       agent: ctx.agent,
       ...(tests ? { tests } : {}),
       unavailable: {

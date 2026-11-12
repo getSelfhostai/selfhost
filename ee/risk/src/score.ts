@@ -66,6 +66,13 @@ export const WEIGHTS = {
   firstHotModule: 10,
   eachMoreHotModule: 5,
   hotModulesMax: 20,
+  /**
+   * A touched module where a person approved the revert signal for the agent and model: their
+   * merged pull requests there were reverted or reworked above `[review] revert_rate_threshold`.
+   */
+  firstLearned: 15,
+  eachMoreLearned: 5,
+  learnedMax: 25,
   /** An AI reviewer asked for changes. */
   secondOpinionChanges: 15,
   /** It left findings without asking for changes. */
@@ -91,6 +98,7 @@ const DEFAULT_MISSING: Record<MissableInput, string> = {
   guardrails: "no agent run found in the ledger",
   reverts: "no revert history yet",
   module_reverts: "no module revert rates: they need the repository's git history",
+  learned_reverts: "no approved revert signal",
   second_opinion: "no review from [integrations.reviewer] on this pull request yet",
 };
 
@@ -350,6 +358,20 @@ export function scoreRisk(inputs: RiskInputs, config: ResolvedSelfhostConfig): R
     });
   } else {
     isMissing("module_reverts");
+  }
+
+  const learned = [...(inputs.learned ?? [])].sort((a, b) => compare(a.module, b.module));
+  if (learned.length > 0) {
+    const who = inputs.agent ? agentName(inputs.agent) : "this agent";
+    factors.push({
+      input: "learned_reverts",
+      points: Math.min(
+        WEIGHTS.firstLearned + (learned.length - 1) * WEIGHTS.eachMoreLearned,
+        WEIGHTS.learnedMax,
+      ),
+      forcesHigh: false,
+      detail: `Approved revert ${learned.length === 1 ? "signal" : "signals"} for ${who}: ${list(learned.map((l) => `${l.module} ${l.reverted + l.reworked} of ${plural(l.pulls, "merged pull request")} reverted or reworked within ${l.days} days (${percent(l.rate)})`))}`,
+    });
   }
 
   const opinions = inputs.secondOpinions;
