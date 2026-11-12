@@ -548,6 +548,77 @@ describe("admin commands", () => {
     });
   });
 
+  it("joins as the email an invite names when no person is given", async () => {
+    const { server, deps } = await adminSetup();
+    const invited = parse(
+      (
+        await run(
+          [
+            "team",
+            "invite",
+            "--server",
+            SERVER,
+            "--team",
+            "platform",
+            "--email",
+            "carol@example.com",
+            "--json",
+          ],
+          deps,
+        )
+      ).out,
+    );
+    // git has a user.email that is not the invite's: it was only a guess, so the invite's wins.
+    const gitConfig = tempDir("git-carol").write(
+      "gitconfig",
+      "[user]\n\temail = carol.laptop@example.com\n",
+    );
+    vi.stubEnv("GIT_CONFIG_GLOBAL", gitConfig);
+    vi.stubEnv("GIT_CONFIG_NOSYSTEM", "1");
+    vi.stubEnv("GIT_DIR", tempDir("no-git-carol").root);
+    const carol = laptop();
+    const joined = await run(["join", SERVER, invited.invite, "--json"], {
+      configPath: carol.configPath,
+      fetch: server.fetch,
+      env: {},
+    });
+    vi.unstubAllEnvs();
+    expect(joined.code, joined.out).toBe(0);
+    expect(parse(joined.out)).toMatchObject({
+      person: "carol@example.com",
+      person_from: null,
+      team: { id: "platform" },
+    });
+
+    // SELFHOST_PERSON is as deliberate as --person: someone else is still refused.
+    const second = parse(
+      (
+        await run(
+          [
+            "team",
+            "invite",
+            "--server",
+            SERVER,
+            "--team",
+            "platform",
+            "--email",
+            "dan@example.com",
+            "--json",
+          ],
+          deps,
+        )
+      ).out,
+    );
+    const mallory = laptop();
+    const refused = await run(["join", SERVER, second.invite, "--json"], {
+      configPath: mallory.configPath,
+      fetch: server.fetch,
+      env: { SELFHOST_PERSON: "mallory@example.com" },
+    });
+    expect(refused.code).toBe(1);
+    expect(parse(refused.out).error).toMatch(/401.*for someone else/);
+  });
+
   it("a team-wide invite adds new people only; an invite for the person adds a machine", async () => {
     const { server, deps, init } = await adminSetup();
     const join = (invite: string, person: string) =>

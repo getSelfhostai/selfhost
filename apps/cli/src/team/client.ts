@@ -199,8 +199,14 @@ export class TeamClient {
     return this.call("DELETE", path);
   }
 
-  join(invite: string, person: string, name?: string): Promise<JoinResponse> {
-    return this.call("POST", "/v1/join", { invite, person, ...(name ? { name } : {}) });
+  /** `guessed`: person is the CLI's own guess, so an invite for an email joins as that email. */
+  join(invite: string, person: string, name?: string, guessed = false): Promise<JoinResponse> {
+    return this.call("POST", "/v1/join", {
+      invite,
+      person,
+      ...(name ? { name } : {}),
+      ...(guessed ? { person_guessed: true } : {}),
+    });
   }
 
   /** The team's policy, or undefined when the team has none yet. Default: the token's team. */

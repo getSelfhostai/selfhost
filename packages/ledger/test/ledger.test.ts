@@ -130,6 +130,7 @@ describe.each(BACKENDS)("ledger on $name", (backend) => {
         "context",
         "decisions",
         "deliveries",
+        "droppedReviewers",
         "handoffs",
         "orgs",
         "query",

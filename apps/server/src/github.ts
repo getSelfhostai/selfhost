@@ -4,7 +4,6 @@ import {
   type GitHubApp,
   githubAppEnv,
   type PullRequestEvent,
-  type Reviewers,
   type ReviewRequestOutcome,
   requestReviews,
   type SyncResult,
@@ -43,9 +42,6 @@ import {
 import type { GitClones } from "./provenance.js";
 
 export const GITHUB_WEBHOOK_PATH = "/v1/github/webhooks";
-
-/** Pull requests whose dropped review requests are remembered, newest kept. */
-const DROPPED_REQUESTS_KEPT = 5000;
 
 /** GitHub caps webhook payloads at 25 MB. */
 const MAX_WEBHOOK_BYTES = 25 * 1024 * 1024;
@@ -88,6 +84,8 @@ export interface GitHubRouteOptions {
    * Default: one of the route's own.
    */
   pulls?: PullSync;
+  /** How long one pull request sync may hold its queue. Default SERIAL_JOB_TIMEOUT_MS. */
+  serialTimeoutMs?: number;
 }
 
 /** What POST /v1/github/webhooks answers to a verified delivery. */
@@ -305,24 +303,11 @@ export function pullSync(
     ...options.providers,
   };
   const config = options.config ?? (async () => DEFAULT_CONFIG);
-  const queued = queue();
+  const queued = queue(options.serialTimeoutMs, options.log);
   // Review requests GitHub accepted but did not keep, by pull request: GitHub answers 201 to a
   // request for a team without access to the repository and keeps nothing, so asking on every
-  // delivery would only repeat it. Forgotten on restart, which asks once more.
-  const dropped = new Map<string, Reviewers>();
-  const remember = (key: string, lost: Reviewers) => {
-    const before = dropped.get(key) ?? { users: [], teams: [] };
-    const merged = {
-      users: [...new Set([...before.users, ...lost.users])],
-      teams: [...new Set([...before.teams, ...lost.teams])],
-    };
-    dropped.delete(key);
-    if (merged.users.length > 0 || merged.teams.length > 0) dropped.set(key, merged);
-    for (const old of dropped.keys()) {
-      if (dropped.size <= DROPPED_REQUESTS_KEPT) break;
-      dropped.delete(old);
-    }
-  };
+  // delivery would only repeat it. Kept in the ledger's database, so a restart does not ask again.
+  const dropped = ledger.droppedReviewers;
   return {
     serial: (installation, where, work) => queued(`${installation}/${where}`, work),
     config,
@@ -346,9 +331,12 @@ export function pullSync(
       let outcome: ReviewRequestOutcome | undefined;
       if (wanted) {
         const key = pullKey(pull);
-        const skip = dropped.get(key);
+        const before = await dropped.get(key);
+        const skip = before.users.length > 0 || before.teams.length > 0 ? before : undefined;
         outcome = await requestReviews(octokit, ref, { ...wanted, ...(skip ? { skip } : {}) });
-        remember(key, outcome.dropped);
+        if (outcome.dropped.users.length > 0 || outcome.dropped.teams.length > 0) {
+          await dropped.add(key, outcome.dropped);
+        }
         if (desired.check && planned.reviewers) {
           desired.check = {
             ...desired.check,
@@ -376,11 +364,69 @@ export function pullSync(
   };
 }
 
-/** Runs one sync at a time per pull request, so two deliveries never race to create a run. */
-function queue() {
+/** A skipped delivery from a repository is logged at most this often; the rest are counted. */
+export const SKIPPED_LOG_INTERVAL_MS = 60_000;
+const SKIPPED_REPOS_KEPT = 1000;
+
+/**
+ * One log line per skipped delivery (repository, event, reason), at most one a minute for each
+ * repository: an App installed on every repository of an org would otherwise log every push.
+ * The line after a quiet minute says how many were not logged.
+ */
+export function skippedDeliveryLog(
+  log: (line: string) => void,
+  now: () => Date,
+  intervalMs = SKIPPED_LOG_INTERVAL_MS,
+): (delivery: string, repo: string, event: string, reason: string) => void {
+  const last = new Map<string, { at: number; quiet: number }>();
+  return (delivery, repo, event, reason) => {
+    const at = now().getTime();
+    const seen = last.get(repo);
+    if (seen && at - seen.at < intervalMs) {
+      seen.quiet++;
+      return;
+    }
+    const more = seen?.quiet ? ` (${seen.quiet} more from ${repo} not logged)` : "";
+    log(`github: delivery ${delivery} ${event} from ${repo} skipped: ${reason}${more}`);
+    last.delete(repo);
+    last.set(repo, { at, quiet: 0 });
+    for (const old of last.keys()) {
+      if (last.size <= SKIPPED_REPOS_KEPT) break;
+      last.delete(old);
+    }
+  };
+}
+
+/**
+ * How long one queued pull request sync may hold its queue. Each GitHub call has its own timeout
+ * and retries (GITHUB_REQUEST_TIMEOUT_MS); this bounds a sync as a whole, so one that never ends
+ * cannot stop every later delivery for the same pull request.
+ */
+export const SERIAL_JOB_TIMEOUT_MS = 5 * 60_000;
+
+/**
+ * Runs one sync at a time per pull request, so two deliveries never race to create a run. A job
+ * still going after timeoutMs fails for its caller, and the next job in its queue starts; what
+ * the stuck job does after that is not waited for.
+ */
+export function queue(timeoutMs = SERIAL_JOB_TIMEOUT_MS, log: (line: string) => void = () => {}) {
   const tails = new Map<string, Promise<unknown>>();
   return <T>(key: string, run: () => Promise<T>): Promise<T> => {
-    const result = (tails.get(key) ?? Promise.resolve()).then(run);
+    const result = (tails.get(key) ?? Promise.resolve()).then(() => {
+      const work = run();
+      let timer: NodeJS.Timeout | undefined;
+      const late = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          log(
+            `github: the sync of ${key} took over ${Math.round(timeoutMs / 1000)}s; the next one goes on`,
+          );
+          reject(new Error(`The sync of ${key} took over ${Math.round(timeoutMs / 1000)}s`));
+        }, timeoutMs);
+        timer.unref?.();
+      });
+      work.catch(() => undefined);
+      return Promise.race([work, late]).finally(() => clearTimeout(timer));
+    });
     const tail = result.catch(() => {});
     tails.set(key, tail);
     void tail.then(() => {
@@ -430,6 +476,7 @@ export function githubRoutes(
   const log = options.log ?? console.log;
   const now = options.now ?? (() => new Date());
   const installed = github;
+  const logSkipped = skippedDeliveryLog(log, now);
 
   /**
    * A reviewer's verdict on an agent pull request: recorded once as a review.submitted event
@@ -509,6 +556,7 @@ export function githubRoutes(
         ? await unclaimedRepo(ledger, options.team, repo)
         : "no repository in the payload";
       if (unclaimed) {
+        if (repo) logSkipped(delivery, repo, event, unclaimed);
         return c.json({ delivery, handled: false, skipped: unclaimed } satisfies WebhookResponse);
       }
 

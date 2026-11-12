@@ -48,7 +48,12 @@ export interface CapStop {
   cap: RuntimeCapKey;
 }
 
-const usd = (value: number) => `$${value.toFixed(2)}`;
+/** Dollars with cents, or with as many places as a small amount (a test cap of $0.002) needs. */
+const usd = (value: number) => {
+  if (value === 0 || Math.abs(value) >= 0.01) return `$${value.toFixed(2)}`;
+  const places = Math.min(8, 1 - Math.floor(Math.log10(Math.abs(value))));
+  return `$${value.toFixed(places)}`;
+};
 
 /**
  * Enforces [budget] runtime_daily_usd and runtime_run_usd for the sandboxes of one team. admit()

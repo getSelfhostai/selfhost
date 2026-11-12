@@ -114,6 +114,11 @@ export interface CliDeps {
   imageExists?: ImageCheck;
   /** Opens a runtime's adapter for `selfhost runtime`. Default: the provider's SDK or API. */
   openRuntime?: RuntimeIo["openAdapter"];
+  /**
+   * Ends the process at once, for a command that leaves a provider's SDK waiting on a call that
+   * got no answer. Default: process.exit.
+   */
+  exit?: (code: number) => void;
   /** Opens the console in a browser for `selfhost console`. Default: the system's opener. */
   openBrowser?: (url: string, platform: NodeJS.Platform) => void;
   /** Resolves when `selfhost console` should stop. Default: Ctrl-C or SIGTERM. */
@@ -137,6 +142,7 @@ function defaultDeps(): CliDeps {
     setExitCode: (code) => {
       process.exitCode = code;
     },
+    exit: (code) => process.exit(code),
     collectAttribution: gitAttribution(),
     ask: process.stdin.isTTY ? askOnTerminal : undefined,
     stdinIsTTY: process.stdin.isTTY === true,
@@ -677,6 +683,7 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       ...(deps.now ? { now: () => deps.now as Date } : {}),
       ...(deps.fetch ? { fetch: wrapFetch(deps.fetch) } : {}),
       ...(deps.openRuntime ? { openAdapter: deps.openRuntime } : {}),
+      ...(deps.exit ? { exit: deps.exit } : {}),
     }),
     fail,
   );

@@ -111,9 +111,10 @@ Approvals, questions and alerts older than seven days open nothing.
   "Second opinion: CodeRabbit requested changes: 3 findings, highest critical". A later approval
   does not lower the score. A verdict that arrives before the PR's item is picked up when the
   item opens. Closed items are left alone.
-- `pr.merged` and `pr.closed` dismiss the PR's item. A `decision.recorded` event from a person
-  with `item_id` (or, for a PR, its `pr_url`) answers the open item; a later decision that
-  replaces the answer updates it. Decisions from a person token answer only that team's items.
+- `pr.linked` gives the PR's open item the session (and run) behind it, when the server learned
+  of the session after the item opened. `pr.merged` and `pr.closed` dismiss the PR's item. A
+  `decision.recorded` event from a person with `item_id` (or, for a PR, its `pr_url`) answers the
+  open item; a later decision that replaces the answer updates it. Decisions from a person token answer only that team's items.
 - A wait ends when the session moves on before the deadline: a prompt the person typed
   (`prompt.submitted`, not the Codex notify record), the session ending, or for an approval the
   tool it waited on returning a result (any tool when the signal does not name one). The item is

@@ -59,6 +59,93 @@ export interface GitHubAppOptions {
   fetch?: typeof fetch;
   /** Octokit warnings and errors, one line each, never tokens or bodies. Default: console.warn. */
   log?: (line: string) => void;
+  /** How long one request may take, its body included. Default GITHUB_REQUEST_TIMEOUT_MS. */
+  timeoutMs?: number;
+  /**
+   * Tries after the first for a request that timed out, failed to connect or got a 5xx or 429.
+   * Only GET, HEAD, PUT and DELETE are tried again, so a POST is never sent twice. Default 2.
+   */
+  retries?: number;
+  /** The wait before the first retry, doubled for each one after. Default 1000. */
+  backoffMs?: number;
+}
+
+/** How long one GitHub API call may take before it fails. */
+export const GITHUB_REQUEST_TIMEOUT_MS = 30_000;
+
+const RETRIED_METHODS = new Set(["GET", "HEAD", "PUT", "DELETE"]);
+
+/** A GitHub API call that got no answer in time, or was cut off by GitHubApp.close(). */
+export class GitHubCallAborted extends Error {
+  override name = "GitHubCallAborted";
+}
+
+const methodOf = (input: Parameters<typeof fetch>[0], init: RequestInit | undefined) =>
+  (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
+
+const pathOf = (input: Parameters<typeof fetch>[0]) => {
+  const url = input instanceof Request ? input.url : String(input);
+  try {
+    return new URL(url).pathname;
+  } catch {
+    return url;
+  }
+};
+
+/**
+ * fetch with a timeout per request (its body included), retries with backoff for the methods
+ * that are safe to send again, and one signal that aborts every request in flight (close).
+ */
+function guardedFetch(
+  base: typeof fetch,
+  closed: AbortSignal,
+  options: { timeoutMs: number; retries: number; backoffMs: number },
+): typeof fetch {
+  const wait = (ms: number) =>
+    new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, ms);
+      timer.unref?.();
+      closed.addEventListener("abort", () => resolve(), { once: true });
+    });
+  return async (input, init) => {
+    const method = methodOf(input, init);
+    const what = `${method} ${pathOf(input)}`;
+    const tries = RETRIED_METHODS.has(method) ? options.retries + 1 : 1;
+    for (let attempt = 1; ; attempt++) {
+      if (closed.aborted) throw new GitHubCallAborted(`${what}: the server is shutting down`);
+      const timeout = new AbortController();
+      // Left running once the answer is in, so a body that stops arriving is cut off too.
+      const timer = setTimeout(() => timeout.abort(), options.timeoutMs);
+      timer.unref?.();
+      const signal = AbortSignal.any([
+        timeout.signal,
+        closed,
+        ...(init?.signal ? [init.signal] : []),
+      ]);
+      let failure: unknown;
+      try {
+        const response = await base(input, { ...init, signal });
+        if (attempt < tries && (response.status >= 500 || response.status === 429)) {
+          clearTimeout(timer);
+          await response.body?.cancel().catch(() => undefined);
+          await wait(options.backoffMs * 2 ** (attempt - 1));
+          continue;
+        }
+        return response;
+      } catch (error) {
+        clearTimeout(timer);
+        if (closed.aborted) throw new GitHubCallAborted(`${what}: the server is shutting down`);
+        if (init?.signal?.aborted) throw error;
+        failure = timeout.signal.aborted
+          ? new GitHubCallAborted(
+              `${what}: GitHub did not answer in ${Math.round(options.timeoutMs / 1000)}s`,
+            )
+          : error;
+      }
+      if (attempt >= tries) throw failure;
+      await wait(options.backoffMs * 2 ** (attempt - 1));
+    }
+  };
 }
 
 /** Permissions a run's token asks for, by GitHub's permission names. */
@@ -107,6 +194,11 @@ export interface GitHubApp {
    * accepts it: revoked before, or expired.
    */
   revokeToken(token: string): Promise<"revoked" | "already">;
+  /**
+   * Aborts every GitHub call in flight and fails the ones after it at once, for a server that is
+   * shutting down: a call GitHub never answers must not hold the shutdown.
+   */
+  close(): void;
 }
 
 /** The GitHub App: webhook signatures through @octokit/webhooks, API calls through Octokit. */
@@ -123,7 +215,20 @@ export function createGitHubApp(
     error: (message: string) => write(`github: ${message}`),
   };
   const installations = new Map<number, Octokit>();
-  const request = options.fetch ? { request: { fetch: options.fetch } } : {};
+  const closing = new AbortController();
+  const request = {
+    request: {
+      fetch: guardedFetch(
+        options.fetch ?? ((input, init) => globalThis.fetch(input, init)),
+        closing.signal,
+        {
+          timeoutMs: options.timeoutMs ?? GITHUB_REQUEST_TIMEOUT_MS,
+          retries: options.retries ?? 2,
+          backoffMs: options.backoffMs ?? 1000,
+        },
+      ),
+    },
+  };
   let asApp: Octokit | undefined;
 
   const app = () =>
@@ -196,6 +301,9 @@ export function createGitHubApp(
         if ((error as { status?: number }).status === 401) return "already";
         throw error;
       }
+    },
+    close() {
+      closing.abort();
     },
   };
 }

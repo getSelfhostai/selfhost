@@ -3,7 +3,7 @@ import { openLedger } from "@selfhost/ledger";
 import { fakeRuntime, type RuntimeAdapter, sandboxEvent } from "@selfhost/runtime";
 import { EVENT_SCHEMA, type LedgerEvent } from "@selfhost/schema";
 import { Command } from "commander";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { runShell } from "../../../packages/runtime/test/shell.js";
 import { createProgram } from "../src/program.js";
 import { registerRuntime, runRuntimeReap } from "../src/runtime.js";
@@ -193,6 +193,58 @@ describe("selfhost runtime", () => {
     expect(opened).toEqual(["e2b", "opensandbox"]);
     expect(checked.code).toBe(1);
   }, 60_000);
+});
+
+describe("selfhost runtime check --conformance on a sandbox that never answers", () => {
+  it("fails the check that got no answer, skips the rest, says why and ends", async () => {
+    const dir = repo();
+    const fetch = async (url: string) =>
+      url === "http://localhost:8080/v1/sandboxes?pageSize=1"
+        ? new Response('{"items":[]}', { status: 200 })
+        : new Response("{}", { status: 401 });
+    const inner = shell() as unknown as RuntimeAdapter;
+    const stopped: string[] = [];
+    const hanging: RuntimeAdapter = {
+      ...inner,
+      async create(spec) {
+        const sandbox = await inner.create(spec);
+        return {
+          ...sandbox,
+          exec: () => new Promise(() => {}),
+          stop: async () => {
+            stopped.push(sandbox.id);
+            await sandbox.stop();
+          },
+        };
+      },
+    };
+    let exited: number | undefined;
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const checking = run(["runtime", "check", "opensandbox", "--conformance"], {
+        cwd: dir.root,
+        env: {},
+        fetch,
+        openRuntime: () => hanging,
+        exit: (code) => {
+          exited = code;
+        },
+      });
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      const checked = await checking;
+      expect(checked.out).toContain("fail exec.stdout: no answer in 60s");
+      expect(checked.out).toContain("skip exec.multiline: exec.stdout got no answer");
+      expect(checked.out).toContain(
+        "exec.stdout got no answer from OpenSandbox, so the checks after it were skipped.",
+      );
+      expect(checked.out).toContain("resolve inside its network only, not from the host");
+      expect(checked.out).toContain("docker compose exec server selfhost runtime check");
+      expect(stopped).toHaveLength(1);
+      expect(exited).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("selfhost runtime reap", () => {

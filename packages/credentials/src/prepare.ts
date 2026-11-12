@@ -39,6 +39,11 @@ import {
 export interface CredentialRun {
   id: string;
   team: string;
+  /**
+   * The person the run works for: its gateway key carries them with the run id, so the model
+   * spend under the key is theirs in the ledger, not the key's.
+   */
+  person?: string | null;
   /** owner/name of the repository the run works on. Its GitHub token reaches only this one. */
   repo?: string;
   /** Where the run executes. */
@@ -254,7 +259,12 @@ export async function prepareCredentials(
 
     if (deps.gateway) {
       const { client, baseUrl } = deps.gateway;
-      const owner = { kind: "run" as const, team: run.team, run_id: run.id };
+      const owner = {
+        kind: "run" as const,
+        team: run.team,
+        run_id: run.id,
+        ...(run.person ? { person: run.person } : {}),
+      };
       const result = await issueKey(client, owner, config, { rotate: true });
       if (!("issued" in result)) throw new Error("The gateway returned no key for the run");
       const issued: IssuedKey = result.issued;

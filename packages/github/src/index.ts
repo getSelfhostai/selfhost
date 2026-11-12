@@ -4,10 +4,12 @@ export type { Octokit } from "@octokit/rest";
 export {
   createGitHubApp,
   GITHUB_APP_ENV,
+  GITHUB_REQUEST_TIMEOUT_MS,
   type GitHubApp,
   type GitHubAppCredentials,
   type GitHubAppEnv,
   type GitHubAppOptions,
+  GitHubCallAborted,
   githubAppEnv,
   RUN_TOKEN_PERMISSIONS,
   type RunToken,

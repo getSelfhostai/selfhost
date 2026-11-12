@@ -39,6 +39,11 @@ export interface RuntimeIo {
   fetch?: Fetch;
   /** Opens a runtime's adapter. Default: openRuntime with the team's key from env. */
   openAdapter?: (kind: RuntimeKind, config: RuntimeConfig) => RuntimeAdapter;
+  /**
+   * Ends the process with this code. Called once a conformance check got no answer: the
+   * runtime's SDK may still be waiting on it, and would otherwise keep the command from ending.
+   */
+  exit?: (code: number) => void;
 }
 
 export interface RuntimeCommandOptions {
@@ -235,11 +240,29 @@ export async function runRuntimeCheck(
             ? `  conformance: every check passed.`
             : `  conformance: ${failed.length} failed (${failed.map((check) => check.name).join(", ")}).`,
         );
+        if (row.conformance.stalled) {
+          for (const line of stalledLines(row.runtime, row.conformance)) io.write(`  ${line}`);
+        }
       }
     }
   }
   if (rows.some((row) => row.status === "error")) io.setExitCode(1);
   return rows;
+}
+
+/**
+ * What a conformance check that got no answer usually means: this machine reaches the runtime's
+ * API, but not the address the sandbox itself answers on.
+ */
+export function stalledLines(kind: RuntimeKind, report: ConformanceReport): string[] {
+  const left = report.sandboxId
+    ? ` Its sandbox ${report.sandboxId} was asked to stop; selfhost runtime reap stops it if it did not.`
+    : "";
+  return [
+    `${report.stalled} got no answer from ${RUNTIMES[kind].name}, so the checks after it were skipped.${left}`,
+    "This machine reaches the runtime's API, but most likely not the address the sandbox answers on: a server in Docker (Docker Compose, a local OpenSandbox) hands out container addresses that resolve inside its network only, not from the host.",
+    "Run the check where the selfhost server runs (docker compose exec server selfhost runtime check --conformance), or set the runtime up so sandboxes are reachable from this machine.",
+  ];
 }
 
 /** The runtimes the team set up or has sandboxes on, of those given. */
@@ -378,6 +401,12 @@ function printReap(report: ReapReport, runtimes: number, write: (line: string) =
   }
 }
 
+/** runRuntimeCheck, then the end of the process when a check left the runtime's SDK waiting. */
+async function checkThenEnd(names: string[], options: RuntimeCommandOptions, io: RuntimeIo) {
+  const rows = await runRuntimeCheck(names, options, io);
+  if (rows.some((row) => row.conformance?.stalled)) io.exit?.(1);
+}
+
 export function registerRuntime(
   program: Command,
   io: () => RuntimeIo,
@@ -417,7 +446,7 @@ export function registerRuntime(
           (RUNTIME_KINDS as readonly string[]).includes(name),
         );
         try {
-          await runRuntimeCheck(kinds, options, io());
+          await checkThenEnd(kinds, options, io());
         } catch (error) {
           fail(error, options.json);
         }
@@ -434,7 +463,7 @@ export function registerRuntime(
       .option("--json", "print the result as JSON")
       .action(async (names: string[], options: RuntimeCommandOptions) => {
         try {
-          await runRuntimeCheck(names, options, io());
+          await checkThenEnd(names, options, io());
         } catch (error) {
           fail(error, options.json);
         }

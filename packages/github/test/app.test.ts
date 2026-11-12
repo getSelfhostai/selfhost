@@ -124,6 +124,70 @@ describe("createGitHubApp", () => {
   });
 });
 
+describe("GitHub calls that get no answer", () => {
+  const credentials = { appId: "123", privateKey: pem, webhookSecret: SECRET };
+  /** A fetch that never answers but stops when its signal aborts, counting calls by method. */
+  const hanging = () => {
+    const calls: string[] = [];
+    const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      calls.push(`${init?.method ?? "GET"} ${new URL(String(input)).pathname}`);
+      return new Promise<Response>((_, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), {
+          once: true,
+        });
+      });
+    }) as typeof globalThis.fetch;
+    return { calls, fetch };
+  };
+
+  it("fails a call after its timeout, trying a GET again with backoff and a POST only once", async () => {
+    const { calls, fetch } = hanging();
+    const app = createGitHubApp(credentials, { fetch, timeoutMs: 30, retries: 2, backoffMs: 1 });
+    await expect(app.repoInstallation("acme", "acme-api")).rejects.toThrow(
+      "GET /repos/acme/acme-api/installation: GitHub did not answer in 0s",
+    );
+    expect(calls).toEqual([
+      "GET /repos/acme/acme-api/installation",
+      "GET /repos/acme/acme-api/installation",
+      "GET /repos/acme/acme-api/installation",
+    ]);
+    calls.length = 0;
+    const octokit = app.installation(42);
+    await expect(
+      octokit.rest.issues.createComment({ owner: "a", repo: "b", issue_number: 1, body: "x" }),
+    ).rejects.toThrow("POST /app/installations/42/access_tokens");
+    expect(calls).toEqual(["POST /app/installations/42/access_tokens"]);
+  });
+
+  it("tries a GET again after a 502 and returns the answer that came", async () => {
+    let answered = 0;
+    const github = new FakeGitHub({
+      appId: "123",
+      publicKey: publicKey.export({ type: "spki", format: "pem" }).toString(),
+      installationOf: () => 77,
+    });
+    const flaky = (async (input: string | URL | Request, init?: RequestInit) => {
+      answered++;
+      if (answered === 1) return new Response("bad gateway", { status: 502 });
+      return github.fetch(String(input), init);
+    }) as typeof globalThis.fetch;
+    const app = createGitHubApp(credentials, { fetch: flaky, backoffMs: 1 });
+    expect(await app.repoInstallation("acme", "acme-api")).toBe(77);
+    expect(answered).toBe(2);
+  });
+
+  it("aborts calls in flight on close, and refuses new ones", async () => {
+    const { fetch } = hanging();
+    const app = createGitHubApp(credentials, { fetch, timeoutMs: 60_000 });
+    const pending = app.repoInstallation("acme", "acme-api");
+    setTimeout(() => app.close(), 10);
+    await expect(pending).rejects.toThrow("the server is shutting down");
+    await expect(app.repoInstallation("acme", "acme-web")).rejects.toThrow(
+      "the server is shutting down",
+    );
+  });
+});
+
 describe("run tokens", () => {
   const credentials = { appId: "123", privateKey: pem, webhookSecret: SECRET };
   const fake = () =>

@@ -12,6 +12,48 @@ const claudeLine = (name: string, input: unknown, id: string) =>
   `${JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id, name, input }] } })}\n`;
 
 describe("background run lifecycle", () => {
+  it("ends a run that finishes before the first watchdog pass with its health finished", async () => {
+    const h = harness();
+    const { run, done } = started(await h.runner.start(h.request()));
+    const final = await done;
+    expect(final.state).toBe("succeeded");
+    expect(final.health).toMatchObject({ status: "ok", line: "finished" });
+    expect(h.kinds(run.id)).toContain("run.health");
+  });
+
+  it("reads the run's gateway usage at its end before figuring its model cost", async () => {
+    let recorded = 0;
+    const settled: string[] = [];
+    const h = harness({
+      gateway: { anthropic: "http://gw", openai: "http://gw/v1", key: "vk-run" },
+      settleUsage: async (run) => {
+        settled.push(run.id);
+        recorded = 0.42;
+        return undefined;
+      },
+      modelCost: async () => recorded,
+    });
+    const { run, done } = started(await h.runner.start(h.request()));
+    const final = await done;
+    expect(settled).toEqual([run.id]);
+    expect(final.cost.model_usd).toBe(0.42);
+  });
+
+  it("says the gateway refused the run on budget when the agent exits after a 402", async () => {
+    // As on the team server: the gateway key comes with the run's brokered credentials.
+    const h = harness({
+      credentials: async () => ({ kind: "gateway_key", secrets: [], revoke: async () => {} }),
+      agent: async () => 1,
+      settleUsage: async () => ({ refusal: "budget exceeded: 0.0068 >= 0.0020 dollars" }),
+    });
+    const { done } = started(await h.runner.start(h.request()));
+    const final = await done;
+    expect(final.state).toBe("failed");
+    expect(final.reason).toBe(
+      "claude exited 1: the AI gateway refused its model calls: budget exceeded: 0.0068 >= 0.0020 dollars",
+    );
+  });
+
   it("clones on a new branch, installs the agent and hooks, runs it, gates, opens one PR and stops the sandbox", async () => {
     const h = harness({
       agent: async ({ print }) => {

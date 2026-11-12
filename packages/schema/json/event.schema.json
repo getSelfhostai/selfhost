@@ -165,6 +165,7 @@
         "pr.opened",
         "pr.merged",
         "pr.closed",
+        "pr.linked",
         "policy.evaluated",
         "alert.raised",
         "config.reported",

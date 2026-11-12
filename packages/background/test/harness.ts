@@ -12,11 +12,13 @@ import {
 } from "@selfhost/schema";
 import {
   createRunner,
+  type GatewayAccess,
   manualClock,
   memoryRunStore,
   type PrepareCredentials,
   type RunAlert,
   type Runner,
+  type RunnerOptions,
   type StartRequest,
 } from "../src/index.js";
 
@@ -57,6 +59,10 @@ export interface Scenario {
   noRuntime?: boolean;
   /** The runtime seam refuses with this reason instead of giving an adapter. */
   runtimeRefusal?: { rule: string; message: string };
+  /** A per-run gateway key for the agent. */
+  gateway?: GatewayAccess;
+  settleUsage?: RunnerOptions["settleUsage"];
+  modelCost?: RunnerOptions["modelCost"];
 }
 
 const until = async (check: () => boolean | Promise<boolean>) => {
@@ -225,7 +231,9 @@ export function harness(scenario: Scenario = {}) {
     alert: async (_run, alert) => {
       alerts.push(alert);
     },
-    modelCost: async () => 0.25,
+    modelCost: scenario.modelCost ?? (async () => 0.25),
+    ...(scenario.gateway ? { gateway: async () => scenario.gateway } : {}),
+    ...(scenario.settleUsage ? { settleUsage: scenario.settleUsage } : {}),
     clock,
     ...(scenario.fetch
       ? { fetch: (url: string) => scenario.fetch?.(url) as Promise<Response> }

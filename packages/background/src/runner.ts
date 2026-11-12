@@ -123,6 +123,12 @@ export interface RunnerOptions {
   /** Model spend so far for a run: cost.recorded events carrying its run id. */
   modelCost?: (runId: string) => Promise<number>;
   /**
+   * Reads what the AI gateway recorded for the run into the ledger now, called once its agent
+   * is done and before its cost is figured, so model spend is not left for the next usage read.
+   * `refusal` says why the gateway refused the run's key (its budget), when it did.
+   */
+  settleUsage?: (run: BackgroundRun) => Promise<{ refusal?: string } | undefined>;
+  /**
    * Why a team may not run on a repo, or undefined when it may: the server answers from the
    * repos each team owns, so naming another team's repo does not get a write token for it.
    * Checked for every trigger. Without it every repo the GitHub App reaches is allowed.
@@ -222,6 +228,8 @@ interface Live {
   partial: string;
   costs: SandboxCost[];
   lastStatus?: RunHealth["status"];
+  /** The gateway's usage for the run, once read at its end. */
+  settled?: Promise<{ refusal?: string } | undefined>;
   /** Masks the run's secret values, from the credentials seam. */
   mask?: (text: string) => string;
   /** Writes of the run, one at a time, so a watchdog write never undoes a state change. */
@@ -363,6 +371,17 @@ export function createRunner(options: RunnerOptions): Runner {
       repo: run.repo,
       run_id: run.id,
     };
+  }
+
+  /** Reads the run's gateway usage once; a failed read leaves it to the periodic one. */
+  function settle(entry: Live): Promise<{ refusal?: string } | undefined> {
+    entry.settled ??= (options.settleUsage?.(entry.run) ?? Promise.resolve(undefined)).catch(
+      (error) => {
+        log(`background: ${entry.run.id}: reading its gateway usage failed: ${message(error)}`);
+        return undefined;
+      },
+    );
+    return entry.settled;
   }
 
   async function costOf(entry: Live): Promise<BackgroundRun["cost"]> {
@@ -664,7 +683,12 @@ export function createRunner(options: RunnerOptions): Runner {
     }
     if (result.exitCode !== 0) {
       const detail = result.stderr.trim().split("\n").slice(-3).join(" ");
-      throw new RunFailure(`${agent.bin} exited ${result.exitCode}${detail ? `: ${detail}` : ""}`);
+      // An agent whose model calls the gateway refused says little more than its exit code.
+      const keyed = gateway !== undefined || entry.run.credential === "gateway_key";
+      const refusal = keyed ? (await settle(entry))?.refusal : undefined;
+      throw new RunFailure(
+        `${agent.bin} exited ${result.exitCode}${refusal ? `: the AI gateway refused its model calls: ${refusal}` : ""}${detail ? `${refusal ? ". " : ": "}${detail}` : ""}`,
+      );
     }
 
     // The agent's work, committed on the run's branch.
@@ -796,12 +820,18 @@ export function createRunner(options: RunnerOptions): Runner {
     await credentials?.revoke(revokeReason(outcome, entry)).catch((error) => {
       log(`background: ${entry.run.id}: revoking credentials failed: ${message(error)}`);
     });
+    if (entry.health) await settle(entry);
     const cost = await costOf(entry);
     const now = clock.now();
     // A reason can carry the agent's stderr, which can carry a secret: masked before it reaches
     // the run record, the API, the ledger and notifications.
     const reason = outcome.state === "succeeded" ? null : masked(entry, outcome.reason);
-    const health = "health" in outcome && outcome.health ? outcome.health : entry.run.health;
+    const stopped = "health" in outcome && outcome.health ? outcome.health : undefined;
+    const health =
+      stopped ??
+      (entry.health && entry.run.health?.status !== "stuck" && entry.run.health?.status !== "lost"
+        ? entry.health.finished()
+        : entry.run.health);
     await save(entry, {
       state: outcome.state,
       reason,
@@ -811,8 +841,9 @@ export function createRunner(options: RunnerOptions): Runner {
       health,
     });
     const final: LedgerEvent[] = [updatedEvent(entry.run, now)];
-    if (health && "health" in outcome && outcome.health)
+    if (health && (stopped || health.status !== entry.lastStatus)) {
       final.push(healthEvent(entry.run, health, now));
+    }
     const alert = alertFor(entry.run);
     if (alert) final.push(alertEvent(entry.run, alert, now));
     await append(final);

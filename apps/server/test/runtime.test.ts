@@ -102,6 +102,61 @@ describe("the server's runtime seam", () => {
     }
   });
 
+  it("keeps the server config's pricing and timeouts, so the daily cap sees what a sandbox costs", async () => {
+    const ledger = await openLedger({ dataDir: "memory://" });
+    try {
+      const opened: unknown[] = [];
+      const seam = serverRuntime(ledger, {
+        env: { OPEN_SANDBOX_API_KEY: "k" },
+        now: () => NOW,
+        config: {
+          runtime: {
+            providers: {
+              opensandbox: {
+                url: "http://opensandbox:8090",
+                usd_per_hour: 2,
+                create_timeout_seconds: 900,
+                template: "node:20",
+              },
+            },
+          },
+        },
+        open: (_kind, config) => {
+          opened.push(config.runtime?.providers?.opensandbox);
+          return fakeRuntime({ kind: "opensandbox", now: () => NOW });
+        },
+      });
+      // No team policy for the provider: every server setting applies.
+      expect(isRefused(await seam({ ...run, runtime: "opensandbox" }, {}))).toBe(false);
+      // A team sets its own template and timeout, and tries to price sandboxes at nothing.
+      const team = {
+        runtime: {
+          default: "opensandbox" as const,
+          providers: {
+            opensandbox: { template: "node:22", create_timeout_seconds: 60, usd_per_hour: 0 },
+          },
+        },
+      };
+      expect(isRefused(await seam({ ...run, runtime: "opensandbox" }, team))).toBe(false);
+      expect(opened).toEqual([
+        {
+          url: "http://opensandbox:8090",
+          usd_per_hour: 2,
+          create_timeout_seconds: 900,
+          template: "node:20",
+        },
+        {
+          url: "http://opensandbox:8090",
+          usd_per_hour: 2,
+          create_timeout_seconds: 60,
+          template: "node:22",
+        },
+      ]);
+    } finally {
+      await ledger.close();
+    }
+  });
+
   it("says a missing url goes in the server's config or environment, and takes it from there", async () => {
     const ledger = await openLedger({ dataDir: "memory://" });
     try {

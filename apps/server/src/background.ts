@@ -52,7 +52,7 @@ import {
 import { backgroundRunsUrl } from "@selfhost/traces";
 import type { Context, Hono } from "hono";
 import { apiError, authorize, type Caller, type Router } from "./access.js";
-import type { Gateway } from "./gateway.js";
+import { type Gateway, readRunUsage, runModelCost } from "./gateway.js";
 import { invalidQuery, limit, readBody, SMALL_BODY_BYTES } from "./http.js";
 
 export const BACKGROUND_RUNS_PATH = "/v1/background-runs";
@@ -78,6 +78,7 @@ export function brokeredCredentials(deps: CredentialDeps): PrepareCredentials {
       {
         id: run.id,
         team: run.team,
+        person: run.person,
         repo: run.repo,
         target: runtime.kind,
         capabilities: runtime.capabilities,
@@ -321,18 +322,7 @@ async function appendUnderRunTeam(ledger: Ledger, events: LedgerEvent[]) {
   for (const [team, list] of byTeam) await ledger.append(list, team ? { team } : {});
 }
 
-/** Model spend so far for a run: its cost.recorded events, from the gateway key or the hooks. */
-export function runModelCost(ledger: Ledger): (runId: string) => Promise<number> {
-  const db = databaseOf(ledger);
-  return async (runId) => {
-    const [row] = await db.query<{ usd: number | string | null }>(
-      `SELECT COALESCE(SUM((body -> 'cost' ->> 'usd')::float8), 0) AS usd FROM events
-       WHERE kind = 'cost.recorded' AND body ->> 'run_id' = $1`,
-      [runId],
-    );
-    return Number(row?.usd ?? 0);
-  };
-}
+export { runModelCost };
 
 /** The runner as the server drives it, with the ledger, the GitHub App, the gateway and notifications. */
 export function createBackground(ledger: Ledger, options: BackgroundServerOptions): Background {
@@ -384,6 +374,12 @@ export function createBackground(ledger: Ledger, options: BackgroundServerOption
         }
       : {}),
     modelCost: runModelCost(ledger),
+    ...(gateway
+      ? {
+          settleUsage: (run: BackgroundRun) =>
+            readRunUsage(ledger, gateway, run, () => clock.now()),
+        }
+      : {}),
     repoAccess: repoAccess(ledger),
     orphaned: orphanedCredentials(ledger, settings, gateway),
     admit: (run, runtime, config) =>

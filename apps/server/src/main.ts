@@ -8,7 +8,8 @@ import { startCacheAlertJob } from "./cache-alerts.js";
 import { findConsoleDir } from "./console.js";
 import { loadExceptionKeys } from "./exception-keys.js";
 import { gatewayFromEnv, startGatewayJob } from "./gateway.js";
-import { githubAppFromEnv, githubConfig, pullSync, resyncPulls } from "./github.js";
+import { errorLine, githubAppFromEnv, githubConfig, pullSync, resyncPulls } from "./github.js";
+import { linkPullSessions } from "./github-prs.js";
 import { appCodeowners } from "./github-review.js";
 import { notifyFromEnv, startNotifyJob } from "./notify.js";
 import { clonesUnder } from "./provenance.js";
@@ -116,9 +117,28 @@ const pulls = github.app
 // refresh that raises a budget alert wakes the notify pass. Any refresh that files an item, on
 // any path (the job, an agent's ask_human through MCP), wakes the notify pass itself (see
 // startNotifyJob), so its push goes out in seconds instead of at the next periodic pass.
-const wakeups: { reviews?: ReviewRefreshJob; notify?: () => void } = {};
+const wakeups: {
+  reviews?: ReviewRefreshJob;
+  notify?: () => void;
+  resync?: (urls: string[]) => Promise<void>;
+} = {};
 // A sync with a block, an ask or an exception request returns once its items are on the list.
-const eventsStored = refreshOnStored(() => wakeups.reviews);
+const refreshStored = refreshOnStored(() => wakeups.reviews);
+// A session that reaches the server after the GitHub App recorded its pull request links to it
+// now: its review item gets the run, and the pull request's brief is written again with it.
+const eventsStored = async (kinds: readonly string[], events: readonly unknown[]) => {
+  await refreshStored(kinds, events);
+  void linkPullSessions(ledger, events)
+    .then(async (urls) => {
+      if (urls.length === 0) return;
+      console.log(`github: linked ${urls.length} pull requests to their sessions`);
+      wakeups.reviews?.wake();
+      await wakeups.resync?.(urls);
+    })
+    .catch((error) =>
+      console.log(`github: linking pull requests to sessions: ${errorLine(error)}`),
+    );
+};
 
 const server = serve(
   {
@@ -208,6 +228,7 @@ const notifications =
     ? startNotifyJob(ledger, { deliver, config, ...(publicUrl ? { publicUrl } : {}) })
     : undefined;
 if (reviews) wakeups.reviews = reviews;
+if (resync) wakeups.resync = resync;
 if (notifications) wakeups.notify = notifications.wake;
 
 // SELFHOST_CACHE_ALERTS=off stops raising prompt cache alerts for sessions whose hit rate
@@ -222,8 +243,16 @@ const schedules =
 const cacheAlerts =
   process.env.SELFHOST_CACHE_ALERTS === "off" ? undefined : startCacheAlertJob(ledger, { config });
 
+// On shutdown, GitHub calls in flight get this long to finish; then they are aborted, so a call
+// GitHub never answers cannot hold the delivery that made it, and with it the shutdown.
+const GITHUB_SHUTDOWN_GRACE_MS = 5_000;
+
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
+    if (github.app) {
+      const app = github.app;
+      setTimeout(() => app.close(), GITHUB_SHUTDOWN_GRACE_MS).unref();
+    }
     retention?.stop();
     schedules?.stop();
     cacheAlerts?.stop();

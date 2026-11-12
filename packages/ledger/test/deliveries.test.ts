@@ -60,3 +60,40 @@ describe.each(BACKENDS)("GitHub delivery store on $name", (backend) => {
     expect(await deliveries.claim("old", { event: "pull_request", now })).toBe(true);
   });
 });
+
+describe.each(BACKENDS)("dropped review requests on $name", (backend) => {
+  let store: Store;
+
+  beforeAll(async () => {
+    if (backend.skip) return;
+    store = await backend.open();
+  });
+
+  afterAll(async () => {
+    await store?.close();
+  });
+
+  it.skipIf(backend.skip)("adds to what a pull request dropped, and keeps the newest", async () => {
+    const dropped = store.ledger.droppedReviewers;
+    expect(await dropped.get("acme/web#1")).toEqual({ users: [], teams: [] });
+    await dropped.add("acme/web#1", { users: [], teams: ["reviewers"] });
+    expect(await dropped.add("acme/web#1", { users: ["dave"], teams: ["reviewers"] })).toEqual({
+      users: ["dave"],
+      teams: ["reviewers"],
+    });
+    expect(await dropped.get("acme/web#1")).toEqual({ users: ["dave"], teams: ["reviewers"] });
+    // Nothing dropped writes nothing.
+    await dropped.add("acme/web#2", { users: [], teams: [] });
+    const count = async () =>
+      (
+        await store.db.query<{ n: number }>(
+          "SELECT count(*)::int AS n FROM github_dropped_reviewers",
+        )
+      )[0]?.n;
+    expect(await count()).toBe(1);
+    await dropped.add("acme/web#3", { users: ["erin"], teams: [] }, 1);
+    expect(await count()).toBe(1);
+    expect(await dropped.get("acme/web#3")).toEqual({ users: ["erin"], teams: [] });
+    expect(await dropped.get("acme/web#1")).toEqual({ users: [], teams: [] });
+  });
+});

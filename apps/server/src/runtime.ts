@@ -38,6 +38,13 @@ export async function ledgerSandboxSpend(
 const CONNECTION = ["url", "api_key_env", "api_secret_env"] as const;
 
 /**
+ * The settings the server's own config decides over a team's policy: where a runtime is, which
+ * server variable holds its key, and what a sandbox costs (so a team cannot price itself under
+ * its own daily cap). A team's value for a pricing field still applies when the server sets none.
+ */
+const SERVER_WINS: readonly string[] = [...CONNECTION, "usd_per_hour"];
+
+/**
  * The server variable that gives a runtime's url when the server's selfhost.toml sets none, for
  * installs (Docker Compose) that configure the server through its environment:
  * SELFHOST_RUNTIME_OPENSANDBOX_URL, SELFHOST_RUNTIME_CODER_URL, and so on.
@@ -45,44 +52,56 @@ const CONNECTION = ["url", "api_key_env", "api_secret_env"] as const;
 export const runtimeUrlEnv = (kind: string) => `SELFHOST_RUNTIME_${kind.toUpperCase()}_URL`;
 
 /**
- * A team's [runtime] with each provider's url, api_key_env and api_secret_env replaced by the
- * server's own (SELFHOST_CONFIG): a team's policy picks runtimes, templates and sizes, but never
- * which server variable is read as a key, nor where that key is sent.
+ * A team's [runtime] merged with the server's own (SELFHOST_CONFIG) provider settings. Precedence
+ * per field: url, api_key_env and api_secret_env come only from the server (its config, then
+ * SELFHOST_RUNTIME_<KIND>_URL for the url), since a team's policy never says which server variable
+ * is read as a key nor where that key is sent; usd_per_hour is the server's when it sets one, else
+ * the team's; every other setting (template, create_timeout_seconds) is the team's when it sets
+ * one, else the server's.
  */
 export function serverConnections(
   team: RuntimeConfig,
   server: Pick<RuntimeConfig, "runtime" | "integrations"> | undefined,
   env: Env = {},
 ): RuntimeConfig {
-  const own = (kind: string): RuntimeProvider => {
+  const serverSettings = (kind: string): Record<string, unknown> => {
     const found = (server?.runtime?.providers as Record<string, RuntimeProvider> | undefined)?.[
       kind
     ];
     const legacy = server?.integrations?.runtime;
-    const source = found ?? (legacy?.tool === kind ? legacy : undefined);
-    const url = source?.url ?? (env[runtimeUrlEnv(kind)]?.trim() || undefined);
-    return Object.fromEntries([
-      ...(url ? [["url", url]] : []),
-      ...CONNECTION.flatMap((field) =>
-        field !== "url" && source?.[field] !== undefined ? [[field, source[field]]] : [],
-      ),
-    ]);
+    const source: Record<string, unknown> | undefined =
+      found ?? (legacy?.tool === kind ? legacy : undefined);
+    const { tool: _tool, url: _url, ...rest } = source ?? {};
+    const url =
+      (source?.url as string | undefined) ?? (env[runtimeUrlEnv(kind)]?.trim() || undefined);
+    return Object.fromEntries(
+      Object.entries({ ...rest, ...(url ? { url } : {}) }).filter(([, v]) => v !== undefined),
+    );
   };
-  const providers = Object.fromEntries(
-    Object.entries(team.runtime?.providers ?? {}).map(([kind, settings]) => {
-      const rest = Object.fromEntries(
-        Object.entries(settings ?? {}).filter(
-          ([field]) => !(CONNECTION as readonly string[]).includes(field),
-        ),
-      );
-      return [kind, { ...rest, ...own(kind) }];
-    }),
+  const merged = (kind: string, teamSettings: RuntimeProvider | undefined): RuntimeProvider => {
+    const own = serverSettings(kind);
+    const teamRest = Object.fromEntries(
+      Object.entries(teamSettings ?? {}).filter(
+        ([field]) => !(CONNECTION as readonly string[]).includes(field),
+      ),
+    );
+    const wins = Object.fromEntries(
+      Object.entries(own).filter(([field]) => SERVER_WINS.includes(field)),
+    );
+    return { ...own, ...teamRest, ...wins } as RuntimeProvider;
+  };
+  const providers: Record<string, RuntimeProvider> = Object.fromEntries(
+    Object.entries(team.runtime?.providers ?? {}).map(([kind, settings]) => [
+      kind,
+      merged(kind, settings),
+    ]),
   );
   for (const [kind, settings] of Object.entries(server?.runtime?.providers ?? {})) {
-    if (!(kind in providers) && settings) providers[kind] = own(kind);
+    if (!(kind in providers) && settings) providers[kind] = merged(kind, undefined);
   }
   for (const kind of RUNTIME_KINDS) {
-    if (!(kind in providers) && env[runtimeUrlEnv(kind)]?.trim()) providers[kind] = own(kind);
+    if (!(kind in providers) && env[runtimeUrlEnv(kind)]?.trim())
+      providers[kind] = merged(kind, undefined);
   }
   const { runtime: _legacy, ...integrations } = team.integrations ?? {};
   return {

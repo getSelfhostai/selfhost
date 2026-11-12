@@ -268,6 +268,13 @@ AWS_REGION=eu-central-1        # VERTEX_REGION and VERTEX_CREDENTIALS
   `[integrations.router]` in the server's `selfhost.toml` (`SELFHOST_CONFIG`), which wins. The
   same keys, budgets and usage work there, with one budget window per key and team (the
   shortest is enforced, the others alert) and fallbacks left to LiteLLM's own router settings.
+- Agents get `https://<domain>/llm` unless `SELFHOST_GATEWAY_PUBLIC_URL` names another address.
+  A sandbox has to reach that address: on a local install (no public domain, or a runtime on the
+  same machine such as a local OpenSandbox) set it to one the sandboxes can reach, such as
+  `SELFHOST_GATEWAY_PUBLIC_URL=http://host.docker.internal:8080` for Bifrost's published port
+  (Docker Desktop; on Linux, set `GATEWAY_BIND` to an address the sandboxes' network reaches).
+  The run's gateway key carries the run's person and id, so its spend lands on that person and
+  run in the ledger.
 
 ## Background runs
 
@@ -293,6 +300,17 @@ itself, not the server. For more than the url and key (`api_key_env`, `template`
 `[runtime.providers.<name>]` in `./config` next to `compose.yml`, which is mounted read-only at
 `/config`, and set `SELFHOST_CONFIG=/config/selfhost.toml`; its url wins over the variable. Until a
 runtime is set, starting a run answers 503 with the setting that is missing and where it goes.
+
+How the server's settings and a team's policy combine, per field of `[runtime.providers.<name>]`:
+`url`, `api_key_env` and `api_secret_env` come only from the server; `usd_per_hour` is the
+server's when it sets one (so the daily cap counts what a sandbox really costs), else the team's;
+`template` and `create_timeout_seconds` are the team's when its policy sets them, else the
+server's. With the AI gateway, the agent in the sandbox calls the gateway at the address in
+`SELFHOST_GATEWAY_PUBLIC_URL` (see [AI gateway](#ai-gateway)): a sandbox on a local install
+cannot reach `https://<domain>/llm`, so set it to an address sandboxes reach, such as
+`http://host.docker.internal:8080`. At a run's end the server reads the gateway's usage for it,
+so the run's model cost is there when it ends; requests the gateway logs later update it. A run
+the gateway refused for its budget says so in its reason.
 
 ## Notifications
 

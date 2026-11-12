@@ -15,7 +15,12 @@ import { type ContextStore, createContextStore } from "./context.js";
 import { decodeCursor, encodeCursor, TS_KEY } from "./cursor.js";
 import { type ConnectOptions, connect, type Database, migrate } from "./db.js";
 import { createDecisionStore, type DecisionStore } from "./decisions/store.js";
-import { createDeliveryStore, type DeliveryStore } from "./deliveries.js";
+import {
+  createDeliveryStore,
+  createDroppedReviewerStore,
+  type DeliveryStore,
+  type DroppedReviewerStore,
+} from "./deliveries.js";
 import { type LedgerFieldError, LedgerQueryError, LedgerValidationError } from "./errors.js";
 import { oneCopyPerFact } from "./facts.js";
 import { createHandoffStore, type HandoffStore } from "./handoffs.js";
@@ -104,6 +109,8 @@ export interface Ledger {
   decisions: DecisionStore;
   /** GitHub webhook delivery ids already handled, so a redelivery changes nothing. */
   deliveries: DeliveryStore;
+  /** Review requests GitHub accepted but did not keep, so they are not asked for again. */
+  droppedReviewers: DroppedReviewerStore;
   /** Proof receipts the receipt step in CI posted, by pull request. */
   receipts: ReceiptStore;
   /** Background runs and the team and org kill switches. */
@@ -251,6 +258,7 @@ export function createLedger(db: Database, options: LedgerOptions = {}): Ledger 
     decisions: createDecisionStore(db),
 
     deliveries: createDeliveryStore(db),
+    droppedReviewers: createDroppedReviewerStore(db),
 
     receipts: createReceiptStore(db),
 

@@ -7,7 +7,7 @@ import { FakeGitHub } from "@selfhost/github/testing";
 import { databaseOf } from "@selfhost/ledger";
 import { parseConfig } from "@selfhost/schema";
 import { afterEach, describe, expect, it } from "vitest";
-import { GITHUB_WEBHOOK_PATH } from "../src/github.js";
+import { GITHUB_WEBHOOK_PATH, skippedDeliveryLog } from "../src/github.js";
 import { claimRepos, startTestServer, type TestServer } from "./helpers.js";
 
 const WEBHOOKS = join(import.meta.dirname, "..", "..", "..", "fixtures", "github", "webhooks");
@@ -72,10 +72,11 @@ async function harness(team?: string) {
   );
   const parsed = parseConfig(AUTO_APPROVE);
   if (!parsed.ok) throw new Error("bad config");
+  const lines: string[] = [];
   const server = await startTestServer({
     app,
     config: async () => parsed.config,
-    log: () => {},
+    log: (line) => lines.push(line),
     providers: { risk: async () => ({ level: "low", score: 1 }) },
     ...(team ? { team } : {}),
   });
@@ -103,7 +104,7 @@ async function harness(team?: string) {
     );
     return { events: events?.n, deliveries: deliveries?.n };
   };
-  return { server, github, deliver, stored };
+  return { server, github, deliver, stored, lines };
 }
 
 describe("GitHub deliveries from a repository no team claimed", () => {
@@ -121,6 +122,29 @@ describe("GitHub deliveries from a repository no team claimed", () => {
     }
     expect(h.github.requests).toEqual([]);
     expect(await h.stored()).toEqual({ events: 0, deliveries: 0 });
+    // One line for the repository, not one per delivery.
+    expect(h.lines).toEqual([
+      `github: delivery claims-1 pull_request from ${UNCLAIMED.toLowerCase()} skipped: ${UNCLAIMED.toLowerCase()} is not claimed by any team: add it with selfhost team repo add for GitHub deliveries to act on it`,
+    ]);
+  });
+
+  it("logs a skipped delivery at most once a minute per repository, counting the rest", () => {
+    const lines: string[] = [];
+    let at = Date.parse("2026-11-12T10:00:00Z");
+    const skipped = skippedDeliveryLog(
+      (line) => lines.push(line),
+      () => new Date(at),
+    );
+    skipped("d1", "acme/a", "push", "not claimed");
+    skipped("d2", "acme/a", "check_suite", "not claimed");
+    skipped("d3", "acme/b", "push", "not claimed");
+    at += 61_000;
+    skipped("d4", "acme/a", "pull_request", "not claimed");
+    expect(lines).toEqual([
+      "github: delivery d1 push from acme/a skipped: not claimed",
+      "github: delivery d3 push from acme/b skipped: not claimed",
+      "github: delivery d4 pull_request from acme/a skipped: not claimed (1 more from acme/a not logged)",
+    ]);
   });
 
   it("with SELFHOST_GITHUB_TEAM, ignores a repository of another team or of none", async () => {

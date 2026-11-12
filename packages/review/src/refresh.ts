@@ -23,6 +23,7 @@ import {
   actionsFor,
   type BuildContext,
   deliveryOf,
+  groupOf,
   mergeItem,
   newItem,
   routeContext,
@@ -35,7 +36,7 @@ import { decisionSubject, internalsOf, type ReviewList } from "./list.js";
 import { buildPolicyReport } from "./policy-report.js";
 import { escalateRoute, routeItem } from "./routing.js";
 import { applySecondOpinion, catchUpOpinions } from "./second-opinion.js";
-import { closedPullRequest, type Draft, draftFor } from "./signals.js";
+import { closedPullRequest, type Draft, draftFor, pullRequestKey } from "./signals.js";
 import {
   claimItem,
   finishClaim,
@@ -123,8 +124,8 @@ interface Run {
 const SIGNALS = `
 SELECT e.id::text AS id, e.body, e.team, e.ingested_at FROM events e
 WHERE e.ingested_at >= $1::timestamptz
-  AND (e.kind IN ('pr.opened', 'pr.merged', 'pr.closed', 'decision.recorded', 'review.submitted',
-      'run.handed_off')
+  AND (e.kind IN ('pr.opened', 'pr.merged', 'pr.closed', 'pr.linked', 'decision.recorded',
+      'review.submitted', 'run.handed_off')
     OR (e.ts >= $2::timestamptz AND (
       e.kind IN ('approval.requested', 'alert.raised')
       OR (e.kind = 'policy.evaluated'
@@ -523,6 +524,46 @@ async function applyDraft(
   return undefined;
 }
 
+/**
+ * pr.linked: the session behind a pull request whose item opened before that session reached
+ * the server. The open `pr` item gets the session (and its run), so it links to the run.
+ */
+async function linkPullItem(
+  tx: Queryable,
+  event: LedgerEvent,
+  team: string | null,
+  run: Run,
+): Promise<string | undefined> {
+  const url = event.links?.pr_url ?? (event.target?.type === "pr" ? event.target.value : undefined);
+  if (!url || !event.session_id) return undefined;
+  for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
+    const open = await openItemByKey(tx, team, pullRequestKey(url));
+    if (!open || open.item.session_id) return open?.item.id;
+    const run_id = open.item.run_id ?? event.run_id;
+    const group =
+      open.item.group ??
+      groupOf({
+        session_id: event.session_id,
+        ...(run_id ? { run_id } : {}),
+      });
+    const item = {
+      ...open.item,
+      session_id: event.session_id,
+      ...(run_id ? { run_id } : {}),
+      ...(group ? { group } : {}),
+      updated_at: run.now.toISOString(),
+      source_event_ids: open.item.source_event_ids.includes(event.id)
+        ? open.item.source_event_ids
+        : [...open.item.source_event_ids, event.id],
+    };
+    if (await updateItem(tx, { ...open, item })) {
+      run.result.updated += 1;
+      return item.id;
+    }
+  }
+  return undefined;
+}
+
 async function applySignal(
   tx: Queryable,
   event: LedgerEvent,
@@ -539,6 +580,7 @@ async function applySignal(
     if (done.updated) run.result.updated += 1;
     return done.itemId;
   }
+  if (event.kind === "pr.linked") return linkPullItem(tx, event, team, run);
   const closedPr = closedPullRequest(event);
   if (closedPr) {
     const open = await openItemByKey(tx, team, `pr:${closedPr}`);

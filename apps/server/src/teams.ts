@@ -251,7 +251,11 @@ export function teamRoutes(
     if (body instanceof Response) return body;
     const id = body.person.trim();
     if (id === "") return c.json(apiError("invalid_request", "person: Expected an id"), 400);
-    const joined = await teams.join(body.invite, { id, name: body.name?.trim() || undefined });
+    const joined = await teams.join(body.invite, {
+      id,
+      name: body.name?.trim() || undefined,
+      ...(body.person_guessed ? { guessed: true } : {}),
+    });
     if ("refused" in joined) {
       return unauthorized(c, REFUSED_INVITE[joined.refused], "invalid_invite");
     }
@@ -404,6 +408,7 @@ const SERVER_ONLY_KINDS: ReadonlyMap<string, string> = new Map([
     "pr.opened",
     "only the server records it, from the GitHub App's webhook and for the pull requests its background runs open",
   ],
+  ["pr.linked", "only the server records it, when a pull request's session arrives"],
 ]);
 
 const SYSTEM_REFUSALS: Record<string, string> = {

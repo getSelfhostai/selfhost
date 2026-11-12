@@ -164,6 +164,19 @@ export class HealthMonitor {
     return { ...base, status: "ok", line: this.lastOutput ? "working" : "starting" };
   }
 
+  /**
+   * Health once the agent is done and nothing stopped it for its health: a run that finished
+   * before the first watchdog pass would otherwise keep showing "starting".
+   */
+  finished(): RunHealth {
+    return {
+      heartbeat_at: this.heartbeat?.toISOString() ?? null,
+      last_output_at: this.lastOutput?.toISOString() ?? null,
+      status: "ok",
+      line: "finished",
+    };
+  }
+
   /** The sandbox stopped answering. */
   lost(at: Date): RunHealth & { stop: RunStuckReason } {
     return {

@@ -108,6 +108,7 @@ paths:
               - pr.opened
               - pr.merged
               - pr.closed
+              - pr.linked
               - policy.evaluated
               - alert.raised
               - config.reported
@@ -2339,7 +2340,7 @@ paths:
           required: false
           description: Comma-separated event kinds, or their first part (tool for tool.called and tool.result).
           schema:
-            pattern: ^(?:session\.started|session\.ended|prompt\.submitted|tool\.called|tool\.result|approval\.requested|decision\.recorded|cost\.recorded|commit\.created|pr\.opened|pr\.merged|pr\.closed|policy\.evaluated|alert\.raised|config\.reported|review\.submitted|credential\.issued|credential\.revoked|egress\.blocked|run\.triggered|run\.updated|run\.output|run\.health|run\.gate|sandbox\.started|sandbox\.stopped|run\.handed_off|session|prompt|tool|approval|decision|cost|commit|pr|policy|alert|config|review|credential|egress|run|sandbox)(?:,(?:session\.started|session\.ended|prompt\.submitted|tool\.called|tool\.result|approval\.requested|decision\.recorded|cost\.recorded|commit\.created|pr\.opened|pr\.merged|pr\.closed|policy\.evaluated|alert\.raised|config\.reported|review\.submitted|credential\.issued|credential\.revoked|egress\.blocked|run\.triggered|run\.updated|run\.output|run\.health|run\.gate|sandbox\.started|sandbox\.stopped|run\.handed_off|session|prompt|tool|approval|decision|cost|commit|pr|policy|alert|config|review|credential|egress|run|sandbox))*$
+            pattern: ^(?:session\.started|session\.ended|prompt\.submitted|tool\.called|tool\.result|approval\.requested|decision\.recorded|cost\.recorded|commit\.created|pr\.opened|pr\.merged|pr\.closed|pr\.linked|policy\.evaluated|alert\.raised|config\.reported|review\.submitted|credential\.issued|credential\.revoked|egress\.blocked|run\.triggered|run\.updated|run\.output|run\.health|run\.gate|sandbox\.started|sandbox\.stopped|run\.handed_off|session|prompt|tool|approval|decision|cost|commit|pr|policy|alert|config|review|credential|egress|run|sandbox)(?:,(?:session\.started|session\.ended|prompt\.submitted|tool\.called|tool\.result|approval\.requested|decision\.recorded|cost\.recorded|commit\.created|pr\.opened|pr\.merged|pr\.closed|pr\.linked|policy\.evaluated|alert\.raised|config\.reported|review\.submitted|credential\.issued|credential\.revoked|egress\.blocked|run\.triggered|run\.updated|run\.output|run\.health|run\.gate|sandbox\.started|sandbox\.stopped|run\.handed_off|session|prompt|tool|approval|decision|cost|commit|pr|policy|alert|config|review|credential|egress|run|sandbox))*$
             type: string
         - name: person
           in: query
@@ -4838,6 +4839,9 @@ components:
           maxLength: 200
           description: Display name.
           type: string
+        person_guessed:
+          description: "true when the client picked person itself (git user.email, the OS user name) because none was given: an invite for an email then joins as that email instead of refusing."
+          type: boolean
     JoinResponse:
       additionalProperties: false
       title: JoinResponse

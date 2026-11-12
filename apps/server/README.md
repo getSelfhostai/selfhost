@@ -420,16 +420,23 @@ setup is reported at start by variable name. It needs no bearer token: the reque
   it, second opinions and escalation attach to that item, the run view lists the pull request,
   and `selfhost share` posts on it. When a route's `escalate_after_minutes` passes, the refresh
   syncs the pull request again at once, so the new route's review request reaches GitHub without
-  waiting for the next delivery.
+  waiting for the next delivery. A pull request recorded before its session reached the server
+  (the laptop synced later) is linked when the session's events arrive and name it (the hook's
+  `links.pr_url`, or its head commit in `links.commit_sha`): a `pr.linked` event names the
+  session, the review item gets the run, and the pull request is synced again so its brief has
+  the trace.
 - `pull_request` with action `closed` on an agent pull request records `pr.merged` or
   `pr.closed` (the same actor and run), which closes its review item; nothing is read from
   GitHub.
 - Only repositories a team claimed with `selfhost team repo add` are acted on (with
   `SELFHOST_GITHUB_TEAM`, that team's own): every other delivery answers `handled: false` with
-  the reason, before any GitHub call or ledger write, whatever its event.
+  the reason, before any GitHub call or ledger write, whatever its event. The log gets one line
+  for it (delivery, event, repository, reason), at most one a minute per repository, with the
+  count of those not logged.
 - The check says whom GitHub kept after the review request: GitHub accepts a request for a team
   without access to the repository (201) and keeps nothing, so the check says so and that
-  account is not asked again on later deliveries.
+  account is not asked again on later deliveries, nor after a restart (table
+  `github_dropped_reviewers`, migration `0017_github_dropped_reviewers.sql`).
 - Each `X-GitHub-Delivery` id is handled once. The id is stored before the sync (table
   `github_deliveries`, migration `0005_github_deliveries.sql`, kept 7 days); the same delivery
   again answers `{ delivery, handled: false, duplicate: true }` without a single GitHub call. A
@@ -444,7 +451,11 @@ setup is reported at start by variable name. It needs no bearer token: the reque
   the App's delivery log on GitHub.
 - Syncs for one pull request run one at a time, so two deliveries never race to create a second
   check run. The sync itself only writes what differs, so a new delivery for an unchanged pull
-  request writes nothing.
+  request writes nothing. Each GitHub API call times out after 30 seconds; a GET, PUT or DELETE
+  that timed out, failed to connect or got a 5xx or 429 is tried twice more with backoff (a POST
+  never, so nothing is created twice). A sync still going after 5 minutes fails, and the next
+  one for that pull request goes on. On SIGTERM, GitHub calls in flight get 5 seconds, then are
+  aborted, so a call GitHub never answers cannot hold the shutdown.
 - The log gets one line per delivery: its id, event, repository, pull request number and how
   many changes were made. Payloads, tokens, the private key and the secret are never logged.
 
@@ -691,6 +702,21 @@ gateway key in place of any provider key when `[integrations.router]` is set, th
 secrets, and the team's egress list plus github.com, api.github.com and the gateway host, all by
 reference in the sandbox spec, masked in the run's output and revoked with how the run ended.
 `createBackground({ credentials })` replaces it.
+
+Runtime settings: the server's own `[runtime.providers.<name>]` (`SELFHOST_CONFIG`) and a team's
+policy combine per field. `url`, `api_key_env` and `api_secret_env` come only from the server
+(`SELFHOST_RUNTIME_<NAME>_URL` for a url its config does not set); `usd_per_hour` is the server's
+when it sets one, else the team's; `template` and `create_timeout_seconds` are the team's when set,
+else the server's.
+
+With a gateway, the run's key is issued for the run and its person (`selfhost_run`,
+`selfhost_person` on the key), so its spend is the person's in the ledger, and the agent in the
+sandbox calls the gateway at `SELFHOST_GATEWAY_PUBLIC_URL` when set. A sandbox on a local install
+cannot reach `https://<domain>/llm`: set it to an address sandboxes reach, such as
+`http://host.docker.internal:8080`. When the agent finishes, the server reads the gateway's usage
+since the run started, so the run's `cost.model_usd` is final at its end; `cost.recorded` events
+for an ended run that arrive later (the periodic read) update its cost and write a `run.updated`.
+An agent that exits after the gateway refused its key on budget fails with the gateway's reason.
 
 Each team reads only its own run secrets. An `env:` secret names
 `SELFHOST_RUN_SECRET_<TEAM>__<NAME>`, where TEAM is the team id in upper snake case and two

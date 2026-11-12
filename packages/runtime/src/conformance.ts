@@ -42,6 +42,11 @@ export interface ConformanceReport {
   ok: boolean;
   sandboxId?: string;
   checks: ConformanceCheck[];
+  /**
+   * The first check whose call got no answer in time. The checks after it that need the sandbox
+   * are skipped, since they would wait the same way; the provider's SDK may still be waiting.
+   */
+  stalled?: ConformanceCheckName;
 }
 
 export interface ConformanceOptions {
@@ -53,11 +58,31 @@ export interface ConformanceOptions {
   execTimeoutMs?: number;
   /** How long to wait for the sandbox to report running. Default 120 seconds. */
   readyTimeoutMs?: number;
+  /** How long create may take, readiness included, before it fails. Default 300 seconds. */
+  createTimeoutMs?: number;
+  /** How long any other check may take before it fails. Default 60 seconds. */
+  checkTimeoutMs?: number;
   /** Progress lines, one per check. */
   log?: (line: string) => void;
 }
 
 class CheckFailed extends Error {}
+
+class NoAnswer extends Error {}
+
+/** `work`, or a NoAnswer once `ms` passes first. The work itself goes on; nothing awaits it. */
+async function answerWithin<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new NoAnswer(`no answer in ${Math.round(ms / 1000)}s`)), ms);
+  });
+  work.catch(() => undefined);
+  try {
+    return await Promise.race([work, late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function expect(condition: unknown, message: string): asserts condition {
   if (!condition) throw new CheckFailed(message);
@@ -96,18 +121,38 @@ export async function runConformance(
   const execTimeoutMs = options.execTimeoutMs ?? 2000;
   const checks: ConformanceCheck[] = [];
   const caps = adapter.capabilities;
+  const readyTimeoutMs = options.readyTimeoutMs ?? 120_000;
+  const createTimeoutMs = options.createTimeoutMs ?? 300_000;
+  const checkTimeoutMs = options.checkTimeoutMs ?? 60_000;
   let sandbox: Sandbox | undefined;
+  let createdId: string | undefined;
   let stoppedAt = false;
+  let stalled: ConformanceCheckName | undefined;
+
+  /** How long a check may take: its own waits, plus room for the calls around them. */
+  const limitOf = (name: ConformanceCheckName) =>
+    name === "create"
+      ? createTimeoutMs
+      : name === "status.running"
+        ? readyTimeoutMs + checkTimeoutMs
+        : name === "stop"
+          ? 60_000 + checkTimeoutMs
+          : checkTimeoutMs;
 
   /** Runs one check; a check that returns a string was skipped for that reason. */
   async function check(name: ConformanceCheckName, run: () => Promise<unknown>) {
     const begun = Date.now();
+    if (stalled && name !== "get.unknown") {
+      checks.push({ name, status: "skip", detail: `${stalled} got no answer`, ms: 0 });
+      options.log?.(`skip ${name}: ${stalled} got no answer`);
+      return;
+    }
     if (!sandbox && name !== "create" && name !== "get.unknown") {
       checks.push({ name, status: "skip", detail: "no sandbox", ms: 0 });
       return;
     }
     try {
-      const answer = await run();
+      const answer = await answerWithin(run(), limitOf(name));
       const skipped = typeof answer === "string" ? answer : undefined;
       checks.push({
         name,
@@ -116,6 +161,7 @@ export async function runConformance(
         ms: Date.now() - begun,
       });
     } catch (error) {
+      if (error instanceof NoAnswer) stalled ??= name;
       checks.push({
         name,
         status: "fail",
@@ -134,6 +180,10 @@ export async function runConformance(
         timeoutMinutes: 10,
         ...options.spec,
         labels: { ...options.spec?.labels, [CONFORMANCE_LABEL]: runId },
+        onCreated: async (id) => {
+          createdId = id;
+          await options.spec?.onCreated?.(id);
+        },
       });
       expect(sandbox.id, "create returned a sandbox without an id");
       expect(
@@ -142,7 +192,7 @@ export async function runConformance(
       );
     });
     await check("status.running", async () => {
-      const state = await waitFor(live(), "running", options.readyTimeoutMs ?? 120_000);
+      const state = await waitFor(live(), "running", readyTimeoutMs);
       expect(state === "running", `status is ${state} after create`);
     });
     await check("exec.stdout", async () => {
@@ -307,19 +357,25 @@ export async function runConformance(
       expect(first.seconds === second.seconds, "billed seconds still grow after stop");
     });
   } finally {
-    if (sandbox && !stoppedAt) {
-      try {
-        await sandbox.stop();
-      } catch {
-        // The report already says what failed; a stop that fails here leaves it to the reaper.
-      }
+    // A create that got no answer may still make its sandbox: stopped by its id when the
+    // provider gave one. A stop that fails or hangs here leaves it to the reaper; the report
+    // already says what failed.
+    const leftover =
+      sandbox ??
+      (createdId
+        ? await answerWithin(adapter.get(createdId), checkTimeoutMs).catch(() => undefined)
+        : undefined);
+    if (leftover && !stoppedAt) {
+      await answerWithin(leftover.stop(), checkTimeoutMs).catch(() => undefined);
     }
   }
+  const sandboxId = sandbox?.id ?? createdId;
   return {
     kind: adapter.kind,
     ok: checks.every((entry) => entry.status !== "fail"),
-    ...(sandbox ? { sandboxId: sandbox.id } : {}),
+    ...(sandboxId ? { sandboxId } : {}),
     checks,
+    ...(stalled ? { stalled } : {}),
   };
 }
 

@@ -5,6 +5,8 @@ import { fakeBifrost } from "@selfhost/gateway/testing";
 import { type Ledger, openLedger } from "@selfhost/ledger";
 import { openReviewList, refreshReviewList } from "@selfhost/review";
 import {
+  BACKGROUND_RUN_SCHEMA,
+  type BackgroundRun,
   type BudgetResponse,
   type CreateTeamResponse,
   type GatewayKeysResponse,
@@ -21,6 +23,7 @@ import {
   checkAgentUrl,
   type Gateway,
   gatewayFromEnv,
+  readRunUsage,
   readUsageNow,
   startGatewayJob,
   syncNow,
@@ -252,6 +255,112 @@ describe("gateway sync and usage", () => {
       actor: { id: "ada@example.com" },
       data: { alert: "budget_exceeded", period: "day", limit_usd: 50, spent_usd: 51 },
     });
+  });
+});
+
+describe("a background run's gateway usage", () => {
+  const RUN_ID = "01a1cfbb-2d53-77c6-b02c-269c27abdb06";
+  const STARTED = new Date(Date.now() - 10 * 60_000);
+  const at = (minutes: number) => new Date(STARTED.getTime() + minutes * 60_000).toISOString();
+  const runLog = (id: string, minutes: number, extra: Record<string, unknown>) => ({
+    id,
+    provider: "anthropic",
+    model: "claude-opus-5-5",
+    object: "responses_stream",
+    timestamp: at(minutes),
+    created_at: at(minutes),
+    latency: 900,
+    virtual_key_name: `selfhost:run:web:${RUN_ID}`,
+    user_agent: "claude-cli/2.1.322 (external, sdk-cli)",
+    metadata: {
+      selfhost_kind: "run",
+      selfhost_team: "web",
+      selfhost_run: RUN_ID,
+      selfhost_person: "alice@example.com",
+    },
+    ...extra,
+  });
+  const run: BackgroundRun = {
+    schema: BACKGROUND_RUN_SCHEMA,
+    id: RUN_ID,
+    team: "web",
+    repo: "acme/web",
+    task: "Fix it",
+    agent: "claude",
+    runtime: "opensandbox",
+    state: "failed",
+    reason: "claude exited 1",
+    person: "alice@example.com",
+    trigger: { source: "cli", sender: "alice@example.com", person: "alice@example.com" },
+    credential: "gateway_key",
+    base: "main",
+    branch: "claude/selfhost-fix-it-abcdefgh",
+    sandbox_id: null,
+    attempt: 1,
+    max_attempts: 1,
+    timeout_minutes: 30,
+    pr_url: null,
+    created_at: at(0),
+    started_at: at(0),
+    ended_at: at(5),
+    updated_at: at(5),
+    cancel: null,
+    cost: { runtime_usd: 0.01, model_usd: 0, usd: 0.01, source: "list_price" },
+    health: null,
+    gate: null,
+  };
+
+  it("reads the run's requests at its end, updates its model cost, and names a budget refusal", async () => {
+    const ledger = await openLedger({ dataDir: "memory://" });
+    try {
+      const logs = {
+        logs: [
+          runLog("req-1", 1, {
+            status: "success",
+            cost: 0.0068,
+            token_usage: { prompt_tokens: 100, completion_tokens: 10, total_tokens: 110 },
+          }),
+          runLog("req-2", 2, {
+            status: "error",
+            error_details: null,
+            content_summary: "Budget exceeded: vk * budget exceeded: 0.0068 >= 0.0020 dollars",
+          }),
+        ],
+        pagination: { total_count: 2 },
+      };
+      const fakeGateway = fakeBifrost({ logs });
+      const gw: Gateway = {
+        client: bifrostClient({
+          url: "http://bifrost:8080",
+          username: "selfhost",
+          password: fakeGateway.password,
+          fetch: fakeGateway.fetch,
+          minIntervalMs: 0,
+        }),
+        baseUrl: "https://selfhost.example.com/llm",
+        state: { sync: null, usage: null },
+      };
+      await ledger.backgroundRuns.create(run);
+      const settled = await readRunUsage(ledger, gw, run);
+      expect(settled.refusal).toBe("budget exceeded: 0.0068 >= 0.0020 dollars");
+      // The periodic read's place is left alone.
+      expect(gw.state.usageFrom).toBeUndefined();
+
+      const updated = await ledger.backgroundRuns.get(RUN_ID);
+      expect(updated?.cost).toMatchObject({ runtime_usd: 0.01, model_usd: 0.0068, usd: 0.0168 });
+      const spend = await ledger.query({ team: "web", kind: "cost.recorded" });
+      expect(spend.events.map((e) => e.actor)).toEqual([
+        { kind: "person", id: "alice@example.com" },
+      ]);
+      const updates = await ledger.query({ team: "web", kind: "run.updated" });
+      expect(updates.events).toHaveLength(1);
+
+      // Read again (the periodic read): nothing new, so the run is not written again.
+      await readUsageNow(ledger, gw);
+      expect((await ledger.query({ team: "web", kind: "run.updated" })).events).toHaveLength(1);
+    } finally {
+      await ledger.close();
+    }
   });
 });
 

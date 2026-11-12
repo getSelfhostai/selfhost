@@ -117,11 +117,13 @@ export interface TeamStore {
    * else's identity or role, there or in another team of the org (a person's tokens act in
    * every team of the org they are in). An invite for an email joins only that person, under
    * that email, and also works for a person already in the team or the org, adding another
-   * token. Refused too when the invite is unknown, expired or revoked, or names someone else.
+   * token. Refused too when the invite is unknown, expired or revoked, or names someone else,
+   * unless `guessed` says the id was the client's own guess (no person was given): an invite
+   * for an email then joins as that email.
    */
   join(
     invite: string,
-    person: { id: string; name?: string },
+    person: { id: string; name?: string; guessed?: boolean },
   ): Promise<JoinResult | { refused: JoinRefusal }>;
   /**
    * The person a person token belongs to, or undefined for an unknown or revoked token, or one
@@ -431,10 +433,11 @@ export function createTeamStore(db: Database): TeamStore {
         if (!team) return { refused: "unknown" };
         if (team.revoked) return { refused: "revoked" };
         if (team.expired) return { refused: "expired" };
-        if (team.email !== null && !sameEmail(joining.id, team.email)) {
+        if (team.email !== null && !joining.guessed && !sameEmail(joining.id, team.email)) {
           return { refused: "wrong_person" };
         }
-        const person = { ...joining, id: team.email ?? joining.id };
+        const { guessed: _guessed, ...given } = joining;
+        const person = { ...given, id: team.email ?? joining.id };
         if (team.email === null) {
           // Ids that differ only in case count as the same person, as emails do.
           const [existing] = await tx.query(

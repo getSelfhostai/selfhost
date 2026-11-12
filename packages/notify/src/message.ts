@@ -232,7 +232,12 @@ export interface SpendDigest {
   capped_runs: { team: string; run_id: string; limit_usd: number }[];
 }
 
-const usd = (value: number) => `$${value.toFixed(2)}`;
+/** Dollars with cents, or with as many places as a small amount (a test cap of $0.002) needs. */
+const usd = (value: number) => {
+  if (value === 0 || Math.abs(value) >= 0.01) return `$${value.toFixed(2)}`;
+  const places = Math.min(8, 1 - Math.floor(Math.log10(Math.abs(value))));
+  return `$${value.toFixed(places)}`;
+};
 
 export function isEmptyDigest(digest: SpendDigest): boolean {
   return (

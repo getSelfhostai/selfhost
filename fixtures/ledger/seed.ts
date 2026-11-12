@@ -124,6 +124,11 @@ export const SEEDS: readonly (readonly [table: string, sql: string])[] = [
        '2026-11-11T09:30:00Z', '2026-11-11T10:00:00Z', '{}', '2026-11-11T09:31:00Z',
        'seed-laptop') ON CONFLICT DO NOTHING`,
   ],
+  [
+    "github_dropped_reviewers",
+    `INSERT INTO github_dropped_reviewers (pull, users, teams)
+     VALUES ('acme/acme-api#101', '["bob"]', '["platform-reviewers"]') ON CONFLICT DO NOTHING`,
+  ],
 ];
 
 /** Seeds every table of SEEDS the database has; tables a release does not have are skipped. */

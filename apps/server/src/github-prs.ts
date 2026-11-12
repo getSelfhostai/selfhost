@@ -180,3 +180,83 @@ export async function recordPullClosed(
   ]);
   return { kind, where };
 }
+
+const PULL_URL = /^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+$/;
+const SHA = /^[0-9a-f]{7,64}$/;
+
+/**
+ * Links agent pull requests recorded before their session reached the server to that session,
+ * from a batch of stored events: an event of a session that names the pull request
+ * (links.pr_url, as the hook records the `gh pr create` that opened it) or its head commit
+ * (links.commit_sha). Each such pr.opened with no session gets one pr.linked event naming the
+ * session, under the pull request's team, which gives its review item the run; only a session of
+ * the same team links. Returns the pull request URLs it linked, whose brief is then out of date.
+ */
+export async function linkPullSessions(
+  ledger: Ledger,
+  events: readonly unknown[],
+  now: Date = new Date(),
+): Promise<string[]> {
+  const byUrl = new Map<string, LedgerEvent>();
+  const bySha = new Map<string, LedgerEvent>();
+  for (const raw of events) {
+    const event = raw as LedgerEvent;
+    if (typeof event?.session_id !== "string" || event.session_id === "") continue;
+    if (event.kind === "pr.opened" || event.kind === "pr.linked") continue;
+    const url = event.links?.pr_url;
+    if (typeof url === "string" && PULL_URL.test(url) && !byUrl.has(url)) byUrl.set(url, event);
+    const sha = event.links?.commit_sha?.toLowerCase();
+    if (typeof sha === "string" && SHA.test(sha) && !bySha.has(sha)) bySha.set(sha, event);
+  }
+  if (byUrl.size === 0 && bySha.size === 0) return [];
+  const db = databaseOf(ledger);
+  const rows = await db.query<{ body: unknown; team: string | null }>(
+    `SELECT o.body, o.team FROM events o
+     WHERE o.kind = 'pr.opened' AND coalesce(o.session_id, '') = ''
+       AND (o.body#>>'{links,pr_url}' IN (SELECT jsonb_array_elements_text($1::text::jsonb))
+         OR lower(o.body#>>'{links,commit_sha}') IN (SELECT jsonb_array_elements_text($2::text::jsonb)))
+       AND NOT EXISTS (SELECT 1 FROM events l WHERE l.kind = 'pr.linked'
+         AND l.body#>>'{links,pr_url}' = o.body#>>'{links,pr_url}')
+     ORDER BY o.ts DESC, o.id DESC`,
+    [JSON.stringify([...byUrl.keys()]), JSON.stringify([...bySha.keys()])],
+  );
+  const linked: string[] = [];
+  for (const row of rows) {
+    const opened = (typeof row.body === "string" ? JSON.parse(row.body) : row.body) as LedgerEvent;
+    const url = opened.links?.pr_url;
+    if (!url || linked.includes(url)) continue;
+    const sha = opened.links?.commit_sha?.toLowerCase();
+    const session = byUrl.get(url) ?? (sha ? bySha.get(sha) : undefined);
+    if (!session?.session_id) continue;
+    // The team the session's event was stored under, not what its body says.
+    const [own] = await db.query<{ team: string | null }>(
+      "SELECT team FROM events WHERE id = $1::uuid",
+      [session.id],
+    );
+    if (!own || (own.team ?? null) !== (row.team ?? null)) continue;
+    const team = row.team ?? undefined;
+    const at = now.toISOString();
+    const event: LedgerEvent = {
+      id: stableEventId(opened.ts, `pr.linked\nserver\n${url}\n${session.session_id}`),
+      schema: EVENT_SCHEMA,
+      ts: at,
+      source: "server",
+      kind: "pr.linked",
+      actor: { kind: "system", id: GITHUB_APP_ACTOR },
+      ...(opened.agent ? { agent: opened.agent } : {}),
+      ...(opened.model ? { model: opened.model } : {}),
+      session_id: session.session_id,
+      ...(session.run_id ? { run_id: session.run_id } : {}),
+      ...(opened.repo ? { repo: opened.repo } : {}),
+      target: { type: "pr", value: url },
+      links: { pr_url: url, ...(sha && SHA.test(sha) ? { commit_sha: sha } : {}) },
+      data: {
+        ...(typeof opened.data?.number === "number" ? { number: opened.data.number } : {}),
+        via: byUrl.has(url) ? "pr_url" : "commit",
+      },
+    };
+    await append(ledger, team, [event]);
+    linked.push(url);
+  }
+  return linked;
+}

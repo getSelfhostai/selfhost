@@ -494,6 +494,18 @@ describe("runtime caps", () => {
     await expect(guard.admit()).rejects.toThrow(RuntimeCapError);
     await expect(guard.admit()).rejects.toThrow("runtime_daily_usd");
   });
+
+  it("names a small daily cap with enough places to read it", async () => {
+    const guard = new RuntimeGuard({
+      caps: runtimeCaps({ runtime_daily_usd: 0.002 }),
+      spentToday: async () => 0.0045,
+      emit: () => {},
+      now: clock().now,
+    });
+    await expect(guard.admit()).rejects.toThrow(
+      "Sandbox spend today is $0.0045, which reached [budget] runtime_daily_usd ($0.0020)",
+    );
+  });
 });
 
 describe("reaper", () => {

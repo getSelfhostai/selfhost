@@ -14,18 +14,21 @@ import {
   type ResolvedSelfhostConfig,
 } from "@selfhost/schema";
 import { afterEach, describe, expect, it } from "vitest";
+import { createApp } from "../src/app.js";
 import {
   GITHUB_WEBHOOK_PATH,
   type GitHubRouteOptions,
   githubAppFromEnv,
   githubConfig,
   pullSync,
+  queue,
   resyncPulls,
 } from "../src/github.js";
+import { linkPullSessions } from "../src/github-prs.js";
 import type { GitHubProviders, ReviewBrief } from "../src/github-pull.js";
 import { appCodeowners } from "../src/github-review.js";
 import { eeRisk } from "../src/github-risk.js";
-import { claimRepos, startTestServer, type TestServer } from "./helpers.js";
+import { claimRepos, startTestServer, type TestServer, TOKEN } from "./helpers.js";
 
 const GITHUB_FIXTURES = join(import.meta.dirname, "..", "..", "..", "fixtures", "github");
 const REPO = "acme/acme-api";
@@ -80,6 +83,8 @@ interface Harness {
     payload: Payload | string,
     options?: { id?: string; event?: string; signature?: string },
   ): Promise<{ status: number; json: Record<string, unknown> }>;
+  /** A new server process over the same database: what it kept only in memory is gone. */
+  restart(): void;
 }
 
 const open: TestServer[] = [];
@@ -111,11 +116,13 @@ async function harness(
   const lines: string[] = [];
   const log = (line: string) => lines.push(line);
   const state: Harness["state"] = { risk: "low", config: config() };
-  const app = createGitHubApp(
-    { appId: APP_ID, privateKey: PRIVATE_KEY, webhookSecret: SECRET },
-    { fetch: github.fetch, log },
-  );
-  const server = await startTestServer({
+  const newApp = () =>
+    createGitHubApp(
+      { appId: APP_ID, privateKey: PRIVATE_KEY, webhookSecret: SECRET },
+      { fetch: github.fetch, log },
+    );
+  const app = newApp();
+  const routeOptions = (app: ReturnType<typeof newApp>): GitHubRouteOptions => ({
     ...(options.app === false ? {} : { app }),
     config: async () => state.config,
     log,
@@ -132,6 +139,8 @@ async function harness(
     },
     ...options.route,
   });
+  const server = await startTestServer(routeOptions(app));
+  let current = server.app;
   open.push(server);
   await claimRepos(server.ledger, [REPO], options.route?.team);
   return {
@@ -145,7 +154,7 @@ async function harness(
     ) {
       const body = typeof payload === "string" ? payload : JSON.stringify(payload);
       // No bearer token: the signature is the credential.
-      const res = await server.app.request(GITHUB_WEBHOOK_PATH, {
+      const res = await current.request(GITHUB_WEBHOOK_PATH, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -156,6 +165,14 @@ async function harness(
         body,
       });
       return { status: res.status, json: (await res.json()) as Record<string, unknown> };
+    },
+    restart() {
+      current = createApp({
+        version: "1.2.3",
+        ledger: server.ledger,
+        token: TOKEN,
+        github: routeOptions(newApp()),
+      });
     },
   };
 }
@@ -312,6 +329,14 @@ describe("POST /v1/github/webhooks", () => {
     expect(asked()).toBe(1);
     // A later delivery (a check suite finishing, a push) does not ask again.
     expect((await h.deliver(fixture("pull_request.opened"))).json).toMatchObject({ writes: 0 });
+    expect(asked()).toBe(1);
+    // Nor does one after the server restarted: what GitHub dropped is in the database.
+    expect(await h.server.ledger.droppedReviewers.get(`${REPO}#101`)).toEqual({
+      users: [],
+      teams: ["platform-reviewers"],
+    });
+    h.restart();
+    expect((await h.deliver(fixture("pull_request.synchronize"))).status).toBe(200);
     expect(asked()).toBe(1);
   });
 
@@ -693,6 +718,18 @@ describe("owner and brief from the review list", () => {
   });
 });
 
+describe("the per pull request queue", () => {
+  it("fails a sync that never ends after its timeout, and runs the next one", async () => {
+    const lines: string[] = [];
+    const queued = queue(50, (line) => lines.push(line));
+    const stuck = queued("42/acme/web#7", () => new Promise<string>(() => {}));
+    const next = queued("42/acme/web#7", async () => "synced");
+    await expect(stuck).rejects.toThrow("The sync of 42/acme/web#7 took over 0s");
+    expect(await next).toBe("synced");
+    expect(lines).toEqual(["github: the sync of 42/acme/web#7 took over 0s; the next one goes on"]);
+  });
+});
+
 describe("GitHub App settings", () => {
   it("names the variables a partial setup lacks, and is off when none are set", () => {
     const lines: string[] = [];
@@ -838,6 +875,75 @@ describe("the agent pull request in the ledger", () => {
     await h.deliver(opened142());
     const [opened] = await prEvents(h);
     expect(opened?.session_id).toBe("laptop-session-1");
+  });
+
+  it("links a pull request recorded before its session arrived, once, and the item gets the run", async () => {
+    const h = await reviewHarness();
+    await h.deliver(opened142());
+    const [opened] = await prEvents(h);
+    expect(opened?.session_id).toBeUndefined();
+    const list = openReviewList(h.server.ledger, { config: h.state.config });
+    await refreshReviewList(h.server.ledger, list);
+    expect((await list.pullRequest(PR_142.html_url))?.session_id).toBeUndefined();
+
+    // The laptop syncs later: the hook saw the gh pr create that opened it.
+    const link: LedgerEvent = {
+      id: stableEventId("2026-10-12T09:20:00.000Z", "github-test:late-gh-pr-create"),
+      schema: EVENT_SCHEMA,
+      ts: "2026-10-12T09:20:00.000Z",
+      source: "hook",
+      kind: "tool.result",
+      actor: { kind: "person", id: "carol@example.com" },
+      session_id: "laptop-session-2",
+      agent: { vendor: "claude_code" },
+      tool: { name: "Bash", input_summary: "gh pr create --fill" },
+      links: { pr_url: PR_142.html_url },
+    };
+    await h.server.ledger.append([link], { team: "repo-owners" });
+    const now = new Date("2026-10-12T10:30:00.000Z");
+    expect(await linkPullSessions(h.server.ledger, [link], now)).toEqual([PR_142.html_url]);
+    // Once only: the same batch again links nothing.
+    expect(await linkPullSessions(h.server.ledger, [link], now)).toEqual([]);
+    const linked = (await prEvents(h)).filter((e) => e.kind === "pr.linked");
+    expect(linked).toEqual([
+      expect.objectContaining({
+        source: "server",
+        session_id: "laptop-session-2",
+        links: { pr_url: PR_142.html_url, commit_sha: PR_142.head.sha },
+        data: { number: 142, via: "pr_url" },
+      }),
+    ]);
+    await refreshReviewList(h.server.ledger, list);
+    expect(await list.pullRequest(PR_142.html_url)).toMatchObject({
+      session_id: "laptop-session-2",
+      group: "session:laptop-session-2",
+    });
+  });
+
+  it("links by the head commit when the session names it, and only within the team", async () => {
+    const h = await reviewHarness();
+    await h.deliver(opened142());
+    const commit = (team?: string): LedgerEvent => ({
+      id: stableEventId("2026-10-12T09:25:00.000Z", `github-test:commit:${team ?? "none"}`),
+      schema: EVENT_SCHEMA,
+      ts: "2026-10-12T09:25:00.000Z",
+      source: "hook",
+      kind: "commit.created",
+      actor: { kind: "person", id: "carol@example.com" },
+      session_id: `laptop-session-${team ?? "none"}`,
+      agent: { vendor: "claude_code" },
+      links: { commit_sha: PR_142.head.sha },
+    });
+    const elsewhere = commit("data");
+    await h.server.ledger.append([elsewhere], { team: "data" });
+    expect(await linkPullSessions(h.server.ledger, [elsewhere])).toEqual([]);
+    const own = commit();
+    await h.server.ledger.append([own], { team: "repo-owners" });
+    expect(await linkPullSessions(h.server.ledger, [own])).toEqual([PR_142.html_url]);
+    const linked = (await prEvents(h)).filter((e) => e.kind === "pr.linked");
+    expect(linked.map((e) => [e.session_id, e.data?.via])).toEqual([
+      ["laptop-session-none", "commit"],
+    ]);
   });
 
   it("pushes an escalated route's review request to GitHub when the refresh escalates it", async () => {

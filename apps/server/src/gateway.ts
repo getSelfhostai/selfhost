@@ -1,3 +1,4 @@
+import { updatedEvent } from "@selfhost/background";
 import {
   BUDGET_SPENT_ALERT,
   bifrostClient,
@@ -16,6 +17,7 @@ import {
 } from "@selfhost/gateway";
 import { databaseOf, type Ledger, LedgerValidationError } from "@selfhost/ledger";
 import {
+  type BackgroundRun,
   createValidator,
   type GatewayKey,
   type GatewayKeysResponse,
@@ -462,6 +464,94 @@ async function appendByTeam(ledger: Ledger, events: LedgerEvent[]) {
   return { accepted, duplicates };
 }
 
+/** Model spend so far for a run: its cost.recorded events, from the gateway key or the hooks. */
+export function runModelCost(ledger: Ledger): (runId: string) => Promise<number> {
+  const db = databaseOf(ledger);
+  return async (runId) => {
+    const [row] = await db.query<{ usd: number | string | null }>(
+      `SELECT COALESCE(SUM((body -> 'cost' ->> 'usd')::float8), 0) AS usd FROM events
+       WHERE kind = 'cost.recorded' AND body ->> 'run_id' = $1`,
+      [runId],
+    );
+    return Number(row?.usd ?? 0);
+  };
+}
+
+/**
+ * Brings the model cost of each ended background run up to date with the cost.recorded events
+ * stored for it: a run's last requests can reach the ledger only after it ended. A run still
+ * going is left to its runner, which figures its cost on every watchdog pass.
+ */
+export async function refreshRunCosts(
+  ledger: Ledger,
+  runIds: Iterable<string>,
+  now: () => Date = () => new Date(),
+): Promise<number> {
+  const modelCost = runModelCost(ledger);
+  let updated = 0;
+  for (const id of new Set(runIds)) {
+    const run = await ledger.backgroundRuns.get(id);
+    if (!run || !isFinalRunState(run.state)) continue;
+    const model = round(await modelCost(id));
+    if (Math.abs(model - run.cost.model_usd) < 1e-9) continue;
+    const at = now();
+    const saved: BackgroundRun = await ledger.backgroundRuns.save({
+      ...run,
+      cost: { ...run.cost, model_usd: model, usd: round(run.cost.runtime_usd + model) },
+      updated_at: at.toISOString(),
+    });
+    await ledger.append([updatedEvent(saved, at)], { team: saved.team });
+    updated++;
+  }
+  return updated;
+}
+
+const round = (usd: number) => Math.round(usd * 1e6) / 1e6;
+
+/** Gateway events written, then the cost of the ended runs their new cost.recorded events name. */
+async function appendUsage(ledger: Ledger, events: LedgerEvent[], now: () => Date) {
+  const written = await appendByTeam(ledger, events);
+  if (written.accepted > 0) {
+    const runs = events.flatMap((event) =>
+      event.kind === "cost.recorded" && event.run_id ? [event.run_id] : [],
+    );
+    await refreshRunCosts(ledger, runs, now);
+  }
+  return written;
+}
+
+/**
+ * Reads the gateway's requests since a background run started into the ledger now, at the run's
+ * end, so its model cost does not wait for the next periodic read. Leaves the periodic read's
+ * place alone. `refusal` is the gateway's own reason when it refused the run's key on budget.
+ */
+export async function readRunUsage(
+  ledger: Ledger,
+  gateway: Gateway,
+  run: Pick<BackgroundRun, "id" | "started_at" | "created_at">,
+  now: () => Date = () => new Date(),
+): Promise<{ refusal?: string }> {
+  const at = now();
+  const started = new Date(run.started_at ?? run.created_at).getTime();
+  const from = new Date(Math.min(started, at.getTime()) - 60_000);
+  const { report } = await readUsage(
+    gateway.client,
+    from,
+    (events) => appendUsage(ledger, events, now),
+    { now: at },
+  );
+  if (report.error) throw new Error(`reading the gateway's usage: ${report.error}`);
+  const [row] = await databaseOf(ledger).query<{ error: string | null }>(
+    `SELECT body -> 'data' ->> 'error' AS error FROM events
+     WHERE kind = 'alert.raised' AND body ->> 'run_id' = $1
+       AND body -> 'data' ->> 'alert' = 'gateway_budget_exceeded'
+     ORDER BY ts DESC LIMIT 1`,
+    [run.id],
+  );
+  if (!row) return {};
+  return { refusal: row.error?.trim() || "the run's gateway budget is spent" };
+}
+
 /** Writes teams, budgets and key settings to the gateway, and records spent budgets. */
 export async function syncNow(
   ledger: Ledger,
@@ -514,7 +604,7 @@ export async function readUsageNow(
   const { report, next } = await readUsage(
     gateway.client,
     from,
-    (events) => appendByTeam(ledger, events),
+    (events) => appendUsage(ledger, events, now),
     { now: at },
   );
   gateway.state.usage = report;

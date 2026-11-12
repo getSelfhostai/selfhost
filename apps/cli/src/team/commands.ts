@@ -508,10 +508,14 @@ export async function joinTeam(
   const server = serverUrl(url);
   const source = options.person === undefined ? personSource(io.env) : undefined;
   const person = options.person ?? source?.person ?? "";
+  // An id from git or the OS user name is a guess: an invite for an email joins as that email.
+  // SELFHOST_PERSON is as deliberate as --person.
+  const guessed = source !== undefined && source.from !== "SELFHOST_PERSON";
   const joined = await new TeamClient(server, undefined, io.fetch).join(
     invite,
     person,
     options.name,
+    guessed,
   );
   const membership = {
     server,

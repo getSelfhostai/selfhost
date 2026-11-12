@@ -217,6 +217,12 @@ export const JoinRequestSchema = Type.Object(
       "Who is joining, such as their git email. A team-wide invite takes only an id not yet in the team; an invite for an email takes only that email.",
     ),
     name: Type.Optional(Type.String({ maxLength: 200, description: "Display name." })),
+    person_guessed: Type.Optional(
+      Type.Boolean({
+        description:
+          "true when the client picked person itself (git user.email, the OS user name) because none was given: an invite for an email then joins as that email instead of refusing.",
+      }),
+    ),
   },
   { additionalProperties: false, title: "JoinRequest" },
 );

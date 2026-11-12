@@ -88,6 +88,19 @@ describe("prepareCredentials", () => {
     );
   });
 
+  it("puts the run's person on its gateway key with the run id, so its spend is theirs", async () => {
+    const { deps, gw } = setup();
+    await prepareCredentials({ ...RUN, person: "ana@acme.test" }, POLICY, deps);
+    const [key] = [...gw.fake.keys.values()];
+    expect(key?.name).toBe("selfhost:run:platform:run-7");
+    expect(key?.metadata).toMatchObject({
+      selfhost_kind: "run",
+      selfhost_team: "platform",
+      selfhost_run: "run-7",
+      selfhost_person: "ana@acme.test",
+    });
+  });
+
   it("limits egress to the team's list plus the repository's and the gateway's hosts", async () => {
     const { deps } = setup();
     const platform = await prepareCredentials(RUN, POLICY, deps);
@@ -292,7 +305,8 @@ describe("revoke", () => {
   it("reports a revoke GitHub refuses without throwing", async () => {
     const { gh, deps } = setup();
     const prepared = await prepareCredentials(RUN, POLICY, deps);
-    gh.fake.failNext("DELETE", /^\/installation\/token$/, 500);
+    // A 5xx is tried again by the App client; a refusal is not.
+    gh.fake.failNext("DELETE", /^\/installation\/token$/, 403);
     const report = await prepared.revoke();
     expect(report.ok).toBe(false);
     expect(report.events[0]?.data).toMatchObject({ ok: false, reason: "succeeded" });

@@ -44,6 +44,9 @@ export const EVENT_KINDS = [
   "pr.opened",
   "pr.merged",
   "pr.closed",
+  // The session behind an agent pull request recorded before that session reached the server,
+  // added 2026-11-12.
+  "pr.linked",
   "policy.evaluated",
   "alert.raised",
   "config.reported",

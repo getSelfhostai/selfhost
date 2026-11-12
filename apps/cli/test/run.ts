@@ -24,6 +24,10 @@ export async function run(args: string[], deps: Partial<CliDeps> = {}): Promise<
     setExitCode: (value) => {
       code = value;
     },
+    // Never end the test process: an early exit is recorded as the exit code.
+    exit: (value) => {
+      code = value;
+    },
     // Never wait on the terminal: tests that prompt pass their own answer.
     ask: undefined,
     // A person at a terminal, as the decision commands need; tests of refusals pass false.

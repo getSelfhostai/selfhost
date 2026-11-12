@@ -145,13 +145,17 @@ describe("messages hold a summary and a link only", () => {
         budgets: [{ team: "web", period: "month", limit_usd: 100, spent_usd: 81 }],
         top_spenders: [{ person: "dev@example.com", team: "web", usd: 12.5 }],
         growing_teams: [{ team: "web", last_day_usd: 12.5, daily_average_usd: 2 }],
-        capped_runs: [{ team: "web", run_id: "run-7", limit_usd: 5 }],
+        capped_runs: [
+          { team: "web", run_id: "run-7", limit_usd: 5 },
+          { team: "web", run_id: "run-8", limit_usd: 0.002 },
+        ],
       },
       CONSOLE,
     );
     expect(digest.body).toContain("- web: $81.00 of $100.00 this month (81%)");
     expect(digest.body).toContain("- dev@example.com (web): $12.50");
     expect(digest.body).toContain("- run-7 (web), cap $5.00");
+    expect(digest.body).toContain("- run-8 (web), cap $0.0020");
   });
 });
 
