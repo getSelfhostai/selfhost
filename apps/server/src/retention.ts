@@ -20,6 +20,8 @@ export function serverConfig(env: NodeJS.ProcessEnv = process.env): ResolvedSelf
 export interface RetentionJobOptions {
   /** Retention for events with no team or whose team has no stored policy. */
   days: number;
+  /** No team keeps events longer than this, whatever its policy says (a hosted server). */
+  maxDays?: number;
   /** Default: once a day. */
   intervalMs?: number;
   /** Where the job reports. Default: console.log. */
@@ -43,7 +45,12 @@ export function startRetentionJob(ledger: Ledger, options: RetentionJobOptions):
   const now = options.now ?? (() => new Date());
   let running: Promise<RetentionResult | undefined> | undefined;
   const run = () => {
-    running ??= retentionSweep(ledger, days, now())
+    running ??= retentionSweep(
+      ledger,
+      days,
+      now(),
+      options.maxDays === undefined ? {} : { maxDays: options.maxDays },
+    )
       .then(
         (result) => {
           if (result.deleted > 0) log(`retention: deleted ${result.deleted} expired events`);

@@ -16,6 +16,7 @@ import { type EventRouteOptions, eventRoutes } from "./events.js";
 import { type ExceptionKeyring, loadExceptionKeys } from "./exception-keys.js";
 import { type Gateway, gatewayAdminRoutes, gatewayProxyRoutes } from "./gateway.js";
 import { type GitHubRouteOptions, githubRoutes } from "./github.js";
+import { type HostedRouteOptions, hostedRoutes, hostedTenancy } from "./hosted.js";
 import { githubRepos, type IntegrationRouteOptions } from "./integrations.js";
 import { adminMcpRoute, mcpRoutes } from "./mcp.js";
 import { type NotifyRouteOptions, notifyRoutes } from "./notify.js";
@@ -79,6 +80,12 @@ export interface AppOptions {
    * key for this process only, as for an in-memory data dir.
    */
   exceptionKeys?: ExceptionKeyring;
+  /**
+   * Hosted mode (SELFHOST_MODE=hosted, see hosted.ts): sign-in with GitHub or Google, an org per
+   * signup, org isolation and the seat limit. It refuses a gateway, background runs, the GitHub
+   * App and the sign-in proxy, so the server stores events and settings only.
+   */
+  hosted?: HostedRouteOptions;
 }
 
 export function createApp({
@@ -99,8 +106,25 @@ export function createApp({
   solo,
   eventsStored,
   exceptionKeys = loadExceptionKeys("memory://"),
+  hosted,
 }: AppOptions): Hono {
+  if (hosted) {
+    const on = [
+      gateway && "the AI gateway",
+      background && "background runs",
+      github.app && "the GitHub App",
+      signin && "sign-in through a proxy",
+      clones && "SELFHOST_GIT_CLONES",
+    ].filter(Boolean);
+    if (on.length > 0) {
+      throw new Error(
+        `Hosted mode stores events and settings only and runs without ${on.join(", ")}`,
+      );
+    }
+  }
   const app = new Hono();
+  // Sign-in, signup and the CLI's code exchange carry no token: before both token checks.
+  if (hosted) hostedRoutes(app, ledger, hosted);
   const review = {
     exceptionKeys,
     ...(config ? { config } : {}),
@@ -128,6 +152,7 @@ export function createApp({
   teamRoutes(app, {
     ledger,
     token,
+    ...(hosted ? { tenancy: hostedTenancy(ledger, hosted.config) } : {}),
     ...(now ? { now } : {}),
     ...(signin ? { signin } : {}),
     provenance: { ...(clones ? { clones } : {}), ...(config ? { config } : {}) },
@@ -136,6 +161,8 @@ export function createApp({
       ...(github.app ? { repos: githubRepos(github.app, ledger) } : {}),
       ...(now ? { now } : {}),
       ...integrations,
+      // Hosted: the checks never read the server's environment, whatever a team's policy names.
+      ...(hosted ? { env: {} } : {}),
     },
     ...(gateway ? { gateway } : {}),
     ...(background ? { background } : {}),
@@ -161,6 +188,7 @@ export function createApp({
       mcpRoutes(person, ledger, { version, ...review });
       notifyRoutes(person, ledger, {
         ...notify,
+        ...(hosted ? { hostedServicesOnly: true } : {}),
         ...(config ? { config } : {}),
         ...(now ? { now } : {}),
       });

@@ -761,3 +761,36 @@ describe("AI gateway overlay", () => {
     expect(read(".gitignore")).toContain("bifrost.json");
   });
 });
+
+describe("hosted overlay", () => {
+  const hosted = parse(read("compose.hosted.yml")) as { services: Record<string, Service> };
+  const role = hosted.services["selfhost-db-role"];
+  const server = hosted.services.selfhost;
+  const env = (server?.environment ?? {}) as Record<string, string>;
+
+  it("runs the same server image, in hosted mode, with the gateway, GitHub App and background runs off", () => {
+    expect(server?.image).toBeUndefined();
+    expect(server?.build).toBeUndefined();
+    expect(env.SELFHOST_MODE).toBe("hosted");
+    expect(env.SELFHOST_GATEWAY_TOOL).toBe("");
+    expect(env.SELFHOST_GITHUB_APP_ID).toBe("");
+    expect(env.SELFHOST_BACKGROUND).toBe("off");
+  });
+
+  it("connects as a role row-level security binds, made before the server starts", () => {
+    expect(role?.image).toBe(service("postgres").image);
+    expect(env.DATABASE_URL).toMatch(/^postgres:\/\/selfhost_app:.*\?search_path=hosted$/);
+    expect(JSON.stringify(role)).toContain("NOSUPERUSER NOBYPASSRLS");
+    expect(server?.depends_on).toMatchObject({
+      "selfhost-db-role": { condition: "service_completed_successfully" },
+    });
+  });
+
+  it("documents in the README every variable it reads", () => {
+    const readme = read("README.md");
+    const names = [...read("compose.hosted.yml").matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)/g)]
+      .map((m) => m[1] ?? "")
+      .filter((name) => !name.startsWith("POSTGRES_"));
+    expect(names.filter((name) => !readme.includes(`\`${name}\``))).toEqual([]);
+  });
+});

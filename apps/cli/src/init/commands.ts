@@ -24,6 +24,7 @@ import {
   planConfigure,
   tilde,
 } from "../agents.js";
+import { systemOpen } from "../console.js";
 import { findConfig } from "../find-config.js";
 import { plural, table } from "../format.js";
 import { drainSpool } from "../hooks/drain.js";
@@ -45,8 +46,9 @@ import { listText } from "../scan/render-text.js";
 import type { Ask } from "../scan/telemetry.js";
 import { runSpend, type SpendReport } from "../spend.js";
 import { type Fetch, serverUrl } from "../team/client.js";
-import { joinTeam } from "../team/commands.js";
+import { joinSignedIn, joinTeam } from "../team/commands.js";
 import { readMembership } from "../team/config.js";
+import { hostedSignin } from "../team/hosted.js";
 import {
   applyContextImport,
   CONTEXT_SOURCE_DIR,
@@ -92,6 +94,10 @@ export interface InitIo extends AgentsIo {
   ask?: Ask;
   /** Read system paths (managed settings) under this folder instead; for images and tests. */
   systemRoot?: string;
+  /** Where the hosted sign-in's instructions go, so --json output stays one object. */
+  writeError?: (line: string) => void;
+  /** Opens the hosted sign-in page. Default: the system browser. */
+  openBrowser?: (url: string) => void;
 }
 
 export interface InitOptions {
@@ -173,9 +179,14 @@ export interface InitReport {
 
 const UNDO_COMMAND = "selfhost init --undo";
 
+/** The hosted server: SELFHOST_HOSTED_URL, else HOSTED_URL. */
+export const hostedServer = (env: NodeJS.ProcessEnv) =>
+  serverUrl(env.SELFHOST_HOSTED_URL?.trim() || HOSTED_URL);
+
 /**
  * The invite as --team <invite> with --server or --hosted, or the whole line `selfhost team
- * init` prints (`selfhost join <server> <invite>`), or just `<server> <invite>`.
+ * init` prints (`selfhost join <server> <invite>`), or just `<server> <invite>`. --hosted with no
+ * invite is a browser sign-in instead (see hostedSignin), so it gives undefined here.
  */
 export function parseInvite(
   options: Pick<InitOptions, "team" | "server" | "hosted">,
@@ -183,9 +194,7 @@ export function parseInvite(
 ): { server: string; invite: string } | undefined {
   if (options.hosted && options.server) throw new Error("pass --server or --hosted, not both");
   if (options.team === undefined) {
-    if (options.hosted || options.server) {
-      throw new Error(`${options.hosted ? "--hosted" : "--server"} needs --team <invite>`);
-    }
+    if (options.server) throw new Error("--server needs --team <invite>");
     return undefined;
   }
   const words = options.team.trim().split(/\s+/);
@@ -347,7 +356,7 @@ function printHeader(
   if (report.dry_run) write("Dry run: nothing is written and no server is contacted.");
   if (report.team) {
     const { server, team, person, joined } = report.team;
-    if (report.dry_run && joined) write(`Would join a team on ${server} with the invite.`);
+    if (report.dry_run && joined) write(`Would join a team on ${server}.`);
     else if (joined) write(`Joined team ${team} on ${server} as ${person}.`);
     else write(`Already in team ${team} on ${server} as ${person}.`);
     write("");
@@ -647,6 +656,8 @@ export async function runInit(options: InitOptions, io: InitIo): Promise<number>
   const since = options.since ?? "30d";
   const sinceDate = parseSince(since, now) ?? now;
   const invite = parseInvite(options, io.env);
+  // --hosted with no invite: sign in with GitHub or Google in the browser.
+  const signIn = options.hosted && !invite ? hostedServer(io.env) : undefined;
   const preset = parsePreset(options.preset);
   const where = paths(options, io);
   const { command, warning } = hookCommand(io.probes.which);
@@ -673,7 +684,8 @@ export async function runInit(options: InitOptions, io: InitIo): Promise<number>
   const repo = repoDir(undefined, io.cwd);
   // In a team the pulled team policy applies with no file in the repository. A starter would
   // only add observe-mode copies of rules, so none is written unless a preset is asked for.
-  const inTeam = invite !== undefined || readMembership(where.configPath) !== undefined;
+  const inTeam =
+    invite !== undefined || signIn !== undefined || readMembership(where.configPath) !== undefined;
   const config: InitReport["config"] =
     found && existsSync(found.path)
       ? { path: found.path, action: "kept", preset: null }
@@ -710,6 +722,29 @@ export async function runInit(options: InitOptions, io: InitIo): Promise<number>
     };
   } else if (invite && options.dryRun) {
     team = { server: invite.server, team: null, person: null, joined: true };
+  } else if (signIn && membership?.server === signIn) {
+    team = {
+      server: membership.server,
+      team: membership.team,
+      person: membership.person,
+      joined: false,
+    };
+  } else if (signIn && options.dryRun) {
+    team = { server: signIn, team: null, person: null, joined: true };
+  } else if (signIn) {
+    const fetcher: Fetch = io.fetch ?? ((url, init) => fetch(url, init));
+    const joined = await joinSignedIn(
+      signIn,
+      (server) =>
+        hostedSignin(server, {
+          fetch: fetcher,
+          write: options.json ? (io.writeError ?? (() => {})) : io.write,
+          openBrowser: io.openBrowser ?? ((url) => systemOpen(url, io.platform)),
+        }),
+      { json: true },
+      { env: io.env, write: () => {}, configPath: where.configPath, fetch: fetcher },
+    );
+    team = { server: joined.server, team: joined.team.id, person: joined.person, joined: true };
   } else if (invite) {
     const joined = await joinTeam(
       invite.server,
@@ -880,7 +915,7 @@ export function registerInit(
     .option("--server <url>", "the team's selfhost server, with --team <invite>")
     .option(
       "--hosted",
-      "join on the hosted server (SELFHOST_HOSTED_URL, else https://app.selfhost.ai)",
+      "use the hosted server (SELFHOST_HOSTED_URL, else https://app.selfhost.ai): sign in with GitHub or Google in the browser, or join with --team <invite>",
     )
     .option(
       "--agent <name...>",

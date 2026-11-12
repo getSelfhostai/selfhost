@@ -353,7 +353,11 @@ export function createBackground(ledger: Ledger, options: BackgroundServerOption
           alert: async (run, alert) => {
             if (!run.person) return;
             // The run's person in the run's org: the same id elsewhere is someone else.
-            const store = notifyStore(databaseOf(ledger), run.org ?? DEFAULT_ORG_ID);
+            const store = notifyStore(
+              databaseOf(ledger),
+              run.org ?? DEFAULT_ORG_ID,
+              ledger.secrets,
+            );
             const link = options.publicUrl ? `\n${backgroundRunsUrl(options.publicUrl)}` : "";
             for (const target of await store.targets(run.person)) {
               const sent = await deliver.send(target.url, {

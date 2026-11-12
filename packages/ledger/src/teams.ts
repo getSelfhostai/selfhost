@@ -31,7 +31,22 @@ export interface JoinResult {
  * Why an invite was refused: no such invite, past its expiry, revoked, for another person, or
  * a team-wide invite used for a person who is already in the team.
  */
-export type JoinRefusal = "unknown" | "expired" | "revoked" | "wrong_person" | "existing_person";
+export type JoinRefusal =
+  | "unknown"
+  | "expired"
+  | "revoked"
+  | "wrong_person"
+  | "existing_person"
+  | "seat_limit";
+
+export interface JoinOptions {
+  /**
+   * The most people an org may have (revoked ones not counted), unless the org sets its own
+   * (orgs.seats): someone new to the org is refused with seat_limit once it is full. Without it
+   * there is no limit, as on a self-hosted server.
+   */
+  seats?: number;
+}
 
 /**
  * Why a role change was refused: no such person in the team, or it would leave the team
@@ -119,11 +134,13 @@ export interface TeamStore {
    * that email, and also works for a person already in the team or the org, adding another
    * token. Refused too when the invite is unknown, expired or revoked, or names someone else,
    * unless `guessed` says the id was the client's own guess (no person was given): an invite
-   * for an email then joins as that email.
+   * for an email then joins as that email. With options.seats, refused with seat_limit for
+   * someone new to a full org.
    */
   join(
     invite: string,
     person: { id: string; name?: string; guessed?: boolean },
+    options?: JoinOptions,
   ): Promise<JoinResult | { refused: JoinRefusal }>;
   /**
    * The person a person token belongs to, or undefined for an unknown or revoked token, or one
@@ -161,6 +178,9 @@ export function hashToken(token: string): string {
 function newToken(prefix: string): string {
   return `${prefix}${randomBytes(32).toString("base64url")}`;
 }
+
+/** A new person token, as joining hands out. */
+export const newPersonToken = () => newToken(PERSON_TOKEN_PREFIX);
 
 const iso = (value: unknown) => new Date(value as string | Date).toISOString();
 
@@ -243,6 +263,27 @@ async function insertInvite(
     ...(forEmail === undefined ? {} : { email: forEmail }),
     expires_at,
   };
+}
+
+/**
+ * Whether adding `person` would take the org past its seats: they are in none of its teams yet
+ * and it already has as many people as its limit (orgs.seats, else `seats`). Locks the org row,
+ * so two joins in different teams of one org cannot both take the last seat.
+ */
+async function orgFull(tx: Queryable, org: string, person: string, seats: number) {
+  const [row] = await tx.query<{ seat_limit: number }>(
+    "SELECT coalesce(seats, $2::int) AS seat_limit FROM orgs WHERE id = $1 FOR UPDATE",
+    [org, seats],
+  );
+  const [counted] = await tx.query<{ used: number; member: boolean }>(
+    `SELECT count(DISTINCT lower(p.id))::int AS used,
+       coalesce(bool_or(lower(p.id) = lower($2::text)), false) AS member
+     FROM people p JOIN teams t ON t.id = p.team_id
+     WHERE t.org_id = $1 AND ${ACTIVE}`,
+    [org, person],
+  );
+  if (!row || !counted || counted.member) return false;
+  return Number(counted.used) >= Number(row.seat_limit);
 }
 
 const sameEmail = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -417,7 +458,7 @@ export function createTeamStore(db: Database): TeamStore {
       return row ? toInvite(row) : undefined;
     },
 
-    async join(invite, joining) {
+    async join(invite, joining, options = {}) {
       return db.transaction(async (tx) => {
         // Locking the team row serializes joins, so exactly one person becomes the owner.
         const [team] = await tx.query<
@@ -446,6 +487,10 @@ export function createTeamStore(db: Database): TeamStore {
             [team.org_id, person.id],
           );
           if (existing) return { refused: "existing_person" };
+        }
+        if (options.seats !== undefined) {
+          const full = await orgFull(tx, team.org_id, person.id, options.seats);
+          if (full) return { refused: "seat_limit" };
         }
         // Someone revoked from the team comes back with the role an invite gives, not the one
         // they had: re-inviting a removed owner by email must not make them an owner again. A

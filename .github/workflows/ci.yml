@@ -51,6 +51,12 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
+      # pnpm test runs it too; here it may not skip: two orgs, a role row-level security binds,
+      # and every API endpoint swept for the other org's rows.
+      - name: Hosted org isolation with row-level security, on Postgres
+        env:
+          SELFHOST_TEST_REQUIRE_POSTGRES: "1"
+        run: pnpm --filter @selfhost/server exec vitest run test/hosted.test.ts
 
   cli:
     runs-on: ubuntu-latest

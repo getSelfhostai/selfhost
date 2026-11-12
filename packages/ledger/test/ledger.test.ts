@@ -132,6 +132,7 @@ describe.each(BACKENDS)("ledger on $name", (backend) => {
         "deliveries",
         "droppedReviewers",
         "handoffs",
+        "hosted",
         "orgs",
         "query",
         "receipts",
@@ -144,6 +145,8 @@ describe.each(BACKENDS)("ledger on $name", (backend) => {
       expect(Object.keys(ledger.handoffs).filter((key) => /event/i.test(key))).toEqual([]);
       // orgs holds orgs, repos and the repo of each run, and only reads events.
       expect(Object.keys(ledger.orgs).filter((key) => /event/i.test(key))).toEqual([]);
+      // hosted holds sign-in lookups, person tokens and seats.
+      expect(Object.keys(ledger.hosted).filter((key) => /event/i.test(key))).toEqual([]);
       // context holds org and team context layers and proposals, never events.
       expect(Object.keys(ledger.context).filter((key) => /event/i.test(key))).toEqual([]);
       // deliveries holds GitHub webhook delivery ids, never events.

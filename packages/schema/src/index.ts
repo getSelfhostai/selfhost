@@ -14,6 +14,7 @@ export * from "./gateway.js";
 export * from "./handoff.js";
 export * from "./hooks/claude-code.js";
 export * from "./hooks/codex.js";
+export * from "./hosted.js";
 export * from "./laptop.js";
 export * from "./layers.js";
 export * from "./location.js";

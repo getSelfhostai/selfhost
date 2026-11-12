@@ -1,0 +1,53 @@
+# The hosted team server: the same images as a self-hosted install, configured for many orgs.
+# Add it after compose.tls.yml (COMPOSE_FILE=compose.yml:compose.tls.yml:compose.hosted.yml).
+# selfhost-db-role makes the database role the server connects as: not a superuser and without
+# BYPASSRLS, so Postgres row-level security keeps every org's rows apart, owning the schema
+# hosted (not one named like the superuser, whose default search path would find it). The server
+# refuses to start in hosted mode as a role that skips row-level security.
+# This is not part of what `selfhost up` deploys. See README.md, "Hosted team server".
+services:
+  selfhost-db-role:
+    image: postgres:16.15
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-selfhost}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      PGDATABASE: ${POSTGRES_DB:-selfhost}
+      APP_PASSWORD: ${SELFHOST_DB_APP_PASSWORD:?Set SELFHOST_DB_APP_PASSWORD in .env}
+    entrypoint: ["sh", "-c"]
+    # Idempotent: on every start the role and schema are made if missing and the password set.
+    command:
+      - |
+        psql -v ON_ERROR_STOP=1 -v pw="$$APP_PASSWORD" <<'SQL'
+        SELECT 'CREATE ROLE selfhost_app LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE'
+        WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'selfhost_app') \gexec
+        ALTER ROLE selfhost_app NOSUPERUSER NOBYPASSRLS PASSWORD :'pw';
+        CREATE SCHEMA IF NOT EXISTS hosted AUTHORIZATION selfhost_app;
+        SQL
+
+  selfhost:
+    depends_on:
+      selfhost-db-role:
+        condition: service_completed_successfully
+    environment:
+      SELFHOST_MODE: hosted
+      DATABASE_URL: postgres://selfhost_app:${SELFHOST_DB_APP_PASSWORD:?Set SELFHOST_DB_APP_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-selfhost}?search_path=hosted
+      SELFHOST_PUBLIC_URL: ${SELFHOST_PUBLIC_URL:?Set SELFHOST_PUBLIC_URL in .env}
+      SELFHOST_HOSTED_SECRET_KEY: ${SELFHOST_HOSTED_SECRET_KEY:?Set SELFHOST_HOSTED_SECRET_KEY in .env}
+      SELFHOST_OAUTH_GITHUB_CLIENT_ID: ${SELFHOST_OAUTH_GITHUB_CLIENT_ID:-}
+      SELFHOST_OAUTH_GITHUB_CLIENT_SECRET: ${SELFHOST_OAUTH_GITHUB_CLIENT_SECRET:-}
+      SELFHOST_OAUTH_GOOGLE_CLIENT_ID: ${SELFHOST_OAUTH_GOOGLE_CLIENT_ID:-}
+      SELFHOST_OAUTH_GOOGLE_CLIENT_SECRET: ${SELFHOST_OAUTH_GOOGLE_CLIENT_SECRET:-}
+      SELFHOST_HOSTED_FREE_SEATS: ${SELFHOST_HOSTED_FREE_SEATS:-10}
+      SELFHOST_HOSTED_PAID_PLAN_NOTICE: ${SELFHOST_HOSTED_PAID_PLAN_NOTICE:-}
+      SELFHOST_HOSTED_PAID_PLAN_URL: ${SELFHOST_HOSTED_PAID_PLAN_URL:-}
+      SELFHOST_HOSTED_RETENTION_DAYS: ${SELFHOST_HOSTED_RETENTION_DAYS:-30}
+      SELFHOST_HOSTED_MAX_EVENTS: ${SELFHOST_HOSTED_MAX_EVENTS:-1000000}
+      # Hosted stores events and settings only: no gateway, GitHub App or background runs.
+      SELFHOST_GATEWAY_TOOL: ""
+      SELFHOST_GITHUB_APP_ID: ""
+      SELFHOST_BACKGROUND: "off"

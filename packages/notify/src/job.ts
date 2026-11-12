@@ -162,7 +162,7 @@ export async function runNotify(ledger: Ledger, options: NotifyOptions): Promise
       waiting: await filterAsync(waiting, async (row) => (await orgOfTeam(row.team)) === org),
       alerts: await filterAsync(alerts, async (e) => (await orgOfTeam(e.team ?? null)) === org),
     };
-    await notifyOrg(ledger, options, notifyStore(db, org), raised, result);
+    await notifyOrg(ledger, options, notifyStore(db, org, ledger.secrets), raised, result);
   }
   await notifyStore(db).prune(options.now);
   return result;
@@ -371,7 +371,7 @@ export async function sendTest(
   name?: string,
   org: string = DEFAULT_ORG_ID,
 ) {
-  const store = notifyStore(databaseOf(ledger), org);
+  const store = notifyStore(databaseOf(ledger), org, ledger.secrets);
   const targets = (await store.targets(person)).filter(
     (target) => name === undefined || target.name === name,
   );

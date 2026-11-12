@@ -728,7 +728,12 @@ and `--dry-run` never ask (the files are then only listed). [`AGENTS.md`](AGENTS
 1. With `--team`, it joins first. The invite is `--team <invite>` with `--server <url>` or
    `--hosted` (`SELFHOST_HOSTED_URL`, else `https://app.selfhost.ai`), or the whole line `selfhost
    team init` prints, pasted as is. A refused invite or an unreachable server exits 1 before any
-   file is written.
+   file is written. `--hosted` with no invite signs in to the hosted server in the browser with
+   GitHub or Google instead: the first sign-in of an email makes an org and a team with you as
+   owner, a later one joins the team you are in. The browser comes back to a one-off address on
+   this machine's loopback with a code only this process can exchange for the person token
+   (it keeps the verifier). Without a sign-in in 5 minutes, or with a refused one (the org at
+   its seat limit), it exits 1 before any file is written.
 2. It lists the agents it finds and where each keeps its config, then adds a hook running
    `selfhost hook <agent>` to Claude Code and Codex through `agents configure`, which backs up
    every file first. When `selfhost` is not on PATH the hook calls the running node and script

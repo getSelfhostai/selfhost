@@ -59,7 +59,8 @@ The server also serves the web console ([`apps/console`](../console/README.md)) 
 other path outside `/v1`, with no token: the pages hold no data, and what they show comes from
 `/v1` with the reader's own token. See [Console](#console).
 
-Every route except `/v1/health`, `/v1/join` and `/v1/github/webhooks` needs
+Every route except `/v1/health`, `/v1/join`, `/v1/github/webhooks` and, on a hosted server,
+the sign-in routes under `/v1/hosted` needs
 `Authorization: Bearer <token>`. The admin
 token is `SELFHOST_TOKEN` when set; otherwise the server generates one on first start, saves it
 to `<data dir>/token` with mode 0600 and logs where it is (`cat <data dir>/token` reads it).
@@ -779,6 +780,64 @@ whose stored policy names one anyway fails before its sandbox starts. A team's
 failed and stops their sandboxes (`SELFHOST_BACKGROUND_RECOVER=off` on all but one server sharing
 a database); `SELFHOST_BACKGROUND=off` turns background runs off.
 
+## Hosted mode
+
+`SELFHOST_MODE=hosted` runs the hosted team server: this same server and release image, with
+differences in configuration only (`src/hosted.ts`). A self-hosted server (`SELFHOST_MODE`
+unset or `self-hosted`) does not change.
+
+- **Org isolation.** Migration `0021_hosted_tenancy` turns on Postgres row-level security on every
+  table that holds an org's rows (orgs, teams, people, tokens, events, review items, repos,
+  notifications, handoffs, exception grants, background runs and kill switches, context
+  proposals, ROI baselines, receipts, org keys). A person token's request runs with
+  `selfhost.org` set to its org for every transaction it makes (`withOrg` in
+  `@selfhost/ledger`), so a query reads and writes that org's rows only, whatever the route
+  does. With `selfhost.org` unset, which is every self-hosted install, the admin token and the
+  server's own jobs (review refresh, notifications, retention), every row passes as before.
+  Superusers and `BYPASSRLS` roles skip row-level security, so a hosted server refuses to start
+  as one, and it needs Postgres: PGlite runs as a superuser. The tables' owner skips it too
+  unless a table has `FORCE ROW LEVEL SECURITY`, which the migration leaves off (a self-hosted
+  install, its backups and its owner's queries do not change) and a hosted server, which owns
+  the tables, turns on when it starts.
+- **Per-org keys.** Each org gets its own AES-256-GCM key, made on first use and stored wrapped
+  with a key derived from `SELFHOST_HOSTED_SECRET_KEY` (`org_keys`). Notification target URLs,
+  the one secret the server keeps at rest, are sealed with it (`sealed:v1:`); a value written
+  before reads as it is.
+- **Sign-in with GitHub or Google.** `GET /v1/hosted/signin` sends the browser to the provider;
+  `GET /v1/hosted/callback/{provider}` reads the verified email with the one-time code (the
+  provider's access token is used once and never stored). The first sign-in of an email in no
+  org makes an org and a team (named after a company domain, or the person for free mail) with
+  them as owner. Later sign-ins get a new person token for the team they joined first. The
+  console gets the token in the URL fragment, as `selfhost console` hands one over, and shows
+  "Continue with GitHub" and "Continue with Google" on its sign-in page (`GET /v1/hosted`).
+- **Invites and the CLI.** Teammates join with an invite as on any server: `selfhost team invite
+  --email <them>`, then `npx selfhostai@0.1.0 init --hosted --team <invite>`, or in the browser with
+  `invite=` on the sign-in link. `npx selfhostai@0.1.0 init --hosted` alone signs in in the browser:
+  the server sends a code to the CLI's loopback address, and only the CLI's verifier (PKCE
+  style) exchanges it for the person token at `POST /v1/hosted/exchange`.
+- **Events and settings only.** The AI gateway, background runs, the GitHub App, `SELFHOST_GIT_CLONES`,
+  the sign-in proxy and trace export are off (createApp refuses the first four), so no model
+  traffic passes through the server and no subscription login or provider key is asked for.
+  Integration checks never read the server's environment, and notifications go to hosted
+  services only (`tgram://`, `slack://`, `discord://` and the like). `test/hosted.test.ts`
+  checks that no API field and no table column holds a login or a provider key.
+- **Seats.** An org of up to `SELFHOST_HOSTED_FREE_SEATS` people (default 10, revoked people not
+  counted) gets every feature with no agent limit. The next join, by invite or sign-in, answers
+  402 `seat_limit` with the paid plan notice (`SELFHOST_HOSTED_PAID_PLAN_NOTICE`, with
+  `SELFHOST_HOSTED_PAID_PLAN_URL` when set). No price is in the code. `orgs.seats` sets one
+  org's own limit (`UPDATE orgs SET seats = 25 WHERE id = '<org>'`).
+- **Retention and storage.** Events are kept at most `SELFHOST_HOSTED_RETENTION_DAYS` (default
+  30, a team's own `ledger.retention_days` can only be shorter), and an org keeps at most
+  `SELFHOST_HOSTED_MAX_EVENTS` (default 1,000,000; uploads past it answer 507
+  `storage_limit`). Both defaults are placeholders until the free plan's limits are decided.
+
+`test/hosted.test.ts` runs two orgs through every operation in `openapi.yaml` with one org's
+token and the other's ids, checks no response holds the other org's data and none of its rows
+changed, and on Postgres (`DATABASE_URL`) does the same as a role row-level security binds, then
+queries the database under one org's scope directly. CI runs it in the `check` job against its
+Postgres service. Open decisions are listed in
+[`deploy/docker`](../../deploy/docker/README.md#hosted-team-server).
+
 ## Privacy and retention
 
 Every event is redacted in the ledger's write path before it is stored, whichever route it came
@@ -814,44 +873,55 @@ pnpm --filter @selfhost/server start   # runs the build
 
 Environment:
 
-| Variable                           | Default            | Meaning                                                                                                                         |
-| ---------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| `PORT`                             | `4400`             | Port to listen on.                                                                                                              |
-| `HOST`                             | `127.0.0.1`        | Address to bind.                                                                                                                |
-| `DATABASE_URL`                     | unset              | `postgres://` URL. Unset uses the embedded database.                                                                            |
-| `SELFHOST_DATA_DIR`                | `~/.selfhost/data` | Embedded database and token file.                                                                                               |
-| `SELFHOST_TOKEN`                   | unset              | API token. Unset uses or creates `<data dir>/token`.                                                                            |
-| `SELFHOST_CONFIG`                  | unset              | `selfhost.toml` with the defaults for events with no team policy: `[ledger]`, `[[redaction]]`, `[review]`.                      |
-| `SELFHOST_RETENTION_SWEEP`         | `daily`            | `off` keeps every event instead of deleting expired ones daily.                                                                 |
-| `SELFHOST_REVIEW_REFRESH`          | `15s`              | `off` stops building review items and timing out approvals on this server.                                                      |
-| `SELFHOST_TRACE_EXPORT`            | `1m`               | `off` stops sending finished runs to each team's `[integrations.tracer]` from this server.                                      |
-| `SELFHOST_CACHE_ALERTS`            | `1m`               | `off` stops raising prompt cache alerts for sessions whose hit rate collapsed, from this server.                                |
-| `SELFHOST_APPRISE_URL`             | unset              | Apprise API server notifications go through (`compose.notify.yml`: `http://apprise:8000`). Unset sends none.                    |
-| `SELFHOST_NOTIFY`                  | `1m`               | `off` stops sending notifications from this server, when another one sends them from the same database.                         |
-| `SELFHOST_GITHUB_APP_ID`           | unset              | GitHub App id. With the key and secret, turns on `POST /v1/github/webhooks`.                                                    |
-| `SELFHOST_GITHUB_PRIVATE_KEY`      | unset              | The App's private key (PEM, or one line with `\n` escapes).                                                                     |
-| `SELFHOST_GITHUB_PRIVATE_KEY_FILE` | unset              | Path to the App's .pem, instead of `SELFHOST_GITHUB_PRIVATE_KEY`.                                                               |
-| `SELFHOST_GITHUB_WEBHOOK_SECRET`   | unset              | The App's webhook secret.                                                                                                       |
-| `SELFHOST_GITHUB_TEAM`             | unset              | Team whose stored `selfhost.toml` sets `[review]` for GitHub, and whose review items pick the owner.                            |
-| `SELFHOST_PUBLIC_URL`              | unset              | This server's URL as people reach it, for brief links and the receipts' OIDC audience. Unset: the request's origin.             |
-| `SELFHOST_GITHUB_OIDC_ISSUER`      | GitHub's           | Issuer of the CI OIDC tokens `POST /v1/receipts` accepts; set it on GitHub Enterprise Server.                                   |
-| `SELFHOST_CONSOLE`                 | on                 | `off` serves `/v1` only, no web console at `/`.                                                                                 |
-| `SELFHOST_CONSOLE_DIR`             | unset              | The built console to serve at `/`. Unset uses the one built into the server.                                                    |
-| `SELFHOST_SIGNIN_PROXY_SECRET`     | unset              | Turns on console sign-in through a proxy that sends it with the signed-in email. See [Console](#console).                       |
-| `SELFHOST_SIGNIN_ORG`              | unset              | The org console sign-in is for, when an email is in teams of several orgs. Unset: the org it joined first.                      |
-| `SELFHOST_RUN_SECRET_<TEAM>__*`    | unset              | Values a team's `env:` secrets may read for background runs (TEAM: the team id in upper snake case); no other server variable.  |
-| `SELFHOST_RUN_SECRET_SHARED__*`    | unset              | Values every team in `SELFHOST_RUN_SECRET_SHARED_TEAMS` may read as `env:` secrets.                                             |
-| `SELFHOST_RUN_SECRET_SHARED_TEAMS` | unset              | Team ids, separated by commas or spaces, that may read the shared run secrets. Unset: none.                                     |
-| `SELFHOST_SECRET_PATH_PREFIX`      | `selfhost/{team}/` | Where each team's `vault:` and `infisical:` paths sit; `{team}` is the team id and must be in it.                               |
-| `VAULT_ADDR`, `VAULT_TOKEN`        | unset              | Vault for `vault:` secrets, with `VAULT_NAMESPACE` and `SELFHOST_VAULT_MOUNT` (default `secret`). Never set by a policy.        |
-| `INFISICAL_PROJECT_ID`             | unset              | Infisical for `infisical:` secrets, with `INFISICAL_ENVIRONMENT`, `INFISICAL_TOKEN` and `INFISICAL_URL`. Never set by a policy. |
-| `SELFHOST_GIT_CLONES`              | unset              | Folder of clones at `<owner>/<name>` (lower case), read for provenance and module revert rates.                                 |
-| `SELFHOST_GATEWAY_TOOL`            | unset              | `bifrost` or `litellm`: the AI gateway to configure when the server's `selfhost.toml` sets no `[integrations.router]`.          |
-| `SELFHOST_GATEWAY_URL`             | unset              | The gateway's own address: its management API, and Bifrost's model routes. Unset with Bifrost: `http://bifrost:8080`.           |
-| `SELFHOST_GATEWAY_ADMIN_KEY`       | unset              | Bifrost's admin password, or LiteLLM's master key. Sent only to the gateway.                                                    |
-| `SELFHOST_GATEWAY_ADMIN_USER`      | `selfhost`         | Bifrost's admin username.                                                                                                       |
-| `SELFHOST_GATEWAY_PUBLIC_URL`      | unset              | Gateway address agents get. Unset: `<SELFHOST_PUBLIC_URL>/llm` with Bifrost (see [Without Docker](#without-docker)).            |
-| `SELFHOST_GATEWAY_SYNC`            | `5m`               | `off` stops writing budgets and keys to the gateway and reading its usage from this server.                                     |
+| Variable                              | Default            | Meaning                                                                                                                                                   |
+| ------------------------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                                | `4400`             | Port to listen on.                                                                                                                                        |
+| `HOST`                                | `127.0.0.1`        | Address to bind.                                                                                                                                          |
+| `DATABASE_URL`                        | unset              | `postgres://` URL. Unset uses the embedded database.                                                                                                      |
+| `SELFHOST_DATA_DIR`                   | `~/.selfhost/data` | Embedded database and token file.                                                                                                                         |
+| `SELFHOST_MODE`                       | `self-hosted`      | `hosted` runs the hosted team server. See [Hosted mode](#hosted-mode); every `SELFHOST_HOSTED_` and `SELFHOST_OAUTH_` variable is for it.                 |
+| `SELFHOST_HOSTED_SECRET_KEY`          | unset              | Hosted: 32 or more random bytes, hex or base64 (`openssl rand -base64 32`). Signs sign-in state and wraps each org's key. Required.                       |
+| `SELFHOST_OAUTH_GITHUB_CLIENT_ID`     | unset              | Hosted: the GitHub OAuth app's client id; with `_CLIENT_SECRET`, offers sign-in with GitHub. Callback: `<SELFHOST_PUBLIC_URL>/v1/hosted/callback/github`. |
+| `SELFHOST_OAUTH_GITHUB_CLIENT_SECRET` | unset              | Hosted: the GitHub OAuth app's client secret.                                                                                                             |
+| `SELFHOST_OAUTH_GOOGLE_CLIENT_ID`     | unset              | Hosted: the Google OAuth client id; with `_CLIENT_SECRET`, offers sign-in with Google. Callback: `<SELFHOST_PUBLIC_URL>/v1/hosted/callback/google`.       |
+| `SELFHOST_OAUTH_GOOGLE_CLIENT_SECRET` | unset              | Hosted: the Google OAuth client secret.                                                                                                                   |
+| `SELFHOST_HOSTED_FREE_SEATS`          | `10`               | Hosted: people per org on the free plan; the next one is refused with the paid plan notice.                                                               |
+| `SELFHOST_HOSTED_PAID_PLAN_NOTICE`    | see text           | Hosted: what an org past its seats is told. Default: ask the selfhost team to move the org to the paid plan. No price.                                    |
+| `SELFHOST_HOSTED_PAID_PLAN_URL`       | unset              | Hosted: a page about the paid plan, added to the notice.                                                                                                  |
+| `SELFHOST_HOSTED_RETENTION_DAYS`      | `30`               | Hosted: days events are kept at most. Open decision.                                                                                                      |
+| `SELFHOST_HOSTED_MAX_EVENTS`          | `1000000`          | Hosted: events an org keeps at most; uploads past it answer 507. Open decision.                                                                           |
+| `SELFHOST_TOKEN`                      | unset              | API token. Unset uses or creates `<data dir>/token`.                                                                                                      |
+| `SELFHOST_CONFIG`                     | unset              | `selfhost.toml` with the defaults for events with no team policy: `[ledger]`, `[[redaction]]`, `[review]`.                                                |
+| `SELFHOST_RETENTION_SWEEP`            | `daily`            | `off` keeps every event instead of deleting expired ones daily.                                                                                           |
+| `SELFHOST_REVIEW_REFRESH`             | `15s`              | `off` stops building review items and timing out approvals on this server.                                                                                |
+| `SELFHOST_TRACE_EXPORT`               | `1m`               | `off` stops sending finished runs to each team's `[integrations.tracer]` from this server.                                                                |
+| `SELFHOST_CACHE_ALERTS`               | `1m`               | `off` stops raising prompt cache alerts for sessions whose hit rate collapsed, from this server.                                                          |
+| `SELFHOST_APPRISE_URL`                | unset              | Apprise API server notifications go through (`compose.notify.yml`: `http://apprise:8000`). Unset sends none.                                              |
+| `SELFHOST_NOTIFY`                     | `1m`               | `off` stops sending notifications from this server, when another one sends them from the same database.                                                   |
+| `SELFHOST_GITHUB_APP_ID`              | unset              | GitHub App id. With the key and secret, turns on `POST /v1/github/webhooks`.                                                                              |
+| `SELFHOST_GITHUB_PRIVATE_KEY`         | unset              | The App's private key (PEM, or one line with `\n` escapes).                                                                                               |
+| `SELFHOST_GITHUB_PRIVATE_KEY_FILE`    | unset              | Path to the App's .pem, instead of `SELFHOST_GITHUB_PRIVATE_KEY`.                                                                                         |
+| `SELFHOST_GITHUB_WEBHOOK_SECRET`      | unset              | The App's webhook secret.                                                                                                                                 |
+| `SELFHOST_GITHUB_TEAM`                | unset              | Team whose stored `selfhost.toml` sets `[review]` for GitHub, and whose review items pick the owner.                                                      |
+| `SELFHOST_PUBLIC_URL`                 | unset              | This server's URL as people reach it, for brief links and the receipts' OIDC audience. Unset: the request's origin.                                       |
+| `SELFHOST_GITHUB_OIDC_ISSUER`         | GitHub's           | Issuer of the CI OIDC tokens `POST /v1/receipts` accepts; set it on GitHub Enterprise Server.                                                             |
+| `SELFHOST_CONSOLE`                    | on                 | `off` serves `/v1` only, no web console at `/`.                                                                                                           |
+| `SELFHOST_CONSOLE_DIR`                | unset              | The built console to serve at `/`. Unset uses the one built into the server.                                                                              |
+| `SELFHOST_SIGNIN_PROXY_SECRET`        | unset              | Turns on console sign-in through a proxy that sends it with the signed-in email. See [Console](#console).                                                 |
+| `SELFHOST_SIGNIN_ORG`                 | unset              | The org console sign-in is for, when an email is in teams of several orgs. Unset: the org it joined first.                                                |
+| `SELFHOST_RUN_SECRET_<TEAM>__*`       | unset              | Values a team's `env:` secrets may read for background runs (TEAM: the team id in upper snake case); no other server variable.                            |
+| `SELFHOST_RUN_SECRET_SHARED__*`       | unset              | Values every team in `SELFHOST_RUN_SECRET_SHARED_TEAMS` may read as `env:` secrets.                                                                       |
+| `SELFHOST_RUN_SECRET_SHARED_TEAMS`    | unset              | Team ids, separated by commas or spaces, that may read the shared run secrets. Unset: none.                                                               |
+| `SELFHOST_SECRET_PATH_PREFIX`         | `selfhost/{team}/` | Where each team's `vault:` and `infisical:` paths sit; `{team}` is the team id and must be in it.                                                         |
+| `VAULT_ADDR`, `VAULT_TOKEN`           | unset              | Vault for `vault:` secrets, with `VAULT_NAMESPACE` and `SELFHOST_VAULT_MOUNT` (default `secret`). Never set by a policy.                                  |
+| `INFISICAL_PROJECT_ID`                | unset              | Infisical for `infisical:` secrets, with `INFISICAL_ENVIRONMENT`, `INFISICAL_TOKEN` and `INFISICAL_URL`. Never set by a policy.                           |
+| `SELFHOST_GIT_CLONES`                 | unset              | Folder of clones at `<owner>/<name>` (lower case), read for provenance and module revert rates.                                                           |
+| `SELFHOST_GATEWAY_TOOL`               | unset              | `bifrost` or `litellm`: the AI gateway to configure when the server's `selfhost.toml` sets no `[integrations.router]`.                                    |
+| `SELFHOST_GATEWAY_URL`                | unset              | The gateway's own address: its management API, and Bifrost's model routes. Unset with Bifrost: `http://bifrost:8080`.                                     |
+| `SELFHOST_GATEWAY_ADMIN_KEY`          | unset              | Bifrost's admin password, or LiteLLM's master key. Sent only to the gateway.                                                                              |
+| `SELFHOST_GATEWAY_ADMIN_USER`         | `selfhost`         | Bifrost's admin username.                                                                                                                                 |
+| `SELFHOST_GATEWAY_PUBLIC_URL`         | unset              | Gateway address agents get. Unset: `<SELFHOST_PUBLIC_URL>/llm` with Bifrost (see [Without Docker](#without-docker)).                                      |
+| `SELFHOST_GATEWAY_SYNC`               | `5m`               | `off` stops writing budgets and keys to the gateway and reading its usage from this server.                                                               |
 
 ## Without Docker
 

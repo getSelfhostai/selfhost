@@ -60,6 +60,9 @@ describe("openapi.yaml", () => {
         "GET /v1/handoffs",
         "GET /v1/handoffs/{id}",
         "GET /v1/health",
+        "GET /v1/hosted",
+        "GET /v1/hosted/callback/{provider}",
+        "GET /v1/hosted/signin",
         "GET /v1/integrations",
         "GET /v1/me",
         "GET /v1/notify",
@@ -97,6 +100,7 @@ describe("openapi.yaml", () => {
         "POST /v1/gateway/keys",
         "POST /v1/gateway/sync",
         "POST /v1/handoffs/{id}/takeover",
+        "POST /v1/hosted/exchange",
         "POST /v1/join",
         "POST /v1/notify/targets",
         "POST /v1/notify/test",
@@ -120,8 +124,16 @@ describe("openapi.yaml", () => {
     );
   });
 
-  it("leaves only the health check, joining and the signed run webhook without a bearer token", () => {
-    const open = ["/v1/health", "/v1/join", "/v1/background-runs/webhook"];
+  it("leaves only the health check, joining, hosted sign-in and the signed run webhook without a bearer token", () => {
+    const open = [
+      "/v1/health",
+      "/v1/join",
+      "/v1/background-runs/webhook",
+      "/v1/hosted",
+      "/v1/hosted/signin",
+      "/v1/hosted/callback/{provider}",
+      "/v1/hosted/exchange",
+    ];
     expect(doc.paths["/v1/health"].get.security).toEqual([]);
     expect(doc.paths["/v1/join"].post.security).toEqual([]);
     expect(doc.paths["/v1/background-runs/webhook"].post.security).toEqual([]);

@@ -575,7 +575,11 @@ describe("parseInvite", () => {
 
   it("names what is missing or contradictory", () => {
     expect(() => parseInvite({ team: "selfhost_inv_a" }, {})).toThrow(/needs the server/);
-    expect(() => parseInvite({ hosted: true }, {})).toThrow("--hosted needs --team <invite>");
+    // --hosted alone signs in with GitHub or Google in the browser instead of an invite.
+    expect(parseInvite({ hosted: true }, {})).toBeUndefined();
+    expect(() => parseInvite({ server: "https://t.example.com" }, {})).toThrow(
+      "--server needs --team <invite>",
+    );
     expect(() => parseInvite({ team: "a b c" }, {})).toThrow(/expected the invite/);
     expect(() =>
       parseInvite(

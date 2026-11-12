@@ -402,6 +402,82 @@ runner, with `SELFHOST_DOMAIN=localhost` so Caddy serves HTTPS from its own loca
 that Bifrost answers behind Caddy, refuses requests without a virtual key, and takes the keys
 and budgets the server writes. No provider is called.
 
+## Hosted team server
+
+The hosted team server is this stack with `compose.hosted.yml` added, and nothing else: the same
+release image, with `SELFHOST_MODE=hosted` (see
+[`apps/server`](../../apps/server/README.md#hosted-mode)). It is the stack selfhost runs for
+teams that do not host their own; `selfhost up` does not deploy it.
+
+```sh
+COMPOSE_FILE=compose.yml:compose.tls.yml:compose.hosted.yml
+SELFHOST_PUBLIC_URL=https://<hosted domain>
+SELFHOST_DB_APP_PASSWORD=<openssl rand -hex 24>
+SELFHOST_HOSTED_SECRET_KEY=<openssl rand -base64 32>   # keep it: it wraps every org's key
+SELFHOST_OAUTH_GITHUB_CLIENT_ID=...                    # and/or the SELFHOST_OAUTH_GOOGLE_ pair
+SELFHOST_OAUTH_GITHUB_CLIENT_SECRET=...
+```
+
+- Postgres row-level security keeps each org's rows apart, and binds only a role that is not a
+  superuser and has no `BYPASSRLS`. `selfhost-db-role`, a one-shot service, makes that role
+  (`selfhost_app`) and the schema `hosted` it owns, and the server connects as it, runs the
+  migrations and turns on `FORCE ROW LEVEL SECURITY`, so the policies bind it as the tables'
+  owner. Started as a superuser, a hosted server refuses to run. Back up the hosted database as
+  the Postgres superuser (`backup.sh` does): `pg_dump` as `selfhost_app` stops at the forced
+  policies.
+- The OAuth apps' callback URLs are `<SELFHOST_PUBLIC_URL>/v1/hosted/callback/github` and
+  `.../google`. GitHub needs the `read:user` and `user:email` scopes; Google `openid email
+  profile`.
+- Losing `SELFHOST_HOSTED_SECRET_KEY` loses every org's key, and with it the sealed
+  notification targets. Back it up apart from the database.
+- The gateway, background runs and the GitHub App stay off, and `compose.gateway.yml` and
+  `compose.signin.yml` are not used: people sign in to the console with GitHub or Google on the
+  server itself, and the server stores events and settings only.
+- A team of five: the owner runs `npx selfhostai@0.1.0 init --hosted` and signs in in the browser,
+  which makes their org and team; `selfhost team invite --email <them>` for each teammate, who
+  runs `npx selfhostai@0.1.0 init --hosted --team <invite>`.
+
+Settings, all in `compose.hosted.yml`:
+
+| Variable                              | Default   | What                                                        |
+| ------------------------------------- | --------- | ----------------------------------------------------------- |
+| `SELFHOST_DB_APP_PASSWORD`            | required  | Password of `selfhost_app`, the role the server connects as |
+| `SELFHOST_PUBLIC_URL`                 | required  | Where people sign in; the OAuth apps redirect back to it    |
+| `SELFHOST_HOSTED_SECRET_KEY`          | required  | Signs sign-in state and wraps every org's key               |
+| `SELFHOST_OAUTH_GITHUB_CLIENT_ID`     | unset     | GitHub sign-in, with `SELFHOST_OAUTH_GITHUB_CLIENT_SECRET`  |
+| `SELFHOST_OAUTH_GITHUB_CLIENT_SECRET` | unset     | The GitHub OAuth app's secret                               |
+| `SELFHOST_OAUTH_GOOGLE_CLIENT_ID`     | unset     | Google sign-in, with `SELFHOST_OAUTH_GOOGLE_CLIENT_SECRET`  |
+| `SELFHOST_OAUTH_GOOGLE_CLIENT_SECRET` | unset     | The Google OAuth client's secret                            |
+| `SELFHOST_HOSTED_FREE_SEATS`          | `10`      | People per org with every feature; the next is refused      |
+| `SELFHOST_HOSTED_PAID_PLAN_NOTICE`    | built in  | What an org past its seats is told; no price in the code    |
+| `SELFHOST_HOSTED_PAID_PLAN_URL`       | unset     | A page about the paid plan, added to the notice             |
+| `SELFHOST_HOSTED_RETENTION_DAYS`      | `30`      | Days events are kept at most                                |
+| `SELFHOST_HOSTED_MAX_EVENTS`          | `1000000` | Events an org keeps at most; uploads past it are refused    |
+
+### Open decisions
+
+- **Price from the 11th person on** (Ronak). The code has none: the notice says the paid plan
+  is needed and points at `SELFHOST_HOSTED_PAID_PLAN_URL` when set. Moving an org to the paid
+  plan is `UPDATE orgs SET seats = <n>` for now; there is no billing.
+- **Free-tier retention and storage** (Ronak). 30 days and 1,000,000 events per org are
+  conservative placeholders, not decisions.
+- **OAuth apps and the domain** (Ronak). No GitHub or Google OAuth app exists and no hosted
+  domain is set; the CLI's default (`https://app.selfhost.ai`, `SELFHOST_HOSTED_URL` overrides
+  it) is a placeholder until one is.
+- **Production hosting, monitoring and on-call** (dev). This overlay runs on one server; where
+  it runs, managed Postgres with backups and point-in-time recovery, alerting, log retention and
+  who is on call are not set up.
+- **Security review of tenant isolation and key handling** (dev). Before launch: the
+  row-level security policies of migration 0021 (tables without one hold no org's rows:
+  `run_repos`, `review_signals`, `review_progress`, `github_deliveries`,
+  `github_dropped_reviewers`), the server's own jobs that run with no org scope, the org key
+  wrapping and the rotation of `SELFHOST_HOSTED_SECRET_KEY` (not built), the sign-in flow
+  (state, cookie, the CLI's code and verifier), rate limits on sign-in and join (none yet), and
+  abuse of free orgs.
+- **Who someone is across orgs.** A person is one email; sign-in takes them to the team they
+  joined first. Choosing among several orgs, and merging an invite joined under a git email
+  with a later sign-in under another, are not built.
+
 ## Files
 
 | File                           | What                                                                 |
@@ -417,6 +493,7 @@ and budgets the server writes. No provider is called.
 | `compose.gateway.yml`          | Bifrost, the AI gateway, with its database on the same Postgres      |
 | `gateway-config.sh`            | Writes `bifrost.json` from `.env`, with references, never secrets    |
 | `compose.notify.yml`           | Apprise, which delivers alerts and digests to phone, chat and email  |
+| `compose.hosted.yml`           | The hosted team server: hosted mode and its database role            |
 | `install.sh`                   | Installs Docker, starts the stack, schedules the daily backup        |
 
 The CI job `compose` in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs all of

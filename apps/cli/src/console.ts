@@ -65,7 +65,8 @@ export function parsePort(value: string): number {
   return port;
 }
 
-function systemOpen(url: string, platform: NodeJS.Platform): void {
+/** Opens a URL in the default browser; no browser (a server over SSH) is not an error. */
+export function systemOpen(url: string, platform: NodeJS.Platform): void {
   const [command, args] =
     platform === "darwin"
       ? ["open", [url]]

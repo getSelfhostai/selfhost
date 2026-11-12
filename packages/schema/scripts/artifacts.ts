@@ -49,6 +49,8 @@ import {
   HandoffTranscriptInfoSchema,
   HandoffTurnSchema,
   HealthResponseSchema,
+  HostedExchangeRequestSchema,
+  HostedInfoSchema,
   INTEGRATION_KINDS,
   IngestEventsErrorSchema,
   IngestEventsRequestSchema,
@@ -254,6 +256,8 @@ const COMPONENT_SCHEMAS: ReadonlyArray<readonly [name: string, schema: TSchema]>
   ["RevokeTokensResponse", RevokeTokensResponseSchema],
   ["JoinRequest", JoinRequestSchema],
   ["JoinResponse", JoinResponseSchema],
+  ["HostedInfo", HostedInfoSchema],
+  ["HostedExchangeRequest", HostedExchangeRequestSchema],
   ["MeResponse", MeResponseSchema],
   ["TeamInfo", TeamInfoSchema],
   ["Person", PersonSchema],
@@ -1580,6 +1584,88 @@ function openApiDocument(): Json {
             "401": errorResponse(
               "Unknown, expired or revoked invite code, or an invite for another person.",
             ),
+            "402": errorResponse(
+              "Hosted servers only: the org has as many people as its plan covers (seat_limit), with a notice about the paid plan.",
+            ),
+          },
+        },
+      },
+      "/v1/hosted": {
+        get: {
+          operationId: "getHosted",
+          summary: "The hosted server's sign-in providers, seats and plan limits.",
+          description:
+            "Only on a hosted server (SELFHOST_MODE=hosted); a self-hosted one answers 404. No token needed: the console reads it to offer sign-in with GitHub or Google.",
+          security: [],
+          responses: {
+            "200": { description: "The hosted plan.", content: jsonContent("HostedInfo") },
+            "404": errorResponse("Not a hosted server."),
+          },
+        },
+      },
+      "/v1/hosted/signin": {
+        get: {
+          operationId: "hostedSignin",
+          summary: "Start signing in with GitHub or Google.",
+          description:
+            "Hosted servers only. A browser page, not JSON: with provider it sets a short-lived cookie and redirects to the provider; without one it shows a page to pick one. invite joins that invite's team after sign-in, with the seat limit. cli_port, cli_state and cli_challenge come from selfhost init --hosted: the code for POST /v1/hosted/exchange then goes to http://127.0.0.1:{cli_port}/callback. The first sign-in of an email in no org makes an org and a team with them as owner; later sign-ins get a new person token for the team they joined first.",
+          security: [],
+          parameters: [
+            {
+              name: "provider",
+              in: "query",
+              required: false,
+              schema: { type: "string", enum: ["github", "google"] },
+            },
+            { name: "invite", in: "query", required: false, schema: { type: "string" } },
+            { name: "cli_port", in: "query", required: false, schema: { type: "integer" } },
+            { name: "cli_state", in: "query", required: false, schema: { type: "string" } },
+            { name: "cli_challenge", in: "query", required: false, schema: { type: "string" } },
+          ],
+          responses: {
+            "200": { description: "A page to pick a provider." },
+            "302": { description: "To the provider's sign-in." },
+            "400": { description: "A broken sign-in link." },
+          },
+        },
+      },
+      "/v1/hosted/callback/{provider}": {
+        get: {
+          operationId: "hostedCallback",
+          summary: "Where GitHub or Google sends the browser back after sign-in.",
+          description:
+            "Hosted servers only. Reads the verified email with the provider's one-time code; the provider's access token is used once and never stored. The console is redirected to /#token=<person token>; the CLI's loopback address gets a code for POST /v1/hosted/exchange, or error with the reason. A join past the org's seat limit is refused with a notice about the paid plan.",
+          security: [],
+          parameters: [
+            {
+              name: "provider",
+              in: "path",
+              required: true,
+              schema: { type: "string", enum: ["github", "google"] },
+            },
+            { name: "code", in: "query", required: false, schema: { type: "string" } },
+            { name: "state", in: "query", required: true, schema: { type: "string" } },
+          ],
+          responses: {
+            "302": { description: "Signed in: to the console or the CLI." },
+            "400": { description: "The sign-in expired or came from another browser." },
+            "401": { description: "Not signed in, or the invite does not work." },
+            "402": { description: "The org is at its seat limit." },
+          },
+        },
+      },
+      "/v1/hosted/exchange": {
+        post: {
+          operationId: "hostedExchange",
+          summary: "Exchange the sign-in code the CLI received for a person token.",
+          description:
+            "Hosted servers only. The verifier's sha256 must be the cli_challenge the sign-in started with, so the code alone, as a browser's history keeps it, is worth nothing. Codes last two minutes.",
+          security: [],
+          requestBody: { required: true, content: jsonContent("HostedExchangeRequest") },
+          responses: {
+            "200": { description: "Signed in.", content: jsonContent("JoinResponse") },
+            "400": errorResponse("Invalid body."),
+            "401": errorResponse("Unknown or expired code, or the wrong verifier."),
           },
         },
       },

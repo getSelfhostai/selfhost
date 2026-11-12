@@ -5,6 +5,7 @@ import { gunzipSync, gzipSync } from "node:zlib";
 import { PGlite } from "@electric-sql/pglite";
 import postgres from "postgres";
 import { MIGRATIONS, type Migration } from "./migrations.generated.js";
+import { currentOrg } from "./scope.js";
 
 /** The few calls the ledger needs, implemented the same way on Postgres and PGlite. */
 export interface Queryable {
@@ -51,6 +52,9 @@ export async function connect(options: ConnectOptions = {}): Promise<Database> {
   return connectPglite(resolveDataDir(options.dataDir));
 }
 
+/** Sets the org the row-level security policies of migration 0021 show, for this transaction. */
+const SET_ORG = "SELECT set_config('selfhost.org', $1, true)";
+
 function connectPostgres(url: string): Database {
   const sql = postgres(url, { onnotice: () => {} });
   const wrap = (client: postgres.Sql | postgres.TransactionSql): Queryable => ({
@@ -62,12 +66,26 @@ function connectPostgres(url: string): Database {
       await client.unsafe(text);
     },
   });
+  const plain = wrap(sql);
+  /** Runs fn in a transaction, limited to the org of the current scope when there is one. */
+  const begin = async <T>(fn: (tx: Queryable) => Promise<T>): Promise<T> => {
+    const org = currentOrg();
+    return (await sql.begin(async (tx) => {
+      if (org !== undefined) await tx.unsafe(SET_ORG, [org]);
+      return fn(wrap(tx));
+    })) as T;
+  };
   return {
     kind: "postgres",
-    ...wrap(sql),
-    async transaction<T>(fn: (tx: Queryable) => Promise<T>) {
-      return (await sql.begin((tx) => fn(wrap(tx)))) as T;
-    },
+    // Outside an org scope a statement runs on its own, as always; inside one it needs a
+    // transaction for SET LOCAL to last exactly as long as the statement.
+    query: <T>(text: string, params?: unknown[]) =>
+      currentOrg() === undefined
+        ? plain.query<T>(text, params)
+        : begin((tx) => tx.query<T>(text, params)),
+    exec: (text: string) =>
+      currentOrg() === undefined ? plain.exec(text) : begin((tx) => tx.exec(text)),
+    transaction: begin,
     close: () => sql.end({ timeout: 5 }),
   };
 }

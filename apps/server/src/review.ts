@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { databaseOf, type Ledger } from "@selfhost/ledger";
+import { asSystem, databaseOf, type Ledger } from "@selfhost/ledger";
 import {
   AlreadyAnsweredError,
   CODEOWNERS_PATHS,
@@ -489,7 +489,9 @@ export function startReviewRefreshJob(
       log(`budget alerts: failed: ${error instanceof Error ? error.message : error}`);
     }
   };
-  const run = (): Promise<RefreshResult | undefined> => {
+  // The server's own job: a request that settles it does not limit it to the request's org.
+  const run = (): Promise<RefreshResult | undefined> => asSystem(refreshOnce);
+  const refreshOnce = (): Promise<RefreshResult | undefined> => {
     if (running) return running;
     raised = 0;
     running = budgets()

@@ -220,6 +220,11 @@ export interface NotifyRouteOptions {
   deliver?: Deliver;
   config?: ResolvedSelfhostConfig;
   now?: () => Date;
+  /**
+   * Hosted mode: only hosted services (tgram://, slack://, discord:// and the like) for
+   * everyone, since a target that reaches any host would reach the hosted server's own network.
+   */
+  hostedServicesOnly?: boolean;
 }
 
 /**
@@ -240,7 +245,7 @@ export function notifyRoutes(
   const small = limit(SMALL_BODY_BYTES);
 
   async function settings(id: string, org: string): Promise<NotifySettings> {
-    const store = notifyStore(db, org);
+    const store = notifyStore(db, org, ledger.secrets);
     const own = await store.digest(id);
     const inForce = await directory.settingsFor(id, org);
     return {
@@ -254,7 +259,7 @@ export function notifyRoutes(
 
   const who = (c: Context<PersonEnv>) => c.env.person.id;
   const orgOf = async (c: Context<PersonEnv>) => (await c.env.caller.scope()).org;
-  const storeOf = async (c: Context<PersonEnv>) => notifyStore(db, await orgOf(c));
+  const storeOf = async (c: Context<PersonEnv>) => notifyStore(db, await orgOf(c), ledger.secrets);
 
   person.get("/v1/notify", async (c) => c.json(await settings(who(c), await orgOf(c))));
 
@@ -266,7 +271,16 @@ export function notifyRoutes(
     if (problem) return c.json(apiError("invalid_request", `url: ${problem}`), 400);
     const id = who(c);
     const { org, memberships } = await c.env.caller.scope();
-    const store = notifyStore(db, org);
+    const store = notifyStore(db, org, ledger.secrets);
+    if (!isHostedService(url) && options.hostedServicesOnly) {
+      return c.json(
+        apiError(
+          "forbidden",
+          `${serviceOf(url)}:// targets can reach any host, so the hosted server does not send to them. Use a hosted service such as tgram://, slack:// or discord://.`,
+        ),
+        403,
+      );
+    }
     if (!isHostedService(url)) {
       // A role in this org: an owner elsewhere under the same id is someone else.
       if (!memberships.some((m) => m.role === "owner" || m.role === "admin")) {

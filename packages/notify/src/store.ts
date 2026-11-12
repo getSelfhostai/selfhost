@@ -1,4 +1,4 @@
-import type { Queryable } from "@selfhost/ledger";
+import type { Queryable, SecretBox } from "@selfhost/ledger";
 import {
   DEFAULT_ORG_ID,
   type NotifyCadence,
@@ -45,9 +45,10 @@ export async function notifyOrgs(db: Queryable): Promise<string[]> {
  * Notification targets, digest settings and the send record of the people of one org, in the
  * ledger's database (migrations 0011 and 0014). Person ids are unique within an org only, so
  * every read and write is for `org`; a laptop has just the default org. Person ids compare
- * without case, as the review list's owners do.
+ * without case, as the review list's owners do. With `secrets` (a hosted server, Ledger.secrets)
+ * target URLs are sealed with the org's key before they are written.
  */
-export function notifyStore(db: Queryable, org: string = DEFAULT_ORG_ID) {
+export function notifyStore(db: Queryable, org: string = DEFAULT_ORG_ID, secrets?: SecretBox) {
   return {
     org,
 
@@ -62,7 +63,13 @@ export function notifyStore(db: Queryable, org: string = DEFAULT_ORG_ID) {
          WHERE org = $2 AND lower(person) = lower($1) ORDER BY created_at, name`,
         [person, org],
       );
-      return rows.map((row) => ({ ...row, created_at: iso(row.created_at) }));
+      return Promise.all(
+        rows.map(async (row) => ({
+          ...row,
+          url: secrets ? await secrets.open(org, row.url) : row.url,
+          created_at: iso(row.created_at),
+        })),
+      );
     },
 
     /** Everyone in the org with at least one target. */
@@ -88,7 +95,13 @@ export function notifyStore(db: Queryable, org: string = DEFAULT_ORG_ID) {
         `INSERT INTO notify_targets (org, person, name, url, created_at)
          VALUES ($5, $1, $2, $3, coalesce($4::timestamptz, now()))
          ON CONFLICT DO NOTHING RETURNING created_at`,
-        [person, name, url, at?.toISOString() ?? null, org],
+        [
+          person,
+          name,
+          secrets ? await secrets.seal(org, url) : url,
+          at?.toISOString() ?? null,
+          org,
+        ],
       );
       return row ? { person, name, url, created_at: iso(row.created_at) } : undefined;
     },

@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import type { JoinRefusal, Ledger } from "@selfhost/ledger";
+import { type JoinRefusal, type Ledger, withOrg } from "@selfhost/ledger";
 import { POLICY_ACTOR_ID } from "@selfhost/policy";
 import {
   allowedActions,
@@ -33,6 +33,7 @@ import { contextRoutes } from "./context.js";
 import { type EventRouteOptions, eventRoutes, MAX_BODY_BYTES } from "./events.js";
 import { type Gateway, gatewayRoutes } from "./gateway.js";
 import { type HandoffRouteOptions, handoffRoutes } from "./handoffs.js";
+import type { Tenancy } from "./hosted.js";
 import { limit, readBody, rethrow, SMALL_BODY_BYTES } from "./http.js";
 import { teamId } from "./ids.js";
 import { type IntegrationRouteOptions, integrationRoutes } from "./integrations.js";
@@ -73,6 +74,11 @@ export interface TeamRouteOptions {
   handoffs?: Omit<HandoffRouteOptions, "now">;
   /** Called with the kinds and events of each batch of new events a person token writes. */
   eventsStored?: EventRouteOptions["stored"];
+  /**
+   * A hosted server (see hosted.ts): each person token's request is limited to its org's rows,
+   * joins stop at the seat limit and uploads at the org's storage limit.
+   */
+  tenancy?: Tenancy;
 }
 
 export type PersonEnv = { Bindings: { person: Person; caller: PersonCaller } };
@@ -93,6 +99,7 @@ const REFUSED_INVITE: Record<JoinRefusal, string> = {
   wrong_person: "This invite is for someone else. Join with the email it was sent to.",
   existing_person:
     "This person is already in the team or another team of its org, and a team-wide invite only adds new people. Ask a team admin to add them (selfhost team add <person>), for an invite for this person (selfhost team invite --email <person>), or to revoke them and invite them again.",
+  seat_limit: "The org has as many people as its plan covers.",
 };
 
 export { teamId } from "./ids.js";
@@ -126,6 +133,7 @@ export function teamRoutes(
     background,
     handoffs,
     eventsStored,
+    tenancy,
   }: TeamRouteOptions,
 ): void {
   const { teams } = ledger;
@@ -156,6 +164,10 @@ export function teamRoutes(
   );
 
   person.post("/v1/events", limit(MAX_BODY_BYTES), async (c) => {
+    if (tenancy) {
+      const full = await tenancy.ingestRefusal(c, (await c.env.caller.scope()).org);
+      if (full) return full;
+    }
     const stamped = stampEvents(await c.req.text(), c.env.person);
     if ("errors" in stamped) {
       const forged = stamped.errors.filter((e) => e.field === "decision.by").length;
@@ -243,7 +255,11 @@ export function teamRoutes(
     const found = await teams.personForToken(bearer);
     // An unknown token goes on to the admin check, which answers 401.
     if (!found) return next();
-    return person.fetch(c.req.raw, { person: found, caller: personCaller(teams, found) });
+    const caller = personCaller(teams, found);
+    const serve = () => person.fetch(c.req.raw, { person: found, caller });
+    if (!tenancy) return serve();
+    // Hosted: every query the request makes sees and writes its org's rows only.
+    return withOrg((await caller.scope()).org, serve);
   });
 
   app.post("/v1/join", limit(SMALL_BODY_BYTES), async (c) => {
@@ -251,12 +267,17 @@ export function teamRoutes(
     if (body instanceof Response) return body;
     const id = body.person.trim();
     if (id === "") return c.json(apiError("invalid_request", "person: Expected an id"), 400);
-    const joined = await teams.join(body.invite, {
-      id,
-      name: body.name?.trim() || undefined,
-      ...(body.person_guessed ? { guessed: true } : {}),
-    });
+    const joined = await teams.join(
+      body.invite,
+      {
+        id,
+        name: body.name?.trim() || undefined,
+        ...(body.person_guessed ? { guessed: true } : {}),
+      },
+      tenancy ? { seats: tenancy.seats } : {},
+    );
     if ("refused" in joined) {
+      if (joined.refused === "seat_limit" && tenancy) return tenancy.seatRefusal(c);
       return unauthorized(c, REFUSED_INVITE[joined.refused], "invalid_invite");
     }
     return c.json(joined satisfies JoinResponse);

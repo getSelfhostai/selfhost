@@ -1,5 +1,11 @@
 import { serve } from "@hono/node-server";
-import { openLedger, resolveDataDir } from "@selfhost/ledger";
+import {
+  asSystem,
+  databaseOf,
+  enforceRowSecurity,
+  openLedger,
+  resolveDataDir,
+} from "@selfhost/ledger";
 import { redactionSettings } from "@selfhost/schema";
 import pkg from "../package.json" with { type: "json" };
 import { createApp } from "./app.js";
@@ -11,6 +17,7 @@ import { gatewayFromEnv, startGatewayJob } from "./gateway.js";
 import { errorLine, githubAppFromEnv, githubConfig, pullSync, resyncPulls } from "./github.js";
 import { linkPullSessions } from "./github-prs.js";
 import { appCodeowners } from "./github-review.js";
+import { hostedFromEnv, orgKeyWrapper } from "./hosted.js";
 import { notifyFromEnv, startNotifyJob } from "./notify.js";
 import { clonesUnder } from "./provenance.js";
 import { serverConfig, startRetentionJob } from "./retention.js";
@@ -30,18 +37,38 @@ const hostname = process.env.HOST ?? "127.0.0.1";
 const dataDir = resolveDataDir();
 const config = serverConfig();
 
+const stop = (error: unknown): never => {
+  console.error(
+    `selfhost server ${pkg.version} did not start: ${error instanceof Error ? error.message : error}`,
+  );
+  process.exit(1);
+};
+
+// SELFHOST_MODE=hosted: the hosted team server, on this same image (see hosted.ts).
+let hosted: ReturnType<typeof hostedFromEnv>;
+try {
+  hosted = hostedFromEnv();
+} catch (error) {
+  stop(error);
+}
+
 // Applies pending migrations first. A failed one changes nothing, and a schema newer than this
 // release (SchemaTooNewError) stops the server before it serves a request.
 const ledger = await openLedger({
   url: process.env.DATABASE_URL,
   dataDir,
   redaction: redactionSettings(config),
-}).catch((error: unknown) => {
-  console.error(
-    `selfhost server ${pkg.version} did not start: ${error instanceof Error ? error.message : error}`,
-  );
-  process.exit(1);
-});
+  ...(hosted ? { secretKey: orgKeyWrapper(hosted) } : {}),
+}).catch(stop);
+if (hosted) {
+  // Row-level security keeps orgs apart only for a role it binds, and binds the tables' owner
+  // only with FORCE, which hosted turns on here.
+  const problem = await enforceRowSecurity(databaseOf(ledger));
+  if (problem) {
+    await ledger.close();
+    stop(problem);
+  }
+}
 const { token, path, created } = loadApiToken(dataDir);
 if (created) console.log(tokenNotice(path));
 
@@ -57,8 +84,10 @@ if (exceptionKeys.created) {
 
 const githubTeam = process.env.SELFHOST_GITHUB_TEAM?.trim() || undefined;
 const publicUrl = process.env.SELFHOST_PUBLIC_URL?.trim() || undefined;
+// Hosted: no GitHub App, clones, sign-in proxy, gateway or background runs (createApp refuses
+// them), so the server stores events and settings only and no model traffic passes through it.
 const github = {
-  app: githubAppFromEnv(),
+  app: hosted ? undefined : githubAppFromEnv(),
   config: githubConfig(ledger, config, githubTeam),
   ...(githubTeam ? { team: githubTeam } : {}),
   ...(publicUrl ? { publicUrl } : {}),
@@ -66,21 +95,21 @@ const github = {
 
 // SELFHOST_CONSOLE=off answers only /v1, for installs that serve the console some other way.
 const web = process.env.SELFHOST_CONSOLE === "off" ? undefined : { dir: findConsoleDir() };
-const signin = signinFromEnv();
+const signin = hosted ? undefined : signinFromEnv();
 // Clones of the teams' repos at <dir>/<owner>/<name>, for line-level provenance and module
 // revert rates. The server only reads them; keep them current with git fetch.
-const clonesDir = process.env.SELFHOST_GIT_CLONES?.trim() || undefined;
+const clonesDir = hosted ? undefined : process.env.SELFHOST_GIT_CLONES?.trim() || undefined;
 const clones = clonesDir ? clonesUnder(clonesDir) : undefined;
 
 // The AI gateway from [integrations.router], or the bundled Bifrost (compose.gateway.yml).
-const gateway = gatewayFromEnv(config);
+const gateway = hosted ? undefined : gatewayFromEnv(config);
 // The Apprise API notifications go through (compose.notify.yml, or one the team runs).
 const deliver = notifyFromEnv();
 
 // Background runs, on the runtime [runtime] picks with the team's own key from this server's
 // environment; a team with no runtime or key gets a 503. SELFHOST_BACKGROUND=off turns them off.
 const background =
-  process.env.SELFHOST_BACKGROUND === "off"
+  hosted || process.env.SELFHOST_BACKGROUND === "off"
     ? undefined
     : createBackground(ledger, {
         config,
@@ -126,7 +155,10 @@ const wakeups: {
 const refreshStored = refreshOnStored(() => wakeups.reviews);
 // A session that reaches the server after the GitHub App recorded its pull request links to it
 // now: its review item gets the run, and the pull request's brief is written again with it.
-const eventsStored = async (kinds: readonly string[], events: readonly unknown[]) => {
+// The server's own work, not the org's of the request that stored the events.
+const eventsStored = (kinds: readonly string[], events: readonly unknown[]) =>
+  asSystem(() => linkStored(kinds, events));
+const linkStored = async (kinds: readonly string[], events: readonly unknown[]) => {
   await refreshStored(kinds, events);
   void linkPullSessions(ledger, events)
     .then(async (urls) => {
@@ -155,6 +187,7 @@ const server = serve(
       ...(gateway ? { gateway } : {}),
       ...(deliver ? { notify: { deliver } } : {}),
       ...(background ? { background } : {}),
+      ...(hosted ? { hosted: { config: hosted } } : {}),
       eventsStored,
     }).fetch,
     port,
@@ -166,6 +199,11 @@ const server = serve(
       console.log(web.dir ? `console at http://${hostname}:${info.port}/` : "console not built");
     }
     if (signin) console.log("console sign-in through the proxy is on");
+    if (hosted) {
+      console.log(
+        `hosted mode: sign-in with ${Object.keys(hosted.providers).join(" and ")}, ${hosted.freeSeats} free seats per org, events kept ${hosted.retentionDays} days`,
+      );
+    }
     if (gateway)
       console.log(`AI gateway: ${gateway.client.tool}, agents reach it at ${gateway.baseUrl}`);
     console.log(
@@ -180,7 +218,12 @@ const server = serve(
 const retention =
   process.env.SELFHOST_RETENTION_SWEEP === "off"
     ? undefined
-    : startRetentionJob(ledger, { days: config.ledger.retention_days });
+    : startRetentionJob(ledger, {
+        days: hosted
+          ? Math.min(config.ledger.retention_days, hosted.retentionDays)
+          : config.ledger.retention_days,
+        ...(hosted ? { maxDays: hosted.retentionDays } : {}),
+      });
 
 const resync =
   github.app && pulls
@@ -211,8 +254,11 @@ const reviews =
 
 // SELFHOST_TRACE_EXPORT=off stops sending finished runs to each team's [integrations.tracer],
 // for installs where another server sends them from the same database.
+// Hosted: off, since sending a run to a team's tracer would use a key in the server's environment.
 const traces =
-  process.env.SELFHOST_TRACE_EXPORT === "off" ? undefined : startTraceExportJob(ledger, { config });
+  hosted || process.env.SELFHOST_TRACE_EXPORT === "off"
+    ? undefined
+    : startTraceExportJob(ledger, { config });
 
 // SELFHOST_GATEWAY_SYNC=off stops writing the gateway's settings and reading its usage, for
 // installs where another server does it.

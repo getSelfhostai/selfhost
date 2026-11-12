@@ -129,6 +129,11 @@ export const SEEDS: readonly (readonly [table: string, sql: string])[] = [
     `INSERT INTO github_dropped_reviewers (pull, users, teams)
      VALUES ('acme/acme-api#101', '["bob"]', '["platform-reviewers"]') ON CONFLICT DO NOTHING`,
   ],
+  [
+    "org_keys",
+    `INSERT INTO org_keys (org_id, wrapped_key) VALUES ('default', 'seed-wrapped-key')
+     ON CONFLICT DO NOTHING`,
+  ],
 ];
 
 /** Seeds every table of SEEDS the database has; tables a release does not have are skipped. */

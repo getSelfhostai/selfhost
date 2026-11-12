@@ -408,6 +408,7 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       fetch: deps.fetch,
       retry: deps.retry,
       ask: deps.ask,
+      writeError: deps.writeError,
       ...(deps.systemRoot === undefined ? {} : { systemRoot: deps.systemRoot }),
     }),
     fail,

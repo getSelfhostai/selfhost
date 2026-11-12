@@ -1,7 +1,23 @@
-import { type FormEvent, useState } from "react";
+import type { HostedInfo, HostedProvider } from "@selfhost/schema";
+import { type FormEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+
+const PROVIDER_NAMES: Record<HostedProvider, string> = { github: "GitHub", google: "Google" };
+
+/** The hosted server's sign-in providers, or undefined on a server that is not hosted. */
+function useHosted(): HostedInfo | undefined {
+  const [hosted, setHosted] = useState<HostedInfo>();
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/v1/hosted", { signal: controller.signal, credentials: "same-origin" })
+      .then(async (res) => (res.ok ? setHosted((await res.json()) as HostedInfo) : undefined))
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
+  return hosted?.schema === "selfhost.hosted/v1" ? hosted : undefined;
+}
 
 export function SignIn({
   error,
@@ -14,6 +30,7 @@ export function SignIn({
   onToken: (token: string) => void;
 }) {
   const [token, setToken] = useState("");
+  const hosted = useHosted();
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (token.trim()) onToken(token.trim());
@@ -30,6 +47,21 @@ export function SignIn({
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {hosted ? (
+            <div className="mb-6 space-y-2">
+              {hosted.providers.map((provider) => (
+                <Button key={provider} asChild variant="outline" className="w-full">
+                  <a href={`/v1/hosted/signin?provider=${provider}`}>
+                    Continue with {PROVIDER_NAMES[provider]}
+                  </a>
+                </Button>
+              ))}
+              <p className="text-muted-foreground text-sm">
+                New here? Signing in makes an org and a team for you, free for up to{" "}
+                {hosted.free_seats} people.
+              </p>
+            </div>
+          ) : null}
           <form onSubmit={submit} className="space-y-4">
             <Input
               type="password"

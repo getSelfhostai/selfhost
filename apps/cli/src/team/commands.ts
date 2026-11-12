@@ -1,6 +1,7 @@
 import {
   INVITE_TTL_MAX_SECONDS,
   INVITE_TTL_MIN_SECONDS,
+  type JoinResponse,
   PERSON_ROLES,
   type Person,
   type PersonRole,
@@ -517,6 +518,39 @@ export async function joinTeam(
     options.name,
     guessed,
   );
+  return saveJoined(server, joined, source, options, io);
+}
+
+/**
+ * Joins with a person token a sign-in handed out (selfhost init --hosted), and saves it as
+ * joinTeam does. `signIn` runs only once the config file is known to be writable and no team is
+ * joined yet.
+ */
+export async function joinSignedIn(
+  url: string,
+  signIn: (server: string) => Promise<JoinResponse>,
+  options: JsonOption & { managed?: boolean },
+  io: TeamIo,
+): Promise<JoinReport> {
+  const current = readMembership(io.configPath);
+  if (current) {
+    throw new Error(
+      `Already in team ${current.team} on ${current.server} as ${current.person}. Run selfhost team leave first.`,
+    );
+  }
+  writableConfig(io.configPath);
+  const server = serverUrl(url);
+  return saveJoined(server, await signIn(server), undefined, options, io);
+}
+
+/** Saves a membership just joined, pins the exception keys and pulls the context layers. */
+async function saveJoined(
+  server: string,
+  joined: JoinResponse,
+  source: ReturnType<typeof personSource> | undefined,
+  options: JsonOption & { managed?: boolean },
+  io: TeamIo,
+): Promise<JoinReport> {
   const membership = {
     server,
     token: joined.token,

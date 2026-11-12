@@ -1,4 +1,5 @@
 import {
+  asSystem,
   type Database,
   databaseOf,
   type Ledger,
@@ -821,10 +822,24 @@ export function onItemsCreated(ledger: Ledger, listener: (created: number) => vo
   };
 }
 
-export async function refreshReviewList(
+/**
+ * Builds review items from new ledger signals and applies approval timeouts. It reads every
+ * org's events from one cursor, so on a hosted server it runs outside the org scope of the
+ * request that woke it (asSystem): a refresh limited to one org would move the cursor past the
+ * others' events.
+ */
+export function refreshReviewList(
   ledger: Ledger,
   list: ReviewList,
   options: RefreshOptions = {},
+): Promise<RefreshResult> {
+  return asSystem(() => refreshAll(ledger, list, options));
+}
+
+async function refreshAll(
+  ledger: Ledger,
+  list: ReviewList,
+  options: RefreshOptions,
 ): Promise<RefreshResult> {
   const internals = internalsOf(list);
   const db = databaseOf(ledger);

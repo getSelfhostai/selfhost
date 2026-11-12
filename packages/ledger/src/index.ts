@@ -58,6 +58,13 @@ export { type LedgerFieldError, LedgerQueryError, LedgerValidationError } from "
 export { type FileCallQuery, fileCalls } from "./files.js";
 export type { HandoffFilter, HandoffStore } from "./handoffs.js";
 export {
+  createSecretBox,
+  enforceRowSecurity,
+  type HostedStore,
+  rowSecurityProblem,
+  type SecretBox,
+} from "./hosted.js";
+export {
   type AppendOptions,
   type AppendResult,
   databaseOf,
@@ -79,6 +86,7 @@ export type {
 } from "./orgs.js";
 export type { ReceiptStore, StoredReceipt } from "./receipts.js";
 export { type RetentionResult, retentionSweep } from "./retention.js";
+export { asSystem, currentOrg, withOrg } from "./scope.js";
 export * from "./sources/index.js";
 export {
   type TailFilter,
@@ -91,6 +99,7 @@ export {
   type AddPersonRefusal,
   hashToken,
   type InviteOptions,
+  type JoinOptions,
   type JoinRefusal,
   type JoinResult,
   type RoleRefusal,

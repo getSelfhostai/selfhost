@@ -24,6 +24,7 @@ import {
 import { type LedgerFieldError, LedgerQueryError, LedgerValidationError } from "./errors.js";
 import { oneCopyPerFact } from "./facts.js";
 import { createHandoffStore, type HandoffStore } from "./handoffs.js";
+import { createHostedStore, createSecretBox, type HostedStore, type SecretBox } from "./hosted.js";
 import { createOrgStore, type OrgStore } from "./orgs.js";
 import { createReceiptStore, type ReceiptStore } from "./receipts.js";
 import { redactBatch, teamRedaction } from "./redaction.js";
@@ -117,6 +118,13 @@ export interface Ledger {
   backgroundRuns: BackgroundRunStore;
   /** Run handoffs: who handed a run to whom, and what the new owner needs to take it over. */
   handoffs: HandoffStore;
+  /** Sign-in, person tokens and seats for a hosted server. */
+  hosted: HostedStore;
+  /**
+   * Seals the secrets kept at rest with a key of their org, when LedgerOptions.secretKey is
+   * given (a hosted server); undefined otherwise, and they are kept as they are.
+   */
+  secrets?: SecretBox;
   close(): Promise<void>;
 }
 
@@ -133,6 +141,11 @@ export interface LedgerOptions {
    * that replaced it was released.
    */
   eventSchemas?: readonly EventSchemaVersion[];
+  /**
+   * 32 bytes that wrap each org's own key for the secrets kept at rest (see Ledger.secrets).
+   * Only a hosted server sets it.
+   */
+  secretKey?: Buffer;
 }
 
 export type OpenLedgerOptions = ConnectOptions & LedgerOptions;
@@ -264,6 +277,8 @@ export function createLedger(db: Database, options: LedgerOptions = {}): Ledger 
 
     backgroundRuns: createBackgroundRunStore(db),
     handoffs: createHandoffStore(db),
+    hosted: createHostedStore(db),
+    ...(options.secretKey ? { secrets: createSecretBox(db, options.secretKey) } : {}),
 
     close: () => db.close(),
   };

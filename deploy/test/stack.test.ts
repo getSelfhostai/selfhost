@@ -30,7 +30,14 @@ describe("stack.generated.ts", () => {
           !path.startsWith("backups/"),
       )
       .sort();
-    expect(left).toEqual([".gitignore", "Dockerfile", "Dockerfile.dockerignore", "README.md"]);
+    // compose.hosted.yml is the hosted team server's, which selfhost runs: not a customer stack.
+    expect(left).toEqual([
+      ".gitignore",
+      "Dockerfile",
+      "Dockerfile.dockerignore",
+      "README.md",
+      "compose.hosted.yml",
+    ]);
   });
 
   it("keeps the scripts executable", () => {
