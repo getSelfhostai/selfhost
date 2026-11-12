@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import type { Command } from "commander";
 import { findConfig } from "./find-config.js";
+import { loadPolicy } from "./hooks/pretool.js";
 import { readMembership } from "./team/config.js";
 
 export interface ConsoleOptions {
@@ -123,6 +124,8 @@ export async function runConsole(options: ConsoleOptions, io: ConsoleIo): Promis
   const policy = io.cwd ? findConfig(io.cwd, undefined, io.env)?.path : undefined;
   const server = await startLocalServer({
     ...(policy ? { policyPath: policy } : {}),
+    // The selfhost.toml the hooks use here: its tracer links the run view to the tracer.
+    ...(io.cwd ? { config: loadPolicy(io.cwd, io.env, io.configPath).config } : {}),
     version: io.version,
     url: options.database ?? io.env.DATABASE_URL,
     dataDir: options.dataDir,

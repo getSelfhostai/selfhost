@@ -14,6 +14,7 @@ import { type ConfigLocation, findConfig, policyText, type TeamPolicyFile } from
 import { hookCommandPaths, userWritable } from "./hooks/hook-binary.js";
 import { type ManagedHooks, managedHooks, userHookIn } from "./hooks/managed-hooks.js";
 import { exceptionTrust } from "./hooks/trust.js";
+import { movedMcpPaths } from "./mcp/record.js";
 import { defaultTargets, enforcementReports, reportLines } from "./runtime-check.js";
 
 export interface DoctorOptions {
@@ -95,6 +96,12 @@ export interface DoctorReport {
     keys: number;
     warnings: string[];
   };
+  /**
+   * The command `selfhost mcp install` wrote into the agents' MCP configs, and its absolute files
+   * that are gone (a node upgrade, a moved install), so the agents can no longer start it. null
+   * when it was never installed.
+   */
+  mcp_command: { command: string[]; missing: string[] } | null;
 }
 
 const AGENT_LABELS: Record<ManagedHooks["agent"], string> = {
@@ -215,6 +222,7 @@ export function doctorReport(options: DoctorOptions): DoctorReport {
     team_floor: [],
     managed_hooks: hookSources(options),
     exceptions: exceptionsReport(options),
+    mcp_command: movedMcpPaths(options.home ?? homedir()),
   };
   const location = findConfig(cwd, config, env, configPath);
   if (!location) return report;
@@ -325,6 +333,13 @@ export function doctor(options: DoctorOptions): number {
       : `team mode: only grants the team server signed count, checked with ${exceptions.keys} pinned key${exceptions.keys === 1 ? "" : "s"}${exceptions.pinned === "managed" ? ` from ${exceptions.path} (root-owned managed settings)` : exceptions.pinned === "config" ? ` from ${exceptions.path}` : ""}`,
   );
   for (const warning of exceptions.warnings) row("warning", warning);
+  const mcp = report.mcp_command;
+  if (mcp && mcp.missing.length > 0) {
+    row(
+      "warning",
+      `The agents' MCP configs run ${mcp.command.join(" ")}, but ${mcp.missing.join(" and ")} is gone (moved, or node upgraded), so they cannot start selfhost mcp. Run selfhost mcp install again.`,
+    );
+  }
   const guards = report.guardrails;
   const guardsRow = () =>
     row(

@@ -256,6 +256,12 @@ export const PolicyResponseSchema = Type.Object(
       description:
         "Rules after team overrides for the given person and agent, with defaults applied. Rules in mode off are left out.",
     }),
+    rule_layers: Type.Optional(
+      Type.Record(Type.String(), StringEnum(POLICY_LAYER_KINDS), {
+        description:
+          "For a layered policy, the layer each rule id comes from: team for the floor (a repo may only tighten it), repo for a rule the repository's selfhost.toml adds.",
+      }),
+    ),
   },
   { additionalProperties: false, title: "PolicyResponse" },
 );

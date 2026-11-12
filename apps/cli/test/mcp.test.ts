@@ -1,12 +1,12 @@
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { openLedger } from "@selfhost/ledger";
+import { type Ledger, openLedger } from "@selfhost/ledger";
 import { uuidv7 } from "@selfhost/mcp";
-import { openReviewList, refreshReviewList } from "@selfhost/review";
+import { openReviewList, type ReviewList, refreshReviewList } from "@selfhost/review";
 import {
   type BudgetResponse,
   type CreateTeamResponse,
@@ -18,12 +18,17 @@ import {
 } from "@selfhost/schema";
 import contract from "@selfhost/schema/mcp-tools.json" with { type: "json" };
 import { createApp } from "@selfhost/server/app";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { oneCopyPerFact } from "../src/hooks/dedupe.js";
+import { drainSpool } from "../src/hooks/drain.js";
+import { issueGrants } from "../src/hooks/exceptions.js";
 import { checkPreToolCall } from "../src/hooks/pretool.js";
-import { runHook } from "../src/hooks/receive.js";
+import { runHook, spoolDir } from "../src/hooks/receive.js";
 import { runImport } from "../src/import.js";
 import { inboxPaths, writeInboxCache } from "../src/inbox/store.js";
 import { mcpServer } from "../src/mcp/commands.js";
+import { mcpItemsPath, writeMcpItems } from "../src/mcp/held.js";
+import { mcpCommandRecord, movedMcpPaths } from "../src/mcp/record.js";
 import { spendSnapshotPath, writeSpendSnapshot } from "../src/mcp/spend.js";
 import { saveMembership } from "../src/team/config.js";
 import { run, tempDir } from "./run.js";
@@ -179,6 +184,8 @@ describe("selfhost mcp on stdio, solo", () => {
     const m = machine();
     const id = await blockCurl(m);
     const client = await stdio(m);
+    const decided = await call(client, "record_decision", { item_id: id, verdict: "approve" });
+    expect(decided.error?.message).toMatch(/^An agent cannot answer an exception item/);
     // The block is still on the spool: the request brings it in and adds the agent's reason.
     const requested = await call<McpItemStatus>(client, "request_exception", {
       exception_id: id,
@@ -332,6 +339,99 @@ describe("selfhost mcp while selfhost import --watch runs, solo", () => {
   }, 60_000);
 });
 
+describe("selfhost mcp hands requests to selfhost import --watch, solo", () => {
+  /** What a running watcher keeps: the statusline cache with its pid. */
+  const holdLedger = (m: Machine) =>
+    m.home.write(
+      ".selfhost/statusline.json",
+      JSON.stringify({
+        schema: "selfhost.statusline/v1",
+        written_at: new Date().toISOString(),
+        pid: process.pid,
+        person: PERSON,
+        today: { day: new Date().toISOString().slice(0, 10), usd: 0 },
+        warnings: [],
+        alarms: [],
+      }),
+    );
+
+  /** One pass of the watcher: drains the spool, and saves what selfhost mcp reads. */
+  const watcherPass = (m: Machine, then?: (ledger: Ledger, list: ReviewList) => Promise<void>) =>
+    withLedger(m, async (ledger) => {
+      await drainSpool(oneCopyPerFact(ledger), spoolDir({ HOME: m.home.root }), {
+        person: PERSON,
+      });
+      const list = openReviewList(ledger);
+      await refreshReviewList(ledger, list);
+      await then?.(ledger, list);
+      await issueGrants(m.home.path(".selfhost", "exceptions"), (id) => list.get(id), new Date());
+      await writeMcpItems(ledger, list, PERSON, mcpItemsPath({}, m.configPath), new Date());
+    });
+
+  it("spools request_exception for the watcher, and get_answer reads the answer it saves", async () => {
+    const m = machine();
+    const id = await blockCurl(m);
+    holdLedger(m);
+    const client = await stdio(m);
+    const requested = await call<McpItemStatus>(client, "request_exception", {
+      exception_id: id,
+      reason: "The status page has no client in src/http.ts yet.",
+    });
+    expect(requested.error).toBeUndefined();
+    expect(requested.result).toMatchObject({
+      item_id: id,
+      kind: "exception",
+      state: "open",
+      blocking: true,
+    });
+
+    // The watcher's next drain brings the block and the request in: the item is on the list.
+    await watcherPass(m, async (_ledger, list) => {
+      const item = await list.get(id);
+      expect(item).toMatchObject({ kind: "exception", state: "open", blocking: true });
+      expect(item?.brief).toMatch(/status page has no client/);
+      await list.decide(id, { verdict: "approve", by: PERSON });
+    });
+    const { result, error } = await call<McpItemStatus>(client, "get_answer", { item_id: id });
+    expect(error).toBeUndefined();
+    expect(result.state).toBe("answered");
+    expect(result.grant?.expires_at).toBeDefined();
+    expect(result.next).toMatch(/identical call again now/);
+  }, 60_000);
+
+  it("spools ask_human, which the watcher turns into a question item", async () => {
+    const m = machine();
+    holdLedger(m);
+    const client = await stdio(m);
+    const asked = await call<McpItemStatus>(client, "ask_human", {
+      question: "Keep the v1 endpoint for one more release?",
+    });
+    expect(asked.error).toBeUndefined();
+    expect(asked.result).toMatchObject({ kind: "question", state: "open", owners: [PERSON] });
+    const waiting = await call<McpItemStatus>(client, "get_answer", {
+      item_id: asked.result.item_id,
+    });
+    expect(waiting.result.state).toBe("open");
+
+    await watcherPass(m, async (_ledger, list) => {
+      const item = await list.get(asked.result.item_id);
+      expect(item).toMatchObject({
+        kind: "question",
+        title: "Keep the v1 endpoint for one more release?",
+      });
+      await list.decide(asked.result.item_id, {
+        verdict: "answer",
+        by: PERSON,
+        reason: "Yes, until December.",
+      });
+    });
+    const { result } = await call<McpItemStatus>(client, "get_answer", {
+      item_id: asked.result.item_id,
+    });
+    expect(result.answer).toMatchObject({ verdict: "answer", reason: "Yes, until December." });
+  }, 60_000);
+});
+
 describe("selfhost mcp in team mode", () => {
   it("hands calls to the team server as the person, and writes approved grants here", async () => {
     const m = machine();
@@ -374,6 +474,13 @@ describe("selfhost mcp in team mode", () => {
     // A block on this machine reaches the server the real way: `selfhost import` maps the hook's
     // spool line into this machine's ledger and the team sync sends it with the person token.
     const id = await blockCurl(m);
+    // Not synced yet: still the refusal any exception gets, not "in none of your teams".
+    const early = await call(client, "record_decision", { item_id: id, verdict: "approve" });
+    expect(early.error).toEqual({
+      code: "forbidden",
+      message:
+        "An agent cannot answer an exception item: a person answers it in selfhost inbox, the console or chat.",
+    });
     const local = await openLedger({ dataDir: "memory://" });
     const imported = await runImport(
       // Empty log folders, so the import never reads this machine's real agent logs.
@@ -420,11 +527,84 @@ describe("selfhost mcp in team mode", () => {
     expect(JSON.stringify(result)).not.toContain(joined.token);
     await ledger.close();
   }, 60_000);
+
+  it("answers get_policy with the layered policy the hook enforces here", async () => {
+    const m = machine();
+    const ledger = await openLedger({ dataDir: "memory://" });
+    const app = createApp({ version: "test", ledger, token: "admin-token" });
+    const team = (await (
+      await app.request("/v1/teams", {
+        method: "POST",
+        headers: { authorization: "Bearer admin-token", "content-type": "application/json" },
+        body: JSON.stringify({ name: "Web" }),
+      })
+    ).json()) as CreateTeamResponse;
+    const joined = (await (
+      await app.request("/v1/join", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ invite: team.invite, person: PERSON }),
+      })
+    ).json()) as JoinResponse;
+    saveMembership(m.configPath, {
+      server: "http://selfhost.test",
+      token: joined.token,
+      person: PERSON,
+      team: "web",
+    });
+    const fetch = async (url: string, init: RequestInit) => app.request(url, init);
+    const proxy = mcpServer(
+      {},
+      { env: {}, cwd: m.workspace.root, configPath: m.configPath, fetch },
+      "test",
+    );
+    const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+    await proxy.connect(serverSide);
+    const client = new Client({ name: "claude-code", version: "2.1.0" });
+    await client.connect(clientSide);
+    clients.push(client);
+
+    // No team policy yet: the hook enforces the repository's selfhost.toml, and so does this.
+    const before = await call<PolicyResponse>(client, "get_policy");
+    expect(before.error).toBeUndefined();
+    expect(before.result.effective_rules.map((rule) => rule.id)).toEqual(["no-curl"]);
+    expect(before.result.rule_layers).toBeUndefined();
+
+    // The sync pulled a team policy: it is the floor, and the repository's file adds to it.
+    m.home.write(
+      ".selfhost/team-policy.toml",
+      `version = 1
+
+[[rules]]
+id = "no-force-push"
+mode = "enforce"
+match = { command = 'git push .*--force' }
+action = "block"
+message = "No force pushes."
+`,
+    );
+    const after = await call<PolicyResponse>(client, "get_policy", { full: true });
+    expect(after.error).toBeUndefined();
+    expect(after.result.effective_rules.map((rule) => rule.id).sort()).toEqual([
+      "no-curl",
+      "no-force-push",
+    ]);
+    expect(after.result.rule_layers).toEqual({ "no-force-push": "team", "no-curl": "repo" });
+    expect(after.result).toMatchObject({ team: "web" });
+    expect(after.result.layers?.map((layer) => layer.kind)).toEqual(["team", "repo"]);
+    expect(after.result.text).toContain("no-force-push");
+    await ledger.close();
+  }, 60_000);
 });
 
 describe("selfhost mcp install", () => {
+  // An npm install: a node script on PATH, which the agents run under this node by absolute path.
+  let script = "";
+  beforeEach(() => {
+    script = realpathSync(tempDir("mcp-bin").write("selfhost", "#!/usr/bin/env node\n"));
+  });
   const probes = {
-    which: (name: string) => (name === "selfhost" ? "/usr/local/bin/selfhost" : undefined),
+    which: (name: string) => (name === "selfhost" ? script : undefined),
   };
 
   it("adds the selfhost server to Claude Code, Codex and Cursor, and takes it out again", async () => {
@@ -433,19 +613,32 @@ describe("selfhost mcp install", () => {
     const installed = await run(["mcp", "install", ...args, "--json"], { probes });
     expect(installed.code).toBe(0);
     const report = JSON.parse(installed.out);
-    expect(report.command).toEqual(["selfhost", "mcp"]);
+    expect(report.command).toEqual([process.execPath, script, "mcp"]);
     expect(report.agents.map((agent: { status: string }) => agent.status)).toEqual([
       "create",
       "create",
       "create",
     ]);
     const claude = JSON.parse(readFileSync(home.path(".claude.json"), "utf8"));
-    expect(claude.mcpServers.selfhost).toMatchObject({ command: "selfhost", args: ["mcp"] });
+    expect(claude.mcpServers.selfhost).toMatchObject({
+      command: process.execPath,
+      args: [script, "mcp"],
+    });
     expect(readFileSync(home.path(".codex", "config.toml"), "utf8")).toContain(
       "[mcp_servers.selfhost]",
     );
     const cursor = JSON.parse(readFileSync(home.path(".cursor", "mcp.json"), "utf8"));
-    expect(cursor.mcpServers.selfhost.command).toBe("selfhost");
+    expect(cursor.mcpServers.selfhost.command).toBe(process.execPath);
+    // selfhost doctor warns once the files it runs are gone.
+    expect(movedMcpPaths(home.root)).toEqual({ command: report.command, missing: [] });
+    const gone = JSON.parse(readFileSync(mcpCommandRecord(home.root), "utf8"));
+    home.write(
+      ".selfhost/mcp-command.json",
+      JSON.stringify({ command: ["/no/such/node", ...gone.command.slice(1)] }),
+    );
+    const doctor = await run(["doctor"], { home: home.root });
+    expect(doctor.out).toMatch(/\/no\/such\/node is gone .* Run selfhost mcp install again/);
+    home.write(".selfhost/mcp-command.json", JSON.stringify(gone));
 
     const again = await run(["mcp", "install", ...args, "--json"], { probes });
     expect(JSON.parse(again.out).agents.map((agent: { status: string }) => agent.status)).toEqual([

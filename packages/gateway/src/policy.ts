@@ -1,9 +1,10 @@
-import type {
-  Budget,
-  BudgetMode,
-  GatewayBudget,
-  GatewayKeyKind,
-  ResolvedSelfhostConfig,
+import {
+  AGENT_VENDORS,
+  type Budget,
+  type BudgetMode,
+  type GatewayBudget,
+  type GatewayKeyKind,
+  type ResolvedSelfhostConfig,
 } from "@selfhost/schema";
 import type { BudgetLimit, KeyOwner, KeySettings } from "./types.js";
 
@@ -31,6 +32,7 @@ export function keyMetadata(owner: KeyOwner): Record<string, string> {
     selfhost_team: owner.team,
     ...(owner.person ? { selfhost_person: owner.person } : {}),
     ...(owner.run_id ? { selfhost_run: owner.run_id } : {}),
+    ...(owner.agent ? { selfhost_agent: owner.agent } : {}),
   };
 }
 
@@ -47,11 +49,13 @@ export function ownerFromMetadata(metadata: unknown): KeyOwner | undefined {
   const run = typeof m.selfhost_run === "string" ? m.selfhost_run : undefined;
   if (kind === "person" && !person) return undefined;
   if (kind === "run" && !run) return undefined;
+  const agent = AGENT_VENDORS.find((vendor) => vendor === m.selfhost_agent);
   return {
     kind,
     team,
     ...(person ? { person } : {}),
     ...(run ? { run_id: run } : {}),
+    ...(agent ? { agent } : {}),
   };
 }
 

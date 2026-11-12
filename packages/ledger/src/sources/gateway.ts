@@ -1,4 +1,4 @@
-import type { LedgerEvent } from "@selfhost/schema";
+import { AGENT_VENDORS, type AgentVendor, type LedgerEvent } from "@selfhost/schema";
 import {
   agentRef,
   buildEvent,
@@ -35,7 +35,8 @@ export function mapGatewayLog(line: unknown, ctx: SourceContext = {}): LedgerEve
   const usage = isObject(metadata.usage_object) ? metadata.usage_object : {};
   const spendMetadata = isObject(metadata.spend_logs_metadata) ? metadata.spend_logs_metadata : {};
   const userAgent = userAgentOf(log, metadata);
-  const vendor = detectVendor(userAgent);
+  const keyMeta = isObject(metadata.user_api_key_metadata) ? metadata.user_api_key_metadata : {};
+  const vendor = detectVendor(userAgent) ?? keyAgent(keyMeta);
   const model = str(log.model);
   const person =
     str(metadata.user_api_key_user_email) ??
@@ -141,6 +142,15 @@ function userAgentOf(log: Json, metadata: Json): string | undefined {
   return tagged ?? str(metadata.user_agent) ?? str(headers["user-agent"]);
 }
 
+/**
+ * The agent the virtual key was set up for (selfhost_agent, which selfhost gateway connect has
+ * recorded while one agent alone uses the key): for requests whose user-agent names none.
+ */
+function keyAgent(metadata: Json): AgentVendor | undefined {
+  const agent = str(metadata.selfhost_agent);
+  return AGENT_VENDORS.find((vendor) => vendor === agent);
+}
+
 function versionOf(userAgent: string | undefined): string | undefined {
   return userAgent?.match(/\/(\d+\.\d+[\w.+-]*)/)?.[1];
 }
@@ -161,7 +171,8 @@ const BIFROST_LIMIT_ALERTS: Record<string, string> = {
  *
  * Who and which team come from the metadata selfhost puts on each virtual key (selfhost_person,
  * selfhost_team, selfhost_run), which Bifrost copies onto every log entry of the key; the agent
- * from the user-agent header when Bifrost is set to log it. Message bodies are never read.
+ * from the request's user-agent, else from the key's selfhost_agent. Message bodies are never
+ * read.
  */
 export function mapBifrostLog(entry: unknown, ctx: SourceContext = {}): LedgerEvent[] {
   if (!isObject(entry)) {
@@ -179,8 +190,9 @@ export function mapBifrostLog(entry: unknown, ctx: SourceContext = {}): LedgerEv
   const status = str(entry.status);
   if (status !== "success" && status !== "error") return [];
   const metadata = isObject(entry.metadata) ? entry.metadata : {};
-  const userAgent = headerOf(metadata, "user-agent");
-  const vendor = detectVendor(userAgent);
+  // Bifrost keeps the user-agent in its own column; older versions only log it as a header.
+  const userAgent = str(entry.user_agent) ?? headerOf(metadata, "user-agent");
+  const vendor = detectVendor(userAgent) ?? keyAgent(metadata);
   const model = str(entry.model);
   const person = str(metadata.selfhost_person) ?? str(entry.user_email) ?? ctx.person;
   const keyName = str(entry.virtual_key_name);

@@ -2057,6 +2057,20 @@
                 }
               }
             }
+          },
+          "rule_layers": {
+            "description": "For a layered policy, the layer each rule id comes from: team for the floor (a repo may only tighten it), repo for a rule the repository's selfhost.toml adds.",
+            "type": "object",
+            "patternProperties": {
+              "^(.*)$": {
+                "type": "string",
+                "enum": [
+                  "org",
+                  "team",
+                  "repo"
+                ]
+              }
+            }
           }
         }
       }

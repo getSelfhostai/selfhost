@@ -69,7 +69,7 @@ function parse<T extends TSchema>(schema: T, args: unknown) {
 }
 
 /** The policy without the text and config.rules, which effective_rules already holds. */
-function compactPolicy(policy: PolicyResponse): PolicyResponse {
+export function compactPolicy(policy: PolicyResponse): PolicyResponse {
   const { text: _text, ...rest } = policy;
   const { rules: _rules, ...config } = policy.config;
   return { ...rest, config };

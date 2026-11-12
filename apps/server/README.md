@@ -759,14 +759,23 @@ Environment:
 ## Without Docker
 
 The server runs from a build with Node 20 or later, on the embedded database or Postgres, with no
-Caddy in front:
+Caddy in front. The npm package (`selfhostai`) is the CLI only and has no server in it, and the
+release's `selfhost-docker-<version>.tar.gz` needs Docker. Without Docker, clone the repository at
+the release tag and build it (pnpm comes with Node through `corepack enable`):
 
 ```sh
-pnpm install && pnpm --filter @selfhost/server... build
+version=0.1.0
+git clone --depth 1 --branch "v$version" https://github.com/getSelfhostai/selfhost.git
+cd selfhost
+corepack enable
+pnpm install --frozen-lockfile && pnpm --filter @selfhost/server... build
 DATABASE_URL=postgres://selfhost@localhost/selfhost \
 SELFHOST_PUBLIC_URL=https://selfhost.example.com \
   node apps/server/dist/main.js
 ```
+
+The build includes the web console, which the server serves at `/`. `selfhost console` on a laptop
+is not a team server: it serves that laptop's own ledger to its own browser.
 
 Whatever terminates TLS in front of it forwards every path to the server. With an AI gateway,
 also set `SELFHOST_GATEWAY_TOOL`, `SELFHOST_GATEWAY_URL` and `SELFHOST_GATEWAY_ADMIN_KEY` (and

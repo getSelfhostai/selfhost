@@ -40,7 +40,12 @@ export const phoenix: Adapter<"tracer"> = {
     }
     const projects = await call(fetch, `${base}/v1/projects?limit=1`, { headers });
     if ("status" in projects && projects.status === 200) {
-      return connected(`Phoenix at ${shown(base)} is up and takes the key.`);
+      const keyed = Object.keys(settings.headers_env ?? {}).length > 0;
+      return connected(
+        keyed
+          ? `Phoenix at ${shown(base)} is up and takes the key.`
+          : `Phoenix at ${shown(base)} is up and needs no key (auth is off).`,
+      );
     }
     if ("status" in projects && refusedKey(projects.status)) {
       const named = Object.values(settings.headers_env ?? {});

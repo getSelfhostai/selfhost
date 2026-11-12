@@ -3914,6 +3914,16 @@ components:
                 default: false
                 description: true when the matched action cannot be undone, which raises review risk.
                 type: boolean
+        rule_layers:
+          description: "For a layered policy, the layer each rule id comes from: team for the floor (a repo may only tighten it), repo for a rule the repository's selfhost.toml adds."
+          type: object
+          patternProperties:
+            ^(.*)$:
+              type: string
+              enum:
+                - org
+                - team
+                - repo
     PolicyCoverageResponse:
       additionalProperties: false
       title: PolicyCoverageResponse
@@ -6670,6 +6680,17 @@ components:
                 run_id:
                   description: Run of a run key.
                   type: string
+                agent:
+                  description: The one agent selfhost gateway connect set up with this key, which its requests are recorded under when they do not name their agent. Unset once several agents share it.
+                  type: string
+                  enum:
+                    - claude_code
+                    - codex
+                    - opencode
+                    - goose
+                    - cursor
+                    - copilot
+                    - other
                 active:
                   description: false once its person left the team or it was revoked.
                   type: boolean
@@ -6832,6 +6853,17 @@ components:
               run_id:
                 description: Run of a run key.
                 type: string
+              agent:
+                description: The one agent selfhost gateway connect set up with this key, which its requests are recorded under when they do not name their agent. Unset once several agents share it.
+                type: string
+                enum:
+                  - claude_code
+                  - codex
+                  - opencode
+                  - goose
+                  - cursor
+                  - copilot
+                  - other
               active:
                 description: false once its person left the team or it was revoked.
                 type: boolean
@@ -6887,6 +6919,17 @@ components:
         rotate:
           description: Replace an existing person or team key with a new value. Without it, asking again for one that exists answers 409.
           type: boolean
+        agent:
+          description: "For a person key: the only agent that will use it (selfhost gateway connect sends it), recorded on the key so its requests are attributed to that agent. Leave it out when several agents share the key; a key that had one then records none."
+          type: string
+          enum:
+            - claude_code
+            - codex
+            - opencode
+            - goose
+            - cursor
+            - copilot
+            - other
     IssueGatewayKeyResponse:
       additionalProperties: false
       title: IssueGatewayKeyResponse
@@ -6933,6 +6976,17 @@ components:
             run_id:
               description: Run of a run key.
               type: string
+            agent:
+              description: The one agent selfhost gateway connect set up with this key, which its requests are recorded under when they do not name their agent. Unset once several agents share it.
+              type: string
+              enum:
+                - claude_code
+                - codex
+                - opencode
+                - goose
+                - cursor
+                - copilot
+                - other
             active:
               description: false once its person left the team or it was revoked.
               type: boolean

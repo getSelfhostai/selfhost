@@ -19,6 +19,7 @@ const SERVER = "http://team.test";
 const ADMIN = "admin-token";
 
 let ledger: Ledger;
+let fake: ReturnType<typeof fakeBifrost>;
 let fetch: (url: string, init: RequestInit) => Promise<Response>;
 let tokens: Record<string, string> = {};
 /** The same server after its operator moved the gateway to another address. */
@@ -26,7 +27,7 @@ let movedFetch: (url: string, init: RequestInit) => Promise<Response>;
 
 beforeAll(async () => {
   ledger = await openLedger({ dataDir: "memory://" });
-  const fake = fakeBifrost();
+  fake = fakeBifrost();
   const server = (baseUrl: string) =>
     createApp({
       version: "test",
@@ -195,8 +196,14 @@ describe("selfhost gateway connect", () => {
     const first = JSON.parse(
       (await run(["gateway", "connect", "claude-code", "--json"], deps)).out,
     );
+    // Claude Code alone uses the key: requests that name no agent are recorded as Claude Code's.
+    const keyOf = () =>
+      [...fake.keys.values()].find((key) => String(key.name).endsWith(":jo@example.com"));
+    expect((keyOf()?.metadata as Record<string, unknown>)?.selfhost_agent).toBe("claude_code");
     const codex = await run(["gateway", "connect", "codex", "--json"], deps);
     expect(codex.code).toBe(0);
+    // Two agents share it now: it names neither, and their user-agents tell them apart.
+    expect((keyOf()?.metadata as Record<string, unknown>)?.selfhost_agent).toBeUndefined();
     const second = JSON.parse(codex.out) as ConnectReport;
     expect(second).toMatchObject({ status: "connected", reused: true, value: first.value });
     const codexToml = () => {

@@ -38,6 +38,8 @@ function run(cwd: string, config?: string, env: NodeJS.ProcessEnv = {}, json = f
     write: (l) => lines.push(l),
     json,
     systemRoot: noSystem(),
+    // An empty home, so no test reads this machine's agent configs or selfhost files.
+    home: noSystem(),
   });
   return { code, output: lines.join("\n") };
 }
@@ -145,7 +147,9 @@ describe("selfhost doctor", () => {
       "team_floor",
       "managed_hooks",
       "exceptions",
+      "mcp_command",
     ]);
+    expect(report.mcp_command).toBeNull();
     expect(report.enforcement).toEqual([]);
     expect(report.guardrails).toMatchObject({ mode: "enforce", observed: [] });
     expect(report.on_path).toBeNull();

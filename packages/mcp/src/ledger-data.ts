@@ -13,9 +13,12 @@ import {
   refreshReviewList,
 } from "@selfhost/review";
 import {
+  type AgentRef,
+  type AskHumanInput,
   EVENT_SCHEMA,
   type EventSource,
   type LedgerEvent,
+  type RequestExceptionInput,
   type ResolvedSelfhostConfig,
   type ReviewItem,
   type ReviewItemKind,
@@ -46,6 +49,13 @@ const kindWords = (kind: ReviewItemKind) => {
   const words = kind.replaceAll("_", " ");
   return `${/^[aeiou]/.test(words) ? "an" : "a"} ${words}`;
 };
+
+/** The refusal record_decision gives for a kind of item a person answers (see GATING_KINDS). */
+export const agentCannotAnswer = (kind: ReviewItemKind) =>
+  new McpToolError(
+    "forbidden",
+    `An agent cannot answer ${kindWords(kind)} item: a person answers it in selfhost inbox, the console or chat.`,
+  );
 
 export interface LedgerDataOptions {
   /** Runs `fn` with the ledger open: the server's, or this machine's opened for the call. */
@@ -80,6 +90,47 @@ export function uuidv7(now: Date): string {
   bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
   const hex = bytes.toString("hex");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/** data of the approval.requested event ask_human records. */
+export function questionRequest(input: AskHumanInput): Record<string, unknown> {
+  const brief = input.context?.trim();
+  return {
+    request: MCP_QUESTION_REQUEST,
+    question: input.question,
+    ...(brief ? { context: brief } : {}),
+    ...(input.paths?.length ? { paths: input.paths } : {}),
+  };
+}
+
+/** data of the approval.requested event request_exception records. */
+export const exceptionRequest = (input: RequestExceptionInput): Record<string, unknown> => ({
+  request: MCP_EXCEPTION_REQUEST,
+  reason: input.reason,
+});
+
+/** The approval.requested event a write tool records for review item `itemId`. */
+export function requestEvent(input: {
+  person: string;
+  source: EventSource;
+  at: Date;
+  data: Record<string, unknown>;
+  itemId: string;
+  agent?: AgentRef;
+  repo?: string;
+}): LedgerEvent {
+  return {
+    id: uuidv7(input.at),
+    schema: EVENT_SCHEMA,
+    ts: input.at.toISOString(),
+    source: input.source,
+    kind: "approval.requested",
+    actor: { kind: "person", id: input.person },
+    ...(input.agent ? { agent: input.agent } : {}),
+    ...(input.repo ? { repo: input.repo } : {}),
+    links: { item_id: input.itemId },
+    data: input.data,
+  };
 }
 
 /** Ledger and review list errors as tool errors; anything else is a bug and goes on. */
@@ -167,21 +218,16 @@ export function ledgerData(options: LedgerDataOptions): Omit<McpData, "policy" |
     context: CallContext,
     itemId: string,
     repo?: string,
-  ): LedgerEvent => {
-    const at = now();
-    return {
-      id: uuidv7(at),
-      schema: EVENT_SCHEMA,
-      ts: at.toISOString(),
+  ): LedgerEvent =>
+    requestEvent({
+      person,
       source,
-      kind: "approval.requested",
-      actor: { kind: "person", id: person },
+      at: now(),
+      data,
+      itemId,
       ...(context.agent ? { agent: context.agent } : {}),
       ...(repo ? { repo } : {}),
-      links: { item_id: itemId },
-      data,
-    };
-  };
+    });
 
   return {
     person,
@@ -234,18 +280,7 @@ export function ledgerData(options: LedgerDataOptions): Omit<McpData, "policy" |
       run(async (ledger) => {
         const own = await oneTeam(undefined);
         const id = uuidv7(now());
-        const brief = input.context?.trim();
-        const event = request(
-          {
-            request: MCP_QUESTION_REQUEST,
-            question: input.question,
-            ...(brief ? { context: brief } : {}),
-            ...(input.paths?.length ? { paths: input.paths } : {}),
-          },
-          context,
-          id,
-          input.repo,
-        );
+        const event = request(questionRequest(input), context, id, input.repo);
         await record(ledger, event, own);
         return (await find(ledger, id)).item;
       }),
@@ -263,12 +298,7 @@ export function ledgerData(options: LedgerDataOptions): Omit<McpData, "policy" |
           );
         }
         if (found.item.state !== "open") return found.item;
-        const event = request(
-          { request: MCP_EXCEPTION_REQUEST, reason: input.reason },
-          context,
-          id,
-          found.item.repo,
-        );
+        const event = request(exceptionRequest(input), context, id, found.item.repo);
         await record(ledger, event, found.team);
         return (await find(ledger, id)).item;
       }),
@@ -277,12 +307,7 @@ export function ledgerData(options: LedgerDataOptions): Omit<McpData, "policy" |
       run(async (ledger) => {
         if (refreshOnRead) await refresh(ledger);
         const { item, list, team } = await find(ledger, input.item_id);
-        if (GATING_KINDS.includes(item.kind)) {
-          throw new McpToolError(
-            "forbidden",
-            `An agent cannot answer ${kindWords(item.kind)} item: a person answers it in selfhost inbox, the console or chat.`,
-          );
-        }
+        if (GATING_KINDS.includes(item.kind)) throw agentCannotAnswer(item.kind);
         // On a team server, the same rule as every other path an answer takes.
         if (team !== undefined) {
           const role = (await ledger.teams.getPerson(team, person))?.role;

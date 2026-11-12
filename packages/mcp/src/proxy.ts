@@ -20,8 +20,20 @@ export interface ProxyOptions {
   token: string;
   version: string;
   fetch?: FetchLike;
-  /** Changes a tool's result on its way back, such as adding this machine's grant. */
-  onResult?: (name: string, result: CallToolResult) => Promise<CallToolResult>;
+  /**
+   * Changes a tool's result on its way back, such as adding this machine's grant; `args` are the
+   * arguments the agent called it with.
+   */
+  /**
+   * Answers a call here instead of the team server when it returns a result, such as refusing
+   * what this machine already knows is refused.
+   */
+  beforeCall?: (name: string, args: Record<string, unknown>) => Promise<CallToolResult | undefined>;
+  onResult?: (
+    name: string,
+    result: CallToolResult,
+    args: Record<string, unknown>,
+  ) => Promise<CallToolResult>;
 }
 
 /**
@@ -83,6 +95,9 @@ export function createProxyServer(options: ProxyOptions): Server {
     return client.listTools(request.params);
   });
   server.setRequestHandler(CallToolRequestSchema, async (request): Promise<CallToolResult> => {
+    const args = request.params.arguments ?? {};
+    const local = await options.beforeCall?.(request.params.name, args);
+    if (local) return local;
     let result: CallToolResult;
     try {
       const client = await upstream();
@@ -97,7 +112,7 @@ export function createProxyServer(options: ProxyOptions): Server {
       connecting = undefined;
       return failed("unavailable", unreachable(error));
     }
-    return options.onResult ? options.onResult(request.params.name, result) : result;
+    return options.onResult ? options.onResult(request.params.name, result, args) : result;
   });
   return server;
 }

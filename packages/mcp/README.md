@@ -56,16 +56,27 @@ identical call again and it is allowed once.
   opened for each call and closed after it. While `selfhost import --watch` holds it,
   `get_budget` answers from the spend the watcher saves (`~/.selfhost/feed/spend.json`, a few
   times a minute) and `list_review_items` from the person's open items it saves for `selfhost
-  inbox`; other states and the other tools that read the ledger answer `unavailable`.
+  inbox`. `ask_human` and `request_exception` append their event to the hook spool, which the
+  watcher drains every second, so the item reaches the review list and its push goes out within
+  seconds; `get_answer` reads the items asked about through `selfhost mcp` that the watcher saves
+  (`~/.selfhost/feed/mcp-items.json`), and the one-time grant it writes. Other states and the
+  other tools that read the ledger answer `unavailable`.
 - **Team**: the team server serves `POST /v1/mcp` for person tokens (`apps/server`). On a laptop
   in a team, `selfhost mcp` hands every call to that endpoint with the person token from
   `selfhost join`, so agents keep one local entry and no token is written into their configs; it
-  also writes approved exceptions' grants on the laptop. An agent that speaks Streamable HTTP
+  also writes approved exceptions' grants on the laptop. `get_policy` for the repository it
+  runs in answers with the policy the hooks there enforce: the team policy the last sync pulled
+  as the floor, with the repository's selfhost.toml on top, and `rule_layers` naming the layer
+  (team or repo) of each rule. An agent that speaks Streamable HTTP
   can also call `/v1/mcp` directly with `Authorization: Bearer <person token>`.
 
 `selfhost mcp install` adds the `selfhost` entry (`selfhost mcp`) to Claude Code, Codex,
 Cursor, OpenCode and Goose through `packages/agents`, under its own profile;
-`selfhost mcp uninstall` takes it out again.
+`selfhost mcp uninstall` takes it out again. The entry names absolute paths, as the managed
+hooks do: selfhost's binary, or for an npm install the node running it and the script, so an
+agent that orders PATH its own way (Goose puts `/usr/local/bin` and `/opt/homebrew/bin` first)
+still starts it under that node. `selfhost doctor` warns when those files are gone, after a node
+upgrade for example; run `selfhost mcp install` again then.
 
 ```ts
 import { createMcpServer, handleMcpHttp, ledgerData, serveStdio } from "@selfhost/mcp";

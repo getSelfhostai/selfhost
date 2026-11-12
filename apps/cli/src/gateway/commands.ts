@@ -450,10 +450,14 @@ async function holdKey(
   io: GatewayIo,
   membership: Membership,
   holders: AgentId[],
+  agent?: AgentId,
 ): Promise<HeldKey> {
   const team = client(io);
   try {
-    const issued = await team.issueGatewayKey(options.rotate ? { rotate: true } : {});
+    const issued = await team.issueGatewayKey({
+      ...(options.rotate ? { rotate: true } : {}),
+      ...(agent ? { agent } : {}),
+    });
     return { ...issued, reused: false };
   } catch (error) {
     if ((error as { code?: string }).code !== "key_exists") throw error;
@@ -652,7 +656,9 @@ export async function gatewayConnect(
     }
   }
 
-  const held = await holdKey(options, io, membership, others);
+  // While this agent alone uses the key, the key names it, for requests that do not name theirs.
+  const sole = id !== null && others.length === 0 ? id : undefined;
+  const held = await holdKey(options, io, membership, others, sole);
   // A new value, or the gateway at a new address: the kept copy follows.
   if (!held.reused || held.moved_from) storeKey(home, membership, held);
   const { spec, note: modelsNote } = await specFor(agent, held, io);

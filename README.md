@@ -59,8 +59,9 @@ curl http://localhost:4400/v1/health
 ```
 
 [`deploy/docker`](./deploy/docker/README.md) covers HTTPS, sign-in, upgrades, backups and restores.
-To run the server from a build without Docker, with or without an AI gateway, see
-[`apps/server`](./apps/server/README.md#without-docker).
+The npm package is the CLI only; it has no server in it. To run the server without Docker, clone
+the repository at the release tag (`v<version>`) and build it with Node 20 and pnpm, with or
+without an AI gateway: see [`apps/server`](./apps/server/README.md#without-docker).
 
 ### Verify a download
 

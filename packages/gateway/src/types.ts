@@ -1,4 +1,5 @@
 import type {
+  AgentVendor,
   GatewayBudget,
   GatewayBudgetPeriod,
   GatewayKey,
@@ -19,6 +20,8 @@ export interface KeyOwner {
   team: string;
   person?: string;
   run_id?: string;
+  /** The one agent set up with the key (see GatewayKey agent). */
+  agent?: AgentVendor;
 }
 
 /** What selfhost decides for a key: its limits, providers and whether it works. */

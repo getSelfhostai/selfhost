@@ -170,6 +170,58 @@ describe("runSpans on a Claude Code session reported by three sources", () => {
     const kinds = new Set(phoenix.map((span) => span.attributes["openinference.span.kind"]));
     expect([...kinds].sort()).toEqual(["AGENT", "CHAIN", "GUARDRAIL", "LLM", "TOOL"]);
   });
+
+  it("sends cache tokens as OpenInference sub-counts of the prompt, so they are priced as cached", () => {
+    const phoenix = runSpans(CLAUDE, session(CLAUDE), {
+      logPrompts: false,
+      root: true,
+      now: NOW,
+      tool: "phoenix",
+    });
+    const chats = phoenix.filter((span) => span.attributes["openinference.span.kind"] === "LLM");
+    expect(chats.length).toBeGreaterThan(0);
+    for (const chat of chats) {
+      const read = chat.attributes["llm.token_count.prompt_details.cache_read"];
+      const write = chat.attributes["llm.token_count.prompt_details.cache_write"];
+      expect(read).toBe(chat.attributes["gen_ai.usage.cache_read.input_tokens"]);
+      expect(write).toBe(chat.attributes["gen_ai.usage.cache_creation.input_tokens"]);
+      expect(Number(chat.attributes["llm.token_count.prompt"])).toBeGreaterThanOrEqual(
+        Number(read) + Number(write),
+      );
+    }
+    expect(
+      chats.some(
+        (chat) => Number(chat.attributes["llm.token_count.prompt_details.cache_read"]) > 0,
+      ),
+    ).toBe(true);
+  });
+
+  it("gives the root span an input and an outcome, with no prompt text while it is off", () => {
+    for (const tool of ["phoenix", "langfuse"] as const) {
+      const traced = runSpans(CLAUDE, session(CLAUDE), {
+        logPrompts: false,
+        root: true,
+        now: NOW,
+        tool,
+      });
+      const top = traced.find((span) => span.parentSpanId === undefined);
+      const key = tool === "phoenix" ? "" : "langfuse.observation.";
+      const input = String(top?.attributes[tool === "phoenix" ? "input.value" : `${key}input`]);
+      const output = String(top?.attributes[tool === "phoenix" ? "output.value" : `${key}output`]);
+      expect(input).toMatch(/^First prompt: \d+ characters, text not logged/);
+      expect(input).not.toContain(promptText);
+      expect(output).toMatch(/^Session ended\. \d+ tool calls/);
+      expect(output).toMatch(/\$\d+\.\d{4}\.$/);
+    }
+    const logged = runSpans(CLAUDE, session(CLAUDE), {
+      logPrompts: true,
+      root: true,
+      now: NOW,
+      tool: "phoenix",
+    });
+    const top = logged.find((span) => span.parentSpanId === undefined);
+    expect(String(top?.attributes["input.value"])).toContain(promptText.slice(0, 40));
+  });
 });
 
 describe("runSpans on a Codex session with no session end", () => {

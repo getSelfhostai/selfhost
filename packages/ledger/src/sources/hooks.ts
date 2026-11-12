@@ -191,3 +191,30 @@ export function mapCodexNotify(payload: unknown, ctx: SourceContext = {}): Ledge
     }),
   ];
 }
+
+/**
+ * Maps one payload of the OpenCode plugin `selfhost guard install` writes (see
+ * apps/cli/src/guard/opencode-plugin.ts): tool.execute.before, sent before each tool call, as
+ * tool.called with the person and the agent, so OpenCode's runs have an owner like the others.
+ */
+export function mapOpenCodePlugin(payload: unknown, ctx: SourceContext = {}): LedgerEvent[] {
+  if (!isObject(payload) || payload.hook_event_name !== "tool.execute.before") return [];
+  const tool = str(payload.tool_name);
+  const sessionId = str(payload.session_id);
+  if (!tool || !sessionId) return [];
+  const input = isObject(payload.tool_input) ? payload.tool_input : {};
+  const cwd = str(input.workdir) ?? str(payload.cwd) ?? "";
+  const event = hookContext(
+    "opencode",
+    { ...payload, hook_event_name: "tool.execute.before", session_id: sessionId, cwd },
+    ctx,
+  );
+  // OpenCode names the file filePath.
+  const file = str(input.filePath);
+  return [
+    event("tool.called", {
+      ...toolDetails(tool, file ? { ...input, file_path: file } : input, cwd || undefined),
+      data: { tool_use_id: str(payload.call_id) },
+    }),
+  ];
+}

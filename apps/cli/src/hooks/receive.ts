@@ -1,5 +1,6 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import type { LedgerEvent } from "@selfhost/schema";
 import {
   DROPPED_FIELDS,
   failOpenText,
@@ -85,6 +86,17 @@ export interface SpoolLine {
   guard?: GuardRecord;
 }
 
+/**
+ * A line `selfhost mcp` writes while `selfhost import --watch` holds the embedded ledger: the
+ * approval.requested event of an agent's question or exception request, which the watcher
+ * imports with the hook lines, so the item reaches the review list and its push goes out.
+ */
+export interface McpSpoolLine {
+  source: "mcp";
+  received_at: string;
+  event: LedgerEvent;
+}
+
 /** How long to wait for the payload on stdin before giving up. */
 const STDIN_TIMEOUT_MS = 3000;
 
@@ -132,6 +144,13 @@ export function appendToSpool(
     payload,
     ...(guard ? { guard } : {}),
   };
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  appendFileSync(spoolFile(dir, line.received_at), `${JSON.stringify(line)}\n`, { mode: 0o600 });
+}
+
+/** Appends one `selfhost mcp` event to the spool (see McpSpoolLine). */
+export function appendEventToSpool(dir: string, event: LedgerEvent, now = new Date()) {
+  const line: McpSpoolLine = { source: "mcp", received_at: now.toISOString(), event };
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   appendFileSync(spoolFile(dir, line.received_at), `${JSON.stringify(line)}\n`, { mode: 0o600 });
 }

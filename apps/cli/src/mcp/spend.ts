@@ -161,7 +161,12 @@ export function startSpendSnapshots(
   ledger: Ledger,
   person: string,
   path: string,
-  options: { intervalMs: number; warn: (line: string) => void },
+  options: {
+    intervalMs: number;
+    warn: (line: string) => void;
+    /** Saved after the spend each time: the items selfhost mcp asked about (see held.ts). */
+    also?: (now: Date) => Promise<void>;
+  },
 ): SpendSnapshots {
   let writing: Promise<void> | undefined;
   let wroteAt = Number.NEGATIVE_INFINITY;
@@ -170,14 +175,16 @@ export function startSpendSnapshots(
   const run = (throttled: boolean) => {
     if (closed || writing || (throttled && Date.now() - wroteAt < options.intervalMs)) return;
     wroteAt = Date.now();
-    writing = writeSpendSnapshot(ledger, person, path, new Date())
+    const at = new Date();
+    writing = writeSpendSnapshot(ledger, person, path, at)
+      .then(() => options.also?.(at))
       .then(
         () => {
           failed = undefined;
         },
         (error: unknown) => {
           const text = error instanceof Error ? error.message : String(error);
-          if (text !== failed) options.warn(`Saving spend for selfhost mcp failed: ${text}`);
+          if (text !== failed) options.warn(`Saving for selfhost mcp failed: ${text}`);
           failed = text;
         },
       )

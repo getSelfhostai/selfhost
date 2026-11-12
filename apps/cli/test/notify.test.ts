@@ -354,4 +354,71 @@ describe("pushes from selfhost import --watch on a solo laptop", () => {
       await ledger.close();
     }
   });
+
+  it("pushes a request selfhost mcp spooled right away, inside the interval", async () => {
+    const repo = tempDir("repo");
+    repo.write("selfhost.toml", "version = 1\n");
+    const apprise = fakeApprise();
+    const ledger = await openLedger({ dataDir: "memory://" });
+    const configPath = tempDir("config").path("config.json");
+    const lines: string[] = [];
+    const env = { PATH: apprise.bin, LOG: apprise.log, SELFHOST_PERSON: "dev@example.com" };
+    const io = { env, cwd: repo.root, write: (line: string) => lines.push(line), configPath };
+    const inbox = await watchInbox(ledger, {
+      membership: undefined,
+      person: "dev@example.com",
+      configPath,
+      fetch: async () => {
+        throw new Error("no server in solo mode");
+      },
+      localReviewList: localReviewList({ ...io, cwd: repo.root }),
+      write: io.write,
+    });
+    if (!inbox) throw new Error("no inbox refresh");
+    const refreshNow = vi.spyOn(inbox, "refreshNow");
+    const notifier = startLaptopNotify(ledger, "dev@example.com", io, {
+      intervalMs: 3_600_000,
+      refresh: () => inbox.refreshNow(),
+    });
+    try {
+      await notifyStore(databaseOf(ledger)).addTarget(
+        "dev@example.com",
+        "phone",
+        PHONE,
+        new Date(Date.now() - 60_000),
+      );
+      // The agent asks and then waits: this is the last event until someone answers.
+      await ledger.append([
+        {
+          id: "01930c4e-2f1a-7b2c-9d3e-00000000a002",
+          schema: EVENT_SCHEMA,
+          ts: new Date().toISOString(),
+          source: "hook",
+          kind: "approval.requested",
+          actor: { kind: "person", id: "dev@example.com" },
+          session_id: "waiting-session",
+          agent: { vendor: "claude_code" },
+          data: { message: "Claude needs your permission to use Bash" },
+        },
+      ]);
+      // A batch inside the interval sends nothing; a spooled request sends its push now, once
+      // the local list refreshes again (at most once a second).
+      notifier.kick();
+      await new Promise((resolve) => setTimeout(resolve, 1_100));
+      notifier.now();
+      await vi.waitFor(
+        () => expect(apprise.lines().some((line) => line.includes("an agent waits"))).toBe(true),
+        { timeout: 10_000 },
+      );
+      expect(refreshNow).toHaveBeenCalled();
+      // The pass reports once it is done, a moment after the push went out.
+      await vi.waitFor(() => expect(lines).toContain("Notifications: 1 sent, 0 failed."), {
+        timeout: 5_000,
+      });
+    } finally {
+      await notifier.close();
+      await inbox.close();
+      await ledger.close();
+    }
+  });
 });

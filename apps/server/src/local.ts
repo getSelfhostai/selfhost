@@ -1,6 +1,6 @@
 import { serve } from "@hono/node-server";
 import { openLedger, resolveDataDir } from "@selfhost/ledger";
-import { redactionSettings } from "@selfhost/schema";
+import { type ResolvedSelfhostConfig, redactionSettings } from "@selfhost/schema";
 import { createApp } from "./app.js";
 import { findConsoleDir } from "./console.js";
 import { serverConfig } from "./retention.js";
@@ -19,6 +19,12 @@ export interface LocalServerOptions {
   env?: NodeJS.ProcessEnv;
   /** The selfhost.toml where the console was started, shown read-only in solo mode. */
   policyPath?: string;
+  /**
+   * The laptop's selfhost.toml as the hooks resolve it, for what the server reads from the policy
+   * ([integrations.tracer] for run views, [review] for the list). Default: SELFHOST_CONFIG, else
+   * the built-in defaults.
+   */
+  config?: ResolvedSelfhostConfig;
 }
 
 export interface LocalServer {
@@ -40,10 +46,11 @@ export async function startLocalServer(options: LocalServerOptions): Promise<Loc
   const env = options.env ?? process.env;
   const dataDir = resolveDataDir(options.dataDir, env);
   const host = options.host ?? "127.0.0.1";
+  const config = options.config ?? serverConfig(env);
   const ledger = await openLedger({
     url: options.url,
     dataDir,
-    redaction: redactionSettings(serverConfig(env)),
+    redaction: redactionSettings(config),
   });
   const { token, path } = loadApiToken(dataDir, env);
   const dir = findConsoleDir(env);
@@ -51,6 +58,7 @@ export async function startLocalServer(options: LocalServerOptions): Promise<Loc
     version: options.version,
     ledger,
     token,
+    config,
     console: { dir },
     solo: options.policyPath ? { policyPath: options.policyPath } : {},
   });

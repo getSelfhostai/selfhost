@@ -8,6 +8,7 @@ import {
   mapClaudeCodeHook,
   mapCodexHook,
   mapCodexNotify,
+  mapOpenCodePlugin,
   type SourceContext,
   stableEventId,
   toolDetails,
@@ -22,7 +23,13 @@ import {
   MAX_EVENT_BATCH,
   validateEvent,
 } from "@selfhost/schema";
-import { type GuardRecord, type HookAgent, SPOOL_FILE_PATTERN, type SpoolLine } from "./receive.js";
+import {
+  type GuardRecord,
+  type HookAgent,
+  type McpSpoolLine,
+  SPOOL_FILE_PATTERN,
+  type SpoolLine,
+} from "./receive.js";
 import { type PreToolCall, preToolCall } from "./vendors.js";
 
 /** What one pass over the hook spool did; part of `selfhost import --json`. */
@@ -65,6 +72,11 @@ export interface DrainOptions {
    * so a caller that never looks at git (tests, a background run's sandbox) stays fast.
    */
   repoOf?: (cwd: string) => string | undefined;
+  /**
+   * Called after a pass that imported requests selfhost mcp spooled (an agent's question or
+   * exception request): --watch sends their pushes right away.
+   */
+  onRequests?: () => void;
 }
 
 const UUIDV7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -78,15 +90,16 @@ const SEEN_KEEP_MS = 10 * 60_000;
 const SEEN_MAX = 10_000;
 
 /**
- * Ledger events for each agent's payloads. Cursor and OpenCode payloads map to no events of
- * their own yet; their pre-tool decisions are still recorded, from the guard record.
+ * Ledger events for each agent's payloads. Cursor payloads map to no events of their own yet;
+ * their pre-tool decisions are still recorded, from the guard record. OpenCode's plugin sends
+ * each tool call before it runs, recorded as tool.called with the person and the agent.
  */
 const MAPPERS: Record<HookAgent, (payload: unknown, ctx: SourceContext) => LedgerEvent[]> = {
   claude: mapClaudeCodeHook,
   codex: mapCodexHook,
   "codex-notify": mapCodexNotify,
   cursor: () => [],
-  opencode: () => [],
+  opencode: mapOpenCodePlugin,
 };
 
 /** The tool input as toolDetails reads it, from the agent-neutral call. */
@@ -216,10 +229,18 @@ function mapLine(
   ctx: SourceContext,
   exceptionsOnly = false,
   repoOf?: (cwd: string) => string | undefined,
-): LedgerEvent[] | undefined {
+): { events: LedgerEvent[]; mcp?: true } | undefined {
   try {
-    const line = JSON.parse(text) as Partial<SpoolLine>;
-    if (exceptionsOnly && !line.guard?.exception) return [];
+    const parsed = JSON.parse(text) as Partial<SpoolLine> & Partial<McpSpoolLine>;
+    // An agent's request through selfhost mcp; kept with exceptionsOnly, as it asks for one.
+    if (parsed.source === "mcp") {
+      const event = parsed.event;
+      return event?.kind === "approval.requested" && validateEvent(event).ok
+        ? { events: [event], mcp: true }
+        : undefined;
+    }
+    const line: Partial<SpoolLine> = parsed;
+    if (exceptionsOnly && !line.guard?.exception) return { events: [] };
     const agent = line.agent;
     const ms = typeof line.received_at === "string" ? Date.parse(line.received_at) : Number.NaN;
     if (typeof agent !== "string" || !Object.hasOwn(MAPPERS, agent) || Number.isNaN(ms)) {
@@ -235,7 +256,7 @@ function mapLine(
       const decision = guardEvent(agent, line.payload, line.guard, toolEvent, ts, repo);
       events.push(decision, ...blockedEgress(line.guard, decision));
     }
-    return events.every((event) => validateEvent(event).ok) ? events : undefined;
+    return events.every((event) => validateEvent(event).ok) ? { events } : undefined;
   } catch {
     return undefined;
   }
@@ -334,6 +355,7 @@ export async function drainSpool(
     .sort();
 
   const pending = new Map<string, Pending>();
+  let requests = 0;
   const read: { path: string; end: number; settled: boolean }[] = [];
   for (const name of names) {
     const path = join(dir, name);
@@ -355,12 +377,13 @@ export async function drainSpool(
         report.repeated += 1;
         continue;
       }
-      const events = mapLine(text, ctx, options.exceptionsOnly, options.repoOf);
-      if (!events) {
+      const mapped = mapLine(text, ctx, options.exceptionsOnly, options.repoOf);
+      if (!mapped) {
         report.malformed += 1;
         continue;
       }
-      for (const event of events) pending.set(event.id, { event, line: `${name}:${n}` });
+      if (mapped.mcp) requests += 1;
+      for (const event of mapped.events) pending.set(event.id, { event, line: `${name}:${n}` });
     }
     read.push({ path, end: Math.max(start, end), settled });
   }
@@ -374,6 +397,7 @@ export async function drainSpool(
   }
   report.malformed += rejected.size;
   forgetOld(seen, now);
+  if (requests > 0) options.onRequests?.();
 
   for (const { path, end, settled } of read) {
     if (options.exceptionsOnly) continue;
@@ -392,7 +416,7 @@ export async function drainSpool(
 export function watchSpool(
   writer: LedgerWriter,
   dir: string | undefined,
-  options: Pick<DrainOptions, "person" | "logPrompts" | "repoOf">,
+  options: Pick<DrainOptions, "person" | "logPrompts" | "repoOf" | "onRequests">,
   onBatch: (accepted: number) => void,
   pollMs = 1000,
 ): { close(): Promise<void> } {

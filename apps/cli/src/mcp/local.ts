@@ -1,18 +1,17 @@
-import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import { dirname } from "node:path";
-import { promisify } from "node:util";
 import { isPostgresUrl, type Ledger, openLedger } from "@selfhost/ledger";
-import { ledgerData, type McpData, McpToolError } from "@selfhost/mcp";
-import { effectiveRules } from "@selfhost/policy";
-import { openReviewList } from "@selfhost/review";
 import {
-  PAGE_LIMIT_MAX,
-  type PolicyResponse,
-  parseRemote,
-  type ReviewItem,
-  type ReviewItemsPage,
-} from "@selfhost/schema";
+  agentCannotAnswer,
+  exceptionRequest,
+  ledgerData,
+  type McpData,
+  McpToolError,
+  questionRequest,
+  requestEvent,
+  uuidv7,
+} from "@selfhost/mcp";
+import { openReviewList } from "@selfhost/review";
+import { PAGE_LIMIT_MAX, type ReviewItem, type ReviewItemsPage } from "@selfhost/schema";
 import { isAlive, readCache } from "../alerts/cache.js";
 import { localPerson } from "../alerts/person.js";
 import { statuslineCachePath } from "../alerts/settings.js";
@@ -20,11 +19,11 @@ import { oneCopyPerFact } from "../hooks/dedupe.js";
 import { drainSpool } from "../hooks/drain.js";
 import { exceptionsDir, isOwnException, issueGrants, readGrant } from "../hooks/exceptions.js";
 import { loadPolicy } from "../hooks/pretool.js";
-import { spoolDir } from "../hooks/receive.js";
+import { appendEventToSpool, spoolDir } from "../hooks/receive.js";
 import { inboxPaths, readInboxCache } from "../inbox/store.js";
+import { mcpItemsPath, newer, pendingItem, readMcpItems } from "./held.js";
+import { localPolicy } from "./policy.js";
 import { periodSpend, readSpendSnapshot, soloBudget, spendSnapshotPath } from "./spend.js";
-
-const run = promisify(execFile);
 
 export interface LocalMcpIo {
   env: NodeJS.ProcessEnv;
@@ -74,24 +73,13 @@ export function heldReviewItems(
   };
 }
 
-/** owner/name of the repository at `cwd`, from its origin remote. */
-async function repoAt(cwd: string): Promise<string | undefined> {
-  try {
-    const { stdout } = await run("git", ["-C", cwd, "remote", "get-url", "origin"]);
-    return parseRemote(stdout)?.repo;
-  } catch {
-    return undefined;
-  }
-}
-
-const hashOf = (text: string) => createHash("sha256").update(text).digest("hex");
-
 /**
  * The tools' data on this machine: the embedded ledger (or Postgres), the selfhost.toml the
  * hooks use for this repository, and the one-time exception files. Everything here is the
  * person's own, so nothing is refused for permissions. The embedded ledger is opened for each
  * call and closed after it, one call at a time, so `selfhost inbox` and `import` can still use
- * it between calls.
+ * it between calls. While `selfhost import --watch` holds it, reads come from what the watcher
+ * saves, and ask_human and request_exception go to the watcher through the hook spool.
  */
 export function localMcpData(
   io: LocalMcpIo,
@@ -129,6 +117,34 @@ export function localMcpData(
     return copy && isAlive(copy.pid) ? copy : undefined;
   }
 
+  /**
+   * While the watcher holds the ledger: the item as the watcher last saved it (the items asked
+   * about through selfhost mcp, and the person's open items), else as this process spooled it.
+   */
+  const spooled = new Map<string, ReviewItem>();
+  function heldItem(id: string): ReviewItem | undefined {
+    const key = id.toLowerCase();
+    const asked = heldCopy(readMcpItems(mcpItemsPath(io.env, io.configPath)));
+    const inbox = heldCopy(
+      readInboxCache(inboxPaths(io.configPath).cache, { server: null, team: null }),
+    );
+    const saved = newer(
+      asked?.items.find((item) => item.id === key),
+      inbox?.items.find((item) => item.id === key),
+    );
+    return saved ?? spooled.get(key);
+  }
+
+  /**
+   * Hands an agent's request to the watcher through the hook spool, which it drains every
+   * second: the item reaches the review list, and its push goes out, as a hook's block does.
+   */
+  function spool(event: Parameters<typeof appendEventToSpool>[1]): void {
+    const dir = spoolDir(io.env);
+    if (!dir) throw new McpToolError("unavailable", HELD);
+    appendEventToSpool(dir, event, now());
+  }
+
   const shared = ledgerData({
     use,
     person,
@@ -154,6 +170,78 @@ export function localMcpData(
   return {
     ...shared,
 
+    async item(id) {
+      if (!(embedded && watcherHolds())) return shared.item(id);
+      const item = heldItem(id);
+      if (!item) throw new McpToolError("unavailable", HELD);
+      return item;
+    },
+
+    async ask(input, context) {
+      if (!(embedded && watcherHolds())) return shared.ask(input, context);
+      const at = now();
+      const event = requestEvent({
+        person,
+        source: "cli",
+        at,
+        data: questionRequest(input),
+        itemId: uuidv7(at),
+        ...(context.agent ? { agent: context.agent } : {}),
+        ...(input.repo ? { repo: input.repo } : {}),
+      });
+      spool(event);
+      const item = pendingItem(
+        event,
+        "question",
+        input.question.replace(/\s+/g, " ").trim(),
+        person,
+      );
+      spooled.set(item.id, item);
+      return item;
+    },
+
+    async requestException(input, context) {
+      if (!(embedded && watcherHolds())) return shared.requestException(input, context);
+      const id = input.exception_id.toLowerCase();
+      if (!isOwnException(exceptions, id)) {
+        throw new McpToolError(
+          "not_found",
+          `No call blocked on this machine asked for exception ${id}. Use the id from selfhost's block message.`,
+        );
+      }
+      const saved = heldItem(id);
+      if (saved && saved.kind !== "exception") {
+        throw new McpToolError(
+          "invalid_request",
+          `Review item ${id} is a ${saved.kind}, not an exception request.`,
+        );
+      }
+      if (saved && saved.state !== "open") return saved;
+      const event = requestEvent({
+        person,
+        source: "cli",
+        at: now(),
+        data: exceptionRequest(input),
+        itemId: id,
+        ...(context.agent ? { agent: context.agent } : {}),
+        ...(saved?.repo ? { repo: saved.repo } : {}),
+      });
+      spool(event);
+      const item = saved
+        ? { ...saved, blocking: true }
+        : pendingItem(event, "exception", "Exception request", person);
+      spooled.set(id, item);
+      return item;
+    },
+
+    async decide(input) {
+      // Before the spool is imported the list has no such item; the answer is the same refusal.
+      if (isOwnException(exceptions, input.item_id.toLowerCase())) {
+        throw agentCannotAnswer("exception");
+      }
+      return shared.decide(input);
+    },
+
     async reviewItems(query) {
       if (embedded && watcherHolds()) {
         const inbox = heldCopy(
@@ -166,25 +254,13 @@ export function localMcpData(
     },
 
     async policy(query) {
-      const loaded = policyOf();
-      const repo = await repoAt(io.cwd);
+      const { response, repo } = await localPolicy(io, query, person, now());
       if (query.repo !== undefined && query.repo.toLowerCase() !== repo) {
         throw new McpToolError(
           "not_found",
           `This selfhost mcp runs in ${repo ?? "a folder with no origin remote"} and reads that repository's policy only. Start it in ${query.repo}, or connect to the team server.`,
         );
       }
-      const response: PolicyResponse = {
-        hash: loaded.source?.hash ?? hashOf(""),
-        ...(repo ? { repo } : {}),
-        ...(loaded.text !== undefined ? { text: loaded.text } : {}),
-        loaded_at: now().toISOString(),
-        config: loaded.config,
-        effective_rules: effectiveRules(loaded.config, {
-          person: query.person ?? person,
-          ...(query.agent ? { agent: query.agent } : {}),
-        }),
-      };
       return response;
     },
 
@@ -210,7 +286,8 @@ export function localMcpData(
       if (!isOwnException(exceptions, item.id)) return undefined;
       const at = now();
       let grant = readGrant(exceptions, item.id, at);
-      if (!grant) {
+      // While the watcher holds the ledger, it writes the grant on its next refresh.
+      if (!grant && !(embedded && watcherHolds())) {
         await use(async (ledger) => {
           const list = openReviewList(ledger, { config: policyOf().config, now });
           await issueGrants(exceptions, (id) => list.get(id), at);

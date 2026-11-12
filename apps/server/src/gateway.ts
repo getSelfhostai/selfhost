@@ -368,7 +368,13 @@ export function gatewayRoutes(router: Router, ledger: Ledger, gateway: Gateway |
       if (refused) return refused;
       const person = caller.kind === "person" ? caller.person.id : undefined;
       // A person key carries its person, so revoking them turns it off at the next sync.
-      const owner: KeyOwner = { kind, team, ...(kind === "person" && person ? { person } : {}) };
+      const owner: KeyOwner = {
+        kind,
+        team,
+        ...(kind === "person" && person ? { person } : {}),
+        // The agent connect set the key up for, so requests that do not name theirs have one.
+        ...(kind === "person" && body.agent ? { agent: body.agent } : {}),
+      };
       try {
         const result = await issueKey(gateway.client, owner, await configOf(ledger, team), {
           ...(body.rotate ? { rotate: true } : {}),

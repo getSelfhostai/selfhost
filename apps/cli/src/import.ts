@@ -21,6 +21,7 @@ import { drainSpool, type SpoolReport, watchSpool } from "./hooks/drain.js";
 import { spoolDir } from "./hooks/receive.js";
 import { refreshGrants } from "./inbox/grants.js";
 import { type OpenLocalReviewList, watchInbox } from "./inbox/sync.js";
+import { mcpItemsPath, writeMcpItems } from "./mcp/held.js";
 import { spendSnapshotPath, startSpendSnapshots } from "./mcp/spend.js";
 import { type LaptopNotifyReport, notifyOnLaptop } from "./notify/laptop.js";
 import { describeManaged } from "./policy/managed.js";
@@ -428,6 +429,11 @@ export function describePull(pull: PullReport): string[] {
 export interface LaptopNotifier {
   /** Runs now unless a run is going or the last one was under the interval ago. */
   kick(): void;
+  /**
+   * Checks now, inside the interval too, or right after a running check: for an item an agent
+   * just asked a person about through selfhost mcp.
+   */
+  now(): void;
   /** Stops the timer and waits for a running check. */
   close(): Promise<void>;
 }
@@ -457,7 +463,9 @@ export function startLaptopNotify(
   let notifying: Promise<void> | undefined;
   let closed = false;
   let skipped = options.skipped;
-  const run = (throttled: boolean) => {
+  let again = false;
+  const run = (throttled: boolean, urgent = false) => {
+    if (urgent && notifying) again = true;
     if (closed || notifying || (throttled && Date.now() - notifiedAt < intervalMs)) return;
     notifiedAt = Date.now();
     notifying = laptopNotify(ledger, person, io, {
@@ -477,16 +485,21 @@ export function startLaptopNotify(
       })
       .finally(() => {
         notifying = undefined;
+        if (again) {
+          again = false;
+          run(false, true);
+        }
       });
   };
   const timer = setInterval(() => run(false), intervalMs);
   timer.unref?.();
   return {
     kick: () => run(true),
+    now: () => run(false, true),
     async close() {
       closed = true;
       clearInterval(timer);
-      await notifying;
+      while (notifying) await notifying;
     },
   };
 }
@@ -574,14 +587,20 @@ export async function runWatch(options: ImportCommandOptions, io: ImportIo): Pro
         ...(first.notify?.skipped ? { skipped: first.notify.skipped } : {}),
       });
   // The spend selfhost mcp's get_budget answers from while this process holds the embedded
-  // ledger, which takes one process at a time.
-  const snapshots =
-    url && isPostgresUrl(url)
-      ? undefined
-      : startSpendSnapshots(ledger, person, spendSnapshotPath(io.env, configPathOf(io)), {
-          intervalMs: LAPTOP_NOTIFY_MS,
-          warn: io.write,
-        });
+  // ledger, which takes one process at a time, and in solo mode the items its agents asked about,
+  // which get_answer reads.
+  const embedded = !(url && isPostgresUrl(url));
+  const asked = embedded && !membership ? await io.localReviewList?.(ledger) : undefined;
+  const itemsPath = mcpItemsPath(io.env, configPathOf(io));
+  const snapshots = !embedded
+    ? undefined
+    : startSpendSnapshots(ledger, person, spendSnapshotPath(io.env, configPathOf(io)), {
+        intervalMs: LAPTOP_NOTIFY_MS,
+        warn: io.write,
+        ...(asked
+          ? { also: (at: Date) => writeMcpItems(ledger, asked, person, itemsPath, at) }
+          : {}),
+      });
   const onBatch = (n: number) => {
     synced();
     monitor.check();
@@ -596,7 +615,13 @@ export async function runWatch(options: ImportCommandOptions, io: ImportIo): Pro
   const hookWatcher = watchSpool(
     writer,
     options.spoolDir ?? spoolDir(io.env),
-    { person: opts.actorId ?? "", logPrompts: opts.logPrompts, repoOf: opts.repoOf },
+    {
+      person: opts.actorId ?? "",
+      logPrompts: opts.logPrompts,
+      repoOf: opts.repoOf,
+      // After the local list's next refresh, which comes at most once a second.
+      onRequests: () => setTimeout(() => notifier?.now(), 1_100).unref?.(),
+    },
     onBatch,
   );
   await new Promise<void>((resolve) => {

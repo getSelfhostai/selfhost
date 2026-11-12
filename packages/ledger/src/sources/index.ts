@@ -7,6 +7,6 @@ export {
   toolDetails,
 } from "./common.js";
 export { mapBifrostLog, mapGatewayLog } from "./gateway.js";
-export { mapClaudeCodeHook, mapCodexHook, mapCodexNotify } from "./hooks.js";
+export { mapClaudeCodeHook, mapCodexHook, mapCodexNotify, mapOpenCodePlugin } from "./hooks.js";
 export { mapOtelLogs } from "./otel.js";
 export { mapVendorAudit } from "./vendor-audit.js";

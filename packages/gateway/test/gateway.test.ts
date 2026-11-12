@@ -114,6 +114,26 @@ describe("Bifrost keys and budgets", () => {
     expect(JSON.stringify(await client.keys())).not.toContain("sk-bf-");
   });
 
+  it("names the one agent set up with a key, and none once a second agent shares it", async () => {
+    const { fake, client } = bifrost();
+    const owner = { kind: "person" as const, team: "platform", person: "ada@example.com" };
+    const first = await issueKey(client, { ...owner, agent: "goose" }, HARD);
+    if (!("issued" in first)) throw new Error("expected a new key");
+    expect(first.issued.key.agent).toBe("goose");
+    const create = fake.calls.find(
+      (c) => c.path === "/api/governance/virtual-keys" && c.method === "POST",
+    );
+    expect(create?.body).toMatchObject({ metadata: { selfhost_agent: "goose" } });
+    // The same agent again changes nothing.
+    const same = await issueKey(client, { ...owner, agent: "goose" }, HARD);
+    expect("exists" in same && same.exists.agent).toBe("goose");
+    // Another agent connects with the same key: it names no agent from then on.
+    const shared = await issueKey(client, { ...owner, agent: "claude_code" }, HARD);
+    expect("exists" in shared && shared.exists.agent).toBeUndefined();
+    const [key] = await client.keys();
+    expect(key?.agent).toBeUndefined();
+  });
+
   it("gives a run key the run budget and a 24 hour life", async () => {
     const { fake, client } = bifrost();
     await issueKey(

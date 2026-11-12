@@ -1,6 +1,7 @@
 import { type Static, Type } from "@sinclair/typebox";
 import { DateTime, NonEmpty, StringEnum } from "./common.js";
 import { BUDGET_MODES, ROUTER_TOOLS } from "./config.js";
+import { AGENT_VENDORS } from "./event.js";
 
 /**
  * The AI gateway as the selfhost server sees it: GET /v1/gateway, the virtual keys it issued and
@@ -34,6 +35,12 @@ export const GatewayKeySchema = Type.Object(
     team: NonEmpty({ description: "Team the key's spend counts against." }),
     person: Type.Optional(Type.String({ description: "Owner of a person key." })),
     run_id: Type.Optional(Type.String({ description: "Run of a run key." })),
+    agent: Type.Optional(
+      StringEnum(AGENT_VENDORS, {
+        description:
+          "The one agent selfhost gateway connect set up with this key, which its requests are recorded under when they do not name their agent. Unset once several agents share it.",
+      }),
+    ),
     active: Type.Boolean({ description: "false once its person left the team or it was revoked." }),
     budgets: Type.Array(GatewayBudgetSchema, {
       description: "Hard limits the gateway enforces on this key. Empty with [budget] mode alert.",
@@ -135,6 +142,12 @@ export const IssueGatewayKeyRequestSchema = Type.Object(
       Type.Boolean({
         description:
           "Replace an existing person or team key with a new value. Without it, asking again for one that exists answers 409.",
+      }),
+    ),
+    agent: Type.Optional(
+      StringEnum(AGENT_VENDORS, {
+        description:
+          "For a person key: the only agent that will use it (selfhost gateway connect sends it), recorded on the key so its requests are attributed to that agent. Leave it out when several agents share the key; a key that had one then records none.",
       }),
     ),
   },

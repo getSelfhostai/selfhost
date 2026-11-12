@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -12,8 +12,19 @@ import {
   removeAgentConfig,
   type Which,
 } from "@selfhost/agents";
-import { createMcpServer, createProxyServer, serveStdio } from "@selfhost/mcp";
-import { MCP_SERVER_NAME, type McpItemStatus } from "@selfhost/schema";
+import {
+  agentCannotAnswer,
+  compactPolicy,
+  createMcpServer,
+  createProxyServer,
+  serveStdio,
+} from "@selfhost/mcp";
+import {
+  createValidator,
+  MCP_SERVER_NAME,
+  type McpItemStatus,
+  McpPolicyQuerySchema,
+} from "@selfhost/schema";
 import type { Command } from "commander";
 import {
   AGENT_ALIASES,
@@ -24,12 +35,15 @@ import {
   tilde,
 } from "../agents.js";
 import { table } from "../format.js";
-import { exceptionsDir, readGrant } from "../hooks/exceptions.js";
+import { exceptionsDir, isOwnException, readGrant } from "../hooks/exceptions.js";
+import { selfhostPaths } from "../hooks/hook-binary.js";
 import { exceptionTrust } from "../hooks/trust.js";
 import { refreshGrants, serverGrants } from "../inbox/grants.js";
 import { type Fetch, serverUrl, TeamClient } from "../team/client.js";
 import { type Membership, readMembership } from "../team/config.js";
 import { type LocalMcpOptions, localMcpData } from "./local.js";
+import { localPolicy } from "./policy.js";
+import { mcpCommandRecord } from "./record.js";
 
 /**
  * `selfhost mcp`: the agent MCP server on stdio. Solo, it answers from this machine's ledger and
@@ -90,17 +104,70 @@ export function grantsOnResult(membership: Membership, configPath: string, fetch
   };
 }
 
+const policyQuery = createValidator(McpPolicyQuerySchema);
+
+/**
+ * In team mode, get_policy for this repository answers with the policy the hooks here enforce:
+ * the team policy the last sync pulled as the floor, with the repository's selfhost.toml on top,
+ * and the layer each rule comes from. The server knows neither the laptop's repository file nor
+ * whether the pull is done; a question about another team or repository goes to the server.
+ */
+export function policyOnResult(membership: Membership, io: McpIo) {
+  return async (
+    name: string,
+    result: CallToolResult,
+    args: Record<string, unknown>,
+  ): Promise<CallToolResult> => {
+    if (name !== "get_policy") return result;
+    const parsed = policyQuery.validate(args);
+    if (!parsed.ok) return result;
+    const { full, ...query } = parsed.value;
+    if (query.team !== undefined && query.team !== membership.team) return result;
+    const local = await localPolicy(io, query, membership.person, io.now ?? new Date());
+    if (!local.found) return result;
+    if (query.repo !== undefined && query.repo.toLowerCase() !== local.repo) return result;
+    const policy = full ? local.response : compactPolicy(local.response);
+    return {
+      content: [{ type: "text", text: JSON.stringify(policy) }],
+      structuredContent: policy as unknown as Record<string, unknown>,
+    };
+  };
+}
+
+/**
+ * In team mode, record_decision on an exception this machine's hook asked for is refused here,
+ * as the server refuses it: before the next sync the server has no such item and would only say
+ * it is in none of the person's teams.
+ */
+export function refuseOwnExceptions(configPath: string) {
+  const dir = exceptionsDir(dirname(configPath));
+  return async (
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<CallToolResult | undefined> => {
+    const id = typeof args.item_id === "string" ? args.item_id.toLowerCase() : undefined;
+    if (name !== "record_decision" || !id || !isOwnException(dir, id)) return undefined;
+    return {
+      content: [{ type: "text", text: JSON.stringify(agentCannotAnswer("exception").toJSON()) }],
+      isError: true,
+    };
+  };
+}
+
 /** The server `selfhost mcp` runs: a proxy to the team server, or the local one. */
 export function mcpServer(options: McpServeOptions, io: McpIo, version: string): Server {
   const membership = options.local ? undefined : readMembership(io.configPath);
   if (membership) {
     const fetch = io.fetch ?? ((url, init) => globalThis.fetch(url, init));
+    const grants = grantsOnResult(membership, io.configPath, fetch);
+    const policy = policyOnResult(membership, io);
     return createProxyServer({
       url: new URL(`${serverUrl(membership.server)}/v1/mcp`),
       token: membership.token,
       version,
       fetch: (url, init) => fetch(String(url), init ?? {}),
-      onResult: grantsOnResult(membership, io.configPath, fetch),
+      beforeCall: refuseOwnExceptions(io.configPath),
+      onResult: async (name, result, args) => policy(name, await grants(name, result), args),
     });
   }
   const fixed = io.now;
@@ -113,15 +180,25 @@ export function mcpServer(options: McpServeOptions, io: McpIo, version: string):
   });
 }
 
-/** `selfhost mcp` when selfhost is on PATH; otherwise the absolute command running now. */
-export function mcpCommand(which: Which | undefined): { spec: McpServerSpec; warning?: string } {
-  if (which?.("selfhost")) return { spec: { command: "selfhost", args: ["mcp"] } };
+/**
+ * The command agents run for `selfhost mcp`, with absolute paths: selfhost's binary, or node and
+ * the script for an npm install, as the managed hooks write it. A bare `selfhost` would run
+ * whatever the agent's PATH finds first, and an agent that puts other folders first (Goose puts
+ * /usr/local/bin and /opt/homebrew/bin first) would start the script under another node. Without
+ * selfhost on PATH, the node and script running now.
+ */
+export function mcpCommand(
+  which: Which | undefined,
+  node: string = process.execPath,
+): { spec: McpServerSpec; warning?: string } {
+  const paths = selfhostPaths(which, node);
+  if (paths) {
+    const [command = node, ...args] = paths;
+    return { spec: { command, args: [...args, "mcp"] } };
+  }
   const script = process.argv[1];
-  const self =
-    script && /\.[cm]?js$/.test(script) && existsSync(script)
-      ? [process.execPath, script]
-      : [process.execPath];
-  const [command = process.execPath, ...args] = self;
+  const self = script && /\.[cm]?js$/.test(script) && existsSync(script) ? [node, script] : [node];
+  const [command = node, ...args] = self;
   return {
     spec: { command, args: [...args, "mcp"] },
     warning:
@@ -218,6 +295,15 @@ export function runMcpInstall(
     warnings: warning && !remove ? [warning] : [],
   };
   const failed = plans.some((plan) => plan.items.some((item) => item.status === "error"));
+  if (!report.dry_run && !failed) {
+    const record = mcpCommandRecord(scope.home);
+    // Taking it out of some agents leaves it in the others, with the same command.
+    if (remove && !options.agent?.length) rmSync(record, { force: true });
+    else if (!remove) {
+      mkdirSync(dirname(record), { recursive: true, mode: 0o700 });
+      writeFileSync(record, `${JSON.stringify({ command: report.command }, null, 2)}\n`);
+    }
+  }
   if (options.json) {
     io.write(JSON.stringify(report, null, 2));
     return failed ? 1 : 0;

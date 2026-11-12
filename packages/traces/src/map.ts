@@ -141,6 +141,60 @@ function pairTools(calls: LedgerEvent[], results: LedgerEvent[]): ToolCall[] {
   return [...pairs, ...orphans];
 }
 
+/** Longest run input or outcome a tracer is sent. */
+const RUN_TEXT_MAX = 500;
+
+const clip = (text: string) =>
+  text.length > RUN_TEXT_MAX ? `${text.slice(0, RUN_TEXT_MAX - 3)}...` : text;
+
+/**
+ * The root span's input: the run's first prompt, already redacted, when prompts are logged;
+ * otherwise only its length, as the ledger keeps it.
+ */
+function runInput(events: readonly LedgerEvent[]): string | undefined {
+  const prompts = events.filter((event) => event.kind === "prompt.submitted");
+  const first = prompts[0];
+  if (!first) return undefined;
+  const more = prompts.length > 1 ? ` (+${prompts.length - 1} more prompts)` : "";
+  const text = str(first.data?.prompt);
+  if (text) return clip(`${text.replace(/\s+/g, " ").trim()}${more}`);
+  const chars = num(first.data?.prompt_chars);
+  const size = chars !== undefined ? `: ${chars} characters` : "";
+  return `First prompt${size}, text not logged ([ledger] log_prompts is off)${more}.`;
+}
+
+/** The root span's output: how the run ended and what it left, from metadata only. */
+function runOutcome(
+  events: readonly LedgerEvent[],
+  summary: { cost_usd: number; tokens: number },
+  endedBy: "session_end" | "idle" | undefined,
+): string {
+  const count = (kind: LedgerEvent["kind"]) => events.filter((e) => e.kind === kind).length;
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  const failed = events.filter(
+    (e) => e.kind === "tool.result" && (e.data?.success === false || str(e.data?.error)),
+  ).length;
+  const blocked = events.filter(
+    (e) =>
+      e.kind === "policy.evaluated" &&
+      e.decision?.verdict === "block" &&
+      e.decision.mode !== "observe",
+  ).length;
+  const prs = new Set(
+    events.flatMap((e) => (e.kind === "pr.opened" && e.links?.pr_url ? [e.links.pr_url] : [])),
+  );
+  const commits = count("commit.created");
+  const parts = [
+    endedBy === "session_end" ? "Session ended" : endedBy === "idle" ? "Went idle" : "Running",
+    `${plural(count("tool.called"), "tool call")}${failed ? ` (${failed} failed)` : ""}`,
+    ...(blocked ? [`${blocked} blocked by policy`] : []),
+    ...(commits ? [plural(commits, "commit")] : []),
+    ...[...prs].map((url) => `PR ${url}`),
+    `${summary.tokens} tokens, $${summary.cost_usd.toFixed(4)}`,
+  ];
+  return clip(`${parts.join(". ")}.`);
+}
+
 /**
  * The spans of one run: a root `invoke_agent` span for the session, and under it an
  * `execute_tool` span per tool call, a `chat` span per model request, a guardrail span per
@@ -180,9 +234,10 @@ export function runSpans(
       parentSpanId?: string;
       attributes: Record<string, AttributeValue | undefined>;
       input?: string;
+      output?: string;
     },
   ) => {
-    const { input, ...rest } = span;
+    const { input, output, ...rest } = span;
     const attributes: Record<string, AttributeValue | undefined> = {
       ...span.attributes,
       ...conversation,
@@ -191,10 +246,12 @@ export function runSpans(
     if (options.tool === "phoenix") {
       attributes["openinference.span.kind"] = OPENINFERENCE_KIND[role];
       if (input !== undefined) attributes["input.value"] = input;
+      if (output !== undefined) attributes["output.value"] = output;
     }
     if (options.tool === "langfuse") {
       attributes["langfuse.observation.type"] = LANGFUSE_TYPE[role];
       if (input !== undefined) attributes["langfuse.observation.input"] = input;
+      if (output !== undefined) attributes["langfuse.observation.output"] = output;
     }
     spans.push({
       ...rest,
@@ -222,6 +279,8 @@ export function runSpans(
       start: summary.started_at,
       end: end?.at ?? summary.started_at,
       eventIds: [],
+      input: runInput(events),
+      output: runOutcome(events, summary, end?.by),
       attributes: {
         "gen_ai.operation.name": "invoke_agent",
         "gen_ai.agent.name": agentName,
@@ -322,6 +381,9 @@ export function runSpans(
               "llm.token_count.prompt": input,
               "llm.token_count.completion": cost.output_tokens,
               "llm.token_count.total": tokensOf(event),
+              // Sub-counts of llm.token_count.prompt, so Phoenix prices them at cache rates.
+              "llm.token_count.prompt_details.cache_read": cost.cache_read_tokens,
+              "llm.token_count.prompt_details.cache_write": cost.cache_write_tokens,
             }
           : {}),
       },

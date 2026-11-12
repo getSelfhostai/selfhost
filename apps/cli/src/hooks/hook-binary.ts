@@ -48,15 +48,14 @@ function isNodeScript(path: string): boolean {
 }
 
 /**
- * The hook command with selfhost's absolute path, from `selfhost` on PATH now, or undefined when
- * it is not there. A script install runs under this node by its absolute path too, since its
- * `#!/usr/bin/env node` line would look node up on PATH.
+ * The absolute files that run selfhost, from `selfhost` on PATH now: the binary, or for a script
+ * install this node and the script, since its `#!/usr/bin/env node` line would look node up on
+ * PATH, which an agent may set otherwise. Undefined when selfhost is not on PATH.
  */
-export function managedHookCommand(
+export function selfhostPaths(
   which: Which | undefined,
-  platform: string,
   node: string = process.execPath,
-): HookBinary | undefined {
+): string[] | undefined {
   const found = which?.("selfhost");
   if (!found || !isAbsolute(found)) return undefined;
   let binary: string;
@@ -66,7 +65,17 @@ export function managedHookCommand(
   } catch {
     return undefined;
   }
-  const paths = isNodeScript(binary) ? [node, binary] : [binary];
+  return isNodeScript(binary) ? [node, binary] : [binary];
+}
+
+/** The hook command with selfhost's absolute path (see selfhostPaths), or undefined. */
+export function managedHookCommand(
+  which: Which | undefined,
+  platform: string,
+  node: string = process.execPath,
+): HookBinary | undefined {
+  const paths = selfhostPaths(which, node);
+  if (!paths) return undefined;
   return {
     command: `${paths.map((path) => quote(path, platform)).join(" ")} hook {agent}`,
     paths,

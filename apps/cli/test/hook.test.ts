@@ -10,9 +10,16 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { openLedger } from "@selfhost/ledger";
+import { requestEvent, uuidv7 } from "@selfhost/mcp";
 import { describe, expect, it } from "vitest";
 import { drainSpool } from "../src/hooks/drain.js";
-import { appendToSpool, runHook, spoolDir, spoolFile } from "../src/hooks/receive.js";
+import {
+  appendEventToSpool,
+  appendToSpool,
+  runHook,
+  spoolDir,
+  spoolFile,
+} from "../src/hooks/receive.js";
 import { runImport } from "../src/import.js";
 import { createProgram } from "../src/program.js";
 import { run, tempDir } from "./run.js";
@@ -220,6 +227,88 @@ describe("spool drain", () => {
       expect((await ledger.query({ kind: "tool.called" })).events).toHaveLength(1);
       expect((await ledger.query({ kind: "tool.result" })).events).toHaveLength(1);
       expect((await ledger.query({ kind: "prompt.submitted" })).events).toHaveLength(2);
+    } finally {
+      await ledger.close();
+    }
+  });
+
+  it("records OpenCode's tool calls with the person and the agent", async () => {
+    const home = tempDir("spool-opencode");
+    const dir = spoolDir({ HOME: home.root }) ?? "";
+    const payload = {
+      hook_event_name: "tool.execute.before",
+      session_id: "ses_opencode1",
+      call_id: "toolu_oc1",
+      cwd: "/work/repo",
+      tool_name: "read",
+      tool_input: { filePath: "/work/repo/.env" },
+    };
+    appendToSpool(dir, "opencode", payload, now, {
+      answer: "deny",
+      hit: {
+        rule_id: "guard.secret_read",
+        mode: "enforce",
+        verdict: "block",
+        message: "No .env reads.",
+        irreversible: false,
+      },
+      hits: [{ rule_id: "guard.secret_read", mode: "enforce", verdict: "block" }],
+      ms: 3,
+    });
+    const ledger = await openLedger({ dataDir: "memory://" });
+    try {
+      expect(await drainSpool(ledger, dir, { person, now })).toMatchObject({ malformed: 0 });
+      const [call] = (await ledger.query({ kind: "tool.called" })).events;
+      expect(call).toMatchObject({
+        actor: { kind: "person", id: person },
+        agent: { vendor: "opencode" },
+        session_id: "ses_opencode1",
+        tool: { name: "read" },
+        target: { type: "file", value: ".env" },
+        data: { tool_use_id: "toolu_oc1" },
+      });
+      const [decision] = (await ledger.query({ kind: "policy.evaluated" })).events;
+      expect(decision).toMatchObject({
+        agent: { vendor: "opencode" },
+        session_id: "ses_opencode1",
+        data: { tool_event_id: call?.id },
+      });
+    } finally {
+      await ledger.close();
+    }
+  });
+
+  it("imports the requests selfhost mcp spools, and says so", async () => {
+    const home = tempDir("spool-mcp");
+    const dir = spoolDir({ HOME: home.root }) ?? "";
+    const request = requestEvent({
+      person,
+      source: "cli",
+      at: now,
+      data: { request: "mcp_question", question: "Ship it?" },
+      itemId: uuidv7(now),
+      agent: { vendor: "claude_code" },
+    });
+    appendEventToSpool(dir, request, now);
+    // Only a valid approval.requested event goes in.
+    appendEventToSpool(dir, { ...request, id: uuidv7(now), kind: "tool.called" }, now);
+    const ledger = await openLedger({ dataDir: "memory://" });
+    try {
+      let requests = 0;
+      const report = await drainSpool(ledger, dir, {
+        person,
+        now,
+        onRequests: () => {
+          requests += 1;
+        },
+      });
+      expect(report).toMatchObject({ lines: 2, accepted: 1, malformed: 1 });
+      expect(requests).toBe(1);
+      const [event] = (await ledger.query({ kind: "approval.requested" })).events;
+      expect(event).toMatchObject({ id: request.id, source: "cli", data: request.data });
+      // Read again with exceptionsOnly, as an exception request does: a duplicate.
+      const again = await drainSpool(ledger, dir, { person, now, exceptionsOnly: true });
+      expect(again).toMatchObject({ accepted: 0, duplicates: 1 });
     } finally {
       await ledger.close();
     }

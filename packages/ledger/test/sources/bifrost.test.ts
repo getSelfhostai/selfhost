@@ -74,6 +74,24 @@ describe("Bifrost gateway request logs", () => {
     expect(mapBifrostLog(page.logs[0])[0]?.id).toBe(claude?.[0]?.id);
   });
 
+  it("reads the agent from the user-agent column, else from the key's selfhost_agent", () => {
+    const entry = page.logs[0] as Record<string, unknown>;
+    const metadata = { ...(entry.metadata as Record<string, unknown>) };
+    for (const key of Object.keys(metadata)) {
+      if (key.toLowerCase() === "user-agent") delete metadata[key];
+    }
+    const column = mapBifrostLog({
+      ...entry,
+      metadata,
+      user_agent: "opencode/1.19.5 ai-sdk/provider-utils/4.0.46 runtime/bun/1.4.4",
+    });
+    expect(column[0]?.agent).toEqual({ vendor: "opencode", version: "1.19.5" });
+    // Goose sends no user-agent that names it; its key was set up for Goose alone.
+    const keyed = mapBifrostLog({ ...entry, metadata: { ...metadata, selfhost_agent: "goose" } });
+    expect(keyed[0]?.agent).toEqual({ vendor: "goose" });
+    expect(mapBifrostLog({ ...entry, metadata })[0]?.agent).toBeUndefined();
+  });
+
   it("rejects entries without an id or a timestamp", () => {
     expect(() => mapBifrostLog("x")).toThrow(SourcePayloadError);
     expect(() => mapBifrostLog({ id: "x", status: "success" })).toThrow("timestamp");

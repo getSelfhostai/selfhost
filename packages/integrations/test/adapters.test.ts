@@ -238,13 +238,21 @@ describe("tracers", () => {
     expectStatus(
       (await check(withKey, "tracer", answers, { PHOENIX_AUTH: `Bearer ${KEY}` })).state,
       "connected",
-      "Phoenix at http://phoenix:6006 is up",
+      "Phoenix at http://phoenix:6006 is up and takes the key",
     );
     expectStatus(
       (await check({ tracer: { tool: "phoenix", endpoint: base } }, "tracer", answers)).state,
       "error",
       "has auth on",
     );
+    // With auth off, nothing is said about a key nobody configured.
+    const open = {
+      [`GET ${base}/healthz`]: RECORDED.phoenixHealth,
+      [`GET ${base}/v1/projects?limit=1`]: RECORDED.phoenixProjects,
+    };
+    const status = (await check({ tracer: { tool: "phoenix", endpoint: base } }, "tracer", open))
+      .state;
+    expectStatus(status, "connected", "is up and needs no key (auth is off)");
   });
 
   it("datadog: validates the API key for the endpoint's site", async () => {
