@@ -78,9 +78,10 @@ npm audit signatures                               # in a project that installed
 ### What works today
 
 - `selfhost init` on a laptop: a hook in Claude Code and Codex (`selfhost guard install` also
-  covers Cursor, OpenCode and Goose) that applies `selfhost.toml` and the built-in guardrails
-  before every tool call, a starter `selfhost.toml`, and the last 30 days of session logs in a
-  local ledger (embedded Postgres, no Docker).
+  covers Cursor, and OpenCode through a plugin) that applies `selfhost.toml` and the built-in
+  guardrails before every tool call, a starter `selfhost.toml`, and the last 30 days of session
+  logs in a local ledger (embedded Postgres, no Docker). Goose has no hooks, so nothing blocks
+  its tool calls (see below).
 - The guardrails block force pushes, `git reset --hard`, `rm -rf` outside the workspace and reads
   of `.env` and key files from the first run; rules start in observe and move to enforce with
   `selfhost policy promote`. A blocked call can be allowed once by a person (`selfhost inbox`).
@@ -89,6 +90,23 @@ npm audit signatures                               # in a project that installed
   (`selfhost mcp`) and the web console (`selfhost console`).
 - Team mode: `selfhost up` sets up a server, `selfhost team init` and `selfhost join` connect
   laptops to it, and `selfhost team policy push` sets the team's policy.
+
+### What selfhost can and cannot enforce, per agent
+
+selfhost blocks a tool call only where the agent runs a hook (or plugin) before it. Everywhere
+else it shapes what the agent reads and where its model traffic goes, and records what it can.
+
+| Agent       | Blocks tool calls                              | Set up by                | Also covered                  |
+| ----------- | ---------------------------------------------- | ------------------------ | ----------------------------- |
+| Claude Code | yes: `PreToolUse` hook, can also ask a person  | `selfhost init`          | context, gateway, MCP, logs   |
+| Codex       | yes: `PreToolUse` hook; an ask becomes a block | `selfhost init`          | context, gateway, MCP, logs   |
+| Cursor      | yes: Cursor hooks; asks on shell and MCP calls | `selfhost guard install` | context, MCP                  |
+| OpenCode    | yes: a plugin (`tool.execute.before`); no asks | `selfhost guard install` | context, gateway, MCP         |
+| Goose       | no: Goose has no hooks, so nothing can block   | nothing to install       | context, gateway and MCP only |
+
+For Goose, `selfhost.toml` rules and the guardrails are not enforced: selfhost compiles its
+context (`selfhost context compile`), routes its model traffic through the team's gateway
+(`selfhost gateway connect goose`) and gives it the selfhost MCP server.
 
 ## What it is
 

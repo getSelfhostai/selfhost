@@ -400,15 +400,19 @@ and `.opencode/`, `.goosehints` and `.mcp.json`. Rules files are written through
 a table of every item per agent: `compiled`, `partial`, `none` (the agent can't express it) or
 `n/a`, with `n/a*` where an agent reads an item that is not for it, then each gap and why.
 `--agent` (claude, codex, cursor, copilot, gemini, opencode, goose) sets the agents; later runs
-keep them. Without it a first compile writes for the agents found on this machine plus any an
+keep them. A compile for some agents never removes the files of the agents it leaves out: they
+stay as they are, still recorded in the lock, so a later compile for that agent updates them. Without it a first compile writes for the agents found on this machine plus any an
 item names in its `agents` list (every agent, with a warning, when there are none). Rules that
 contradict each other once merged, such as "Use npm" in one and "Use pnpm" in another, get a
 warning; the compile goes on. `--out` writes into another folder instead. A file selfhost did not write is never
-replaced without `--force`, and nothing is written then. `.selfhost/context.lock.json` records
+replaced without `--force`, and nothing is written then. A file the source no longer compiles to
+is removed only while it holds what selfhost last wrote there: one edited by hand since, or one
+`selfhost init --import-context` took over and selfhost never rewrote, stays unless `--force`. `.selfhost/context.lock.json` records
 every generated file with its source and the skill version each agent received; commit it with
 the files. When the repository has `.selfhost/context`, `selfhost policy compile --apply` writes
 `.ruler/selfhost-policy.md` and lets the context compile write the rules files, so both end up in
-them.
+them. It is the same compile `selfhost context compile` makes, with the same layers and agents,
+so `selfhost context check` passes afterwards.
 
 `selfhost context check [--json]` (or `context compile --check`) writes nothing and exits 1 when a
 generated file differs from what `.selfhost/context` compiles to, saying which file and whether it
@@ -747,8 +751,9 @@ and `--dry-run` never ask (the files are then only listed). [`AGENTS.md`](AGENTS
    matter wins. A nested `CLAUDE.md` or `AGENTS.md` becomes a rule with a `globs` for its folder,
    and exact copies become one rule. Each file the import moved into the source that `selfhost
    context compile` writes (such as `CLAUDE.md`, `AGENTS.md`, `.mcp.json` or a skill in
-   `.claude/skills`) is recorded in `.selfhost/context.lock.json` with its hash, so the next
-   compile replaces it with the compiled copy without `--force`. A file whose content was not
+   `.claude/skills`) is recorded in `.selfhost/context.lock.json` with its hash, marked `adopted`, so the next
+   compile replaces it with the compiled copy without `--force`, and no compile deletes it
+   without `--force`. A file whose content was not
    all imported (another file was in the way, an MCP server set up differently elsewhere, a
    secret swapped for a reference) is not handed over. The originals are never edited or deleted, a file already in
    `.selfhost/context/` is never replaced, and home files and `CLAUDE.local.md` stay where they
@@ -761,7 +766,9 @@ and `--dry-run` never ask (the files are then only listed). [`AGENTS.md`](AGENTS
 `--dry-run` prints the same plan, with the number of log files and hook events it would import,
 and writes nothing. `selfhost init --undo` puts every agent config file init changed back byte
 for byte from its backup (recorded in `~/.selfhost/init.json`) and deletes the context files it
-imported, unless a file was edited since. It needs no terminal, so a person can script it, but
+imported, unless a file was edited since. It also puts back each file the import handed over
+(such as `CLAUDE.md`), whose text before the import the record keeps: while it is missing or
+holds what `selfhost context compile` wrote; one edited by hand since is left as is. It needs no terminal, so a person can script it, but
 it refuses inside a coding agent session (`--dry-run` excepted);
 `agents configure --remove` takes the same settings out but writes the file in its own layout.
 The ledger, `selfhost.toml` and a team membership are kept.
@@ -824,6 +831,23 @@ from the export: local workspaces' agents already logged them where `selfhost im
 them. A second import adds nothing. Without `--history` it says no history was imported and
 finishes the rest; an export with no session in a known shape exits 1 after the scripts are
 moved. See [`packages/importers`](../../packages/importers/README.md#conductor-history).
+
+## What selfhost can and cannot enforce, per agent
+
+A tool call is blocked only where the agent runs selfhost before it: a hook, or OpenCode's
+plugin. The rest is what the agent reads (context), where its model traffic goes (the gateway)
+and the tools it gets (MCP).
+
+| Agent       | Enforced before a tool call                                  | How                                   | Not enforced, but covered     |
+| ----------- | ------------------------------------------------------------ | ------------------------------------- | ----------------------------- |
+| Claude Code | rules and guardrails: block and ask                          | hook, from `selfhost init`            | context, gateway, MCP         |
+| Codex       | rules and guardrails: block (an ask is answered as a block)  | hook, from `selfhost init`            | context, gateway, MCP         |
+| Cursor      | rules and guardrails: block; ask on shell and MCP calls only | hooks, from `selfhost guard install`  | context, MCP                  |
+| OpenCode    | rules and guardrails: block (an ask is answered as a block)  | plugin, from `selfhost guard install` | context, gateway, MCP         |
+| Goose       | nothing: Goose has no hooks                                  | none                                  | context, gateway and MCP only |
+
+`selfhost init` says the same for each agent it finds: it hooks Claude Code and Codex, points
+OpenCode and Cursor at `selfhost guard install`, and says Goose has no hooks.
 
 ## Guardrails: `selfhost guard`
 
@@ -1205,7 +1229,11 @@ to (the handoff records that remote's URL, so it does not matter what this clone
 from each remote in turn, else prints the exact `git fetch` command, and switches to it when the
 working tree is clean, writes a short brief to
 `.selfhost/handoff/<id>.md` (kept out of commits through `.git/info/exclude`) and prints how to
-carry on. `--print` prints the brief and changes nothing.
+carry on. `--print` prints the brief and changes nothing: it only reads the handoff, which
+stays pending (and keeps its transcript) for a later `selfhost takeover`. Without a native resume
+the brief names a new session of the run's own agent (`claude "..."`, `codex "..."`, `opencode
+run "..."`, `goose run --interactive --text "..."`), or the prompt to give an agent with no
+command line.
 
 Native resume needs the agent's transcript, which can hold secrets, so it travels only when the
 team turns it on:
@@ -1358,7 +1386,10 @@ person, per team and per run, each named `selfhost:<kind>:<team>:<who>`.
 
 `gateway connect` (with `--rotate` and `--undo`) and `gateway disconnect` decide which key, and so
 which budget, an agent's traffic goes through, so they are a person's: they refuse inside a coding
-agent session (`disconnect --dry-run` excepted), and the hooks block an agent that runs them.
+agent session (`--dry-run` excepted), and the hooks block an agent that runs them.
+`connect --dry-run` (also with `--rotate`) prints the files it would write and which key it would
+use, and changes nothing: no key is issued or rotated and the server is not asked.
+`disconnect --dry-run` prints what it would put back.
 
 - Budgets: `[budget]` in the team's `selfhost.toml`. With `mode = "hard"` the team's
   `daily_usd`, `weekly_usd` and `monthly_usd` go on the gateway's team, `[budget.person]` on each

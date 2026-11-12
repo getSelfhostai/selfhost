@@ -48,6 +48,12 @@ export const ContextLockSchema = Type.Object(
             description: "Hash of the file, or of selfhost's key or block in a shared file.",
           }),
           key: Type.Optional(Type.Array(Type.String())),
+          adopted: Type.Optional(
+            Type.Literal(true, {
+              description:
+                "selfhost init --import-context took over this hand-written file, and sha256 is its hash from before the import. selfhost has not written it yet, so it never deletes it without --force.",
+            }),
+          ),
         },
         { additionalProperties: false },
       ),

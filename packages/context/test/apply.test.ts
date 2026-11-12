@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { applyContextPlan, type BuildOptions, buildContext, LOCK_PATH } from "../src/index.js";
@@ -145,6 +146,77 @@ describe("planContext and check", () => {
       },
       goose: expect.objectContaining({ status: "compiled", version: "1.2.0" }),
     });
+  });
+
+  it("never removes the files of agents a narrower compile leaves out", async () => {
+    const dir = temp(true);
+    await compiled(dir);
+    const claude = readFileSync(dir.path("CLAUDE.md"), "utf8");
+    const narrow = await compiled(dir, { agents: ["opencode", "goose"] });
+    expect(narrow.plan.files.filter((file) => file.action === "delete")).toEqual([]);
+    expect(readFileSync(dir.path("CLAUDE.md"), "utf8")).toBe(claude);
+    expect(existsSync(dir.path(".cursor/mcp.json"))).toBe(true);
+    // The lock still owns them, so a check passes and a later compile for Claude Code updates them.
+    const lock = JSON.parse(readFileSync(dir.path(LOCK_PATH), "utf8"));
+    expect(lock.agents).toEqual(["opencode", "goose"]);
+    expect(lock.files["CLAUDE.md"]).toBeDefined();
+    expect((await build(dir)).plan.drift).toEqual([]);
+    const back = await build(dir, { agents: ["claude_code"] });
+    expect(back.plan.conflicts).toEqual([]);
+  });
+
+  it("will not delete a file it no longer compiles when someone changed it, unless forced", async () => {
+    const dir = temp(true);
+    await compiled(dir);
+    rmSync(dir.path(".selfhost/context/skills/release-notes"), { recursive: true });
+    const script = ".claude/skills/release-notes/scripts/collect.sh";
+    writeFileSync(dir.path(script), "#!/bin/sh\necho mine\n");
+    const plan = (await build(dir)).plan;
+    expect(plan.conflicts).toEqual([expect.objectContaining({ path: script, forceable: true })]);
+    expect(plan.conflicts[0]?.message).toContain("it was edited by hand");
+    expect(() => applyContextPlan(dir.root, plan)).toThrow(/conflicts/);
+    expect(readFileSync(dir.path(script), "utf8")).toBe("#!/bin/sh\necho mine\n");
+    applyContextPlan(dir.root, (await build(dir, { force: true })).plan);
+    expect(existsSync(dir.path(script))).toBe(false);
+  });
+
+  it("takes its key or block out of a shared file the source no longer needs", async () => {
+    const dir = temp(true);
+    await compiled(dir);
+    rmSync(dir.path(".selfhost/context/mcp.json"));
+    const plan = (await build(dir)).plan;
+    expect(plan.conflicts).toEqual([]);
+    expect(plan.files.find((file) => file.path === "opencode.json")?.action).toBe("delete");
+    applyContextPlan(dir.root, plan);
+    expect(existsSync(dir.path("opencode.json"))).toBe(false);
+  });
+
+  it("never deletes or overwrites an adopted file that changed, without --force", async () => {
+    const dir = temp(true);
+    await compiled(dir);
+    const lock = JSON.parse(readFileSync(dir.path(LOCK_PATH), "utf8"));
+    const original = "# Hand written\n";
+    writeFileSync(dir.path("CLAUDE.md"), original);
+    lock.files["CLAUDE.md"] = { ...lock.files["CLAUDE.md"], adopted: true, sha256: "0".repeat(64) };
+    // A file the source no longer compiles to, taken over as it is.
+    dir.write(".claude/rules/old.md", original);
+    lock.files[".claude/rules/old.md"] = {
+      sources: [".selfhost/context/rules/old.md"],
+      header: "front_matter",
+      sha256: createHash("sha256").update(original).digest("hex"),
+      adopted: true,
+    };
+    writeFileSync(dir.path(LOCK_PATH), JSON.stringify(lock));
+    const plan = (await build(dir)).plan;
+    expect(plan.conflicts.map((conflict) => conflict.path)).toEqual([
+      "CLAUDE.md",
+      ".claude/rules/old.md",
+    ]);
+    expect(plan.conflicts[1]?.message).toContain("selfhost init took it over as it was");
+    expect(() => applyContextPlan(dir.root, plan)).toThrow(/conflicts/);
+    expect(readFileSync(dir.path(".claude/rules/old.md"), "utf8")).toBe(original);
+    applyContextPlan(dir.root, (await build(dir, { force: true })).plan);
+    expect(existsSync(dir.path(".claude/rules/old.md"))).toBe(false);
   });
 
   it("warns when a skill changes without a new version", async () => {

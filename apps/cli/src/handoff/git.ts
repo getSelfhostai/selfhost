@@ -108,6 +108,39 @@ export function remoteHolding(
   return best ? { ...best, url: withoutUserInfo(best.url) } : undefined;
 }
 
+/** One entry of `git status`: the path (the new one for a rename) and whether git tracks it. */
+interface StatusEntry {
+  path: string;
+  untracked: boolean;
+}
+
+/** Fields before the path in each `git status --porcelain=v2` entry kind. */
+const V2_FIELDS: Record<string, number> = { "1": 8, "2": 9, u: 10, "?": 1, "!": 1 };
+
+/**
+ * The working tree's changes, from `git status --porcelain=v2 -z`: entries end in NUL and start
+ * with their kind, never with a space, so a Git that trims its output loses nothing, and paths
+ * come as they are, unquoted.
+ */
+export function statusEntries(git: Git, top: string): StatusEntry[] {
+  const out = git(top, ["status", "--porcelain=v2", "-z", "--untracked-files=normal"]) ?? "";
+  const parts = out.split("\0");
+  const entries: StatusEntry[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i] ?? "";
+    const kind = part[0] ?? "";
+    const fields = V2_FIELDS[kind];
+    if (fields === undefined || kind === "!") continue;
+    const path = part.split(" ").slice(fields).join(" ");
+    // A rename or copy is followed by the path it came from.
+    if (kind === "2") i += 1;
+    if (path !== "") entries.push({ path, untracked: kind === "?" });
+  }
+  return entries;
+}
+
+const inHandoff = (path: string) => path.startsWith(".selfhost/handoff/");
+
 export interface WorkState {
   /** The checked-out branch; undefined on a detached HEAD. */
   branch?: string;
@@ -135,7 +168,6 @@ export function workState(git: Git, top: string): WorkState {
   const commit = git(top, ["rev-parse", "HEAD"]);
   const upstream = git(top, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
   const ahead = upstream ? git(top, ["rev-list", "--count", "@{u}..HEAD"]) : undefined;
-  const status = git(top, ["status", "--porcelain", "--untracked-files=normal"]) ?? "";
   const named = branch && branch !== "HEAD" ? branch : undefined;
   const sha = commit && /^[0-9a-f]{7,64}$/.test(commit) ? commit : undefined;
   const tracked = named ? upstreamOf(git, top, named) : undefined;
@@ -152,11 +184,9 @@ export function workState(git: Git, top: string): WorkState {
     ...(sha ? { commit: sha } : {}),
     ...(pushed !== undefined ? { pushed } : {}),
     ...(pushTo ? { pushTo } : {}),
-    uncommitted: status
-      .split("\n")
-      .filter((line) => line.trim() !== "")
-      .map((line) => line.slice(3).replace(/^.* -> /, ""))
-      .filter((path) => !path.startsWith(".selfhost/handoff/")),
+    uncommitted: statusEntries(git, top)
+      .map((entry) => entry.path)
+      .filter((path) => !inHandoff(path)),
   };
 }
 
@@ -270,10 +300,8 @@ export function checkoutBranch(
   }
   // Only changes to tracked files block the switch. Untracked files (selfhost.toml right after
   // `selfhost init`) go along with it, and git itself refuses when the branch has one of them.
-  const status = (git(top, ["status", "--porcelain", "--untracked-files=normal"]) ?? "")
-    .split("\n")
-    .filter((line) => line.trim() !== "" && !line.slice(3).startsWith(".selfhost/handoff/"));
-  if (status.some((line) => !line.startsWith("??"))) {
+  const status = statusEntries(git, top).filter((entry) => !inHandoff(entry.path));
+  if (status.some((entry) => !entry.untracked)) {
     return {
       fetched: true,
       remote,
@@ -287,7 +315,7 @@ export function checkoutBranch(
       git(top, ["merge", "--ff-only", tracking]) !== undefined
     : git(top, ["switch", "--track", "-c", branch, tracking]) !== undefined;
   if (switched) return { fetched: true, remote, switched: true };
-  const untracked = status.map((line) => line.slice(3));
+  const untracked = status.map((entry) => entry.path);
   const inTheWay =
     untracked.length > 0
       ? (git(top, ["ls-tree", "-r", "--name-only", tracking, "--", ...untracked]) ?? "")

@@ -170,7 +170,8 @@ export function pendingItems(
   return cache.items.filter((item) => {
     if (item.state !== "open" || answered.has(item.id)) return false;
     if (all) return true;
-    if (cache.all && !item.owners.includes(cache.person)) return false;
+    // Solo mode: the person on this machine owns every item.
+    if (cache.all && cache.server !== null && !item.owners.includes(cache.person)) return false;
     const until = snoozed.get(item.id);
     return until === undefined || Date.parse(until) <= ms;
   });

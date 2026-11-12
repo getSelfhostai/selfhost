@@ -60,7 +60,7 @@ beforeAll(async () => {
   tokens = {};
   const people = [
     ...["ada", "ben", "cy", "di", "ed", "flo", "gus", "hal", "ivy"],
-    ...["jo", "kim", "lu", "max", "ned", "oz"],
+    ...["jo", "kim", "lu", "max", "ned", "oz", "pat"],
   ];
   for (const person of people.map((name) => `${name}@example.com`)) {
     const res = await app.request(`${SERVER}/v1/join`, {
@@ -140,6 +140,49 @@ describe("selfhost gateway connect", () => {
     expect(existsSync(kept)).toBe(false);
     const nothing = await run(["gateway", "connect", "claude-code", "--undo"], deps);
     expect(nothing.out).toContain("Nothing to undo");
+  });
+
+  it("--dry-run changes nothing and issues no key: connect, rotate and disconnect", async () => {
+    const { home, deps } = laptop("pat@example.com");
+    const calls: string[] = [];
+    const counted = {
+      ...deps,
+      fetch: async (url: string, init: RequestInit) => {
+        calls.push(`${init.method ?? "GET"} ${url}`);
+        return fetch(url, init);
+      },
+    };
+    const opencode = home.path(".config/opencode/opencode.json");
+    const kept = home.path(".selfhost/gateway-key.json");
+    const dry = await run(["gateway", "connect", "opencode", "--dry-run", "--json"], counted);
+    expect(dry.code).toBe(0);
+    expect(JSON.parse(dry.out)).toMatchObject({
+      status: "planned",
+      key: null,
+      value: null,
+      files: [{ path: opencode, action: "created" }],
+    });
+    const text = await run(["gateway", "connect", "opencode", "--dry-run"], counted);
+    expect(text.out).toContain("Dry run: nothing was changed and no key was issued.");
+    expect(text.out).toContain("Would create ~/.config/opencode/opencode.json");
+    expect(calls).toEqual([]);
+    expect(existsSync(opencode)).toBe(false);
+    expect(existsSync(kept)).toBe(false);
+    expect(existsSync(home.path(".selfhost/gateway-connect.json"))).toBe(false);
+
+    // Connected for real, then a dry rotate and a dry disconnect touch nothing.
+    expect((await run(["gateway", "connect", "opencode"], deps)).code).toBe(0);
+    const before = readFileSync(opencode, "utf8");
+    const keyBefore = readFileSync(kept, "utf8");
+    const rotate = await run(["gateway", "connect", "opencode", "--rotate", "--dry-run"], counted);
+    expect(rotate.code).toBe(0);
+    expect(rotate.out).toContain("Would give your gateway key a new value");
+    const off = await run(["gateway", "disconnect", "opencode", "--dry-run"], counted);
+    expect(off.out).toContain("Would delete ~/.config/opencode/opencode.json");
+    expect(calls).toEqual([]);
+    expect(readFileSync(opencode, "utf8")).toBe(before);
+    expect(readFileSync(kept, "utf8")).toBe(keyBefore);
+    expect((await run(["gateway", "disconnect"], deps)).code).toBe(0);
   });
 
   it("writes Codex, OpenCode and Goose settings, and disconnect puts every file back", async () => {

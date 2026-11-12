@@ -329,7 +329,7 @@ async function resolveHandoff(client: TeamClient, arg: string): Promise<string> 
 const quote = (text: string) => `"${text.replace(/(["\\$`])/g, "\\$1")}"`;
 
 /** How the new owner carries on, from what the takeover could set up. */
-function resumePlan(
+export function resumePlan(
   handoff: Handoff,
   placed: { path: string; resumeBy: "id" | "path" } | undefined,
   why: string | undefined,
@@ -351,14 +351,30 @@ function resumePlan(
       why: "Codex resumes the session itself, with its history, under your own login.",
     };
   }
-  const program = vendor === "codex" ? "codex" : "claude";
   const fresh = `Read ${briefPath(handoff)} and carry on with the work it describes.`;
+  const start = vendor ? FRESH_SESSION[vendor] : undefined;
+  const reason = `No native resume: ${why ?? "no transcript came with the handoff"}.`;
+  if (!start) {
+    return {
+      command: fresh,
+      native: false,
+      why: `${reason} Start a new session of ${agentName(handoff)} in this clone and give it this prompt.`,
+    };
+  }
   return {
-    command: `${program} ${quote(fresh)}`,
+    command: start(quote(fresh)),
     native: false,
-    why: `No native resume: ${why ?? "no transcript came with the handoff"}. Start a new session and point it at the brief.`,
+    why: `${reason} Start a new session and point it at the brief.`,
   };
 }
+
+/** A new session of each agent, with a first prompt, for agents with a command line. */
+const FRESH_SESSION: Partial<Record<string, (prompt: string) => string>> = {
+  claude_code: (prompt) => `claude ${prompt}`,
+  codex: (prompt) => `codex ${prompt}`,
+  opencode: (prompt) => `opencode run ${prompt}`,
+  goose: (prompt) => `goose run --interactive --text ${prompt}`,
+};
 
 /** Why there is no transcript to resume from, for the brief. */
 function noTranscriptWhy(handoff: Handoff): string {
@@ -379,7 +395,8 @@ export async function runTakeover(
   options: TakeoverOptions,
   io: HandoffIo,
 ): Promise<TakeoverReport> {
-  refuseAgentSession("selfhost takeover", io.env);
+  // --print only reads the handoff; taking it over is a person's call.
+  if (!options.print) refuseAgentSession("selfhost takeover", io.env);
   const { client, membership } = team(io, "Taking a run over");
   const git = io.git ?? systemGit;
   const id = await resolveHandoff(client, arg);
@@ -412,7 +429,8 @@ export async function runTakeover(
     }
   }
 
-  const taken = await client.takeover(id);
+  // --print reads the handoff and changes nothing: it stays pending, with its transcript.
+  const taken = options.print ? { handoff: pending, transcript: null } : await client.takeover(id);
   const handoff = taken.handoff;
   const warnings: string[] = [];
   let checkout: CheckoutResult | null = null;
@@ -450,9 +468,9 @@ export async function runTakeover(
         warnings.push(`A transcript of this session was already at ${result.path}; it was kept.`);
       }
     }
-  } else if (taken.transcript) {
+  } else {
     warnings.push(
-      "--print: the transcript was not saved, and the server no longer keeps it. Resume from the brief.",
+      `--print only reads the brief: the run is still handed to you, not taken over. Run selfhost takeover ${shortId(id)} in a clone of ${handoff.repo ?? "its repository"} to take it over.`,
     );
   }
   const resume = resumePlan(
@@ -460,9 +478,11 @@ export async function runTakeover(
     placed,
     placed
       ? undefined
-      : taken.transcript
-        ? "the transcript was not saved"
-        : noTranscriptWhy(handoff),
+      : options.print
+        ? "--print does not take the run over, so no transcript is fetched"
+        : taken.transcript
+          ? "the transcript was not saved"
+          : noTranscriptWhy(handoff),
   );
   const text = renderBrief(handoff, resume);
   if (top) {
@@ -553,7 +573,10 @@ export function registerHandoff(
     )
     .argument("<id>", "the handoff id, or its end or start (selfhost inbox lists them)")
     .option("--repo <dir>", "your clone of the run's repository (default: here)")
-    .option("--print", "print the brief instead of writing it; change nothing in a clone")
+    .option(
+      "--print",
+      "print the brief and change nothing: the handoff stays pending and no clone is touched",
+    )
     .option("--json", "print JSON")
     .action(async (id: string, options: TakeoverOptions) => {
       try {

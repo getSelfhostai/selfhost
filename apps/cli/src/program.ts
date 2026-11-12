@@ -148,6 +148,18 @@ const collect = (value: string, previous: string[]) => [...previous, value];
 /** The team client's fetch, whose init is required, as one whose init is optional. */
 const wrapFetch = (fetch: Fetch) => (url: string, init?: RequestInit) => fetch(url, init ?? {});
 
+/** The agents installed or set up on this machine, for a first context compile. */
+function detectedAgents(deps: CliDeps) {
+  return detectAgents({
+    home: deps.home ?? homedir(),
+    env: deps.env,
+    platform: deps.platform,
+    ...deps.probes,
+  })
+    .filter((agent) => agent.installed || agent.configExists)
+    .map((agent) => agent.id);
+}
+
 export function createProgram(overrides: Partial<CliDeps> = {}): Command {
   const deps = { ...defaultDeps(), ...overrides };
   const openLocalList =
@@ -493,6 +505,7 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       now: deps.now,
       configPath: deps.configPath ?? defaultConfigPath(),
       fetch: deps.fetch,
+      detect: () => detectedAgents(deps),
     }),
     fail,
   );
@@ -521,15 +534,7 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       configPath: deps.configPath ?? defaultConfigPath(),
       fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
       ...(deps.ask ? { confirm: deps.ask } : {}),
-      detect: () =>
-        detectAgents({
-          home: deps.home ?? homedir(),
-          env: deps.env,
-          platform: deps.platform,
-          ...deps.probes,
-        })
-          .filter((agent) => agent.installed || agent.configExists)
-          .map((agent) => agent.id),
+      detect: () => detectedAgents(deps),
     }),
     fail,
   );

@@ -93,8 +93,10 @@ export interface ConnectReport {
    * connected: the agent's own config files point at the gateway. printed: the settings are in
    * `settings`, to paste. not_applicable: the agent can't use a gateway. subscription: the agent
    * is signed in with a subscription, so nothing was changed. The last two issue no key.
+   * planned: --dry-run; `files` lists what connect would write, and nothing was changed and no
+   * key issued.
    */
-  status: "connected" | "printed" | "not_applicable" | "subscription";
+  status: "connected" | "printed" | "not_applicable" | "subscription" | "planned";
   key: GatewayKey | null;
   /**
    * True when the value is the person's key already kept on this laptop: one key per person,
@@ -537,7 +539,12 @@ function printConnect(report: ConnectReport, io: GatewayIo): ConnectReport {
     }
     write("");
   }
-  if (report.status === "connected") {
+  if (report.status === "planned") {
+    write("Dry run: nothing was changed and no key was issued.");
+    for (const file of report.files) {
+      write(`Would ${file.action === "created" ? "create" : "update"} ${tilde(file.path, home)}`);
+    }
+  } else if (report.status === "connected") {
     for (const file of report.files) {
       const backup = file.backup ? ` (backup ${tilde(file.backup, home)})` : "";
       write(
@@ -583,6 +590,49 @@ const empty = (
   notes,
 });
 
+/** What config files a plan writes, as connect would report them. */
+const plannedFiles = (plan: AgentConfigPlan): AppliedChange[] =>
+  plan.changes
+    .filter((change) => change.role === "config" && change.after !== null)
+    .map((change) => ({
+      path: change.path,
+      action: change.before === null ? "created" : "updated",
+      backup: null,
+    }));
+
+/**
+ * connect --dry-run: what connect would write and which key it would use, from this laptop
+ * alone. Nothing is written, no key is issued or rotated, and the server is not asked.
+ */
+function plannedConnect(
+  agent: ConnectAgent,
+  id: AgentId | null,
+  others: AgentId[],
+  membership: Membership,
+  options: ConnectOptions,
+  io: GatewayIo,
+  warnings: string[],
+): ConnectReport {
+  const stored = readStoredKey(scope(io).home, membership);
+  const fresh = options.rotate === true || !stored;
+  const files = [
+    ...(id ? plannedFiles(planConnect(id, PLACEHOLDER, io)) : []),
+    ...(fresh ? others.flatMap((other) => plannedFiles(planConnect(other, PLACEHOLDER, io))) : []),
+  ];
+  const names = others.map((other) => AGENT_NAMES[other]);
+  const key = options.rotate
+    ? `Would give your gateway key a new value; the old one would stop working${names.length > 0 ? `, and ${names.join(" and ")} would get the new one too` : ""}.`
+    : stored
+      ? "Would use your gateway key kept on this laptop."
+      : "Would ask the team server for your gateway key (one per person; if you have one already and its value is not kept here, connect asks for --rotate).";
+  const how = id
+    ? []
+    : [
+        `Would print the settings for ${agent} to paste${options.managed ? " as a managed settings file" : ""}.`,
+      ];
+  return { ...empty(agent, "planned", [key, ...how], warnings), files };
+}
+
 /**
  * Points one agent at the gateway with the person's virtual key. Claude Code, Codex, OpenCode and
  * Goose get it written into their own config files, with a backup and a record for disconnect;
@@ -597,7 +647,9 @@ export async function gatewayConnect(
 ): Promise<ConnectReport | DisconnectReport> {
   if (options.undo) return gatewayDisconnect(agentName, options, io);
   // Which key an agent's traffic goes through, and so which budget holds it, is a person's call.
-  refuseAgentSession(`selfhost gateway connect${options.rotate ? " --rotate" : ""}`, io.env);
+  if (!options.dryRun) {
+    refuseAgentSession(`selfhost gateway connect${options.rotate ? " --rotate" : ""}`, io.env);
+  }
   const target = connectTarget(agentName);
   if (target.kind === "admin_api") {
     return done(empty(target.name, "not_applicable", [target.message]), options, io);
@@ -656,6 +708,13 @@ export async function gatewayConnect(
     }
   }
 
+  if (options.dryRun) {
+    return done(
+      plannedConnect(agent, writes ? id : null, others, membership, options, io, warnings),
+      options,
+      io,
+    );
+  }
   // While this agent alone uses the key, the key names it, for requests that do not name theirs.
   const sole = id !== null && others.length === 0 ? id : undefined;
   const held = await holdKey(options, io, membership, others, sole);
@@ -878,7 +937,10 @@ export function registerGateway(
       "connect even when the agent is signed in with a subscription: its traffic then goes through the gateway on API billing",
     )
     .option("--undo", "the same as selfhost gateway disconnect <agent>")
-    .option("--dry-run", "with --undo: say what would be put back, change nothing")
+    .option(
+      "--dry-run",
+      "say what would be written (with --undo: put back) and change nothing: no key is issued or rotated",
+    )
     .option("--json", "print one selfhost.gateway_connect/v1 object, with the key's value")
     .action(async (agent: string, options: ConnectOptions) => {
       try {

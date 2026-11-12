@@ -14,7 +14,6 @@ import { openLedger } from "@selfhost/ledger";
 import { guardrailChecks } from "@selfhost/policy";
 import { CONFIG_FILE_NAME, parseConfig } from "@selfhost/schema";
 import type { Command } from "commander";
-import pkg from "../../package.json" with { type: "json" };
 import {
   AGENT_ALIASES,
   type AgentsIo,
@@ -58,10 +57,12 @@ import {
 import { PRESET_NAMES, type PresetName } from "./presets.generated.js";
 import {
   readRecord,
+  recordAdopted,
   recordApplied,
   recordCreated,
   recordPath,
   sameBytes,
+  UNCHANGED,
   type UndoReport,
   undoInit,
 } from "./record.js";
@@ -267,11 +268,23 @@ function hookAgents(names: string[] | undefined, detected: AgentStatus[]): Agent
   });
 }
 
+/** How selfhost covers an agent init does not hook. */
+const NOT_HOOKED: Partial<Record<AgentId, string>> = {
+  cursor:
+    "init hooks Claude Code and Codex; selfhost guard install adds the guardrail hook to Cursor",
+  opencode:
+    "init hooks Claude Code and Codex; OpenCode is covered by a plugin: selfhost guard install adds it",
+  goose:
+    "Goose has no hooks, so nothing can block its tool calls; selfhost covers it through context (selfhost context compile), the gateway (selfhost gateway connect goose) and MCP only",
+};
+
+const notHooked = (agent: AgentId) =>
+  NOT_HOOKED[agent] ??
+  "init hooks Claude Code and Codex; selfhost guard install adds the guardrail hook where the agent has one";
+
 /** Reasons to leave an agent's files alone, found before anything is written. */
 function screen(plan: AgentConfigPlan): string | undefined {
-  if (!HOOKED.includes(plan.agent)) {
-    return "init hooks Claude Code and Codex; selfhost guard install adds the guardrail hook to this agent";
-  }
+  if (!HOOKED.includes(plan.agent)) return notHooked(plan.agent);
   if (plan.items.some((item) => item.status === "remove")) {
     return "selfhost agents configure set other settings here; left as is so they stay (add hooks with selfhost agents configure)";
   }
@@ -299,10 +312,7 @@ function agentRow(
     config_path: agent.configPath,
     config_exists: agent.configExists,
     hooks: skipped ? "skipped" : (item?.status ?? (found || wanted ? "skipped" : null)),
-    message:
-      skipped ??
-      item?.message ??
-      (found && !wanted ? "selfhost has no hook mapping for this agent yet" : null),
+    message: skipped ?? item?.message ?? (found && !wanted ? notHooked(agent.id) : null),
     files:
       configured?.agents
         .find((entry) => entry.agent === agent.id)
@@ -447,6 +457,16 @@ function printUndo(report: UndoReport, home: string, write: (line: string) => vo
       write(`Left ${path} as is: ${file.message}.`);
     }
   }
+  for (const file of report.files.filter(
+    (entry) => entry.role === "adopted" && entry.message !== UNCHANGED,
+  )) {
+    const path = tilde(file.path, home);
+    write(
+      file.action === "restored"
+        ? `${dry ? "Would put back" : "Put back"} ${path} as it was before selfhost init imported it.`
+        : `Left ${path} as is: ${file.message}.`,
+    );
+  }
   const imported = report.files.filter((entry) => entry.role === "context");
   const deleted = imported.filter((entry) => entry.action === "deleted");
   if (deleted.length > 0) {
@@ -485,8 +505,9 @@ async function offerContext(
   else if (options.dryRun || options.json || options.yes || !io.ask) status = "offered";
   else status = (await io.ask(contextQuestion(creates.length))) ? "imported" : "declined";
   if (status === "imported") {
-    const written = await applyContextImport(plan);
+    const { written, adopted } = await applyContextImport(plan);
     if (written.length > 0) recordCreated(recordPath(home), written);
+    if (adopted.length > 0) recordAdopted(recordPath(home), adopted);
   }
   return {
     found,
