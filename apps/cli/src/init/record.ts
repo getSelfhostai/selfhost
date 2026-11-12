@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, sep } from "node:path";
+import { basename, dirname, join, relative, sep } from "node:path";
 import type { AgentConfigPlan, AgentId } from "@selfhost/agents";
 
 /**
@@ -13,14 +13,20 @@ export interface RecordedFile {
   agent: AgentId | null;
   path: string;
   /** config is the agent's own file; state is selfhost's record of what it owns there; context
-   * is a file init imported into `.selfhost/context/`. */
-  role: "config" | "state" | "context";
+   * is a file init imported into `.selfhost/context/`; adopted is a hand-written file (CLAUDE.md
+   * and the like) the import handed over to selfhost context compile. */
+  role: "config" | "state" | "context" | "adopted";
   /** config: copy of the file from before init first changed it; null when init created it. */
   backup: string | null;
-  /** state: selfhost's record from before init, null when there was none. */
+  /** state: selfhost's record from before init, null when there was none. adopted: the file's
+   * content from before the import, base64 when `encoding` says so. */
   before: string | null;
-  /** SHA-256 of what init last wrote, null for a file it deleted. Undo needs the file unchanged. */
+  encoding?: "base64";
+  /** SHA-256 of what init last wrote, null for a file it deleted. Undo needs the file unchanged.
+   * adopted: the hash from before the import. */
   sha256: string | null;
+  /** adopted: the context lock that records the file, which says what the compile wrote there. */
+  lock?: string;
   /** config: the outermost folder selfhost created for the file; undo removes it once empty. */
   made_dir?: string;
 }
@@ -129,6 +135,54 @@ export function recordCreated(path: string, created: string[]): void {
   writeRecord(path, files);
 }
 
+/**
+ * Adds the hand-written files the import handed over to the compile, with their content, so
+ * undo can put each back once the compile replaced or removed it.
+ */
+export function recordAdopted(
+  path: string,
+  adopted: readonly { path: string; lock: string; original: Buffer }[],
+): void {
+  const paths = new Set(adopted.map((file) => file.path));
+  const files = readRecord(path).filter(
+    (file) => !(file.role === "adopted" && paths.has(file.path)),
+  );
+  for (const file of adopted) {
+    const text = file.original.toString("utf8");
+    const utf8 = Buffer.from(text, "utf8").equals(file.original);
+    files.push({
+      agent: null,
+      path: file.path,
+      role: "adopted",
+      backup: null,
+      before: utf8 ? text : file.original.toString("base64"),
+      ...(utf8 ? {} : { encoding: "base64" as const }),
+      sha256: hash(file.original),
+      lock: file.lock,
+    });
+  }
+  writeRecord(path, files);
+}
+
+/** The message on an adopted file undo found as it was before the import. */
+export const UNCHANGED = "already as it was before the import";
+
+/** What the last selfhost context compile wrote at an adopted file's path, by the lock. */
+function compiledHash(file: RecordedFile): string | undefined {
+  if (!file.lock) return undefined;
+  try {
+    const lock = JSON.parse(readFileSync(file.lock, "utf8")) as {
+      files?: Record<string, { sha256?: string; adopted?: boolean }>;
+    };
+    const root = dirname(dirname(file.lock));
+    const rel = relative(root, file.path).split(sep).join("/");
+    const entry = lock.files?.[rel];
+    return entry && !entry.adopted ? entry.sha256 : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Removes the empty folders from a deleted file's own up to `top`, the one selfhost made. */
 function pruneMade(file: string, top: string): void {
   let dir = dirname(file);
@@ -213,6 +267,7 @@ export function undoRecorded(
   const order = [
     ...files.filter((file) => file.role === "config"),
     ...files.filter((file) => file.role === "state"),
+    ...files.filter((file) => file.role === "adopted"),
     ...files.filter((file) => file.role === "context"),
   ];
   for (const file of order) {
@@ -231,6 +286,26 @@ export function undoRecorded(
     };
     if (file.role === "state" && blocked.has(file.agent)) {
       leave("kept while the agent's settings file is not restored");
+      continue;
+    }
+    if (file.role === "adopted") {
+      const original = Buffer.from(
+        file.before ?? "",
+        file.encoding === "base64" ? "base64" : "utf8",
+      );
+      const now = hashOf(readBytes(file.path));
+      // Put back while it is gone, still the original, or what the compile wrote over it.
+      if (now !== null && now !== file.sha256 && now !== compiledHash(file)) {
+        leave(
+          "changed since selfhost context compile wrote it; its text from before the import is in the record",
+        );
+        continue;
+      }
+      if (!dryRun && now !== file.sha256) {
+        mkdirSync(dirname(file.path), { recursive: true });
+        writeFileSync(file.path, original);
+      }
+      results.push(result("restored", now === file.sha256 ? UNCHANGED : null));
       continue;
     }
     if (hashOf(readBytes(file.path)) !== file.sha256) {

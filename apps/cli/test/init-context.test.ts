@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -5,7 +6,7 @@ import { readContextSource } from "@selfhost/context";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { contextLaptop } from "./context-fixture.js";
-import { run } from "./run.js";
+import { run, tempDir } from "./run.js";
 
 const NOW = new Date("2026-10-31T00:00:00Z");
 const PERSON = "dev@example.com";
@@ -181,10 +182,22 @@ describe("selfhost init: importing the context files", () => {
     });
     // .cursor/mcp.json sets up the docs server differently, so the import kept the other one
     // and said so: that file stays the person's to settle. Everything else is handed over.
-    const first = JSON.parse((await run(["context", "compile", "--json"], { cwd: repo.root })).out);
+    const every = [
+      "--agent",
+      "claude",
+      "codex",
+      "cursor",
+      "copilot",
+      "gemini",
+      "opencode",
+      "goose",
+    ];
+    const first = JSON.parse(
+      (await run(["context", "compile", "--json", ...every], { cwd: repo.root })).out,
+    );
     expect(first.conflicts.map((c: { path: string }) => c.path)).toEqual([".cursor/mcp.json"]);
     rmSync(repo.path(".cursor", "mcp.json"));
-    const compiled = await run(["context", "compile", "--json"], { cwd: repo.root });
+    const compiled = await run(["context", "compile", "--json", ...every], { cwd: repo.root });
     const report = JSON.parse(compiled.out);
     expect(report.conflicts).toEqual([]);
     expect(compiled.code).toBe(0);
@@ -204,6 +217,100 @@ describe("selfhost init: importing the context files", () => {
     // A second compile finds nothing to do.
     const again = JSON.parse((await run(["context", "check", "--json"], { cwd: repo.root })).out);
     expect(again.drift).toEqual([]);
+  });
+
+  it("never deletes a tracked, hand-written CLAUDE.md, and --undo puts it back", async () => {
+    const home = tempDir("adopt-home");
+    const repo = tempDir("adopt-repo");
+    const git = (...args: string[]) =>
+      execFileSync("git", ["-C", repo.root, ...args], {
+        encoding: "utf8",
+        env: {
+          PATH: process.env.PATH,
+          GIT_CONFIG_NOSYSTEM: "1",
+          HOME: home.root,
+          GIT_AUTHOR_NAME: "Dev",
+          GIT_AUTHOR_EMAIL: PERSON,
+          GIT_COMMITTER_NAME: "Dev",
+          GIT_COMMITTER_EMAIL: PERSON,
+        },
+      });
+    git("init", "-q");
+    const original = "# Acme\n\nRun pnpm test before every commit.\n";
+    repo.write("CLAUDE.md", original);
+    git("add", "CLAUDE.md");
+    git("commit", "-q", "-m", "Add CLAUDE.md");
+    const cli = (args: string[]) => run(args, { cwd: repo.root, now: NOW, probes: onPath });
+    const init = await cli([
+      "init",
+      "--home",
+      home.root,
+      "--person",
+      PERSON,
+      "--data-dir",
+      "memory://",
+      "--import-context",
+    ]);
+    expect(init.code).toBe(0);
+    const lock = () =>
+      JSON.parse(readFileSync(repo.path(".selfhost", "context.lock.json"), "utf8"));
+    expect(lock().files["CLAUDE.md"]).toMatchObject({ adopted: true });
+
+    // Compiling for other agents leaves the file, and its ownership, alone.
+    const narrow = await cli(["context", "compile", "--agent", "opencode", "goose", "--json"]);
+    expect(JSON.parse(narrow.out).ok).toBe(true);
+    expect(readFileSync(repo.path("CLAUDE.md"), "utf8")).toBe(original);
+    expect(git("status", "--porcelain", "CLAUDE.md")).toBe("");
+    expect(lock().files["CLAUDE.md"]).toMatchObject({ adopted: true });
+    expect((await cli(["context", "check"])).code).toBe(0);
+
+    // Compiling for Claude Code takes it over; --undo puts the hand-written text back.
+    expect((await cli(["context", "compile", "--agent", "claude"])).code).toBe(0);
+    expect(readFileSync(repo.path("CLAUDE.md"), "utf8")).toContain("Compiled by selfhost from");
+    const undo = await run(["init", "--home", home.root, "--undo"], { cwd: repo.root });
+    expect(undo.out).toContain(
+      `Put back ${repo.path("CLAUDE.md")} as it was before selfhost init imported it.`,
+    );
+    expect(readFileSync(repo.path("CLAUDE.md"), "utf8")).toBe(original);
+    expect(git("status", "--porcelain", "CLAUDE.md")).toBe("");
+  });
+
+  it("lets the first compile after an import choose the agents found on the machine", async () => {
+    const { repo, init } = laptop();
+    expect((await init(["--import-context"])).code).toBe(0);
+    const home = tempDir("only-claude");
+    home.write(".claude/settings.json", "{}\n");
+    const compiled = await run(["context", "compile", "--json"], {
+      cwd: repo.root,
+      home: home.root,
+    });
+    // Claude Code is found here, and one imported rule names Cursor.
+    expect(JSON.parse(compiled.out).agents).toEqual(["claude_code", "cursor"]);
+    // The files the import took over for other agents stay as they are.
+    expect(readFileSync(repo.path("GEMINI.md"), "utf8")).not.toContain("Compiled by selfhost");
+  });
+
+  it("--undo puts back an adopted file a compile removed, and leaves one edited since", async () => {
+    const { home, repo, init } = laptop();
+    const original = readFileSync(repo.path("CLAUDE.md"));
+    expect((await init(["--import-context"])).code).toBe(0);
+    rmSync(repo.path("CLAUDE.md"));
+    const dry = await run(["init", "--home", home.root, "--undo", "--dry-run"], {
+      cwd: repo.root,
+    });
+    expect(dry.out).toContain(`Would put back ${repo.path("CLAUDE.md")}`);
+    expect(existsSync(repo.path("CLAUDE.md"))).toBe(false);
+    await run(["init", "--home", home.root, "--undo"], { cwd: repo.root });
+    expect(readFileSync(repo.path("CLAUDE.md")).equals(original)).toBe(true);
+
+    const other = laptop();
+    expect((await other.init(["--import-context"])).code).toBe(0);
+    writeFileSync(other.repo.path("CLAUDE.md"), "mine now\n");
+    const left = await run(["init", "--home", other.home.root, "--undo"], {
+      cwd: other.repo.root,
+    });
+    expect(left.out).toContain(`Left ${other.repo.path("CLAUDE.md")} as is: changed since`);
+    expect(readFileSync(other.repo.path("CLAUDE.md"), "utf8")).toBe("mine now\n");
   });
 
   it("asks in a terminal, and never with --yes or --json", async () => {

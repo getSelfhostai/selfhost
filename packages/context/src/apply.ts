@@ -72,6 +72,11 @@ export interface ContextPlan {
 export interface PlanOptions {
   /** Replace files selfhost did not write. */
   force?: boolean;
+  /**
+   * Files from the last compile that belong to agents this compile leaves out: they stay as
+   * they are and keep their lock entry.
+   */
+  keep?: ReadonlySet<string>;
 }
 
 function read(path: string): Buffer | null {
@@ -301,7 +306,8 @@ export function planContext(
         ? "outdated"
         : "edited";
     plan.drift.push({ path: file.path, problem, message: driftMessage(problem, describe(file)) });
-    if (state.foreign && known === undefined && file.path !== LOCK_PATH && !state.error) {
+    const notOurs = known === undefined || (known.adopted === true && state.hash !== known.sha256);
+    if (state.foreign && notOurs && file.path !== LOCK_PATH && !state.error) {
       plan.conflicts.push({
         path: file.path,
         message: `${label(describe(file))} exists and selfhost did not write it. Move what it holds into ${CONTEXT_DIR}, or run again with --force to replace it.`,
@@ -318,7 +324,7 @@ export function planContext(
   }
   const wanted = new Set(files.map((file) => file.path));
   for (const [path, entry] of Object.entries(previous?.files ?? {})) {
-    if (wanted.has(path)) continue;
+    if (wanted.has(path) || options.keep?.has(path)) continue;
     const current = read(join(root, path));
     if (current === null) continue;
     const removed = removal(entry, path, current);
@@ -330,6 +336,16 @@ export function planContext(
       ...(entry.header === "block" ? { block: true } : {}),
     };
     plan.drift.push({ path, problem: "stale", message: driftMessage("stale", stale) });
+    // A whole file goes only while it holds what selfhost last wrote there. A key or a block
+    // comes out of a shared file whatever else it holds.
+    const whole = !entry.key && entry.header !== "block";
+    if (whole && (entry.adopted === true || sha256(current) !== entry.sha256)) {
+      plan.conflicts.push({
+        path,
+        message: `${path} is no longer compiled from ${CONTEXT_DIR}, but selfhost did not write what it holds now${entry.adopted ? " (selfhost init took it over as it was)" : " (it was edited by hand)"}. Delete it yourself, or run again with --force to remove it.`,
+        forceable: true,
+      });
+    }
     plan.files.push({
       path,
       action: removed.after === null ? "delete" : "update",

@@ -84,6 +84,22 @@ afterEach(() => {
 });
 
 describe("selfhost init", () => {
+  it("says how OpenCode is covered and that Goose has no hooks", async () => {
+    const { home, init } = laptop();
+    home.write(".config/opencode/opencode.json", "{}\n");
+    home.write(".config/goose/config.yaml", "extensions: {}\n");
+    const report = JSON.parse((await init("--dry-run", "--json")).out);
+    const message = (id: string) =>
+      report.agents.find((agent: { id: string }) => agent.id === id)?.message;
+    expect(message("opencode")).toBe(
+      "init hooks Claude Code and Codex; OpenCode is covered by a plugin: selfhost guard install adds it",
+    );
+    expect(message("goose")).toBe(
+      "Goose has no hooks, so nothing can block its tool calls; selfhost covers it through context (selfhost context compile), the gateway (selfhost gateway connect goose) and MCP only",
+    );
+    expect((await init("--dry-run")).out).not.toContain("no hook mapping");
+  });
+
   it("--dry-run lists the agents and where each keeps its config, and writes nothing", async () => {
     const { home, repo, init } = laptop();
     const before = snapshot(home.root, repo.root);

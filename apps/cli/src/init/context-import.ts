@@ -403,13 +403,26 @@ export function planContextImport(docs: ContextDoc[], root: string): ContextImpo
   return { root, dir, files, takeOver, skipped, notes };
 }
 
+/** A hand-written file the import handed over to the compile, as it was before. */
+export interface AdoptedFile {
+  /** Absolute path. */
+  path: string;
+  /** The context lock that records it. */
+  lock: string;
+  original: Buffer;
+}
+
 /**
  * Records in the context lock the files the import handed over to the compile: each file the
  * compile would refuse to replace because selfhost did not write it, when it is one the import
- * read and its source file is in place. Each goes in with the hash it has now, so the next
- * compile replaces it. Returns the lock's path when this made a new lock, for the init record.
+ * read and its source file is in place. Each goes in marked adopted, with the hash it has now,
+ * so the next compile replaces it but never deletes it. Returns the lock's path when this made a
+ * new lock, and the files with their bytes from before, for the init record.
  */
-async function recordTakeOver(plan: ContextImportPlan): Promise<string | undefined> {
+async function recordTakeOver(
+  plan: ContextImportPlan,
+): Promise<{ lock: string | undefined; adopted: AdoptedFile[] }> {
+  const none = { lock: undefined, adopted: [] };
   const inPlace = new Set(
     plan.files
       .filter((file) => file.action !== "exists")
@@ -417,9 +430,9 @@ async function recordTakeOver(plan: ContextImportPlan): Promise<string | undefin
   );
   const lockPath = join(plan.root, ...LOCK_PATH.split("/"));
   const current = existsSync(lockPath) ? parseLock(readFileSync(lockPath, "utf8")) : undefined;
-  if (existsSync(lockPath) && !current) return undefined;
+  if (existsSync(lockPath) && !current) return none;
   const built = await buildContext(plan.root);
-  if (!built.ok) return undefined;
+  if (!built.ok) return none;
   const refused = new Set(built.plan.conflicts.map((conflict) => conflict.path));
   const imported = (path: string) =>
     plan.takeOver.find((entry) =>
@@ -431,29 +444,38 @@ async function recordTakeOver(plan: ContextImportPlan): Promise<string | undefin
     skills: {},
     files: {},
   };
-  let recorded = 0;
+  const adopted: AdoptedFile[] = [];
   for (const file of built.result.files) {
     if (!refused.has(file.path) || (file.content.kind !== "text" && file.content.kind !== "bytes"))
       continue;
     const entry = imported(file.path);
     if (!entry?.sources.every((source) => inPlace.has(source))) continue;
-    const bytes = existing(join(plan.root, ...file.path.split("/")));
+    const path = join(plan.root, ...file.path.split("/"));
+    const bytes = existing(path);
     if (bytes === null) continue;
-    lock.files[file.path] = { sources: file.sources, header: file.header, sha256: sha(bytes) };
-    recorded += 1;
+    lock.files[file.path] = {
+      sources: file.sources,
+      header: file.header,
+      sha256: sha(bytes),
+      adopted: true,
+    };
+    adopted.push({ path, lock: lockPath, original: bytes });
   }
-  if (recorded === 0) return undefined;
+  if (adopted.length === 0) return none;
   mkdirSync(dirname(lockPath), { recursive: true });
   writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
-  return current ? undefined : lockPath;
+  return { lock: current ? undefined : lockPath, adopted };
 }
 
 /**
  * Writes the plan's new files, never replacing one, and returns the paths it wrote (a new
  * context lock among them). The files the import moved into the source (CLAUDE.md and the
- * like) are recorded in the context lock, so the next selfhost context compile takes them over.
+ * like) are recorded in the context lock, so the next selfhost context compile takes them over;
+ * they come back with their bytes from before, so selfhost init --undo can put them back.
  */
-export async function applyContextImport(plan: ContextImportPlan): Promise<string[]> {
+export async function applyContextImport(
+  plan: ContextImportPlan,
+): Promise<{ written: string[]; adopted: AdoptedFile[] }> {
   const written: string[] = [];
   for (const file of plan.files) {
     if (file.action !== "create") continue;
@@ -466,6 +488,6 @@ export async function applyContextImport(plan: ContextImportPlan): Promise<strin
       file.action = "exists";
     }
   }
-  const lock = await recordTakeOver(plan);
-  return lock ? [...written, lock] : written;
+  const { lock, adopted } = await recordTakeOver(plan);
+  return { written: lock ? [...written, lock] : written, adopted };
 }

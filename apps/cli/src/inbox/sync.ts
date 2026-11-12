@@ -54,6 +54,7 @@ export async function listAll(
 
 /**
  * Reads the open items (the person's, or everyone's with `all`) and saves them as the copy.
+ * In solo mode (no server) the person on this machine owns every item, whoever the item names.
  * With `stuck`, the person's list also gets the exceptions their own agent asked for that went
  * to nobody, because they are the team's only owner or admin: nobody else sees those.
  */
@@ -64,8 +65,12 @@ export async function refreshCache(
   options: { all?: boolean; now: Date; pid?: number | null; stuck?: boolean },
 ): Promise<ReviewItem[]> {
   const all = options.all ?? false;
-  const items = await listAll(list, { state: "open", ...(all ? {} : { owner: scope.person }) });
-  if (!all && options.stuck) {
+  const byOwner = !all && scope.server !== null;
+  const items = await listAll(list, {
+    state: "open",
+    ...(byOwner ? { owner: scope.person } : {}),
+  });
+  if (byOwner && options.stuck) {
     const own = new Set(items.map((item) => item.id));
     const open = await listAll(list, { state: "open" });
     items.push(

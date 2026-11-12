@@ -2,10 +2,12 @@ import { dirname, relative, resolve } from "node:path";
 import {
   AGENT_NAMES,
   applyContextPlan,
+  type BuildResult,
   buildContext,
   CONTEXT_DIR,
   type Conflict,
   type ContextError,
+  type ContextLayer,
   type Drift,
   type FileAction,
   formatContextError,
@@ -176,6 +178,49 @@ function printCoverage(
 }
 
 /**
+ * The compile `selfhost context compile` makes: the repository's .selfhost/context merged with
+ * the org, team and personal layers on this machine (unless `layers` is false), for the given
+ * agents, else those of the last compile, else those found on this machine. Writes nothing.
+ * Other commands that compile the context (policy compile --apply) use it too, so what they
+ * write is what context compile and context check expect.
+ */
+export async function layeredBuild(
+  root: string,
+  options: {
+    agents?: ContextAgent[];
+    out?: string;
+    force?: boolean;
+    layers?: boolean;
+    /** Ask about new org or team MCP servers that run a command, when a terminal can answer. */
+    ask?: boolean;
+  },
+  io: Pick<ContextIo, "configPath" | "confirm" | "detect">,
+): Promise<{
+  built: BuildResult;
+  local: { layers: ContextLayer[]; errors: ContextError[] };
+  trusted: Awaited<ReturnType<typeof trustedLayers>>;
+}> {
+  const pulled = options.layers === false ? { layers: [], errors: [] } : localLayers(io.configPath);
+  const trusted = await trustedLayers(
+    io.configPath,
+    pulled.layers,
+    options.ask ? io.confirm : undefined,
+  );
+  const local = { layers: trusted.layers, errors: pulled.errors };
+  const built: BuildResult =
+    local.errors.length > 0
+      ? { ok: false, errors: local.errors }
+      : await buildContext(root, {
+          agents: options.agents,
+          out: options.out,
+          force: options.force,
+          layers: local.layers,
+          ...(options.agents === undefined && io.detect ? { detected: io.detect() } : {}),
+        });
+  return { built, local, trusted };
+}
+
+/**
  * Compiles .selfhost/context into each agent's files in the repository (or --out), and prints
  * what every agent gets per item. With `check`, writes nothing and fails when a generated file
  * differs from what the source compiles to.
@@ -190,23 +235,11 @@ export async function contextCompile(
     : undefined;
   const out = options.out === undefined ? undefined : resolve(io.cwd, options.out);
   const check = options.check === true;
-  const pulled = options.layers === false ? { layers: [], errors: [] } : localLayers(io.configPath);
-  const trusted = await trustedLayers(
-    io.configPath,
-    pulled.layers,
-    options.json || check ? undefined : io.confirm,
+  const { built, local, trusted } = await layeredBuild(
+    root,
+    { agents, out, force: options.force, layers: options.layers, ask: !(options.json || check) },
+    io,
   );
-  const local = { layers: trusted.layers, errors: pulled.errors };
-  const built =
-    local.errors.length > 0
-      ? ({ ok: false, errors: local.errors } as const)
-      : await buildContext(root, {
-          agents,
-          out,
-          force: options.force,
-          layers: local.layers,
-          ...(agents === undefined && io.detect ? { detected: io.detect() } : {}),
-        });
   const report: ContextCompileReport = {
     schema: "selfhost.context_compile/v1",
     root,

@@ -11,7 +11,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderStatusline, type StatuslineCache, writeCache } from "../src/alerts/cache.js";
 import { type InboxIo, runInboxDecide, runInboxOpen, snoozeUntil } from "../src/inbox/commands.js";
 import type { ReviewList } from "../src/inbox/review-list.js";
-import { inboxPaths, readInboxCache, readQueue, writeInboxCache } from "../src/inbox/store.js";
+import {
+  inboxPaths,
+  pendingItems,
+  readInboxCache,
+  readQueue,
+  writeInboxCache,
+} from "../src/inbox/store.js";
 import { startInboxRefresh } from "../src/inbox/sync.js";
 import { shortIds } from "../src/inbox/text.js";
 import { createProgram } from "../src/program.js";
@@ -713,6 +719,36 @@ describe("selfhost inbox in solo mode", () => {
     const listed = parse((await run(["inbox", "--json", "--data-dir", "memory://"], deps)).out);
     expect(listed).toMatchObject({ mode: "solo", person: PERSON, offline: false });
     expect(listed.items).toHaveLength(2);
+    expect(attempts).toEqual([]);
+  });
+
+  it("shows every open item: the person on this machine owns them all", async () => {
+    const attempts = blockNetwork();
+    // Exceptions the guardrail raised name the agent's person, or nobody.
+    const list = new FakeList([
+      item(1, { kind: "exception", owners: [] }),
+      item(2, { kind: "exception", owners: ["someone@else.example"] }),
+      item(3),
+    ]);
+    const { configPath } = laptop();
+    const deps = {
+      configPath,
+      env: { SELFHOST_PERSON: PERSON },
+      now: NOW,
+      localReviewList: () => list,
+    };
+    const listed = parse((await run(["inbox", "--json", "--data-dir", "memory://"], deps)).out);
+    expect(listed.items.map((entry: ReviewItem) => entry.title).sort()).toEqual([
+      "Item 1",
+      "Item 2",
+      "Item 3",
+    ]);
+    const text = await run(["inbox", "--data-dir", "memory://"], deps);
+    expect(text.out).not.toContain("Nothing to review");
+    // The copy --all saved reads the same.
+    await run(["inbox", "--all", "--json", "--data-dir", "memory://"], deps);
+    const cache = readInboxCache(inboxPaths(configPath).cache, { server: null, team: null });
+    expect(cache && pendingItems(cache, [], NOW)).toHaveLength(3);
     expect(attempts).toEqual([]);
   });
 

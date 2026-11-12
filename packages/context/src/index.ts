@@ -14,7 +14,7 @@ import { contradictions } from "./lint.js";
 import { buildLock, type ContextLock, lockFile, parseLock, versionWarnings } from "./lock.js";
 import { LOCK_PATH } from "./schema.js";
 import { readContextSource } from "./source.js";
-import type { ContextError, ContextSource } from "./types.js";
+import type { ContextError, ContextSource, RulerFile } from "./types.js";
 
 export {
   applyContextPlan,
@@ -153,6 +153,28 @@ function defaultAgents(
 }
 
 /**
+ * Files of the last compile that this one does not write but the agents it leaves out would:
+ * compiling for a few agents never removes another agent's files.
+ */
+async function othersFiles(
+  source: ContextSource,
+  result: CompileResult,
+  previous: ContextLock | undefined,
+  ruler: readonly RulerFile[],
+): Promise<Set<string>> {
+  const keep = new Set<string>();
+  const others = CONTEXT_AGENTS.filter((agent) => !result.agents.includes(agent));
+  if (!previous || others.length === 0) return keep;
+  const wanted = new Set(result.files.map((file) => file.path));
+  const gone = Object.keys(previous.files).filter((path) => !wanted.has(path));
+  if (gone.length === 0) return keep;
+  const theirs = await compileContext(source, { agents: others, ruler });
+  const paths = new Set(theirs.files.map((file) => file.path));
+  for (const path of gone) if (paths.has(path)) keep.add(path);
+  return keep;
+}
+
+/**
  * Reads root/.selfhost/context, compiles it and plans the writes into root (or `out`), with
  * the lock among the files. Writes nothing: applyContextPlan does, and a check is a plan
  * with drift.
@@ -174,15 +196,27 @@ export async function buildContext(root: string, options: BuildOptions = {}): Pr
     previous = parseLock(readFileSync(lockPath, "utf8"));
     if (!previous) warnings.push(`${LOCK_PATH} is not a lock this selfhost reads; it is replaced.`);
   }
+  // A lock that only records files selfhost init took over is no compile: it sets no agents.
+  const compiledBefore =
+    previous && Object.values(previous.files).some((entry) => entry.adopted !== true);
   const result = await compileContext(source, {
-    agents: options.agents ?? previous?.agents ?? defaultAgents(source, options.detected, warnings),
+    agents:
+      options.agents ??
+      (compiledBefore ? previous?.agents : undefined) ??
+      defaultAgents(source, options.detected, warnings),
     ruler: read.ruler,
   });
   warnings.push(...contradictions(source));
   const lock = buildLock(source, result);
+  const keep = await othersFiles(source, result, previous, read.ruler);
+  for (const path of keep) {
+    const entry = previous?.files[path];
+    if (entry) lock.files[path] = entry;
+  }
   warnings.push(...versionWarnings(previous, lock));
   const plan = planContext(target, [...result.files, lockFile(lock)], previous, {
     force: options.force,
+    keep,
   });
   return {
     ok: true,

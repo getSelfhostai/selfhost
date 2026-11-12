@@ -13,7 +13,13 @@ import {
 import { createApp } from "@selfhost/server/app";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { plantedValues, readPlanted } from "../../../fixtures/redaction/planted.js";
-import { type HandoffIo, runHandoff, runShare, runTakeover } from "../src/handoff/commands.js";
+import {
+  type HandoffIo,
+  resumePlan,
+  runHandoff,
+  runShare,
+  runTakeover,
+} from "../src/handoff/commands.js";
 import {
   changedFiles,
   checkoutBranch,
@@ -44,6 +50,7 @@ function keptDir(prefix: string) {
 const SERVER = "https://selfhost.acme.example.com";
 const SESSION = "5f0c2b1e-7d4a-4c8e-9a51-3e2d1c0b9a87";
 const CODEX_SESSION = "019a5b01-0c3d-7e2f-8a10-2b3c4d5e6f70";
+const OPENCODE_SESSION = "019a5b02-1d4e-7f30-9b21-3c4d5e6f7081";
 const BRANCH = "agent/rate-limits";
 // Every event is dated against this clock, so nothing here depends on the day the tests run.
 const NOW = new Date("2026-11-11T12:00:00Z");
@@ -202,6 +209,12 @@ describe("handing a run over and taking it over, two people on two machines", ()
         ts: "2026-11-11T10:00:00.000Z",
         session_id: CODEX_SESSION,
         agent: { vendor: "codex" },
+      }),
+      event({
+        kind: "session.started",
+        ts: "2026-11-11T10:30:00.000Z",
+        session_id: OPENCODE_SESSION,
+        agent: { vendor: "opencode" },
       }),
     ];
     const res = await app.request("/v1/events", {
@@ -363,9 +376,30 @@ describe("handing a run over and taking it over, two people on two machines", ()
     expect(report.resume).toEqual({
       command: `codex "Read .selfhost/handoff/${handed.handoff.id}.md and carry on with the work it describes."`,
       native: false,
-      why: expect.stringMatching(/^No native resume: the team does not share transcripts/),
+      why: expect.stringMatching(/^No native resume: --print does not take the run over/),
     });
     expect(out.join("\n")).toContain(`# Handoff: Codex run ${CODEX_SESSION}`);
+    // --print only read it: the handoff is still pending, and still Ben's to take over.
+    expect(out.join("\n")).toContain("--print only reads the brief");
+    const again = await runTakeover(handed.handoff.id, { print: true }, io("ben", benClone).io);
+    expect(again.handoff.state).toBe("pending");
+    const taken = await runTakeover(handed.handoff.id, {}, io("ben", benClone).io);
+    expect(taken.handoff.state).toBe("taken");
+    expect(taken.resume.why).toMatch(/^No native resume: the team does not share transcripts/);
+  });
+
+  it("tells the new owner to start the run's own agent, not Claude Code", async () => {
+    const handed = await runHandoff(
+      OPENCODE_SESSION,
+      { to: "ben@example.com", transcript: false, repo: anaClone },
+      io("ana", anaClone).io,
+    );
+    const report = await runTakeover(handed.handoff.id, {}, io("ben", benClone).io);
+    const prompt = `"Read .selfhost/handoff/${handed.handoff.id}.md and carry on with the work it describes."`;
+    expect(report.resume).toMatchObject({ command: `opencode run ${prompt}`, native: false });
+    expect(
+      readFileSync(join(benClone, ".selfhost", "handoff", `${handed.handoff.id}.md`), "utf8"),
+    ).toContain(`opencode run ${prompt}`);
   });
 
   it("fetches from the remote the branch was pushed to, and tells same-minute handoffs apart", async () => {
@@ -443,6 +477,24 @@ describe("handing a run over and taking it over, two people on two machines", ()
   });
 });
 
+describe("the resume hint without a transcript", () => {
+  it("starts a new session of the run's own agent, and says it in words for one without a command", () => {
+    const hint = (vendor: string | undefined) =>
+      resumePlan(
+        { id: "h1", ...(vendor ? { agent: { vendor } } : {}) } as Parameters<typeof resumePlan>[0],
+        undefined,
+        "none",
+      ).command;
+    const prompt = '"Read .selfhost/handoff/h1.md and carry on with the work it describes."';
+    expect(hint("claude_code")).toBe(`claude ${prompt}`);
+    expect(hint("codex")).toBe(`codex ${prompt}`);
+    expect(hint("opencode")).toBe(`opencode run ${prompt}`);
+    expect(hint("goose")).toBe(`goose run --interactive --text ${prompt}`);
+    expect(hint("cursor")).toBe(prompt.slice(1, -1));
+    expect(hint(undefined)).toBe(prompt.slice(1, -1));
+  });
+});
+
 describe("the branch's git state at handoff and takeover", () => {
   const root = keptDir("handoff-git");
   const origin = root.path("origin.git");
@@ -513,6 +565,24 @@ describe("the branch's git state at handoff and takeover", () => {
     rmSync(join(ana, "scripts"), { recursive: true });
     sh(ana, "switch", "main");
     expect(changedFiles(systemGit, ana)).toBeUndefined();
+  });
+
+  it("keeps the first letter of the first uncommitted file, and names a renamed file by its new path", () => {
+    root.write("ana/README.md", "# api, edited by hand\n");
+    root.write("ana/notes with space.md", "draft\n");
+    try {
+      // `git status --porcelain` starts this entry with a space: " M README.md".
+      expect(workState(systemGit, ana).uncommitted).toEqual(["README.md", "notes with space.md"]);
+    } finally {
+      sh(ana, "checkout", "--", "README.md");
+      rmSync(join(ana, "notes with space.md"));
+    }
+    sh(ana, "mv", "README.md", "READ ME.md");
+    try {
+      expect(workState(systemGit, ana).uncommitted).toEqual(["READ ME.md"]);
+    } finally {
+      sh(ana, "mv", "READ ME.md", "README.md");
+    }
   });
 
   it("switches a clone whose only change is an untracked selfhost.toml", () => {

@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { personalDir } from "../src/context/layers.js";
 import type { PolicyCompileReport } from "../src/policy/compile.js";
 import type { Fetch } from "../src/team/client.js";
 import { run, tempDir } from "./run.js";
@@ -214,5 +215,30 @@ describe("selfhost policy compile", () => {
     expect(claude).toContain("<!-- Source: .ruler/selfhost-policy.md -->");
     expect(claude).toContain("<!-- Source: .selfhost/context/rules/style.md -->");
     expect((await run(["context", "check"], { cwd: dir.root })).code).toBe(0);
+  });
+
+  it("--apply makes the same layered compile, for the same agents, as context compile", async () => {
+    const dir = repo({ ".selfhost/context/rules/style.md": "Use tabs.\n" });
+    const configPath = tempDir("config").path("config.json");
+    const personal = join(personalDir(configPath), "rules", "mine.md");
+    mkdirSync(join(personalDir(configPath), "rules"), { recursive: true });
+    writeFileSync(personal, "Answer in short sentences.\n");
+    // Only Claude Code is set up on this machine.
+    const home = tempDir("home");
+    home.write(".claude/settings.json", "{}\n");
+    const deps = { cwd: dir.root, configPath, home: home.root };
+    const result = await run(
+      ["policy", "compile", "--apply", "--vendor", "claude", "--json"],
+      deps,
+    );
+    expect(result.code).toBe(0);
+    const lock = JSON.parse(readFileSync(dir.path(".selfhost", "context.lock.json"), "utf8"));
+    expect(lock.agents).toEqual(["claude_code"]);
+    const claude = readFileSync(dir.path("CLAUDE.md"), "utf8");
+    expect(claude).toContain("Answer in short sentences.");
+    expect(claude).toContain("<!-- Source: .ruler/selfhost-policy.md -->");
+    expect(existsSync(dir.path(".cursor"))).toBe(false);
+    const check = await run(["context", "check"], deps);
+    expect(check.code).toBe(0);
   });
 });

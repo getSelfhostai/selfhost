@@ -9,15 +9,18 @@ import {
   RULER_SOURCE,
 } from "@selfhost/compile";
 import { handWrittenRulesFiles, runRuler } from "@selfhost/compile/ruler";
-import { applyContextPlan, buildContext, CONTEXT_DIR } from "@selfhost/context";
+import { applyContextPlan, CONTEXT_DIR } from "@selfhost/context";
 import {
   COMPILE_VENDORS,
   type CompileVendor,
+  type ContextAgent,
   type PolicyCoverage,
   type RuleCoverage,
 } from "@selfhost/schema";
 import type { Command } from "commander";
 import { readConfigFile } from "../config-file.js";
+import { layeredBuild } from "../context/commands.js";
+import { rememberRepo } from "../context/layers.js";
 import { plural, table } from "../format.js";
 import { managedHookCommand } from "../hooks/hook-binary.js";
 import { configPin } from "../hooks/trust.js";
@@ -40,6 +43,8 @@ export interface PolicyCompileIo extends PolicyIo {
   which?: (name: string) => string | undefined;
   /** HTTP for the GitHub API, used only with --apply. Default: the global fetch. */
   fetch?: Fetch;
+  /** The agents found on this machine, for a first context compile (as context compile). */
+  detect?: () => ContextAgent[];
 }
 
 export interface PolicyCompileOptions {
@@ -319,6 +324,7 @@ async function writeRules(
   root: string | undefined,
   result: CompileResult,
   vendors: CompileVendor[],
+  io: Pick<PolicyCompileIo, "configPath" | "detect">,
 ): Promise<ApplyReport["rules"]> {
   if (!result.rules) {
     return {
@@ -334,7 +340,9 @@ async function writeRules(
       message: "Not in a git repository, so no rules files were written.",
     };
   }
-  if (existsSync(join(root, CONTEXT_DIR))) return writeRulesWithContext(root, result.rules.content);
+  if (existsSync(join(root, CONTEXT_DIR))) {
+    return writeRulesWithContext(root, result.rules.content, io);
+  }
   const handWritten = handWrittenRulesFiles(root);
   if (handWritten.length > 0) {
     return {
@@ -360,13 +368,22 @@ async function writeRules(
 /**
  * In a repository with .selfhost/context, `selfhost context compile` owns the rules files and
  * puts .ruler/ in them: the policy text goes to .ruler/ and the context compile writes the
- * files, so neither compile undoes the other.
+ * files, so neither compile undoes the other. It is the same compile, with the same layers and
+ * agents, so selfhost context check passes afterwards.
  */
-async function writeRulesWithContext(root: string, text: string): Promise<ApplyReport["rules"]> {
+async function writeRulesWithContext(
+  root: string,
+  text: string,
+  io: Pick<PolicyCompileIo, "configPath" | "detect">,
+): Promise<ApplyReport["rules"]> {
   const source = join(root, RULER_SOURCE);
   mkdirSync(dirname(source), { recursive: true });
   writeFileSync(source, text);
-  const built = await buildContext(root);
+  const { built, local } = await layeredBuild(
+    root,
+    { layers: io.configPath !== undefined },
+    { configPath: io.configPath ?? "", ...(io.detect ? { detect: io.detect } : {}) },
+  );
   if (!built.ok) {
     return {
       root,
@@ -382,6 +399,9 @@ async function writeRulesWithContext(root: string, text: string): Promise<ApplyR
     };
   }
   applyContextPlan(root, built.plan);
+  if (io.configPath && local.layers.some((layer) => layer.kind !== "personal")) {
+    rememberRepo(io.configPath, root);
+  }
   const changed = built.plan.files
     .filter((file) => file.action !== "unchanged")
     .map((file) => file.path);
@@ -519,7 +539,7 @@ export async function policyCompile(
 
   if (options.apply) {
     report.apply = {
-      rules: await writeRules(root, result, compiled),
+      rules: await writeRules(root, result, compiled, io),
       ...installSteps(written, io.platform),
       // --managed installed what it could and says what is left.
       ...(report.managed ? { commands: report.managed.commands } : {}),
