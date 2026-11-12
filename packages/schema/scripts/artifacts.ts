@@ -8,6 +8,8 @@ import {
   BackgroundRunSchema,
   BackgroundRunsQuerySchema,
   BackgroundRunsResponseSchema,
+  BreakEvenResponseSchema,
+  BreakEvenRowSchema,
   BudgetQuerySchema,
   BudgetResponseSchema,
   ClaudeCodeHookInputSchema,
@@ -94,6 +96,10 @@ import {
   PolicyObservedRuleSchema,
   PolicyQuerySchema,
   PolicyResponseSchema,
+  PresenceOverlapSchema,
+  PresenceQuerySchema,
+  PresenceResponseSchema,
+  PresenceRunSchema,
   ProvenanceAgentRowSchema,
   ProvenanceModuleRowSchema,
   ProvenancePersonRowSchema,
@@ -151,6 +157,8 @@ import {
   UsageResponseSchema,
   UsageRowSchema,
   UsageTotalsSchema,
+  VendorImportStatusSchema,
+  VendorImportsResponseSchema,
   VendorReportedRowSchema,
   WebhookRunRequestSchema,
 } from "../src/index.js";
@@ -299,6 +307,10 @@ const COMPONENT_SCHEMAS: ReadonlyArray<readonly [name: string, schema: TSchema]>
   ["UsageTotals", UsageTotalsSchema],
   ["UsageRow", UsageRowSchema],
   ["UsageResponse", UsageResponseSchema],
+  ["BreakEvenRow", BreakEvenRowSchema],
+  ["BreakEvenResponse", BreakEvenResponseSchema],
+  ["VendorImportStatus", VendorImportStatusSchema],
+  ["VendorImportsResponse", VendorImportsResponseSchema],
   ["RoiAgentRow", RoiAgentRowSchema],
   ["RoiBaseline", RoiBaselineSchema],
   ["RoiResponse", RoiResponseSchema],
@@ -332,6 +344,9 @@ const COMPONENT_SCHEMAS: ReadonlyArray<readonly [name: string, schema: TSchema]>
   ["HandoffsResponse", HandoffsResponseSchema],
   ["TakeoverResponse", TakeoverResponseSchema],
   ["TailResponse", TailResponseSchema],
+  ["PresenceRun", PresenceRunSchema],
+  ["PresenceOverlap", PresenceOverlapSchema],
+  ["PresenceResponse", PresenceResponseSchema],
   ["BackgroundRun", BackgroundRunSchema],
   ["BackgroundRunsResponse", BackgroundRunsResponseSchema],
   ["StartRunRequest", StartRunRequestSchema],
@@ -1305,6 +1320,24 @@ function openApiDocument(): Json {
           },
         },
       },
+      "/v1/presence": {
+        get: {
+          operationId: "getPresence",
+          summary:
+            "Who (people and named agents) is working right now on which repo, branch and files, and who owns each run.",
+          description: `${ROLE_NOTE.read} A run is active from its first event until its session ends (or its background run finishes) or it has had no event for idle_minutes. A person token sees the teams of its org it can read; the admin token sees every team and runs with no team. overlaps lists files two active runs in one repo both edited; the team server also warns each of their owners with an overlap item. selfhost who and the MCP tool who give the same answer.`,
+          parameters: queryParameters(PresenceQuerySchema),
+          responses: {
+            "200": {
+              description: "Who is working where.",
+              content: jsonContent("PresenceResponse"),
+            },
+            "400": errorResponse("Invalid query."),
+            ...authErrors,
+            "403": forbiddenResponse,
+          },
+        },
+      },
       "/v1/budget": {
         get: {
           operationId: "getBudget",
@@ -1487,6 +1520,53 @@ function openApiDocument(): Json {
             "400": errorResponse("Invalid query or time range."),
             ...authErrors,
             "403": errorResponse("The caller is not in the team or the org asked for."),
+          },
+        },
+      },
+      "/v1/usage/break-even": {
+        get: {
+          operationId: "getUsageBreakEven",
+          summary:
+            "Seat or API key for each developer: their usage at API rates against seat prices.",
+          description:
+            "Same query and scope as GET /v1/usage (default: the last 30 days); group_by is ignored. Spend per person and agent is counted as /v1/usage counts it, scaled to 30 days and compared with each seat tier of the agent's plan (Claude Code and Codex): the tier's list price plus API rates for use past its approximate limit. The cheaper choice is the verdict. Heaviest use first.",
+          parameters: queryParameters(UsageQuerySchema),
+          responses: {
+            "200": {
+              description: "One row per person and agent.",
+              content: jsonContent("BreakEvenResponse"),
+            },
+            "400": errorResponse("Invalid query or time range."),
+            ...authErrors,
+            "403": errorResponse("The caller is not in the team or the org asked for."),
+          },
+        },
+      },
+      "/v1/vendor-imports": {
+        get: {
+          operationId: "getVendorImports",
+          summary:
+            "Status of the vendor usage importers (Anthropic, OpenAI and Cursor admin APIs).",
+          description:
+            "Either kind of token. One entry per importer whose admin key is set on the server (SELFHOST_ANTHROPIC_ADMIN_KEY, SELFHOST_OPENAI_ADMIN_KEY, SELFHOST_CURSOR_ADMIN_KEY), with the last UTC day imported, how the last run went and what the importer cannot see. No key is ever returned. Imported rows are cost.recorded events with source vendor_api and data.rollup day, counted only for a person, agent and day no other source reported.",
+          responses: {
+            "200": { description: "The importers.", content: jsonContent("VendorImportsResponse") },
+            ...authErrors,
+          },
+        },
+      },
+      "/v1/vendor-imports/run": {
+        post: {
+          operationId: "runVendorImports",
+          summary: "Import vendor usage now.",
+          description:
+            "Admin token only. The server also does this every hour. Safe to repeat: a day already imported stores nothing new.",
+          responses: {
+            "200": {
+              description: "The importers after the run.",
+              content: jsonContent("VendorImportsResponse"),
+            },
+            ...authErrors,
           },
         },
       },

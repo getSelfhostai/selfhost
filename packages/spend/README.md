@@ -123,10 +123,26 @@ counts each once, by two rules applied in order:
    by more than one source keeps the cost events of one, in the order `otel`, `local_log`,
    `hook`, `gateway`, `vendor_api`. OpenTelemetry comes first because it is the only source that
    sees every request. Sessions that did not go through the gateway keep their session log.
+3. **A vendor-reported daily total counts once per person-day.** The vendor usage importers
+   (`@selfhost/importers`, run by the server) write a person's usage of a model per UTC day,
+   with no session and `data.rollup: "day"` (`isVendorRollup`). It counts only when no other
+   source recorded spend for the same person, agent and day, so a day a laptop's logs, a hook or
+   the gateway saw is counted from them, request by request.
 
 `pairGatewayCosts(events)` returns the pairs of rule 1. `countedCostsSql(input, prefix)` is rule 1
 as SQL CTEs over a table of cost rows, for the server's usage and ROI queries; it pairs the same
 events, so `GET /v1/usage`, the team overview, `GET /v1/budget`, ROI and `selfhost spend` agree.
+`vendorRollupCountsSql(columns)` is rule 3 as a SQL condition on a cost row.
+
+## Seat or API key
+
+`breakEven(spend, days)` takes spend per person and agent over a range of `days` and answers, for
+each agent with seat tiers (`SEAT_TIERS`: Claude Code Pro, Max 5x and Max 20x, Codex Plus and Pro,
+list prices as of `SEAT_PRICES_AS_OF`), whether a seat or an API key is cheaper. The spend is
+scaled to 30 days; a tier costs its price plus API rates for use past its approximate monthly
+limit (the weekly limits of `PLAN_LIMITS` times 30/7). The cheapest choice wins, the API key on a
+tie. Rows come heaviest use first, with the tier, the monthly saving and `break_even_usd`, the
+cheapest seat's price. The server serves it at `GET /v1/usage/break-even`.
 
 ## Prompt cache hit rate
 

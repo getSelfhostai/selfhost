@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import type { AdminImporter } from "@selfhost/importers";
 import { type JoinRefusal, type Ledger, withOrg } from "@selfhost/ledger";
 import { POLICY_ACTOR_ID } from "@selfhost/policy";
 import {
@@ -42,6 +43,7 @@ import { createOrgRoute, orgRoutes } from "./orgs.js";
 import { peopleRoutes } from "./people.js";
 import { policyRoutes } from "./policy.js";
 import { policyObservedRoutes } from "./policy-observe.js";
+import { presenceRoutes } from "./presence.js";
 import { type ProvenanceRouteOptions, provenanceRoutes } from "./provenance.js";
 import { roiRoutes } from "./roi.js";
 import { type RunRouteOptions, runRoutes } from "./runs.js";
@@ -49,6 +51,7 @@ import { sandboxRoutes } from "./sandboxes.js";
 import { forwardedEmail, type SigninOptions, signedInPerson } from "./signin.js";
 import { tailRoutes } from "./tail.js";
 import { usageRoutes } from "./usage.js";
+import { vendorImportRoutes } from "./vendor-usage.js";
 
 export interface TeamRouteOptions {
   ledger: Ledger;
@@ -74,6 +77,8 @@ export interface TeamRouteOptions {
   handoffs?: Omit<HandoffRouteOptions, "now">;
   /** Called with the kinds and events of each batch of new events a person token writes. */
   eventsStored?: EventRouteOptions["stored"];
+  /** Vendor usage importers with a key set (see vendor-usage.ts), for their status route. */
+  vendorImporters?: readonly AdminImporter[];
   /**
    * A hosted server (see hosted.ts): each person token's request is limited to its org's rows,
    * joins stop at the seat limit and uploads at the org's storage limit.
@@ -133,6 +138,7 @@ export function teamRoutes(
     background,
     handoffs,
     eventsStored,
+    vendorImporters = [],
     tenancy,
   }: TeamRouteOptions,
 ): void {
@@ -238,6 +244,7 @@ export function teamRoutes(
     gateway,
     background,
     handoffs,
+    vendorImporters,
   );
   personRoutes?.(person);
 
@@ -331,7 +338,18 @@ export function teamRoutes(
       else app.on(method, path, adminOnly, run);
     },
   };
-  sharedRoutes(asAdmin, ledger, now, provenance, runs, integrations, gateway, background, handoffs);
+  sharedRoutes(
+    asAdmin,
+    ledger,
+    now,
+    provenance,
+    runs,
+    integrations,
+    gateway,
+    background,
+    handoffs,
+    vendorImporters,
+  );
 }
 
 /** The routes both kinds of token reach, each checking the caller's role. */
@@ -345,6 +363,7 @@ function sharedRoutes(
   gateway: Gateway | undefined,
   background: Background | undefined,
   handoffs: TeamRouteOptions["handoffs"],
+  vendorImporters: readonly AdminImporter[],
 ): void {
   policyRoutes(router, ledger, gateway, background?.env);
   contextRoutes(router, ledger, { ...(now ? { now } : {}), ...runs });
@@ -366,11 +385,13 @@ function sharedRoutes(
   laptopRoutes(router, ledger, now ? { now } : {});
   orgRoutes(router, ledger, { ...(now ? { now } : {}), ...(gateway ? { gateway } : {}) });
   usageRoutes(router, ledger, now ? { now } : {});
+  vendorImportRoutes(router, ledger, vendorImporters);
   roiRoutes(router, ledger, now ? { now } : {});
   sandboxRoutes(router, ledger, now ? { now } : {});
   provenanceRoutes(router, ledger, { ...provenance, ...(now ? { now } : {}) });
   runRoutes(router, ledger, { ...runs, ...(now ? { now } : {}) });
   tailRoutes(router, ledger, { ...runs, ...(now ? { now } : {}) });
+  presenceRoutes(router, ledger, { ...runs, ...(now ? { now } : {}) });
   gatewayRoutes(router, ledger, gateway);
   backgroundRoutes(router, ledger, background);
   handoffRoutes(router, ledger, { ...handoffs, ...(now ? { now } : {}) });

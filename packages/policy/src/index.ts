@@ -11,6 +11,8 @@ export {
   callHosts,
   effectiveRules,
   evaluate,
+  namedAgentHit,
+  namedAgentToolsRuleId,
   type PolicyCheck,
   type PolicyHit,
   policyChecks,

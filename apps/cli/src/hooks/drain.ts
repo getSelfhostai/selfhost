@@ -21,6 +21,7 @@ import {
   type ExecutionLocation,
   type LedgerEvent,
   MAX_EVENT_BATCH,
+  namedAgentActor,
   validateEvent,
 } from "@selfhost/schema";
 import {
@@ -263,6 +264,7 @@ function mapLine(
         }
       }
     }
+    withLineContext(events, line);
     if (line.guard) {
       const toolEvent = events.find((event) => event.kind === "tool.called");
       const decision = guardEvent(agent, line.payload, line.guard, toolEvent, ts, repo);
@@ -275,6 +277,24 @@ function mapLine(
 }
 
 const textOf = (value: unknown) => (typeof value === "string" && value !== "" ? value : undefined);
+
+/**
+ * What the hook saw beyond the payload: the branch goes into each event's data.branch (presence
+ * reads it), and a named agent ([agents.<name>], from SELFHOST_AGENT_NAME) becomes the actor of
+ * every event a person or an unnamed agent would otherwise be the actor of.
+ */
+function withLineContext(events: LedgerEvent[], line: Partial<SpoolLine>): void {
+  const branch = textOf(line.branch);
+  const named = textOf(line.named_agent);
+  if (!branch && !named) return;
+  for (const [index, event] of events.entries()) {
+    events[index] = {
+      ...event,
+      ...(named && event.actor.kind !== "system" ? { actor: namedAgentActor(named) } : {}),
+      ...(branch && event.data?.branch === undefined ? { data: { ...event.data, branch } } : {}),
+    };
+  }
+}
 
 /**
  * What makes two spool lines the same hook call, when two hook entries both ran `selfhost hook`

@@ -210,6 +210,18 @@ describe.each(BACKENDS)("review list on $name", (backend) => {
             { source: "server" },
           ),
         ],
+        [
+          alert(
+            t,
+            {
+              alert: "edit_overlap",
+              owner: "dev@example.com",
+              file: "src/app.ts",
+              runs: ["s-1", "s-2"],
+            },
+            { source: "server", repo: "acme/web" },
+          ),
+        ],
         [pullRequest(t, 82)],
         [exceptionBlock(t, { id: requestId(t, 1), fingerprint: "f".repeat(64) })],
         [contextProposal(t, requestId(t, 2))],

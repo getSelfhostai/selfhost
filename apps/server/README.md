@@ -258,8 +258,9 @@ sources.
   gateway's event, in the session of its copy from the session log, OpenTelemetry or a hook
   (joined on person, prompt and output tokens, at most 10 minutes apart). For the rest, a session (agent
   and `session_id`) that more than one source reports counts the events of one, in the order
-  `otel`, `local_log`, `hook`, `gateway`, `vendor_api`. See "Where spend comes from" in
-  [`packages/spend`](../../packages/spend/README.md).
+  `otel`, `local_log`, `hook`, `gateway`, `vendor_api`. A vendor-reported daily total (see
+  [Vendor usage](#vendor-usage)) counts only for a person, agent and day no other source
+  reported. See "Where spend comes from" in [`packages/spend`](../../packages/spend/README.md).
 - `sessions` counts distinct sessions with a `session.started`, `session.ended`,
   `prompt.submitted` or `cost.recorded` event in the range. A session counts once in every row
   its events fall in (a session over midnight is in two days) and once in the total, so rows
@@ -282,6 +283,53 @@ view; text a spreadsheet would run as a formula starts with an apostrophe.
 `test/usage.test.ts` seeds a ledger and checks every grouping under every filter, the totals
 and the CSV against SQL written directly on the events table, on PGlite and on Postgres when
 `DATABASE_URL` is set.
+
+### Seat or API key
+
+`GET /v1/usage/break-even` takes the same query and scope as `GET /v1/usage` (default: the last
+30 days) and answers, for each person and agent with a seat plan (Claude Code and Codex), whether
+a subscription seat or an API key is cheaper for their use. Their spend, counted as the usage view
+counts it (interactive sessions and background runs under their own login, at API rates), is
+scaled to 30 days and compared with each seat tier: its list price, plus API rates for use past
+its approximate monthly limit (the weekly limits of the plan limit forecast's table). The cheaper
+choice is the verdict, with the tier, the monthly saving and the break-even point (the cheapest
+seat's price). Heaviest use first. Seat prices are dated (`prices_as_of`); see `SEAT_TIERS` in
+[`packages/spend`](../../packages/spend). The console's Spend screen shows it as "Seat or API
+key".
+
+### Vendor usage
+
+Use that never reaches the gateway or a laptop's logs on this server (Cursor, people who did not
+run `selfhost import`) can come from the vendors' admin usage APIs. With a key set, the server
+reads each importer every hour (`SELFHOST_VENDOR_IMPORT=off` turns it off):
+
+| Importer    | Key                            | API                                                                  | Covers                                                                                                     |
+| ----------- | ------------------------------ | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `anthropic` | `SELFHOST_ANTHROPIC_ADMIN_KEY` | Claude Code Analytics (`/v1/organizations/usage_report/claude_code`) | Claude Code with a Claude Console login; not personal Pro or Max, nor claude.ai Team or Enterprise seats.  |
+| `openai`    | `SELFHOST_OPENAI_ADMIN_KEY`    | Organization usage (`/v1/organization/usage/completions`) and users  | API keys used by a person, counted as Codex and priced from the bundled table; not Codex on ChatGPT plans. |
+| `cursor`    | `SELFHOST_CURSOR_ADMIN_KEY`    | Admin API usage events (`/teams/filtered-usage-events`)              | Cursor requests per person, at API rates (`data.charged_usd` keeps what Cursor billed).                    |
+
+Each run reads the closed UTC days (ended at least 3 hours ago) after the last one imported,
+going back at most 30 days, and keeps its place in `vendor_imports`. Each person's usage of a
+model on a day is one `cost.recorded` event: `source: vendor_api`, at the start of the day, no
+session, `data.rollup: "day"` and `data.vendor_reported: true`. Its id comes from the importer,
+day, email and model, so reading a day again stores nothing new. A vendor email maps to the person
+with that id, ignoring case, and to their team when they are in one; an email no person has is
+kept as the person id. Anthropic's daily sessions, lines, commits and pull requests go in `data`
+of the person's first model that day.
+
+Spend counts a vendor-reported day only when no other source recorded spend for that person,
+agent and day, so a day the logs, hooks or the gateway saw counts from them, request by request.
+API key records in the Anthropic report name no person and are skipped, and the OpenAI key ids in
+`SELFHOST_OPENAI_SKIP_KEY_IDS` (the gateway's own) are left out, since the gateway records that
+traffic itself.
+
+`GET /v1/vendor-imports` (either token) lists each importer's state (`ok`, `not_available` when
+the key may not read that API, `error`, or `pending`), the last day imported, what was skipped and
+what it cannot see; it never returns a key. `POST /v1/vendor-imports/run` (admin token) imports
+now. Pull requests that cloud agents (Codex cloud, Copilot, Cursor background agents) open are
+attributed to their agent by the GitHub App (see [`packages/attribution`](../../packages/attribution)),
+not by these importers. GitHub Copilot usage metrics are not imported yet.
 
 ## Integrations
 
@@ -698,6 +746,18 @@ for a second server on the same database.
   the request is held until something lands. A person token reads the teams of its org it is in;
   `team` narrows it, and a team they are not in answers 403. `selfhost tail` in a team follows it.
 
+- `GET /v1/presence?team&repo&idle_minutes` (both kinds of token): `selfhost.presence/v1`, who
+  (people and named agents) is working right now on which repo, branch and files, each run's one
+  human owner and how it was picked (`owner_via`), and `overlaps`: files two active runs in one
+  repo both edited. A person token sees the teams of its org it can read; the admin token sees
+  every team and runs with no team. `selfhost who`, the console's Overview and the MCP tool `who`
+  read it.
+
+Every minute the server also warns the owners of runs that edit the same file: one `alert.raised`
+(`data.alert: "edit_overlap"`) per owner, which becomes an `overlap` review item for them, raised
+once per file and set of runs. Named agents with `[agents.<name>] daily_usd` that spent their day's
+budget get one `budget` item for their owner per UTC day.
+
 Every minute the server also looks at the requests of the last hour for sessions past `[alerts]
 cache_min_requests` whose prompt cache hit rate over their last 10 requests fell under
 `cache_hit_floor`, and records one `alert.raised` (`data.alert: "cache_hit_low"`) per session in
@@ -874,6 +934,7 @@ pnpm --filter @selfhost/server start   # runs the build
 Environment:
 
 | Variable                              | Default            | Meaning                                                                                                                                                   |
+| ---------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
 | ------------------------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `PORT`                                | `4400`             | Port to listen on.                                                                                                                                        |
 | `HOST`                                | `127.0.0.1`        | Address to bind.                                                                                                                                          |
@@ -922,6 +983,11 @@ Environment:
 | `SELFHOST_GATEWAY_ADMIN_USER`         | `selfhost`         | Bifrost's admin username.                                                                                                                                 |
 | `SELFHOST_GATEWAY_PUBLIC_URL`         | unset              | Gateway address agents get. Unset: `<SELFHOST_PUBLIC_URL>/llm` with Bifrost (see [Without Docker](#without-docker)).                                      |
 | `SELFHOST_GATEWAY_SYNC`               | `5m`               | `off` stops writing budgets and keys to the gateway and reading its usage from this server.                                                               |
+| `SELFHOST_ANTHROPIC_ADMIN_KEY`     | unset              | Anthropic Admin API key: imports Claude Code usage per person from the Claude Code Analytics API. Sent only to Anthropic.       |
+| `SELFHOST_OPENAI_ADMIN_KEY`        | unset              | OpenAI Admin key: imports API key usage per person from the organization usage API. Sent only to OpenAI.                        |
+| `SELFHOST_OPENAI_SKIP_KEY_IDS`     | unset              | OpenAI API key ids, comma separated, whose usage is not imported: the keys the gateway calls OpenAI with.                       |
+| `SELFHOST_CURSOR_ADMIN_KEY`        | unset              | Cursor team Admin API key: imports Cursor usage per person. Sent only to Cursor.                                                |
+| `SELFHOST_VENDOR_IMPORT`           | `1h`               | `off` stops importing vendor usage from this server, when another one imports it into the same database.                        |
 
 ## Without Docker
 

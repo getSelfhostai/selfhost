@@ -37,6 +37,7 @@ import { bodyLimit } from "hono/body-limit";
 import { raiseBudgetAlerts } from "./budget-alerts.js";
 import { exceptionGrantRoutes } from "./exception-grants.js";
 import type { ExceptionKeyring } from "./exception-keys.js";
+import { raiseOverlapAlerts } from "./presence.js";
 import type { GitClones } from "./provenance.js";
 import { teamConfig, withRunLinks } from "./runs.js";
 import { wakeAfter } from "./wake.js";
@@ -487,6 +488,13 @@ export function startReviewRefreshJob(
       if (raised > 0) log(`budget alerts: ${raised} raised from spend`);
     } catch (error) {
       log(`budget alerts: failed: ${error instanceof Error ? error.message : error}`);
+    }
+    try {
+      const overlaps = await raiseOverlapAlerts(ledger, at, options.config);
+      if (overlaps > 0) log(`presence: ${overlaps} overlap warnings raised`);
+      raised += overlaps;
+    } catch (error) {
+      log(`presence: overlap check failed: ${error instanceof Error ? error.message : error}`);
     }
   };
   // The server's own job: a request that settles it does not limit it to the request's org.

@@ -1,4 +1,10 @@
-import type { BudgetLine, BudgetResponse, SandboxWasteResponse } from "@selfhost/schema";
+import type {
+  BreakEvenResponse,
+  BudgetLine,
+  BudgetResponse,
+  SandboxWasteResponse,
+  VendorImportsResponse,
+} from "@selfhost/schema";
 import { PageHeader } from "@/components/common";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -269,6 +275,125 @@ function SandboxCard({ team }: { team: string }) {
   );
 }
 
+const TIER_NAMES: Record<string, string> = {
+  pro: "Pro",
+  max_5x: "Max 5x",
+  max_20x: "Max 20x",
+  plus: "Plus",
+};
+
+/**
+ * Seat or API key per developer: the last 30 days at API rates against each seat tier, heaviest
+ * use first. Hidden when the server has no report yet or nobody has a plan to compare.
+ */
+function BreakEvenCard({ team, org, now }: { team?: string; org?: string; now: Date }) {
+  const range = rangeOf({ range: "30d", filters: {}, metric: "usd" }, now);
+  const { data, error } = useApi(`break-even:${team ?? ""}:${org ?? ""}:${range.from}`, (signal) =>
+    getOptional<BreakEvenResponse>(
+      `/v1/usage/break-even${query({ from: range.from, to: range.to, team, org })}`,
+      signal,
+    ),
+  );
+  if (error) return null;
+  if (data === undefined) return <Skeleton className="h-24 md:col-span-2" />;
+  if (data === null || data.rows.length === 0) return null;
+  return (
+    <Card className="gap-2 md:col-span-2">
+      <CardHeader>
+        <CardTitle className="font-medium text-base">Seat or API key</CardTitle>
+        <CardDescription>
+          The last 30 days of each developer's use at API rates, against the seat tiers of their
+          plan. Prices as of {data.prices_as_of}.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2 text-sm">
+        <ul className="divide-y">
+          {data.rows.map((row) => (
+            <li
+              key={`${row.person}:${row.agent}`}
+              className="flex flex-wrap items-baseline justify-between gap-x-2 py-1"
+            >
+              <span className="min-w-0 truncate">
+                {row.person}
+                <span className="text-muted-foreground"> {agentName(row.agent)}</span>
+              </span>
+              <span className="text-right tabular-nums">
+                {formatUsd(row.monthly_api_usd)} a month at API rates.{" "}
+                {row.verdict === "seat" ? (
+                  <span className="font-medium">
+                    {TIER_NAMES[row.tier ?? ""] ?? row.tier} seat ({formatUsd(row.seat_usd ?? 0)}),
+                    saves {formatUsd(row.saving_usd)}
+                    {row.over_limit ? ", past its limit" : ""}
+                  </span>
+                ) : (
+                  <span className="font-medium">
+                    API key, saves {formatUsd(row.saving_usd)} (seats pay from{" "}
+                    {formatUsd(row.break_even_usd)})
+                  </span>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+        {data.notes.map((note) => (
+          <p key={note} className="text-muted-foreground">
+            {note}
+          </p>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+const IMPORT_STATE: Record<string, string> = {
+  ok: "imported",
+  not_available: "not available for this key",
+  error: "failed",
+  pending: "not run yet",
+};
+
+const VENDOR_NAMES: Record<string, string> = {
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  cursor: "Cursor",
+};
+
+/** Which vendor admin APIs feed the numbers here, and how far. Hidden with none set up. */
+function VendorImportsCard() {
+  const { data } = useApi("vendor-imports", (signal) =>
+    getOptional<VendorImportsResponse>("/v1/vendor-imports", signal),
+  );
+  if (!data || data.importers.length === 0) return null;
+  return (
+    <Card className="gap-2 md:col-span-2">
+      <CardHeader>
+        <CardTitle className="font-medium text-base">Vendor-reported usage</CardTitle>
+        <CardDescription>
+          Usage read from the vendors' admin APIs, for use that skips the gateway and the laptops'
+          logs. A day another source already reported is counted from that source.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="text-sm">
+        <ul className="divide-y">
+          {data.importers.map((item) => (
+            <li key={item.importer} className="space-y-0.5 py-1">
+              <div className="flex justify-between gap-2">
+                <span className="font-medium">{VENDOR_NAMES[item.importer] ?? item.importer}</span>
+                <span className="text-muted-foreground">
+                  {IMPORT_STATE[item.state] ?? item.state}
+                  {item.through_day ? `, through ${item.through_day}` : ""}
+                </span>
+              </div>
+              {item.detail ? <p className="text-muted-foreground">{item.detail}</p> : null}
+              {item.notes[0] ? <p className="text-muted-foreground">{item.notes[0]}</p> : null}
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function SpendScreen() {
   const { me, view, now, go } = useConsole();
   const team = view.filters.team ?? (me.kind === "person" ? me.team?.id : undefined);
@@ -279,13 +404,21 @@ export function SpendScreen() {
         title="Spend"
         description="Tokens, cost and pull requests by team, developer, agent and model."
       />
-      {team ? (
-        <div className="grid gap-3 md:grid-cols-2">
-          <BudgetCard team={team} />
-          <RoiCard team={team} from={range.from} to={range.to} />
-          <SandboxCard team={team} />
-        </div>
-      ) : null}
+      <div className="grid gap-3 md:grid-cols-2">
+        {team ? (
+          <>
+            <BudgetCard team={team} />
+            <RoiCard team={team} from={range.from} to={range.to} />
+            <SandboxCard team={team} />
+          </>
+        ) : null}
+        <BreakEvenCard
+          now={now}
+          {...(team ? { team } : {})}
+          {...(view.org ? { org: view.org } : {})}
+        />
+        <VendorImportsCard />
+      </div>
       <UsageView me={me} view={view} onChange={go} now={now} />
     </>
   );

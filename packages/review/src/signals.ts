@@ -1,7 +1,9 @@
 import { decisionPaths } from "@selfhost/ledger";
 import {
   type AgentVendor,
+  EDIT_OVERLAP_ALERT,
   type LedgerEvent,
+  namedAgentOf,
   REDACTED,
   type ReviewItemKind,
   type ReviewWhy,
@@ -43,6 +45,8 @@ export interface Draft {
   person?: string;
   /** Team name on the event, matched against [teams]. */
   team?: string;
+  /** The [agents.<name>] that wrote the signal: its items go to that agent's owner. */
+  namedAgent?: string;
   url?: string;
 }
 
@@ -61,6 +65,7 @@ const ALERT_KINDS: Record<string, ReviewItemKind> = {
   quality: "quality",
   quality_alarm: "quality",
   grant_unverified: "security",
+  [EDIT_OVERLAP_ALERT]: "overlap",
 };
 
 /**
@@ -144,10 +149,12 @@ function strings(value: unknown): string[] {
 }
 
 function base(event: LedgerEvent) {
+  const named = namedAgentOf(event.actor);
   return {
     paths: decisionPaths(event),
     person: eventPerson(event),
     ...(event.team ? { team: event.team } : {}),
+    ...(named ? { namedAgent: named } : {}),
     ...(event.links?.run_url ? { url: event.links.run_url } : {}),
   };
 }
@@ -407,8 +414,10 @@ function fromAlert(event: LedgerEvent): Draft | undefined {
   if (kind === "security" && event.source !== "server") return undefined;
   const message = text(data.message);
   const agent = agentName(event);
+  const named = text(data.named_agent);
   const common = {
     ...base(event),
+    ...(named ? { namedAgent: named } : {}),
     kind,
     scored: false,
     blocking: false,
@@ -480,6 +489,30 @@ function fromAlert(event: LedgerEvent): Draft | undefined {
         why: { signal, text: error ?? `The run reported ${alert}.` },
         score: failed ? 60 : 30,
         reasons: [failed ? "A run failed or stopped making progress" : "A run hit errors"],
+      };
+    }
+    case "overlap": {
+      // One item per owner warned: data.owner is the person it is for.
+      const person = personId(data.owner);
+      const file = text(data.file);
+      const runs = strings(data.runs);
+      return {
+        ...common,
+        paths: file ? [file] : [],
+        dedupeKey: `overlap:${event.repo ?? ""}:${file ?? ""}:${[...runs].sort().join(",")}:${person ?? ""}`,
+        title: title(
+          message ??
+            `${runs.length || "Several"} active runs are editing ${file ?? "the same file"}${event.repo ? ` in ${event.repo}` : ""}`,
+        ),
+        why: {
+          signal,
+          text:
+            text(data.reason) ??
+            "Another active run in the same repo edited this file. Agree who goes first before either opens a pull request.",
+        },
+        score: 55,
+        reasons: ["Two runs are editing the same file at once"],
+        ...(person ? { person } : {}),
       };
     }
     case "security": {

@@ -88,6 +88,7 @@ export function mcpRoutes(person: Hono<PersonEnv>, ledger: Ledger, options: McpR
         return read("/v1/policy", { ...query, team }, query.repo);
       },
       budget: (query) => read("/v1/budget", query),
+      presence: (query) => read("/v1/presence", query),
     };
   }
 

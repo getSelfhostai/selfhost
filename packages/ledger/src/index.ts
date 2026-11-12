@@ -84,6 +84,7 @@ export type {
   StoredLayer,
   TeamCost,
 } from "./orgs.js";
+export { PRESENCE_EVENTS_MAX, type PresenceOptions, readPresence } from "./presence.js";
 export type { ReceiptStore, StoredReceipt } from "./receipts.js";
 export { type RetentionResult, retentionSweep } from "./retention.js";
 export { asSystem, currentOrg, withOrg } from "./scope.js";

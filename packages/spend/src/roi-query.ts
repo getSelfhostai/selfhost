@@ -13,7 +13,7 @@ import {
   type RoiPullEvent,
   type RoiReport,
 } from "./roi.js";
-import { countedCostsSql } from "./sources.js";
+import { countedCostsSql, vendorRollupCountsSql } from "./sources.js";
 
 /**
  * The ROI input from the ledger's tables, and the frozen baseline in roi_baselines. An event's
@@ -47,6 +47,14 @@ const teamed = (org: string) => `events e
     ON tr.org_id = ${org} AND tr.repo = coalesce(lower(e.body->>'repo'), rr.repo)`;
 const REPO = "coalesce(lower(e.body->>'repo'), rr.repo)";
 const TEAM = "coalesce(e.team, tr.team_id)";
+/** A vendor-reported daily total counts only for a person-day no other source reported. */
+const ROLLUP_COUNTS = vendorRollupCountsSql({
+  source: "e.source",
+  body: "e.body",
+  person: "e.actor_id",
+  agent: "e.agent",
+  ts: "e.ts",
+});
 
 type Nullable<T> = { [K in keyof T]: T[K] | null };
 const defined = <T extends object>(row: Nullable<T>): T =>
@@ -103,7 +111,7 @@ export async function readRoiInput(
        SELECT e.id, e.ts, e.source, e.session_id, e.agent, e.model, e.body,
          ${REPO} AS repo, ${TEAM} AS team
        FROM ${teamed("$3")}
-       WHERE e.kind = 'cost.recorded'
+       WHERE e.kind = 'cost.recorded' AND ${ROLLUP_COUNTS}
          AND ((e.ts >= $1::timestamptz AND e.ts < $2::timestamptz)
            OR e.session_id IN (SELECT jsonb_array_elements_text($4::text::jsonb)))
      ),

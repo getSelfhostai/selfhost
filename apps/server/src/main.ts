@@ -31,6 +31,7 @@ import { startTraceExportJob } from "./runs.js";
 import { serverRuntime } from "./runtime.js";
 import { signinFromEnv } from "./signin.js";
 import { loadApiToken, tokenNotice } from "./token.js";
+import { startVendorImportJob, vendorImportersFromEnv } from "./vendor-usage.js";
 
 const port = Number(process.env.PORT ?? 4400);
 const hostname = process.env.HOST ?? "127.0.0.1";
@@ -105,6 +106,8 @@ const clones = clonesDir ? clonesUnder(clonesDir) : undefined;
 const gateway = hosted ? undefined : gatewayFromEnv(config);
 // The Apprise API notifications go through (compose.notify.yml, or one the team runs).
 const deliver = notifyFromEnv();
+// Vendor usage importers, one per admin key set (SELFHOST_ANTHROPIC_ADMIN_KEY and the rest).
+const vendorImporters = vendorImportersFromEnv();
 
 // Background runs, on the runtime [runtime] picks with the team's own key from this server's
 // environment; a team with no runtime or key gets a 503. SELFHOST_BACKGROUND=off turns them off.
@@ -189,6 +192,7 @@ const server = serve(
       ...(background ? { background } : {}),
       ...(hosted ? { hosted: { config: hosted } } : {}),
       eventsStored,
+      vendorImporters,
     }).fetch,
     port,
     hostname,
@@ -206,6 +210,9 @@ const server = serve(
     }
     if (gateway)
       console.log(`AI gateway: ${gateway.client.tool}, agents reach it at ${gateway.baseUrl}`);
+    if (vendorImporters.length > 0) {
+      console.log(`vendor usage: importing from ${vendorImporters.map((i) => i.id).join(", ")}`);
+    }
     console.log(
       deliver
         ? "notifications: on, through Apprise"
@@ -267,6 +274,13 @@ const gatewayJob =
     ? startGatewayJob(ledger, gateway)
     : undefined;
 
+// SELFHOST_VENDOR_IMPORT=off stops reading usage from the vendor admin APIs, for installs where
+// another server reads it into the same database.
+const vendorImports =
+  vendorImporters.length > 0 && process.env.SELFHOST_VENDOR_IMPORT !== "off"
+    ? startVendorImportJob(ledger, vendorImporters)
+    : undefined;
+
 // SELFHOST_NOTIFY=off stops sending notifications, for installs where another server sends
 // them from the same database.
 const notifications =
@@ -304,6 +318,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     cacheAlerts?.stop();
     notifications?.stop();
     gatewayJob?.stop();
+    vendorImports?.stop();
     reviews?.stop();
     traces?.stop();
     server.close(() => {

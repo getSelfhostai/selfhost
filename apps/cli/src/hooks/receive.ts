@@ -1,6 +1,7 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { LedgerEvent } from "@selfhost/schema";
+import { gitBranchAt } from "./branch.js";
 import {
   DROPPED_FIELDS,
   failOpenText,
@@ -89,6 +90,28 @@ export interface SpoolLine {
    * is dropped: the run's link to it (see pullRequestUrl).
    */
   pr_url?: string;
+  /** The git branch at the payload's cwd when the hook ran, for presence (selfhost who). */
+  branch?: string;
+  /** The [agents.<name>] the hook ran for, from SELFHOST_AGENT_NAME: the events' actor. */
+  named_agent?: string;
+}
+
+/** NAMED_AGENT_ENV in @selfhost/schema, spelled out: this module has no workspace imports. */
+const NAMED_AGENT_ENV = "SELFHOST_AGENT_NAME";
+const NAMED_AGENT_NAME = /^[a-z0-9][a-z0-9_-]{0,62}$/;
+
+/** What the hook adds to a spool line from its environment: the branch and the named agent. */
+export function spoolContext(
+  payload: Record<string, unknown>,
+  env: NodeJS.ProcessEnv,
+): Pick<SpoolLine, "branch" | "named_agent"> {
+  const cwd = typeof payload.cwd === "string" && payload.cwd !== "" ? payload.cwd : undefined;
+  const branch = cwd ? gitBranchAt(cwd) : undefined;
+  const named = env[NAMED_AGENT_ENV]?.trim();
+  return {
+    ...(branch ? { branch } : {}),
+    ...(named && NAMED_AGENT_NAME.test(named) ? { named_agent: named } : {}),
+  };
 }
 
 /**
@@ -179,6 +202,7 @@ export function appendToSpool(
   text: string | Record<string, unknown>,
   now = new Date(),
   guard?: GuardRecord,
+  context: Pick<SpoolLine, "branch" | "named_agent"> = {},
 ) {
   const payload = typeof text === "string" ? parsePayload(text) : { ...text };
   const prUrl = pullRequestUrl(payload);
@@ -189,6 +213,7 @@ export function appendToSpool(
     payload,
     ...(guard ? { guard } : {}),
     ...(prUrl ? { pr_url: prUrl } : {}),
+    ...context,
   };
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   appendFileSync(spoolFile(dir, line.received_at), `${JSON.stringify(line)}\n`, { mode: 0o600 });
@@ -259,7 +284,7 @@ export async function runHook(args: string[], io: HookIo): Promise<number> {
     }
     const dir = spoolDir(io.env);
     if (!dir) throw new Error("HOME is not set, so there is no ~/.selfhost/spool");
-    appendToSpool(dir, agent, payload, io.now, guard);
+    appendToSpool(dir, agent, payload, io.now, guard, spoolContext(payload, io.env));
   } catch (error) {
     io.writeError(`selfhost hook: ${errorText(error)}`);
     if (!answered && agent && payload && isPreToolEvent(agent, payload)) {
@@ -274,7 +299,7 @@ export async function runHook(args: string[], io: HookIo): Promise<number> {
       };
       try {
         const dir = spoolDir(io.env);
-        if (dir) appendToSpool(dir, agent, payload, io.now, guard);
+        if (dir) appendToSpool(dir, agent, payload, io.now, guard, spoolContext(payload, io.env));
       } catch {
         // Already reported above; the answer matters more than the record.
       }

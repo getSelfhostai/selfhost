@@ -81,6 +81,20 @@ tool input only as the run view shows it.
 - In a team it follows the team server (`GET /v1/events/tail`, a long poll), which shows the
   person only the teams they are in; `--local` follows this machine instead.
 
+`selfhost who [--team <team>] [--repo <owner/name>] [--idle <minutes>] [--json]` lists the people
+and named agents working right now, by repo and branch: who is in each run, its agent, when it
+started and last did something, the files it edited, and its one human owner (the new owner of a
+handoff, else the owner of the named agent in `[agents.<name>]`, else the person in it, else who
+started a background run or the schedule's `owner`, else the first person in `[review] fallback`).
+Files two active runs in one repo both edited are listed as overlaps. A run counts as active from
+its first event until its session ends or it has had no event for `[presence] idle_minutes` (30).
+In a team it asks the team server (`GET /v1/presence`), which shows only the teams the person can
+read; on a laptop with no team (or with `--database` / `--data-dir`) it reads the local ledger.
+`--json` prints the same `selfhost.presence/v1` answer as the API and the MCP tool `who`. The
+hooks record the branch checked out where the agent works (read from `.git/HEAD`, no git process),
+and when `SELFHOST_AGENT_NAME` is set (a named agent's own environment) they record the agent as
+the actor of its events and check its `[agents.<name>] tools`.
+
 `selfhost console [--port 4400] [--host 127.0.0.1] [--no-open] [--json [--show-token]]` serves the web console
 ([`apps/console`](../console/README.md)) and the API on this machine's ledger (the one `selfhost
 import` writes, or `--database` / `--data-dir`) and opens it in the browser, signed in: it prints

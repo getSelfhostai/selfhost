@@ -2432,6 +2432,55 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /v1/presence:
+    get:
+      operationId: getPresence
+      summary: Who (people and named agents) is working right now on which repo, branch and files, and who owns each run.
+      description: The admin token, or a person token of anyone in the team. A run is active from its first event until its session ends (or its background run finishes) or it has had no event for idle_minutes. A person token sees the teams of its org it can read; the admin token sees every team and runs with no team. overlaps lists files two active runs in one repo both edited; the team server also warns each of their owners with an overlap item. selfhost who and the MCP tool who give the same answer.
+      parameters:
+        - name: team
+          in: query
+          required: false
+          description: "Only this team. Default: every team you can read."
+          schema:
+            minLength: 1
+            type: string
+        - name: repo
+          in: query
+          required: false
+          description: Only runs in this repository, as owner/name.
+          schema:
+            pattern: ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$
+            type: string
+        - name: idle_minutes
+          in: query
+          required: false
+          description: "A run with no event for this long no longer counts as active. Default: the team's [presence] idle_minutes, else 30."
+          schema:
+            minimum: 1
+            maximum: 1440
+            type: integer
+      responses:
+        "200":
+          description: Who is working where.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresenceResponse"
+        "400":
+          description: Invalid query.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /v1/budget:
     get:
       operationId: getBudget
@@ -2961,6 +3010,121 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /v1/usage/break-even:
+    get:
+      operationId: getUsageBreakEven
+      summary: "Seat or API key for each developer: their usage at API rates against seat prices."
+      description: "Same query and scope as GET /v1/usage (default: the last 30 days); group_by is ignored. Spend per person and agent is counted as /v1/usage counts it, scaled to 30 days and compared with each seat tier of the agent's plan (Claude Code and Codex): the tier's list price plus API rates for use past its approximate limit. The cheaper choice is the verdict. Heaviest use first."
+      parameters:
+        - name: group_by
+          in: query
+          required: false
+          description: One or two of team, person, agent, model and day, comma separated, such as person or day,model. Without it, rows holds one row with the total.
+          schema:
+            pattern: ^(?:team|person|agent|model|day)(?:,(?:team|person|agent|model|day))?$
+            type: string
+        - name: from
+          in: query
+          required: false
+          description: "Events at or after this time. Default: 30 days before to."
+          schema:
+            format: date-time
+            type: string
+        - name: to
+          in: query
+          required: false
+          description: "Events before this time. Default: now."
+          schema:
+            format: date-time
+            type: string
+        - name: team
+          in: query
+          required: false
+          description: "Only this team: the team that owns the run's repo, else the team that wrote it. unknown matches events with none."
+          schema:
+            minLength: 1
+            maxLength: 256
+            type: string
+        - name: person
+          in: query
+          required: false
+          description: Only this person (actor.id of a person). unknown matches events with none.
+          schema:
+            minLength: 1
+            maxLength: 256
+            type: string
+        - name: agent
+          in: query
+          required: false
+          description: Only this agent (agent.vendor), such as claude_code or codex. unknown matches events with none.
+          schema:
+            minLength: 1
+            maxLength: 256
+            type: string
+        - name: model
+          in: query
+          required: false
+          description: Only this model, as the vendor reports it. unknown matches events with none.
+          schema:
+            minLength: 1
+            maxLength: 256
+            type: string
+        - name: org
+          in: query
+          required: false
+          description: "Org whose repos assign runs to teams. Default: the person token's org, or default with the admin token."
+          schema:
+            pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+            type: string
+      responses:
+        "200":
+          description: One row per person and agent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BreakEvenResponse"
+        "400":
+          description: Invalid query or time range.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team or the org asked for.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/vendor-imports:
+    get:
+      operationId: getVendorImports
+      summary: Status of the vendor usage importers (Anthropic, OpenAI and Cursor admin APIs).
+      description: Either kind of token. One entry per importer whose admin key is set on the server (SELFHOST_ANTHROPIC_ADMIN_KEY, SELFHOST_OPENAI_ADMIN_KEY, SELFHOST_CURSOR_ADMIN_KEY), with the last UTC day imported, how the last run went and what the importer cannot see. No key is ever returned. Imported rows are cost.recorded events with source vendor_api and data.rollup day, counted only for a person, agent and day no other source reported.
+      responses:
+        "200":
+          description: The importers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VendorImportsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/vendor-imports/run:
+    post:
+      operationId: runVendorImports
+      summary: Import vendor usage now.
+      description: "Admin token only. The server also does this every hour. Safe to repeat: a day already imported stores nothing new."
+      responses:
+        "200":
+          description: The importers after the run.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VendorImportsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /v1/usage.csv:
     get:
       operationId: getUsageCsv
@@ -8386,6 +8550,297 @@ components:
               minimum: 0
               description: Distinct pull requests with a pr.merged event in the range.
               type: integer
+    BreakEvenRow:
+      additionalProperties: false
+      title: BreakEvenRow
+      type: object
+      required:
+        - person
+        - agent
+        - api_usd
+        - monthly_api_usd
+        - verdict
+        - tier
+        - seat_usd
+        - monthly_cost_usd
+        - saving_usd
+        - break_even_usd
+        - over_limit
+      properties:
+        person:
+          type: string
+        agent:
+          type: string
+          enum:
+            - claude_code
+            - codex
+            - opencode
+            - goose
+            - cursor
+            - copilot
+            - other
+        api_usd:
+          minimum: 0
+          description: Spend in the range, priced at API rates, as the ledger counts it.
+          type: number
+        monthly_api_usd:
+          minimum: 0
+          description: api_usd scaled to 30 days.
+          type: number
+        verdict:
+          description: "seat: a subscription seat costs less than paying for the same use with an API key. api: an API key costs less."
+          type: string
+          enum:
+            - seat
+            - api
+        tier:
+          description: The cheapest seat tier for this use, such as max_5x; null with verdict api.
+          anyOf:
+            - type: string
+            - type: "null"
+        seat_usd:
+          anyOf:
+            - minimum: 0
+              description: That tier's price a month.
+              type: number
+            - type: "null"
+        monthly_cost_usd:
+          minimum: 0
+          description: "What the verdict costs a month: the seat, plus API spend past its limits, or the API spend."
+          type: number
+        saving_usd:
+          minimum: 0
+          description: A month, against the other choice.
+          type: number
+        break_even_usd:
+          minimum: 0
+          description: "Monthly API spend at which the cheapest seat starts to pay for itself: its price."
+          type: number
+        over_limit:
+          description: The use is past the chosen tier's approximate monthly limit, so the rest goes to an API key.
+          type: boolean
+    BreakEvenResponse:
+      additionalProperties: false
+      title: BreakEvenResponse
+      description: For each developer, the range's usage priced at API rates against the seat tiers of the agent's plan, with a verdict.
+      type: object
+      required:
+        - schema
+        - org
+        - from
+        - to
+        - days
+        - prices_as_of
+        - rows
+        - notes
+      properties:
+        schema:
+          const: selfhost.break_even/v1
+          type: string
+        org:
+          type: string
+        from:
+          format: date-time
+          type: string
+        to:
+          format: date-time
+          type: string
+        days:
+          exclusiveMinimum: 0
+          type: number
+        prices_as_of:
+          description: Day the seat prices were checked, YYYY-MM-DD.
+          type: string
+        rows:
+          description: One per person and agent with a seat plan to compare (Claude Code and Codex), heaviest use first.
+          type: array
+          items:
+            additionalProperties: false
+            title: BreakEvenRow
+            type: object
+            required:
+              - person
+              - agent
+              - api_usd
+              - monthly_api_usd
+              - verdict
+              - tier
+              - seat_usd
+              - monthly_cost_usd
+              - saving_usd
+              - break_even_usd
+              - over_limit
+            properties:
+              person:
+                type: string
+              agent:
+                type: string
+                enum:
+                  - claude_code
+                  - codex
+                  - opencode
+                  - goose
+                  - cursor
+                  - copilot
+                  - other
+              api_usd:
+                minimum: 0
+                description: Spend in the range, priced at API rates, as the ledger counts it.
+                type: number
+              monthly_api_usd:
+                minimum: 0
+                description: api_usd scaled to 30 days.
+                type: number
+              verdict:
+                description: "seat: a subscription seat costs less than paying for the same use with an API key. api: an API key costs less."
+                type: string
+                enum:
+                  - seat
+                  - api
+              tier:
+                description: The cheapest seat tier for this use, such as max_5x; null with verdict api.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              seat_usd:
+                anyOf:
+                  - minimum: 0
+                    description: That tier's price a month.
+                    type: number
+                  - type: "null"
+              monthly_cost_usd:
+                minimum: 0
+                description: "What the verdict costs a month: the seat, plus API spend past its limits, or the API spend."
+                type: number
+              saving_usd:
+                minimum: 0
+                description: A month, against the other choice.
+                type: number
+              break_even_usd:
+                minimum: 0
+                description: "Monthly API spend at which the cheapest seat starts to pay for itself: its price."
+                type: number
+              over_limit:
+                description: The use is past the chosen tier's approximate monthly limit, so the rest goes to an API key.
+                type: boolean
+        notes:
+          type: array
+          items:
+            type: string
+    VendorImportStatus:
+      additionalProperties: false
+      title: VendorImportStatus
+      type: object
+      required:
+        - importer
+        - state
+        - detail
+        - through_day
+        - last_run_at
+        - events
+        - notes
+      properties:
+        importer:
+          type: string
+          enum:
+            - anthropic
+            - openai
+            - cursor
+        state:
+          description: "ok: the last read worked. not_available: the key may not read the vendor's admin API (401, 403 or 404), so nothing is imported and nothing fails. error: the last read failed and is tried again at the next run. pending: no run yet."
+          type: string
+          enum:
+            - ok
+            - not_available
+            - error
+            - pending
+        detail:
+          description: What went wrong, or what was left out. Never holds a key.
+          anyOf:
+            - type: string
+            - type: "null"
+        through_day:
+          description: Last UTC day imported, YYYY-MM-DD; the next run starts the day after.
+          anyOf:
+            - pattern: ^\d{4}-\d{2}-\d{2}$
+              type: string
+            - type: "null"
+        last_run_at:
+          anyOf:
+            - format: date-time
+              type: string
+            - type: "null"
+        events:
+          minimum: 0
+          description: Events the last run wrote.
+          type: integer
+        notes:
+          description: What the importer covers and what it cannot see.
+          type: array
+          items:
+            type: string
+    VendorImportsResponse:
+      additionalProperties: false
+      title: VendorImportsResponse
+      type: object
+      required:
+        - importers
+      properties:
+        importers:
+          description: One per importer with a key set on the server.
+          type: array
+          items:
+            additionalProperties: false
+            title: VendorImportStatus
+            type: object
+            required:
+              - importer
+              - state
+              - detail
+              - through_day
+              - last_run_at
+              - events
+              - notes
+            properties:
+              importer:
+                type: string
+                enum:
+                  - anthropic
+                  - openai
+                  - cursor
+              state:
+                description: "ok: the last read worked. not_available: the key may not read the vendor's admin API (401, 403 or 404), so nothing is imported and nothing fails. error: the last read failed and is tried again at the next run. pending: no run yet."
+                type: string
+                enum:
+                  - ok
+                  - not_available
+                  - error
+                  - pending
+              detail:
+                description: What went wrong, or what was left out. Never holds a key.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              through_day:
+                description: Last UTC day imported, YYYY-MM-DD; the next run starts the day after.
+                anyOf:
+                  - pattern: ^\d{4}-\d{2}-\d{2}$
+                    type: string
+                  - type: "null"
+              last_run_at:
+                anyOf:
+                  - format: date-time
+                    type: string
+                  - type: "null"
+              events:
+                minimum: 0
+                description: Events the last run wrote.
+                type: integer
+              notes:
+                description: What the importer covers and what it cannot see.
+                type: array
+                items:
+                  type: string
     RoiAgentRow:
       additionalProperties: false
       title: RoiAgentRow
@@ -10519,7 +10974,24 @@ components:
             - type: string
             - type: "null"
         owner:
-          description: "The person who holds the run now: the new owner of its newest handoff, else person."
+          description: "The one human who answers for the run: the new owner of its newest handoff, else the owner of the named agent that wrote it, else person, else who started it (or the schedule's owner), else the first person in [review] fallback."
+          anyOf:
+            - type: string
+            - type: "null"
+        owner_via:
+          description: "Where owner came from: handoff, named_agent, person, trigger, schedule or fallback."
+          anyOf:
+            - type: string
+              enum:
+                - handoff
+                - named_agent
+                - person
+                - trigger
+                - schedule
+                - fallback
+            - type: "null"
+        named_agent:
+          description: The [agents.<name>] whose events these are, or null.
           anyOf:
             - type: string
             - type: "null"
@@ -10763,7 +11235,24 @@ components:
                 - type: string
                 - type: "null"
             owner:
-              description: "The person who holds the run now: the new owner of its newest handoff, else person."
+              description: "The one human who answers for the run: the new owner of its newest handoff, else the owner of the named agent that wrote it, else person, else who started it (or the schedule's owner), else the first person in [review] fallback."
+              anyOf:
+                - type: string
+                - type: "null"
+            owner_via:
+              description: "Where owner came from: handoff, named_agent, person, trigger, schedule or fallback."
+              anyOf:
+                - type: string
+                  enum:
+                    - handoff
+                    - named_agent
+                    - person
+                    - trigger
+                    - schedule
+                    - fallback
+                - type: "null"
+            named_agent:
+              description: The [agents.<name>] whose events these are, or null.
               anyOf:
                 - type: string
                 - type: "null"
@@ -11065,6 +11554,7 @@ components:
             - policy_report
             - context_promotion
             - security
+            - overlap
         title:
           type: string
         blocking:
@@ -11269,6 +11759,7 @@ components:
                   - policy_report
                   - context_promotion
                   - security
+                  - overlap
               title:
                 type: string
               blocking:
@@ -11635,6 +12126,7 @@ components:
                         - policy_report
                         - context_promotion
                         - security
+                        - overlap
                     title:
                       type: string
                     blocking:
@@ -11903,6 +12395,7 @@ components:
                       - policy_report
                       - context_promotion
                       - security
+                      - overlap
                   title:
                     type: string
                   blocking:
@@ -12034,6 +12527,408 @@ components:
           patternProperties:
             ^(.*)$:
               type: string
+    PresenceRun:
+      additionalProperties: false
+      title: PresenceRun
+      type: object
+      required:
+        - id
+        - kind
+        - actor
+        - person
+        - named_agent
+        - owner
+        - owner_via
+        - agent
+        - model
+        - team
+        - repo
+        - branch
+        - files
+        - edits
+        - pr_url
+        - started_at
+        - last_event_at
+      properties:
+        id:
+          minLength: 1
+          description: "The run: the agent's session id, or the background run's id."
+          type: string
+        kind:
+          description: session for an agent session, background for a background run.
+          type: string
+          enum:
+            - session
+            - background
+        actor:
+          additionalProperties: false
+          description: Who did it.
+          type: object
+          required:
+            - kind
+            - id
+          properties:
+            kind:
+              description: person for a human, agent for a coding agent acting on its own, system for selfhost, CI or another service.
+              type: string
+              enum:
+                - person
+                - agent
+                - system
+            id:
+              minLength: 1
+              description: "Stable identifier: email or login for a person, agent or run id for an agent, component name for system."
+              type: string
+            name:
+              description: Display name.
+              type: string
+        person:
+          description: The person working in the run, or null for an agent alone.
+          anyOf:
+            - type: string
+            - type: "null"
+        named_agent:
+          description: The [agents.<name>] that wrote the run, or null.
+          anyOf:
+            - type: string
+            - type: "null"
+        owner:
+          description: The one human who answers for the run (see owner_via), or null when selfhost.toml names nobody.
+          anyOf:
+            - type: string
+            - type: "null"
+        owner_via:
+          description: "Where the owner came from: handoff, named_agent ([agents.<name>] owner), person (who acted in it), trigger (who started a background run), schedule (the schedule's owner) or fallback ([review] fallback)."
+          anyOf:
+            - type: string
+              enum:
+                - handoff
+                - named_agent
+                - person
+                - trigger
+                - schedule
+                - fallback
+            - type: "null"
+        agent:
+          description: The coding agent, or null.
+          anyOf:
+            - additionalProperties: false
+              description: Which coding agent was involved.
+              type: object
+              required:
+                - vendor
+              properties:
+                vendor:
+                  description: Agent product.
+                  type: string
+                  enum:
+                    - claude_code
+                    - codex
+                    - opencode
+                    - goose
+                    - cursor
+                    - copilot
+                    - other
+                version:
+                  description: Agent CLI or app version, for example 2.1.0.
+                  type: string
+                name:
+                  description: Agent or subagent name when the vendor reports one, for example a Claude Code subagent type.
+                  type: string
+            - type: "null"
+        model:
+          description: The newest model the run used, or null.
+          anyOf:
+            - type: string
+            - type: "null"
+        team:
+          description: The team the run belongs to, or null on a laptop.
+          anyOf:
+            - type: string
+            - type: "null"
+        repo:
+          description: Repository as owner/name, or null when not known.
+          anyOf:
+            - type: string
+            - type: "null"
+        branch:
+          description: The git branch the run is on, or null when not known.
+          anyOf:
+            - type: string
+            - type: "null"
+        files:
+          description: Files the run edited while active, newest first, at most 20.
+          type: array
+          items:
+            type: string
+        edits:
+          minimum: 0
+          description: Edit calls the run made while active.
+          type: integer
+        pr_url:
+          description: The pull request the run opened or pushed to, or null.
+          anyOf:
+            - type: string
+            - type: "null"
+        started_at:
+          format: date-time
+          description: The run's first event.
+          type: string
+        last_event_at:
+          format: date-time
+          description: The run's newest event.
+          type: string
+    PresenceOverlap:
+      additionalProperties: false
+      title: PresenceOverlap
+      type: object
+      required:
+        - repo
+        - file
+        - runs
+        - owners
+        - since
+      properties:
+        repo:
+          pattern: ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$
+          description: Repository as owner/name.
+          type: string
+        file:
+          minLength: 1
+          description: The file more than one active run edited.
+          type: string
+        runs:
+          minItems: 2
+          description: The runs that edited it, the first to edit it first.
+          type: array
+          items:
+            minLength: 1
+            type: string
+        owners:
+          description: The owners of those runs, each once.
+          type: array
+          items:
+            minLength: 1
+            type: string
+        since:
+          format: date-time
+          description: When a second run first edited it.
+          type: string
+    PresenceResponse:
+      additionalProperties: false
+      title: PresenceResponse
+      type: object
+      required:
+        - schema
+        - at
+        - idle_minutes
+        - runs
+        - overlaps
+      properties:
+        schema:
+          const: selfhost.presence/v1
+          type: string
+        at:
+          format: date-time
+          description: When the answer was worked out.
+          type: string
+        idle_minutes:
+          minimum: 1
+          description: "The idle window: a run with no event for this long is not listed."
+          type: integer
+        runs:
+          description: Runs active right now, by repo, then branch, then newest event first. Only teams the caller can read are included.
+          type: array
+          items:
+            additionalProperties: false
+            title: PresenceRun
+            type: object
+            required:
+              - id
+              - kind
+              - actor
+              - person
+              - named_agent
+              - owner
+              - owner_via
+              - agent
+              - model
+              - team
+              - repo
+              - branch
+              - files
+              - edits
+              - pr_url
+              - started_at
+              - last_event_at
+            properties:
+              id:
+                minLength: 1
+                description: "The run: the agent's session id, or the background run's id."
+                type: string
+              kind:
+                description: session for an agent session, background for a background run.
+                type: string
+                enum:
+                  - session
+                  - background
+              actor:
+                additionalProperties: false
+                description: Who did it.
+                type: object
+                required:
+                  - kind
+                  - id
+                properties:
+                  kind:
+                    description: person for a human, agent for a coding agent acting on its own, system for selfhost, CI or another service.
+                    type: string
+                    enum:
+                      - person
+                      - agent
+                      - system
+                  id:
+                    minLength: 1
+                    description: "Stable identifier: email or login for a person, agent or run id for an agent, component name for system."
+                    type: string
+                  name:
+                    description: Display name.
+                    type: string
+              person:
+                description: The person working in the run, or null for an agent alone.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              named_agent:
+                description: The [agents.<name>] that wrote the run, or null.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              owner:
+                description: The one human who answers for the run (see owner_via), or null when selfhost.toml names nobody.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              owner_via:
+                description: "Where the owner came from: handoff, named_agent ([agents.<name>] owner), person (who acted in it), trigger (who started a background run), schedule (the schedule's owner) or fallback ([review] fallback)."
+                anyOf:
+                  - type: string
+                    enum:
+                      - handoff
+                      - named_agent
+                      - person
+                      - trigger
+                      - schedule
+                      - fallback
+                  - type: "null"
+              agent:
+                description: The coding agent, or null.
+                anyOf:
+                  - additionalProperties: false
+                    description: Which coding agent was involved.
+                    type: object
+                    required:
+                      - vendor
+                    properties:
+                      vendor:
+                        description: Agent product.
+                        type: string
+                        enum:
+                          - claude_code
+                          - codex
+                          - opencode
+                          - goose
+                          - cursor
+                          - copilot
+                          - other
+                      version:
+                        description: Agent CLI or app version, for example 2.1.0.
+                        type: string
+                      name:
+                        description: Agent or subagent name when the vendor reports one, for example a Claude Code subagent type.
+                        type: string
+                  - type: "null"
+              model:
+                description: The newest model the run used, or null.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              team:
+                description: The team the run belongs to, or null on a laptop.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              repo:
+                description: Repository as owner/name, or null when not known.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              branch:
+                description: The git branch the run is on, or null when not known.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              files:
+                description: Files the run edited while active, newest first, at most 20.
+                type: array
+                items:
+                  type: string
+              edits:
+                minimum: 0
+                description: Edit calls the run made while active.
+                type: integer
+              pr_url:
+                description: The pull request the run opened or pushed to, or null.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              started_at:
+                format: date-time
+                description: The run's first event.
+                type: string
+              last_event_at:
+                format: date-time
+                description: The run's newest event.
+                type: string
+        overlaps:
+          description: Files that two or more active runs in the same repo have edited, oldest first. Each run's owner is warned.
+          type: array
+          items:
+            additionalProperties: false
+            title: PresenceOverlap
+            type: object
+            required:
+              - repo
+              - file
+              - runs
+              - owners
+              - since
+            properties:
+              repo:
+                pattern: ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$
+                description: Repository as owner/name.
+                type: string
+              file:
+                minLength: 1
+                description: The file more than one active run edited.
+                type: string
+              runs:
+                minItems: 2
+                description: The runs that edited it, the first to edit it first.
+                type: array
+                items:
+                  minLength: 1
+                  type: string
+              owners:
+                description: The owners of those runs, each once.
+                type: array
+                items:
+                  minLength: 1
+                  type: string
+              since:
+                format: date-time
+                description: When a second run first edited it.
+                type: string
     BackgroundRun:
       additionalProperties: false
       title: BackgroundRun

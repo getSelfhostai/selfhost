@@ -457,7 +457,8 @@
                               "quality",
                               "policy_report",
                               "context_promotion",
-                              "security"
+                              "security",
+                              "overlap"
                             ]
                           }
                         },
@@ -1947,6 +1948,11 @@
                             "opencode",
                             "goose"
                           ]
+                        },
+                        "owner": {
+                          "minLength": 1,
+                          "description": "Person id who owns the schedule's runs: their review items, errors and budget items go to them. Default: the first person in [review] fallback.",
+                          "type": "string"
                         }
                       }
                     }
@@ -1968,6 +1974,76 @@
                     "maximum": 50,
                     "default": 10,
                     "description": "How many of the run's last turns the handoff summarizes.",
+                    "type": "integer"
+                  }
+                }
+              },
+              "agents": {
+                "description": "Named agents by name: lowercase letters, digits, - and _. Each needs an owner.",
+                "type": "object",
+                "patternProperties": {
+                  "^(.*)$": {
+                    "additionalProperties": false,
+                    "description": "A long-lived agent the team runs itself, with a name, a human owner, the paths it owns, a budget and the tools it may use. Its hooks run with SELFHOST_AGENT_NAME set to the name, so its events are recorded with the agent as the actor.",
+                    "type": "object",
+                    "required": [
+                      "owner"
+                    ],
+                    "properties": {
+                      "owner": {
+                        "minLength": 1,
+                        "description": "Person id of the human who answers for the agent: they own its runs, and its review items, budget items and errors on its paths go to them.",
+                        "type": "string"
+                      },
+                      "paths": {
+                        "description": "Globs of the files the agent owns, relative to the repository root. Review items and errors on them go to the owner before [[review.routes]] and [review.owners].",
+                        "type": "array",
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "daily_usd": {
+                        "exclusiveMinimum": 0,
+                        "description": "What the agent may spend in a UTC day. Going over raises a budget item for the owner.",
+                        "type": "number"
+                      },
+                      "tools": {
+                        "description": "Names or globs of the tools the agent may call. Empty or absent allows every tool. A call to another tool fires the rule agents.<name>.tools.",
+                        "type": "array",
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "model": {
+                        "minLength": 1,
+                        "description": "The model the agent runs on unless its run asks for another.",
+                        "type": "string"
+                      },
+                      "mode": {
+                        "default": "observe",
+                        "description": "observe records a call outside tools; enforce blocks it where hooks run. Default: observe.",
+                        "type": "string",
+                        "enum": [
+                          "observe",
+                          "enforce"
+                        ]
+                      }
+                    }
+                  }
+                }
+              },
+              "presence": {
+                "additionalProperties": false,
+                "description": "Presence: who is working where right now (selfhost who).",
+                "type": "object",
+                "properties": {
+                  "idle_minutes": {
+                    "minimum": 1,
+                    "maximum": 1440,
+                    "default": 30,
+                    "description": "A run counts as active from its first event until it ends or has had no event for this long. Default: 30.",
                     "type": "integer"
                   }
                 }
@@ -2431,7 +2507,8 @@
                     "quality",
                     "policy_report",
                     "context_promotion",
-                    "security"
+                    "security",
+                    "overlap"
                   ]
                 },
                 "title": {
@@ -4320,6 +4397,352 @@
       }
     },
     {
+      "name": "who",
+      "description": "Who (people and named agents) is working right now on which repo, branch and files, who owns each run, and which files two runs are both editing. Check it before starting on a file another run is editing.",
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "team": {
+            "minLength": 1,
+            "description": "Only this team. Default: every team you can read.",
+            "type": "string"
+          },
+          "repo": {
+            "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+            "description": "Only runs in this repository, as owner/name.",
+            "type": "string"
+          },
+          "idle_minutes": {
+            "minimum": 1,
+            "maximum": 1440,
+            "description": "A run with no event for this long no longer counts as active. Default: the team's [presence] idle_minutes, else 30.",
+            "type": "integer"
+          }
+        }
+      },
+      "outputSchema": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "schema",
+          "at",
+          "idle_minutes",
+          "runs",
+          "overlaps"
+        ],
+        "properties": {
+          "schema": {
+            "const": "selfhost.presence/v1",
+            "type": "string"
+          },
+          "at": {
+            "format": "date-time",
+            "description": "When the answer was worked out.",
+            "type": "string"
+          },
+          "idle_minutes": {
+            "minimum": 1,
+            "description": "The idle window: a run with no event for this long is not listed.",
+            "type": "integer"
+          },
+          "runs": {
+            "description": "Runs active right now, by repo, then branch, then newest event first. Only teams the caller can read are included.",
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "title": "PresenceRun",
+              "type": "object",
+              "required": [
+                "id",
+                "kind",
+                "actor",
+                "person",
+                "named_agent",
+                "owner",
+                "owner_via",
+                "agent",
+                "model",
+                "team",
+                "repo",
+                "branch",
+                "files",
+                "edits",
+                "pr_url",
+                "started_at",
+                "last_event_at"
+              ],
+              "properties": {
+                "id": {
+                  "minLength": 1,
+                  "description": "The run: the agent's session id, or the background run's id.",
+                  "type": "string"
+                },
+                "kind": {
+                  "description": "session for an agent session, background for a background run.",
+                  "type": "string",
+                  "enum": [
+                    "session",
+                    "background"
+                  ]
+                },
+                "actor": {
+                  "additionalProperties": false,
+                  "description": "Who did it.",
+                  "type": "object",
+                  "required": [
+                    "kind",
+                    "id"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "description": "person for a human, agent for a coding agent acting on its own, system for selfhost, CI or another service.",
+                      "type": "string",
+                      "enum": [
+                        "person",
+                        "agent",
+                        "system"
+                      ]
+                    },
+                    "id": {
+                      "minLength": 1,
+                      "description": "Stable identifier: email or login for a person, agent or run id for an agent, component name for system.",
+                      "type": "string"
+                    },
+                    "name": {
+                      "description": "Display name.",
+                      "type": "string"
+                    }
+                  }
+                },
+                "person": {
+                  "description": "The person working in the run, or null for an agent alone.",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "named_agent": {
+                  "description": "The [agents.<name>] that wrote the run, or null.",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "owner": {
+                  "description": "The one human who answers for the run (see owner_via), or null when selfhost.toml names nobody.",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "owner_via": {
+                  "description": "Where the owner came from: handoff, named_agent ([agents.<name>] owner), person (who acted in it), trigger (who started a background run), schedule (the schedule's owner) or fallback ([review] fallback).",
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "handoff",
+                        "named_agent",
+                        "person",
+                        "trigger",
+                        "schedule",
+                        "fallback"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "agent": {
+                  "description": "The coding agent, or null.",
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "description": "Which coding agent was involved.",
+                      "type": "object",
+                      "required": [
+                        "vendor"
+                      ],
+                      "properties": {
+                        "vendor": {
+                          "description": "Agent product.",
+                          "type": "string",
+                          "enum": [
+                            "claude_code",
+                            "codex",
+                            "opencode",
+                            "goose",
+                            "cursor",
+                            "copilot",
+                            "other"
+                          ]
+                        },
+                        "version": {
+                          "description": "Agent CLI or app version, for example 2.1.0.",
+                          "type": "string"
+                        },
+                        "name": {
+                          "description": "Agent or subagent name when the vendor reports one, for example a Claude Code subagent type.",
+                          "type": "string"
+                        }
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "model": {
+                  "description": "The newest model the run used, or null.",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "team": {
+                  "description": "The team the run belongs to, or null on a laptop.",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "repo": {
+                  "description": "Repository as owner/name, or null when not known.",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "branch": {
+                  "description": "The git branch the run is on, or null when not known.",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "files": {
+                  "description": "Files the run edited while active, newest first, at most 20.",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "edits": {
+                  "minimum": 0,
+                  "description": "Edit calls the run made while active.",
+                  "type": "integer"
+                },
+                "pr_url": {
+                  "description": "The pull request the run opened or pushed to, or null.",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "started_at": {
+                  "format": "date-time",
+                  "description": "The run's first event.",
+                  "type": "string"
+                },
+                "last_event_at": {
+                  "format": "date-time",
+                  "description": "The run's newest event.",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "overlaps": {
+            "description": "Files that two or more active runs in the same repo have edited, oldest first. Each run's owner is warned.",
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "title": "PresenceOverlap",
+              "type": "object",
+              "required": [
+                "repo",
+                "file",
+                "runs",
+                "owners",
+                "since"
+              ],
+              "properties": {
+                "repo": {
+                  "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+                  "description": "Repository as owner/name.",
+                  "type": "string"
+                },
+                "file": {
+                  "minLength": 1,
+                  "description": "The file more than one active run edited.",
+                  "type": "string"
+                },
+                "runs": {
+                  "minItems": 2,
+                  "description": "The runs that edited it, the first to edit it first.",
+                  "type": "array",
+                  "items": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "owners": {
+                  "description": "The owners of those runs, each once.",
+                  "type": "array",
+                  "items": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "since": {
+                  "format": "date-time",
+                  "description": "When a second run first edited it.",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "ask_human",
       "description": "Ask a person a question. Creates a question on the review list and returns its item_id at once; call get_answer with wait_seconds for the answer. Search past decisions first.",
       "annotations": {
@@ -4391,7 +4814,8 @@
               "quality",
               "policy_report",
               "context_promotion",
-              "security"
+              "security",
+              "overlap"
             ]
           },
           "state": {
@@ -4531,7 +4955,8 @@
               "quality",
               "policy_report",
               "context_promotion",
-              "security"
+              "security",
+              "overlap"
             ]
           },
           "state": {
@@ -4671,7 +5096,8 @@
               "quality",
               "policy_report",
               "context_promotion",
-              "security"
+              "security",
+              "overlap"
             ]
           },
           "state": {
@@ -4857,7 +5283,8 @@
                   "quality",
                   "policy_report",
                   "context_promotion",
-                  "security"
+                  "security",
+                  "overlap"
                 ]
               },
               "title": {

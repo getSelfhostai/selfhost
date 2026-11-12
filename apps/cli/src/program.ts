@@ -62,6 +62,7 @@ import { registerTraces } from "./traces.js";
 import { registerUp } from "./up/commands.js";
 import type { ImageCheck } from "./up/registry.js";
 import { type Exec, systemExec } from "./up/resources.js";
+import { registerWho } from "./who.js";
 
 export { VERSION };
 
@@ -786,6 +787,19 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       configPath: deps.configPath ?? defaultConfigPath(),
       fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
       ...(deps.sleep ? { sleep: deps.sleep } : {}),
+    }),
+    fail,
+  );
+
+  registerWho(
+    program,
+    () => ({
+      env: deps.env,
+      cwd: deps.cwd,
+      write: deps.write,
+      configPath: deps.configPath ?? defaultConfigPath(),
+      fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
+      ...(deps.now ? { now: deps.now } : {}),
     }),
     fail,
   );

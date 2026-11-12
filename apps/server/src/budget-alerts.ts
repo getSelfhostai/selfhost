@@ -1,6 +1,13 @@
 import { spendAlerts } from "@selfhost/gateway";
-import { databaseOf, type Ledger, LedgerValidationError } from "@selfhost/ledger";
+import { databaseOf, type Ledger, LedgerValidationError, stableEventId } from "@selfhost/ledger";
 import { highestShares } from "@selfhost/notify";
+import {
+  EVENT_SCHEMA,
+  type LedgerEvent,
+  NAMED_AGENT_RULE_PREFIX,
+  namedAgentActor,
+  type ResolvedSelfhostConfig,
+} from "@selfhost/schema";
 import { periodRange } from "@selfhost/spend";
 import { costsOf, totalOf } from "./orgs.js";
 
@@ -29,6 +36,7 @@ export async function raiseBudgetAlerts(
       } catch {
         continue;
       }
+      if (budget) raised += await raiseNamedAgentBudgets(ledger, org, team.id, budget.config, now);
       const limits = budget?.config.budget;
       if (!limits) continue;
       // The month holds the week's and the day's spend too, except a week that began last month.
@@ -53,4 +61,71 @@ export async function raiseBudgetAlerts(
     }
   }
   return raised;
+}
+
+/**
+ * A budget alert for each named agent ([agents.<name>] daily_usd) that spent its day's budget,
+ * once per UTC day, for its owner: the review list routes it to them. The agent's spend is the
+ * cost of the requests it made as the actor, and of the sessions it acted in today.
+ */
+export async function raiseNamedAgentBudgets(
+  ledger: Ledger,
+  org: string,
+  team: string,
+  config: Pick<ResolvedSelfhostConfig, "agents">,
+  now: Date,
+): Promise<number> {
+  const budgets = Object.entries(config.agents ?? {}).filter(
+    ([, agent]) => agent.daily_usd !== undefined,
+  );
+  if (budgets.length === 0) return 0;
+  const day = periodRange("day", now).from.toISOString();
+  const costs = costsOf(await ledger.orgs.teamCosts(org, [team], day, now.toISOString()), team);
+  const alerts: LedgerEvent[] = [];
+  for (const [name, agent] of budgets) {
+    const actor = namedAgentActor(name).id;
+    const sessions = new Set(
+      (
+        await databaseOf(ledger).query<{ session_id: string }>(
+          "SELECT DISTINCT session_id FROM events WHERE actor_id = $1 AND ts >= $2 AND session_id IS NOT NULL",
+          [actor, day],
+        )
+      ).map((row) => row.session_id),
+    );
+    const spent = totalOf(
+      costs.filter(
+        (e) => e.actor.id === actor || (e.session_id !== undefined && sessions.has(e.session_id)),
+      ),
+    ).usd;
+    const cap = agent.daily_usd as number;
+    if (spent < cap) continue;
+    alerts.push({
+      id: stableEventId(day, `named_agent_budget\n${team}\n${name}\n${day}`),
+      schema: EVENT_SCHEMA,
+      ts: now.toISOString(),
+      source: "server",
+      kind: "alert.raised",
+      actor: { kind: "system", id: "selfhost" },
+      team,
+      ...(org ? { org } : {}),
+      data: {
+        alert: "budget",
+        owner: agent.owner,
+        named_agent: name,
+        cap: `${NAMED_AGENT_RULE_PREFIX}${name}`,
+        window: "day",
+        spent_usd: Math.round(spent * 100) / 100,
+        budget_usd: cap,
+        message: `Agent ${name} spent $${spent.toFixed(2)} of its $${cap.toFixed(2)} daily budget`,
+        suggestion: `Raise [agents.${name}] daily_usd, or stop the agent until tomorrow. Nothing was cut off.`,
+      },
+    });
+  }
+  if (alerts.length === 0) return 0;
+  try {
+    return (await ledger.append(alerts, { team })).accepted.length;
+  } catch (error) {
+    if (!(error instanceof LedgerValidationError)) throw error;
+    return 0;
+  }
 }

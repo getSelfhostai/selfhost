@@ -130,6 +130,12 @@ export const SEEDS: readonly (readonly [table: string, sql: string])[] = [
      VALUES ('acme/acme-api#101', '["bob"]', '["platform-reviewers"]') ON CONFLICT DO NOTHING`,
   ],
   [
+    "vendor_imports",
+    `INSERT INTO vendor_imports (importer, through_day, state, detail, events, last_run_at)
+     VALUES ('anthropic', '2026-11-11', 'ok', NULL, 3, '2026-11-12T07:00:00Z')
+     ON CONFLICT DO NOTHING`,
+  ],
+  [
     "org_keys",
     `INSERT INTO org_keys (org_id, wrapped_key) VALUES ('default', 'seed-wrapped-key')
      ON CONFLICT DO NOTHING`,

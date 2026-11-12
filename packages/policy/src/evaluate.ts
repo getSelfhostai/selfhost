@@ -6,6 +6,7 @@ import {
   hostsInCommand,
   MCP_ALLOW_RULE_ID,
   MODELS_ALLOW_RULE_ID,
+  NAMED_AGENT_RULE_PREFIX,
   type ResolvedRule,
   type ResolvedSelfhostConfig,
   type RuleAction,
@@ -172,6 +173,31 @@ function allowListCheck(list: AllowList, value?: string): PolicyCheck {
   };
 }
 
+/** Rule id of a named agent's tool list. */
+export const namedAgentToolsRuleId = (name: string) => `${NAMED_AGENT_RULE_PREFIX}${name}.tools`;
+
+/**
+ * The hit for a call a named agent ([agents.<name>]) makes to a tool outside its tools list, in
+ * the agent's mode: observe records it, enforce blocks it. Undefined for any other call.
+ */
+export function namedAgentHit(
+  config: Pick<ResolvedSelfhostConfig, "agents">,
+  call: Pick<ToolCall, "tool" | "namedAgent">,
+): PolicyHit | undefined {
+  const name = call.namedAgent;
+  const agent = name === undefined ? undefined : config.agents?.[name];
+  const tools = agent?.tools ?? [];
+  if (!agent || tools.length === 0 || anyGlobMatches(tools, call.tool)) return undefined;
+  return {
+    rule_id: namedAgentToolsRuleId(name as string),
+    mode: agent.mode === "enforce" ? "enforce" : "observe",
+    verdict: "block",
+    message: `Agent ${name} may not use ${call.tool}: it is not in [agents.${name}] tools.`,
+    alternative: `Use one of ${tools.join(", ")}, or ask ${agent.owner} to add this tool to the list.`,
+    irreversible: false,
+  };
+}
+
 /**
  * Every rule and allow-list check in the policy with the team's overrides applied, in the order
  * evaluate reports hits: rules in file order, then mcp.allow, models.allow and egress.allow. Checks in mode
@@ -226,7 +252,7 @@ function hit(check: PolicyCheck): PolicyHit {
 /**
  * The rules and allow-list checks that fire on one tool call, with `team`'s overrides applied.
  * Pure: no I/O, and the same config and call always give the same hits in the same order
- * (rules in file order, then mcp.allow, models.allow and egress.allow). Every field a rule's `match` gives
+ * (rules in file order, then mcp.allow, models.allow, a named agent's tools and egress.allow). Every field a rule's `match` gives
  * must match, so a rule that tests a field the call does not have does not fire. A call to an
  * MCP server or on a model outside a non-empty allow list fires that list's check, and a call
  * that reaches a host outside [egress] allow (by URL, or a URL or git remote in its command)
@@ -250,6 +276,8 @@ export function evaluate(
     if (applies(merged, call)) fired.push(merged);
   }
   const hits = fired.map(hit);
+  const named = namedAgentHit(config, call);
+  if (named) hits.push(named);
   const egress = egressCheck(config, opts.team);
   if (egress) {
     const outside = callHosts(call).filter((host) => !hostAllowed(host, egress.allow));

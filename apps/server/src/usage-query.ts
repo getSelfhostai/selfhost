@@ -6,7 +6,7 @@ import {
   type UsageRow,
   type UsageTotals,
 } from "@selfhost/schema";
-import { countedCostsSql, sourceRankSql } from "@selfhost/spend";
+import { countedCostsSql, sourceRankSql, vendorRollupCountsSql } from "@selfhost/spend";
 
 /**
  * Usage, cost and outcomes in SQL over the ledger's events table. Nothing here knows which source
@@ -16,7 +16,8 @@ import { countedCostsSql, sourceRankSql } from "@selfhost/spend";
  * - Spend: cost.recorded events, counted as `selfhost spend` and the team overview count them
  *   (oneSourcePerSession in @selfhost/spend): a request that went through the model gateway once,
  *   as the gateway's event (countedCostsSql), then for the rest one source per session (agent
- *   vendor and session_id), in the order of COST_SOURCE_PREFERENCE.
+ *   vendor and session_id), in the order of COST_SOURCE_PREFERENCE, and a vendor-reported daily
+ *   total only for a person, agent and day no other source reported (vendorRollupCountsSql).
  * - Sessions: distinct sessions with a session, prompt or cost event in the range.
  * - Pull requests: distinct pull request URLs of pr.opened and pr.merged events in the range.
  * - Cache hit rate: cache reads over cache reads, uncached input and cache writes of the cost
@@ -64,6 +65,13 @@ const literal = (text: string) => `'${text.replaceAll("'", "''")}'`;
 const list = (values: readonly string[]) => values.map(literal).join(", ");
 
 const SOURCE_RANK = sourceRankSql();
+const ROLLUP_COUNTS = vendorRollupCountsSql({
+  source: "ranked.source",
+  body: "ranked.body",
+  person: "ranked.person_id",
+  agent: "ranked.vendor",
+  ts: "ranked.ts",
+});
 
 const METRIC_COLUMNS = `
   coalesce(c.usd, 0)::float8 AS usd,
@@ -166,6 +174,7 @@ costs AS (
     FROM usage_counted
   ) ranked
   WHERE (coalesce(session_id, '') = '' OR paired OR source = chosen_source)
+    AND ${ROLLUP_COUNTS}
 ),
 cost_agg AS (
   SELECT ${leading}

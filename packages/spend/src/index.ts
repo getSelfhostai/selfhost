@@ -1,4 +1,12 @@
 export {
+  BREAK_EVEN_NOTES,
+  breakEven,
+  type PersonAgentSpend,
+  SEAT_PRICES_AS_OF,
+  SEAT_TIERS,
+  type SeatTier,
+} from "./break-even.js";
+export {
   BUDGET_KEY,
   budgetLine,
   budgetResponse,
@@ -116,9 +124,12 @@ export {
   GATEWAY_PAIR_MIN_TOKENS,
   GATEWAY_PAIR_WINDOW_MS,
   type GatewayPairs,
+  isVendorRollup,
   oneSourcePerSession,
   pairGatewayCosts,
   sourceRankSql,
+  VENDOR_ROLLUP,
+  vendorRollupCountsSql,
 } from "./sources.js";
 export {
   DEFAULT_BASELINE_DAYS,

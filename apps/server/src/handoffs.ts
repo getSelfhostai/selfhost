@@ -233,7 +233,7 @@ export function handoffRoutes(
       );
       const at = new Date(Math.max(now().getTime(), last + 1));
       const config = await configOf(team);
-      const summary = summarizeRun(runId, events, { now: at, team });
+      const summary = summarizeRun(runId, events, { now: at, team, config });
       const people = await ledger.teams.listPeople(team);
       const target = people.find((p) => p.id.toLowerCase() === body.to.trim().toLowerCase());
       const decider = await deciderIn(caller, team);

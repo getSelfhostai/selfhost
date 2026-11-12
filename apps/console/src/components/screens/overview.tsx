@@ -5,6 +5,7 @@ import type {
   UsageResponse,
 } from "@selfhost/schema";
 import { Failed, PageHeader, Section, Stat } from "@/components/common";
+import { WorkingNow } from "@/components/presence";
 import { reviewQuery, riskLevel } from "@/components/screens/review";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -136,6 +137,7 @@ export function OverviewScreen() {
           ))
         ) : null}
       </section>
+      <WorkingNow />
       {data ? (
         <Section
           title="Needs a person"

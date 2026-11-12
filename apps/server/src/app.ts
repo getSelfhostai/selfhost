@@ -1,3 +1,4 @@
+import type { AdminImporter } from "@selfhost/importers";
 import type { Ledger } from "@selfhost/ledger";
 import {
   type ApiError,
@@ -27,6 +28,7 @@ import { reviewRoutes } from "./review.js";
 import type { SigninOptions } from "./signin.js";
 import { type SoloOptions, soloRoutes } from "./solo.js";
 import { type PersonEnv, teamRoutes } from "./teams.js";
+import { vendorImportAdminRoutes } from "./vendor-usage.js";
 
 export interface AppOptions {
   version: string;
@@ -81,6 +83,10 @@ export interface AppOptions {
    */
   exceptionKeys?: ExceptionKeyring;
   /**
+   * Vendor usage importers for the admin keys set (vendor-usage.ts): GET /v1/vendor-imports
+   * shows their status and POST /v1/vendor-imports/run runs them now.
+   */
+  vendorImporters?: readonly AdminImporter[];
    * Hosted mode (SELFHOST_MODE=hosted, see hosted.ts): sign-in with GitHub or Google, an org per
    * signup, org isolation and the seat limit. It refuses a gateway, background runs, the GitHub
    * App and the sign-in proxy, so the server stores events and settings only.
@@ -106,6 +112,7 @@ export function createApp({
   solo,
   eventsStored,
   exceptionKeys = loadExceptionKeys("memory://"),
+  vendorImporters = [],
   hosted,
 }: AppOptions): Hono {
   if (hosted) {
@@ -167,6 +174,7 @@ export function createApp({
     ...(gateway ? { gateway } : {}),
     ...(background ? { background } : {}),
     ...(eventsStored ? { eventsStored } : {}),
+    vendorImporters,
     handoffs: {
       ...(config ? { config } : {}),
       ...(github.publicUrl ? { publicUrl: github.publicUrl } : {}),
@@ -212,6 +220,7 @@ export function createApp({
   adminMcpRoute(app);
   receiptReadRoutes(app, ledger);
   gatewayAdminRoutes(app, ledger, gateway);
+  vendorImportAdminRoutes(app, ledger, vendorImporters, now);
   if (solo) soloRoutes(app, solo);
 
   app.notFound((c) =>

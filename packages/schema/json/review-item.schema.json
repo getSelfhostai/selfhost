@@ -64,7 +64,8 @@
         "quality",
         "policy_report",
         "context_promotion",
-        "security"
+        "security",
+        "overlap"
       ]
     },
     "title": {

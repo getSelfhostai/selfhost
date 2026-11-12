@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+
+import type { PresenceResponse, PresenceRun } from "@selfhost/schema";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { blockedToolEvents, eventLine, runFromEvents } from "../src/components/screens/run";
@@ -56,6 +58,81 @@ describe("the overview", () => {
     fireEvent.click(stat("Risky PRs"));
     expect(go).toHaveBeenCalledWith(expect.objectContaining({ screen: "review" }));
     await screen.findByRole("heading", { name: "Review list" });
+  });
+});
+
+describe("working now", () => {
+  const run = (fields: Partial<PresenceRun>): PresenceRun => ({
+    id: "s-1",
+    kind: "session",
+    actor: { kind: "person", id: "ada@example.com" },
+    person: "ada@example.com",
+    named_agent: null,
+    owner: "ada@example.com",
+    owner_via: "person",
+    agent: { vendor: "claude_code" },
+    model: null,
+    team: "web",
+    repo: "acme/web",
+    branch: "main",
+    files: ["src/app.ts"],
+    edits: 1,
+    pr_url: null,
+    started_at: "2026-11-08T09:00:00.000Z",
+    last_event_at: "2026-11-08T09:58:00.000Z",
+    ...fields,
+  });
+
+  it("shows who works on which repo and branch, who owns each run, and overlaps", async () => {
+    const server = mockServer({
+      "GET /v1/usage": USAGE,
+      "GET /v1/review-items": REVIEW_PAGE,
+      "GET /v1/policy/observed": OBSERVED,
+      "GET /v1/presence": {
+        schema: "selfhost.presence/v1",
+        at: "2026-11-08T10:00:00.000Z",
+        idle_minutes: 30,
+        runs: [
+          run({
+            id: "s-janitor",
+            actor: { kind: "agent", id: "agent:janitor", name: "janitor" },
+            person: null,
+            named_agent: "janitor",
+            owner: "bo@example.com",
+            owner_via: "named_agent",
+            agent: { vendor: "codex" },
+            branch: "janitor/deps",
+          }),
+          run({}),
+        ],
+        overlaps: [
+          {
+            repo: "acme/web",
+            file: "src/app.ts",
+            runs: ["s-1", "s-janitor"],
+            owners: ["ada@example.com", "bo@example.com"],
+            since: "2026-11-08T09:58:00.000Z",
+          },
+        ],
+      } satisfies PresenceResponse,
+    });
+    renderConsole(OWNER, "");
+    const section = (await screen.findByRole("heading", { name: "Working now" })).closest(
+      "section",
+    ) as HTMLElement;
+    const view = within(section);
+    expect(await view.findByText("acme/web")).toBeTruthy();
+    expect(view.getByText("Branch janitor/deps")).toBeTruthy();
+    expect(view.getByText("Branch main")).toBeTruthy();
+    expect(view.getByText("janitor")).toBeTruthy();
+    expect(view.getByText("Named agent")).toBeTruthy();
+    expect(view.getByText("Owner bo@example.com (owns the agent)")).toBeTruthy();
+    expect(view.getByText("Owner ada@example.com")).toBeTruthy();
+    expect(view.getAllByText("Overlap")).toHaveLength(2);
+    expect(view.getByText(/2 runs editing it since 2m ago/)).toBeTruthy();
+    expect(server.calls.find((c) => c.path === "/v1/presence")?.url.searchParams.get("team")).toBe(
+      "web",
+    );
   });
 });
 
