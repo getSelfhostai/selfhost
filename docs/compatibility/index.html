@@ -68,14 +68,14 @@ dd { margin: 2px 0 0 0; color: var(--muted); }
 <body>
 <main>
 <h1>Vendor compatibility</h1>
-<p>Each new release of the coding agent CLIs selfhost supports is installed in CI and checked against selfhost's hooks, log importers, policy compiler and gateway connect: every week, and within hours of a release. A failing run marks that release broken here and opens an issue. Last run 2026-11-11 19:54 UTC, <a href="https://github.com/getSelfhostai/selfhost/actions/runs/43091276776">CI run</a>.</p>
+<p>Each new release of the coding agent CLIs selfhost supports is installed in CI and checked against selfhost's hooks, log importers, policy compiler and gateway connect: every week, and within hours of a release. A failing run marks that release broken here and opens an issue. Last run 2026-11-12 07:48 UTC, <a href="https://github.com/getSelfhostai/selfhost/actions/runs/43177737831">CI run</a>.</p>
 <div class="scroll"><table>
 <thead><tr><th>CLI</th><th>Newest tested</th><th>Status</th><th>Live session</th></tr></thead>
 <tbody>
 <tr><td><a href="#claude_code">Claude Code</a></td><td><code>2.1.322</code></td><td><span class="status status-passing">Passing</span></td><td><span class="status status-not-run">Not run</span></td></tr>
-<tr><td><a href="#codex">Codex</a></td><td><code>0.167.1</code></td><td><span class="status status-passing">Passing</span></td><td><span class="status status-not-run">Not run</span></td></tr>
+<tr><td><a href="#codex">Codex</a></td><td><code>0.167.2</code></td><td><span class="status status-passing">Passing</span></td><td><span class="status status-not-run">Not run</span></td></tr>
 <tr><td><a href="#cursor">Cursor CLI</a></td><td><code>2026.11.11-b912975</code></td><td><span class="status status-passing">Passing</span></td><td><span class="status status-not-run">Not run</span></td></tr>
-<tr><td><a href="#opencode">OpenCode</a></td><td><code>1.19.5</code></td><td><span class="status status-passing">Passing</span></td><td><span class="status status-not-run">Not run</span></td></tr>
+<tr><td><a href="#opencode">OpenCode</a></td><td><code>1.19.5</code></td><td><span class="status status-broken">Broken</span></td><td><span class="status status-not-run">Not run</span></td></tr>
 </tbody></table></div>
 <section id="gateway-connect"><h2>Gateway connect</h2>
 <p><code>selfhost gateway connect &lt;agent&gt;</code> points an agent at the team's AI gateway with the person's virtual key, and <code>selfhost gateway disconnect</code> puts the files back byte for byte. Only API key traffic goes through a gateway: an agent signed in with a subscription is left as it is unless <code>--api-billing</code> is given. Each version's result is in its <code>gateway-connect</code> check below.</p>
@@ -83,8 +83,8 @@ dd { margin: 2px 0 0 0; color: var(--muted); }
 <thead><tr><th>Agent</th><th>What connect writes</th><th>Newest tested</th><th>Connect</th></tr></thead>
 <tbody>
 <tr><td>Claude Code</td><td>ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN in the env block of ~/.claude/settings.json (--managed: a managed-settings.d file)</td><td><code>2.1.322</code></td><td><span class="status status-pass">Works</span></td></tr>
-<tr><td>Codex</td><td>model_provider and model_providers.selfhost at the top of ~/.codex/config.toml</td><td><code>0.167.1</code></td><td><span class="status status-pass">Works</span></td></tr>
-<tr><td>OpenCode</td><td>provider.anthropic and provider.openai baseURL and apiKey in opencode.json</td><td><code>1.19.5</code></td><td><span class="status status-pass">Works</span></td></tr>
+<tr><td>Codex</td><td>model_provider and model_providers.selfhost at the top of ~/.codex/config.toml</td><td><code>0.167.2</code></td><td><span class="status status-pass">Works</span></td></tr>
+<tr><td>OpenCode</td><td>provider.anthropic and provider.openai baseURL and apiKey in opencode.json</td><td><code>1.19.5</code></td><td><span class="status status-fail">Broken</span></td></tr>
 <tr><td>Goose</td><td>a custom provider, custom_providers/selfhost.json, picked with --provider selfhost</td><td></td><td><span class="muted">Fixture tests only: not installed by CI yet</span></td></tr>
 <tr><td>Cursor CLI</td><td>Nothing: its model traffic leaves from Cursor's servers. Usage comes from Cursor's admin API.</td><td><code>2026.11.11-b912975</code></td><td><span class="muted">Not applicable</span></td></tr>
 <tr><td>GitHub Copilot</td><td>Nothing: its model traffic leaves from GitHub's servers. Usage comes from GitHub's admin API.</td><td></td><td><span class="muted">Not applicable</span></td></tr>
@@ -101,7 +101,7 @@ dd { margin: 2px 0 0 0; color: var(--muted); }
 <td><span class="status status-not-run">Not run</span></td>
 <td><span class="status status-pass">Works</span></td>
 <td>2026-11-10</td>
-<td>2026-11-11</td>
+<td>2026-11-12</td>
 <td><details><summary>Checks</summary>
 <table class="checks"><thead><tr><th>Check</th><th>Result</th><th>Detail</th></tr></thead>
 <tbody>
@@ -123,7 +123,7 @@ dd { margin: 2px 0 0 0; color: var(--muted); }
 </tbody></table>
 <p>Hook events not modeled by selfhost yet: <code>PostToolUseFailure</code>, <code>PostToolBatch</code>, <code>UserPromptExpansion</code>, <code>StopFailure</code>, <code>SubagentStart</code>, <code>PostCompact</code>, <code>PreModelSwitch</code>, <code>PostModelSwitch</code>, <code>PermissionRequest</code>, <code>PermissionDenied</code>, <code>Setup</code>, <code>TeammateIdle</code>, <code>TaskCreated</code>, <code>TaskCompleted</code>, <code>Elicitation</code>, <code>ElicitationResult</code>, <code>ConfigChange</code>, <code>WorktreeCreate</code>, <code>WorktreeRemove</code>, <code>InstructionsLoaded</code>, <code>CwdChanged</code>, <code>FileChanged</code>, <code>DirectoryAdded</code>, <code>MessageDisplay</code></p>
 <p>No compile golden files for 2.1.322 yet (newest: 2.1.319). Review its config changes and add it to VENDOR_VERSIONS.</p>
-<p><a href="https://github.com/getSelfhostai/selfhost/actions/runs/43091276776">CI run</a></p>
+<p><a href="https://github.com/getSelfhostai/selfhost/actions/runs/43177737831">CI run</a></p>
 </details></td>
 </tr>
 <tr>
@@ -193,6 +193,36 @@ dd { margin: 2px 0 0 0; color: var(--muted); }
 <div class="scroll"><table>
 <thead><tr><th>Version</th><th>Status</th><th>Live session</th><th>Gateway connect</th><th>First tested</th><th>Last tested</th><th></th></tr></thead>
 <tbody>
+<tr>
+<td><code>0.167.2</code></td>
+<td><span class="status status-passing">Passing</span> <span class="muted"></span></td>
+<td><span class="status status-not-run">Not run</span></td>
+<td><span class="status status-pass">Works</span></td>
+<td>2026-11-12</td>
+<td>2026-11-12</td>
+<td><details><summary>Checks</summary>
+<table class="checks"><thead><tr><th>Check</th><th>Result</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td><code>install</code></td><td><span class="status status-pass">pass</span></td><td><pre>Installed @openai/codex@0.167.2, linux-x64</pre></td></tr>
+<tr><td><code>version</code></td><td><span class="status status-pass">pass</span></td><td><pre>Reports 0.167.2</pre></td></tr>
+<tr><td><code>hook-events</code></td><td><span class="status status-pass">pass</span></td><td><pre>All 13 hook events found: SessionStart, SessionEnd, UserPromptSubmit, PreToolUse, PermissionRequest, PostToolUse, PostModelRequest, Stop, SubagentStart, SubagentStop, PreCompact, PostCompact, Interrupt</pre></td></tr>
+<tr><td><code>hook-fields</code></td><td><span class="status status-pass">pass</span></td><td><pre>All 18 payload, notify and answer fields found: cwd, hook_event_name, prompt, reason, session_id, source, tool_input, tool_name, trigger, turn_id, agent-turn-complete, thread-id, turn-id, input-messages, hookSpecificOutput, permissionDecision, permissionDecisionReason, systemMessage</pre></td></tr>
+<tr><td><code>config</code></td><td><span class="status status-pass">pass</span></td><td><pre>Codex loads the requirements.toml selfhost compiles for this version</pre></td></tr>
+<tr><td><code>gateway-connect</code></td><td><span class="status status-pass">pass</span></td><td><pre>With the settings selfhost gateway connect writes, POST /llm/openai/v1/responses reached the stand-in gateway with the virtual key in authorization</pre></td></tr>
+<tr><td><code>live-session</code></td><td><span class="status status-skip">skipped</span></td><td><pre>No OPENAI_API_KEY secret, so no live session ran</pre></td></tr>
+<tr><td><code>suite:schema</code></td><td><span class="status status-pass">pass</span></td><td><pre>Hook payload fixtures and frozen v1 contracts against the payload schemas, and event schema versions</pre></td></tr>
+<tr><td><code>suite:hook-mappers</code></td><td><span class="status status-pass">pass</span></td><td><pre>Hook payload fixtures mapped to ledger events, and ingest of older event versions</pre></td></tr>
+<tr><td><code>suite:importers</code></td><td><span class="status status-pass">pass</span></td><td><pre>Fixture session logs through the local log importers</pre></td></tr>
+<tr><td><code>suite:hooks</code></td><td><span class="status status-pass">pass</span></td><td><pre>Each agent's pre-tool payloads through selfhost hook, the spool and the ledger</pre></td></tr>
+<tr><td><code>suite:compile</code></td><td><span class="status status-pass">pass</span></td><td><pre>Policy compile golden files per vendor config version</pre></td></tr>
+<tr><td><code>suite:gateway-connect</code></td><td><span class="status status-pass">pass</span></td><td><pre>selfhost gateway connect's settings on fixture configs per agent, and disconnect restoring them byte for byte</pre></td></tr>
+<tr><td><code>suite:context</code></td><td><span class="status status-pass">pass</span></td><td><pre>Context compile golden files per agent</pre></td></tr>
+</tbody></table>
+
+<p>No compile golden files for 0.167.2 yet (newest: 0.167.0). Review its config changes and add it to VENDOR_VERSIONS.</p>
+<p><a href="https://github.com/getSelfhostai/selfhost/actions/runs/43177737831">CI run</a></p>
+</details></td>
+</tr>
 <tr>
 <td><code>0.167.1</code></td>
 <td><span class="status status-passing">Passing</span> <span class="muted"></span></td>
@@ -264,7 +294,7 @@ dd { margin: 2px 0 0 0; color: var(--muted); }
 <td><span class="status status-not-run">Not run</span></td>
 <td><span class="muted">Not applicable</span></td>
 <td>2026-11-11</td>
-<td>2026-11-11</td>
+<td>2026-11-12</td>
 <td><details><summary>Checks</summary>
 <table class="checks"><thead><tr><th>Check</th><th>Result</th><th>Detail</th></tr></thead>
 <tbody>
@@ -278,7 +308,7 @@ dd { margin: 2px 0 0 0; color: var(--muted); }
 <tr><td><code>suite:context</code></td><td><span class="status status-pass">pass</span></td><td><pre>Context compile golden files per agent</pre></td></tr>
 </tbody></table>
 
-<p><a href="https://github.com/getSelfhostai/selfhost/actions/runs/43091276776">CI run</a></p>
+<p><a href="https://github.com/getSelfhostai/selfhost/actions/runs/43177737831">CI run</a></p>
 </details></td>
 </tr>
 <tr>
@@ -312,11 +342,11 @@ dd { margin: 2px 0 0 0; color: var(--muted); }
 <tbody>
 <tr>
 <td><code>1.19.5</code></td>
-<td><span class="status status-passing">Passing</span> <span class="muted"></span></td>
+<td><span class="status status-broken">Broken</span> <span class="muted">Failed: gateway-connect</span></td>
 <td><span class="status status-not-run">Not run</span></td>
-<td><span class="status status-pass">Works</span></td>
+<td><span class="status status-fail">Broken</span></td>
 <td>2026-11-08</td>
-<td>2026-11-11</td>
+<td>2026-11-12</td>
 <td><details><summary>Checks</summary>
 <table class="checks"><thead><tr><th>Check</th><th>Result</th><th>Detail</th></tr></thead>
 <tbody>
@@ -324,14 +354,22 @@ dd { margin: 2px 0 0 0; color: var(--muted); }
 <tr><td><code>version</code></td><td><span class="status status-pass">pass</span></td><td><pre>Reports 1.19.5</pre></td></tr>
 <tr><td><code>hook-events</code></td><td><span class="status status-pass">pass</span></td><td><pre>All 1 plugin hooks found: tool.execute.before</pre></td></tr>
 <tr><td><code>hook-fields</code></td><td><span class="status status-pass">pass</span></td><td><pre>All 2 plugin event fields found: sessionID, callID</pre></td></tr>
-<tr><td><code>gateway-connect</code></td><td><span class="status status-pass">pass</span></td><td><pre>With the settings selfhost gateway connect writes, POST /llm/anthropic/v1/messages reached the stand-in gateway with the virtual key in x-api-key</pre></td></tr>
+<tr><td><code>gateway-connect</code></td><td><span class="status status-fail">fail</span></td><td><pre>No /llm/anthropic/v1/messages request with the virtual key.
+The stand-in gateway got no request.
+[91m[1mError: [0m{
+  &quot;name&quot;: &quot;UnknownError&quot;,
+  &quot;data&quot;: {
+    &quot;message&quot;: &quot;Unexpected server error. Check server logs for details.&quot;,
+    &quot;ref&quot;: &quot;err_3a9d9a1c&quot;
+  }
+}</pre></td></tr>
 <tr><td><code>live-session</code></td><td><span class="status status-skip">skipped</span></td><td><pre>No live session for this CLI yet</pre></td></tr>
 <tr><td><code>suite:hooks</code></td><td><span class="status status-pass">pass</span></td><td><pre>Each agent's pre-tool payloads through selfhost hook, the spool and the ledger</pre></td></tr>
 <tr><td><code>suite:gateway-connect</code></td><td><span class="status status-pass">pass</span></td><td><pre>selfhost gateway connect's settings on fixture configs per agent, and disconnect restoring them byte for byte</pre></td></tr>
 <tr><td><code>suite:context</code></td><td><span class="status status-pass">pass</span></td><td><pre>Context compile golden files per agent</pre></td></tr>
 </tbody></table>
 
-<p><a href="https://github.com/getSelfhostai/selfhost/actions/runs/43091276776">CI run</a></p>
+<p><a href="https://github.com/getSelfhostai/selfhost/actions/runs/43177737831">CI run</a></p>
 </details></td>
 </tr>
 </tbody></table></div></section>
