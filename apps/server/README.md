@@ -934,7 +934,6 @@ pnpm --filter @selfhost/server start   # runs the build
 Environment:
 
 | Variable                              | Default            | Meaning                                                                                                                                                   |
-| ---------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
 | ------------------------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `PORT`                                | `4400`             | Port to listen on.                                                                                                                                        |
 | `HOST`                                | `127.0.0.1`        | Address to bind.                                                                                                                                          |
@@ -983,11 +982,11 @@ Environment:
 | `SELFHOST_GATEWAY_ADMIN_USER`         | `selfhost`         | Bifrost's admin username.                                                                                                                                 |
 | `SELFHOST_GATEWAY_PUBLIC_URL`         | unset              | Gateway address agents get. Unset: `<SELFHOST_PUBLIC_URL>/llm` with Bifrost (see [Without Docker](#without-docker)).                                      |
 | `SELFHOST_GATEWAY_SYNC`               | `5m`               | `off` stops writing budgets and keys to the gateway and reading its usage from this server.                                                               |
-| `SELFHOST_ANTHROPIC_ADMIN_KEY`     | unset              | Anthropic Admin API key: imports Claude Code usage per person from the Claude Code Analytics API. Sent only to Anthropic.       |
-| `SELFHOST_OPENAI_ADMIN_KEY`        | unset              | OpenAI Admin key: imports API key usage per person from the organization usage API. Sent only to OpenAI.                        |
-| `SELFHOST_OPENAI_SKIP_KEY_IDS`     | unset              | OpenAI API key ids, comma separated, whose usage is not imported: the keys the gateway calls OpenAI with.                       |
-| `SELFHOST_CURSOR_ADMIN_KEY`        | unset              | Cursor team Admin API key: imports Cursor usage per person. Sent only to Cursor.                                                |
-| `SELFHOST_VENDOR_IMPORT`           | `1h`               | `off` stops importing vendor usage from this server, when another one imports it into the same database.                        |
+| `SELFHOST_ANTHROPIC_ADMIN_KEY`        | unset              | Anthropic Admin API key: imports Claude Code usage per person from the Claude Code Analytics API. Sent only to Anthropic.                                 |
+| `SELFHOST_OPENAI_ADMIN_KEY`           | unset              | OpenAI Admin key: imports API key usage per person from the organization usage API. Sent only to OpenAI.                                                  |
+| `SELFHOST_OPENAI_SKIP_KEY_IDS`        | unset              | OpenAI API key ids, comma separated, whose usage is not imported: the keys the gateway calls OpenAI with.                                                 |
+| `SELFHOST_CURSOR_ADMIN_KEY`           | unset              | Cursor team Admin API key: imports Cursor usage per person. Sent only to Cursor.                                                                          |
+| `SELFHOST_VENDOR_IMPORT`              | `1h`               | `off` stops importing vendor usage from this server, when another one imports it into the same database.                                                  |
 
 ## Without Docker
 

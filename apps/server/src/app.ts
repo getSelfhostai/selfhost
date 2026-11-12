@@ -87,6 +87,7 @@ export interface AppOptions {
    * shows their status and POST /v1/vendor-imports/run runs them now.
    */
   vendorImporters?: readonly AdminImporter[];
+  /**
    * Hosted mode (SELFHOST_MODE=hosted, see hosted.ts): sign-in with GitHub or Google, an org per
    * signup, org isolation and the seat limit. It refuses a gateway, background runs, the GitHub
    * App and the sign-in proxy, so the server stores events and settings only.
