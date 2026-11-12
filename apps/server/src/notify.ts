@@ -33,6 +33,7 @@ import {
 import { periodRange } from "@selfhost/spend";
 import type { Context, Hono } from "hono";
 import { apiError } from "./access.js";
+import { TEAM_READERS } from "./advisor.js";
 import { limit, readBody, SMALL_BODY_BYTES } from "./http.js";
 import { costsOf } from "./orgs.js";
 import { teamConfig } from "./runs.js";
@@ -105,6 +106,24 @@ export function serverDirectory(
     },
 
     budgetOwners,
+
+    // Owners and admins get the team note of each team whose [notify] advisor is not off;
+    // members get a note about their own work where it is everyone.
+    async advisor(person, org) {
+      const access = await teams.peopleWithAccess(person);
+      if (!access.some((a) => a.org === org)) return undefined;
+      const admin: string[] = [];
+      const member: string[] = [];
+      for (const { team, role } of await teams.memberships(org, person)) {
+        const audience = (await configOf(team)).notify.advisor;
+        if (audience === "off") continue;
+        if (TEAM_READERS.includes(role)) admin.push(team);
+        else if (audience === "everyone") member.push(team);
+      }
+      if (admin.length > 0) return { teams: admin };
+      if (member.length > 0) return { teams: member, person };
+      return undefined;
+    },
 
     async spendDigest(person, org, now) {
       const access = await teams.peopleWithAccess(person);

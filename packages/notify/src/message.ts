@@ -61,7 +61,7 @@ export function clean(text: string, keep?: ReadonlySet<string>): string {
   return masked.length > MAX_LINE ? `${masked.slice(0, MAX_LINE - 3)}...` : masked;
 }
 
-const plainId = (value: string | undefined) =>
+export const plainId = (value: string | undefined) =>
   value !== undefined && PLAIN_ID.test(value) ? value : undefined;
 
 function agentOf(item: ReviewItem): string {

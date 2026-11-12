@@ -1,5 +1,7 @@
 import { hashToken } from "@selfhost/ledger";
 import type {
+  AdvisorQuery,
+  AdvisorReport,
   BackgroundRun,
   BackgroundRunsQuery,
   BackgroundRunsResponse,
@@ -166,6 +168,16 @@ export class TeamClient {
     }
     const search = params.size > 0 ? `?${params}` : "";
     return this.call("GET", `/v1/presence${search}`);
+  }
+
+  /** The weekly advisor report of the teams this token reads, or one team (GET /v1/advisor). */
+  advisor(query: AdvisorQuery = {}): Promise<AdvisorReport> {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined) params.set(key, String(value));
+    }
+    const search = params.size > 0 ? `?${params}` : "";
+    return this.call("GET", `/v1/advisor${search}`);
   }
 
   me(): Promise<MeResponse> {

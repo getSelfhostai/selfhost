@@ -1,4 +1,20 @@
 export {
+  ADVISOR_KINDS,
+  ADVISOR_SIGNAL_DAYS,
+  type AdvisorData,
+  type AdvisorItem,
+  type AdvisorReader,
+  advisorLines,
+  advisorMessage,
+  advisorReport,
+  ENFORCE_HITS,
+  isQuietWeek,
+  MIN_SAVING_USD,
+  REPEATED_BLOCKS,
+  readAdvisorData,
+  recommend,
+} from "./advisor.js";
+export {
   appriseApi,
   appriseApiUrl,
   appriseCli,
@@ -9,7 +25,7 @@ export {
   NO_APPRISE_NOTE,
   type RunFile,
 } from "./apprise.js";
-export { digestWindow, spendDigestWindow } from "./cadence.js";
+export { advisorWindow, digestWindow, spendDigestWindow } from "./cadence.js";
 export {
   type Directory,
   isSpendAlert,

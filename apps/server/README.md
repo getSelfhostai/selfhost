@@ -296,6 +296,34 @@ seat's price). Heaviest use first. Seat prices are dated (`prices_as_of`); see `
 [`packages/spend`](../../packages/spend). The console's Spend screen shows it as "Seat or API
 key".
 
+### Weekly advisor
+
+`GET /v1/advisor?team&to` (both kinds of token) answers `selfhost.advisor/v1`: what a team's
+agents did in the 7 days before `to` (default now) and what to change. Sections, each from data
+the ledger already holds: what shipped (agent pull requests opened and merged, by person and
+agent), what got blocked (enforced and recording-only rule hits from `policy.evaluated`, and
+one-time exceptions asked, answered and used), where money went (spend by person and agent counted
+as `GET /v1/usage` counts it, the part only a vendor admin API reported, the cache hit rate, seat or
+API key as `/v1/usage/break-even` prices it, and sandbox idle cost), quality (reverts and reworks
+found in the week and learned risk signals) and who worked where (agent sessions per person and
+repository, and files two runs edited at once). Then up to 3 recommendations, picked by fixed rules
+from those numbers: approve or deny a learned risk signal still waiting, ask about a rule that
+stopped one person's agents 3 or more times, start enforcing a recording-only rule with 3 or more
+hits and no likely false positives, change a person's billing where it saves $20 or more a month,
+and cut idle sandbox time where that saves $20 or more a month. No model is called. Each
+recommendation names the review item, run or console screen to act on.
+
+Owners and admins of every team read get the team report; anyone else gets a report about their
+own sessions, pull requests and spend (`scope: "self"`), without learned signals or rule changes.
+The admin token reads every team and events with no team.
+
+The same report goes out as a weekly note through each person's notification targets, inside the
+notification job: `[notify] advisor` (`admins`, the default: each team's owners and admins get the
+team note; `everyone`: members also get one about their own work; `off`), `advisor_day`
+(`monday`), `advisor_hour` (`9`) and `advisor_timezone` (`UTC`, any IANA name). A week with nothing
+in it sends nothing. The note is recorded as a `digest` send whose subject is
+`advisor:<window start>`. `selfhost advisor` prints it now, and the console's Overview shows it.
+
 ### Vendor usage
 
 Use that never reaches the gateway or a laptop's logs on this server (Cursor, people who did not

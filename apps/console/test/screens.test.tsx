@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import type { PresenceResponse, PresenceRun } from "@selfhost/schema";
+import type { AdvisorReport, PresenceResponse, PresenceRun } from "@selfhost/schema";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { blockedToolEvents, eventLine, runFromEvents } from "../src/components/screens/run";
@@ -58,6 +58,111 @@ describe("the overview", () => {
     fireEvent.click(stat("Risky PRs"));
     expect(go).toHaveBeenCalledWith(expect.objectContaining({ screen: "review" }));
     await screen.findByRole("heading", { name: "Review list" });
+  });
+});
+
+describe("the weekly advisor", () => {
+  const report: AdvisorReport = {
+    schema: "selfhost.advisor/v1",
+    from: "2026-11-01T10:00:00.000Z",
+    to: "2026-11-08T10:00:00.000Z",
+    scope: "team",
+    person: null,
+    teams: ["web"],
+    shipped: {
+      opened: 6,
+      merged: 5,
+      by: [{ person: "ada@example.com", agent: "claude_code", opened: 6, merged: 5 }],
+    },
+    blocked: {
+      blocked: 3,
+      asked: 1,
+      would_block: 4,
+      would_ask: 0,
+      rules: [
+        {
+          rule_id: "secret-files",
+          blocked: 3,
+          asked: 0,
+          would_block: 0,
+          would_ask: 0,
+          likely_false_positives: 0,
+          top_person: "bo@example.com",
+          top_person_hits: 3,
+          run: "s-bo",
+        },
+      ],
+      exceptions: { requested: 2, approved: 1, denied: 1, used: 1 },
+    },
+    spend: {
+      usd: 61.5,
+      vendor_usd: 4,
+      cache_hit_rate: 0.72,
+      by: [{ person: "ada@example.com", agent: "claude_code", usd: 57.5, vendor_usd: 0 }],
+      billing: [],
+      sandbox: null,
+    },
+    quality: { merged: 5, reverted: 1, reworked: 0, reverts: [], signals: [] },
+    presence: {
+      work: [{ person: "ada@example.com", repos: [{ repo: "acme/web", sessions: 4 }] }],
+      overlaps: [],
+    },
+    recommendations: [
+      {
+        action: "check_repeated_blocks",
+        title: "Ask bo@example.com why their agents keep hitting secret-files",
+        why: "It stopped their agents 3 times this week.",
+        saving_usd: null,
+        screen: "rules",
+        item_id: null,
+        run: "s-bo",
+      },
+      {
+        action: "switch_billing",
+        title: "Put ada@example.com on a Claude Code Max 5x seat if on an API key",
+        why: "Their use is about $246 a month at API rates.",
+        saving_usd: 146,
+        screen: "spend",
+        item_id: null,
+        run: null,
+      },
+    ],
+  };
+
+  it("lists the changes to make and a line per section, for the team in view", async () => {
+    const server = mockServer({
+      "GET /v1/usage": USAGE,
+      "GET /v1/review-items": REVIEW_PAGE,
+      "GET /v1/policy/observed": OBSERVED,
+      "GET /v1/advisor": report,
+    });
+    renderConsole(OWNER, "");
+    const section = (await screen.findByRole("heading", { name: "Weekly advisor" })).closest(
+      "section",
+    ) as HTMLElement;
+    const view = within(section);
+    const first = await view.findByRole("link", {
+      name: "1. Ask bo@example.com why their agents keep hitting secret-files",
+    });
+    expect(first.getAttribute("href")).toBe("?screen=rules");
+    expect(view.getByRole("link", { name: "See the run." }).getAttribute("href")).toBe(
+      "?screen=run&run=s-bo",
+    );
+    expect(view.getByText("Saves $146.00/mo")).toBeTruthy();
+    expect(view.getByText(/5 agent PRs merged, 6 opened/)).toBeTruthy();
+    expect(view.getByText(/\$61\.50 on models/)).toBeTruthy();
+    expect(server.calls.find((c) => c.path === "/v1/advisor")?.url.searchParams.get("team")).toBe(
+      "web",
+    );
+  });
+
+  it("shows nothing on a server without it", async () => {
+    mockServer({ "GET /v1/usage": USAGE, "GET /v1/review-items": REVIEW_PAGE });
+    renderConsole(MEMBER, "");
+    await screen.findByText("12");
+    await waitFor(() =>
+      expect(screen.queryByRole("heading", { name: "Weekly advisor" })).toBeNull(),
+    );
   });
 });
 

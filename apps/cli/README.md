@@ -95,6 +95,13 @@ hooks record the branch checked out where the agent works (read from `.git/HEAD`
 and when `SELFHOST_AGENT_NAME` is set (a named agent's own environment) they record the agent as
 the actor of its events and check its `[agents.<name>] tools`.
 
+`selfhost advisor [--team <team>] [--json]` prints the weekly agent advisor for the last 7 days:
+what shipped, what got blocked, where money went (with seat or API key and idle sandbox cost),
+reverts and learned risk signals, who worked where, and up to 3 changes to make, picked by fixed
+rules from the ledger with no model. In a team it is the server's report for the teams you read
+(about your own work when you are a member); on a laptop, the local ledger's. The team server sends
+the same note weekly (`[notify] advisor`).
+
 `selfhost console [--port 4400] [--host 127.0.0.1] [--no-open] [--json [--show-token]]` serves the web console
 ([`apps/console`](../console/README.md)) and the API on this machine's ledger (the one `selfhost
 import` writes, or `--database` / `--data-dir`) and opens it in the browser, signed in: it prints
