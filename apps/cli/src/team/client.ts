@@ -41,6 +41,8 @@ import type {
   Person,
   PersonRole,
   PolicyResponse,
+  PresenceQuery,
+  PresenceResponse,
   ReviewItem,
   ReviewItemQuery,
   ReviewItemsPage,
@@ -154,6 +156,16 @@ export class TeamClient {
    */
   sandboxes(team: string): Promise<SandboxWasteResponse> {
     return this.call("GET", `/v1/teams/${encodeURIComponent(team)}/sandboxes`);
+  }
+
+  /** Who is working where right now, in the teams this token reads (GET /v1/presence). */
+  presence(query: PresenceQuery = {}): Promise<PresenceResponse> {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined) params.set(key, String(value));
+    }
+    const search = params.size > 0 ? `?${params}` : "";
+    return this.call("GET", `/v1/presence${search}`);
   }
 
   me(): Promise<MeResponse> {

@@ -22,6 +22,7 @@ export * from "./notify.js";
 export * from "./org.js";
 export * from "./policy-observed.js";
 export * from "./policy-test.js";
+export * from "./presence.js";
 export * from "./provenance.js";
 export * from "./receipt.js";
 export * from "./redact.js";

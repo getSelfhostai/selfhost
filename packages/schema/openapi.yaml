@@ -2429,6 +2429,55 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /v1/presence:
+    get:
+      operationId: getPresence
+      summary: Who (people and named agents) is working right now on which repo, branch and files, and who owns each run.
+      description: The admin token, or a person token of anyone in the team. A run is active from its first event until its session ends (or its background run finishes) or it has had no event for idle_minutes. A person token sees the teams of its org it can read; the admin token sees every team and runs with no team. overlaps lists files two active runs in one repo both edited; the team server also warns each of their owners with an overlap item. selfhost who and the MCP tool who give the same answer.
+      parameters:
+        - name: team
+          in: query
+          required: false
+          description: "Only this team. Default: every team you can read."
+          schema:
+            minLength: 1
+            type: string
+        - name: repo
+          in: query
+          required: false
+          description: Only runs in this repository, as owner/name.
+          schema:
+            pattern: ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$
+            type: string
+        - name: idle_minutes
+          in: query
+          required: false
+          description: "A run with no event for this long no longer counts as active. Default: the team's [presence] idle_minutes, else 30."
+          schema:
+            minimum: 1
+            maximum: 1440
+            type: integer
+      responses:
+        "200":
+          description: Who is working where.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresenceResponse"
+        "400":
+          description: Invalid query.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /v1/budget:
     get:
       operationId: getBudget
@@ -10314,7 +10363,24 @@ components:
             - type: string
             - type: "null"
         owner:
-          description: "The person who holds the run now: the new owner of its newest handoff, else person."
+          description: "The one human who answers for the run: the new owner of its newest handoff, else the owner of the named agent that wrote it, else person, else who started it (or the schedule's owner), else the first person in [review] fallback."
+          anyOf:
+            - type: string
+            - type: "null"
+        owner_via:
+          description: "Where owner came from: handoff, named_agent, person, trigger, schedule or fallback."
+          anyOf:
+            - type: string
+              enum:
+                - handoff
+                - named_agent
+                - person
+                - trigger
+                - schedule
+                - fallback
+            - type: "null"
+        named_agent:
+          description: The [agents.<name>] whose events these are, or null.
           anyOf:
             - type: string
             - type: "null"
@@ -10558,7 +10624,24 @@ components:
                 - type: string
                 - type: "null"
             owner:
-              description: "The person who holds the run now: the new owner of its newest handoff, else person."
+              description: "The one human who answers for the run: the new owner of its newest handoff, else the owner of the named agent that wrote it, else person, else who started it (or the schedule's owner), else the first person in [review] fallback."
+              anyOf:
+                - type: string
+                - type: "null"
+            owner_via:
+              description: "Where owner came from: handoff, named_agent, person, trigger, schedule or fallback."
+              anyOf:
+                - type: string
+                  enum:
+                    - handoff
+                    - named_agent
+                    - person
+                    - trigger
+                    - schedule
+                    - fallback
+                - type: "null"
+            named_agent:
+              description: The [agents.<name>] whose events these are, or null.
               anyOf:
                 - type: string
                 - type: "null"
@@ -10860,6 +10943,7 @@ components:
             - policy_report
             - context_promotion
             - security
+            - overlap
         title:
           type: string
         blocking:
@@ -11064,6 +11148,7 @@ components:
                   - policy_report
                   - context_promotion
                   - security
+                  - overlap
               title:
                 type: string
               blocking:
@@ -11430,6 +11515,7 @@ components:
                         - policy_report
                         - context_promotion
                         - security
+                        - overlap
                     title:
                       type: string
                     blocking:
@@ -11698,6 +11784,7 @@ components:
                       - policy_report
                       - context_promotion
                       - security
+                      - overlap
                   title:
                     type: string
                   blocking:
@@ -11829,6 +11916,408 @@ components:
           patternProperties:
             ^(.*)$:
               type: string
+    PresenceRun:
+      additionalProperties: false
+      title: PresenceRun
+      type: object
+      required:
+        - id
+        - kind
+        - actor
+        - person
+        - named_agent
+        - owner
+        - owner_via
+        - agent
+        - model
+        - team
+        - repo
+        - branch
+        - files
+        - edits
+        - pr_url
+        - started_at
+        - last_event_at
+      properties:
+        id:
+          minLength: 1
+          description: "The run: the agent's session id, or the background run's id."
+          type: string
+        kind:
+          description: session for an agent session, background for a background run.
+          type: string
+          enum:
+            - session
+            - background
+        actor:
+          additionalProperties: false
+          description: Who did it.
+          type: object
+          required:
+            - kind
+            - id
+          properties:
+            kind:
+              description: person for a human, agent for a coding agent acting on its own, system for selfhost, CI or another service.
+              type: string
+              enum:
+                - person
+                - agent
+                - system
+            id:
+              minLength: 1
+              description: "Stable identifier: email or login for a person, agent or run id for an agent, component name for system."
+              type: string
+            name:
+              description: Display name.
+              type: string
+        person:
+          description: The person working in the run, or null for an agent alone.
+          anyOf:
+            - type: string
+            - type: "null"
+        named_agent:
+          description: The [agents.<name>] that wrote the run, or null.
+          anyOf:
+            - type: string
+            - type: "null"
+        owner:
+          description: The one human who answers for the run (see owner_via), or null when selfhost.toml names nobody.
+          anyOf:
+            - type: string
+            - type: "null"
+        owner_via:
+          description: "Where the owner came from: handoff, named_agent ([agents.<name>] owner), person (who acted in it), trigger (who started a background run), schedule (the schedule's owner) or fallback ([review] fallback)."
+          anyOf:
+            - type: string
+              enum:
+                - handoff
+                - named_agent
+                - person
+                - trigger
+                - schedule
+                - fallback
+            - type: "null"
+        agent:
+          description: The coding agent, or null.
+          anyOf:
+            - additionalProperties: false
+              description: Which coding agent was involved.
+              type: object
+              required:
+                - vendor
+              properties:
+                vendor:
+                  description: Agent product.
+                  type: string
+                  enum:
+                    - claude_code
+                    - codex
+                    - opencode
+                    - goose
+                    - cursor
+                    - copilot
+                    - other
+                version:
+                  description: Agent CLI or app version, for example 2.1.0.
+                  type: string
+                name:
+                  description: Agent or subagent name when the vendor reports one, for example a Claude Code subagent type.
+                  type: string
+            - type: "null"
+        model:
+          description: The newest model the run used, or null.
+          anyOf:
+            - type: string
+            - type: "null"
+        team:
+          description: The team the run belongs to, or null on a laptop.
+          anyOf:
+            - type: string
+            - type: "null"
+        repo:
+          description: Repository as owner/name, or null when not known.
+          anyOf:
+            - type: string
+            - type: "null"
+        branch:
+          description: The git branch the run is on, or null when not known.
+          anyOf:
+            - type: string
+            - type: "null"
+        files:
+          description: Files the run edited while active, newest first, at most 20.
+          type: array
+          items:
+            type: string
+        edits:
+          minimum: 0
+          description: Edit calls the run made while active.
+          type: integer
+        pr_url:
+          description: The pull request the run opened or pushed to, or null.
+          anyOf:
+            - type: string
+            - type: "null"
+        started_at:
+          format: date-time
+          description: The run's first event.
+          type: string
+        last_event_at:
+          format: date-time
+          description: The run's newest event.
+          type: string
+    PresenceOverlap:
+      additionalProperties: false
+      title: PresenceOverlap
+      type: object
+      required:
+        - repo
+        - file
+        - runs
+        - owners
+        - since
+      properties:
+        repo:
+          pattern: ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$
+          description: Repository as owner/name.
+          type: string
+        file:
+          minLength: 1
+          description: The file more than one active run edited.
+          type: string
+        runs:
+          minItems: 2
+          description: The runs that edited it, the first to edit it first.
+          type: array
+          items:
+            minLength: 1
+            type: string
+        owners:
+          description: The owners of those runs, each once.
+          type: array
+          items:
+            minLength: 1
+            type: string
+        since:
+          format: date-time
+          description: When a second run first edited it.
+          type: string
+    PresenceResponse:
+      additionalProperties: false
+      title: PresenceResponse
+      type: object
+      required:
+        - schema
+        - at
+        - idle_minutes
+        - runs
+        - overlaps
+      properties:
+        schema:
+          const: selfhost.presence/v1
+          type: string
+        at:
+          format: date-time
+          description: When the answer was worked out.
+          type: string
+        idle_minutes:
+          minimum: 1
+          description: "The idle window: a run with no event for this long is not listed."
+          type: integer
+        runs:
+          description: Runs active right now, by repo, then branch, then newest event first. Only teams the caller can read are included.
+          type: array
+          items:
+            additionalProperties: false
+            title: PresenceRun
+            type: object
+            required:
+              - id
+              - kind
+              - actor
+              - person
+              - named_agent
+              - owner
+              - owner_via
+              - agent
+              - model
+              - team
+              - repo
+              - branch
+              - files
+              - edits
+              - pr_url
+              - started_at
+              - last_event_at
+            properties:
+              id:
+                minLength: 1
+                description: "The run: the agent's session id, or the background run's id."
+                type: string
+              kind:
+                description: session for an agent session, background for a background run.
+                type: string
+                enum:
+                  - session
+                  - background
+              actor:
+                additionalProperties: false
+                description: Who did it.
+                type: object
+                required:
+                  - kind
+                  - id
+                properties:
+                  kind:
+                    description: person for a human, agent for a coding agent acting on its own, system for selfhost, CI or another service.
+                    type: string
+                    enum:
+                      - person
+                      - agent
+                      - system
+                  id:
+                    minLength: 1
+                    description: "Stable identifier: email or login for a person, agent or run id for an agent, component name for system."
+                    type: string
+                  name:
+                    description: Display name.
+                    type: string
+              person:
+                description: The person working in the run, or null for an agent alone.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              named_agent:
+                description: The [agents.<name>] that wrote the run, or null.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              owner:
+                description: The one human who answers for the run (see owner_via), or null when selfhost.toml names nobody.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              owner_via:
+                description: "Where the owner came from: handoff, named_agent ([agents.<name>] owner), person (who acted in it), trigger (who started a background run), schedule (the schedule's owner) or fallback ([review] fallback)."
+                anyOf:
+                  - type: string
+                    enum:
+                      - handoff
+                      - named_agent
+                      - person
+                      - trigger
+                      - schedule
+                      - fallback
+                  - type: "null"
+              agent:
+                description: The coding agent, or null.
+                anyOf:
+                  - additionalProperties: false
+                    description: Which coding agent was involved.
+                    type: object
+                    required:
+                      - vendor
+                    properties:
+                      vendor:
+                        description: Agent product.
+                        type: string
+                        enum:
+                          - claude_code
+                          - codex
+                          - opencode
+                          - goose
+                          - cursor
+                          - copilot
+                          - other
+                      version:
+                        description: Agent CLI or app version, for example 2.1.0.
+                        type: string
+                      name:
+                        description: Agent or subagent name when the vendor reports one, for example a Claude Code subagent type.
+                        type: string
+                  - type: "null"
+              model:
+                description: The newest model the run used, or null.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              team:
+                description: The team the run belongs to, or null on a laptop.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              repo:
+                description: Repository as owner/name, or null when not known.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              branch:
+                description: The git branch the run is on, or null when not known.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              files:
+                description: Files the run edited while active, newest first, at most 20.
+                type: array
+                items:
+                  type: string
+              edits:
+                minimum: 0
+                description: Edit calls the run made while active.
+                type: integer
+              pr_url:
+                description: The pull request the run opened or pushed to, or null.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              started_at:
+                format: date-time
+                description: The run's first event.
+                type: string
+              last_event_at:
+                format: date-time
+                description: The run's newest event.
+                type: string
+        overlaps:
+          description: Files that two or more active runs in the same repo have edited, oldest first. Each run's owner is warned.
+          type: array
+          items:
+            additionalProperties: false
+            title: PresenceOverlap
+            type: object
+            required:
+              - repo
+              - file
+              - runs
+              - owners
+              - since
+            properties:
+              repo:
+                pattern: ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$
+                description: Repository as owner/name.
+                type: string
+              file:
+                minLength: 1
+                description: The file more than one active run edited.
+                type: string
+              runs:
+                minItems: 2
+                description: The runs that edited it, the first to edit it first.
+                type: array
+                items:
+                  minLength: 1
+                  type: string
+              owners:
+                description: The owners of those runs, each once.
+                type: array
+                items:
+                  minLength: 1
+                  type: string
+              since:
+                format: date-time
+                description: When a second run first edited it.
+                type: string
     BackgroundRun:
       additionalProperties: false
       title: BackgroundRun

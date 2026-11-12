@@ -70,6 +70,7 @@ describe("openapi.yaml", () => {
         "GET /v1/policy",
         "GET /v1/policy/coverage",
         "GET /v1/policy/observed",
+        "GET /v1/presence",
         "GET /v1/review-items",
         "GET /v1/review-items/{id}",
         "GET /v1/runs/{run_id}",

@@ -29,6 +29,8 @@ export const REVIEW_ITEM_KINDS = [
   "context_promotion",
   // An allow on a laptop cited a one-time exception the team server never signed, added 2026-11-11.
   "security",
+  // Two active runs edited the same file in one repo (presence), added 2026-11-12.
+  "overlap",
 ] as const;
 
 export const REVIEW_ITEM_STATES = ["open", "answered", "dismissed", "expired"] as const;

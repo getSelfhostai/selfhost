@@ -22,6 +22,7 @@ export const REVIEW_KIND_NAMES: Record<ReviewItemKind, string> = {
   policy_report: "Rules report",
   context_promotion: "Team context proposal",
   security: "Security alert",
+  overlap: "Edit overlap",
 };
 
 /** The built-in guardrails, in the order the hooks check them. */

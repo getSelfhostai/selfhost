@@ -46,7 +46,7 @@ const sleep = (ms: number, signal: AbortSignal) =>
   });
 
 /** The teams a caller reads: every team with the admin token (null), else their teams. */
-async function readableTeams(
+export async function readableTeams(
   c: Context,
   caller: Caller,
   team: string | undefined,

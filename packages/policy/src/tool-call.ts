@@ -29,6 +29,8 @@ export interface ToolCall {
   cwd?: string;
   /** Absolute workspace root: the repository root, else cwd. `path` is relative to it. */
   root?: string;
+  /** The [agents.<name>] making the call, from SELFHOST_AGENT_NAME in the hook's environment. */
+  namedAgent?: string;
 }
 
 const MCP_PREFIX = "mcp__";

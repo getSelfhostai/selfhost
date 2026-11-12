@@ -23,6 +23,7 @@ describe("mcp-tools.json", () => {
       "search_decisions",
       "list_file_runs",
       "list_active_on_file",
+      "who",
       "ask_human",
       "request_exception",
       "get_answer",

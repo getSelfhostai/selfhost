@@ -437,6 +437,74 @@ export const TeamSchema = Type.Object(
   },
 );
 
+/** The name of a named agent, the key of its [agents.<name>] table. */
+export const NAMED_AGENT_NAME_PATTERN = "^[a-z0-9][a-z0-9_-]{0,62}$";
+/** Rule id prefix of a named agent's tool list: agents.<name>.tools. */
+export const NAMED_AGENT_RULE_PREFIX = "agents.";
+export const NAMED_AGENT_MODES = ["observe", "enforce"] as const;
+
+export const NamedAgentSchema = Type.Object(
+  {
+    owner: NonEmpty({
+      description:
+        "Person id of the human who answers for the agent: they own its runs, and its review items, budget items and errors on its paths go to them.",
+    }),
+    paths: Type.Optional(
+      Type.Array(NonEmpty(), {
+        description:
+          "Globs of the files the agent owns, relative to the repository root. Review items and errors on them go to the owner before [[review.routes]] and [review.owners].",
+      }),
+    ),
+    daily_usd: Type.Optional(
+      Type.Number({
+        exclusiveMinimum: 0,
+        description:
+          "What the agent may spend in a UTC day. Going over raises a budget item for the owner.",
+      }),
+    ),
+    tools: Type.Optional(
+      Type.Array(NonEmpty(), {
+        description:
+          "Names or globs of the tools the agent may call. Empty or absent allows every tool. A call to another tool fires the rule agents.<name>.tools.",
+      }),
+    ),
+    model: Type.Optional(
+      NonEmpty({ description: "The model the agent runs on unless its run asks for another." }),
+    ),
+    mode: Type.Optional(
+      StringEnum(NAMED_AGENT_MODES, {
+        default: "observe",
+        description:
+          "observe records a call outside tools; enforce blocks it where hooks run. Default: observe.",
+      }),
+    ),
+  },
+  {
+    additionalProperties: false,
+    description:
+      "A long-lived agent the team runs itself, with a name, a human owner, the paths it owns, a budget and the tools it may use. Its hooks run with SELFHOST_AGENT_NAME set to the name, so its events are recorded with the agent as the actor.",
+  },
+);
+
+export const PRESENCE_IDLE_MINUTES_DEFAULT = 30;
+
+export const PresenceConfigSchema = Type.Object(
+  {
+    idle_minutes: Type.Optional(
+      Type.Integer({
+        minimum: 1,
+        maximum: 1440,
+        default: PRESENCE_IDLE_MINUTES_DEFAULT,
+        description: `A run counts as active from its first event until it ends or has had no event for this long. Default: ${PRESENCE_IDLE_MINUTES_DEFAULT}.`,
+      }),
+    ),
+  },
+  {
+    additionalProperties: false,
+    description: "Presence: who is working where right now (selfhost who).",
+  },
+);
+
 const UsdPerWindow = (description: string) =>
   Type.Optional(Type.Number({ exclusiveMinimum: 0, description }));
 
@@ -1540,6 +1608,13 @@ export const SelfhostConfigSchema = Type.Object(
     roi: Type.Optional(RoiConfigSchema),
     background: Type.Optional(BackgroundConfigSchema),
     handoff: Type.Optional(HandoffConfigSchema),
+    agents: Type.Optional(
+      Type.Record(Type.String(), NamedAgentSchema, {
+        description:
+          "Named agents by name: lowercase letters, digits, - and _. Each needs an owner.",
+      }),
+    ),
+    presence: Type.Optional(PresenceConfigSchema),
   },
   {
     $id: CONFIG_SCHEMA_URL,
@@ -1564,6 +1639,8 @@ export type Budget = Static<typeof BudgetSchema>;
 export type NotifyConfig = Static<typeof NotifyConfigSchema>;
 export type RoiConfig = Static<typeof RoiConfigSchema>;
 export type HandoffConfig = Static<typeof HandoffConfigSchema>;
+export type NamedAgent = Static<typeof NamedAgentSchema>;
+export type PresenceConfig = Static<typeof PresenceConfigSchema>;
 export type Integrations = Static<typeof IntegrationsSchema>;
 export type ReviewRouteRule = Static<typeof ReviewRouteRuleSchema>;
 export type AutoApprove = Static<typeof AutoApproveSchema>;
@@ -1749,7 +1826,19 @@ function semanticErrors(
   if (config.roi) errors.push(...roiErrors(config.roi));
   errors.push(...routeErrors(config.review.routes));
   if (config.background) errors.push(...backgroundErrors(config.background));
+  errors.push(...namedAgentErrors(config));
   return errors;
+}
+
+function namedAgentErrors(config: ResolvedSelfhostConfig): SegmentError[] {
+  const pattern = new RegExp(NAMED_AGENT_NAME_PATTERN);
+  return Object.keys(config.agents ?? {})
+    .filter((name) => !pattern.test(name))
+    .map((name) => ({
+      segments: ["agents", name],
+      message:
+        "Expected a name of lowercase letters, digits, - and _, starting with a letter or digit",
+    }));
 }
 
 function backgroundErrors(background: BackgroundConfig): SegmentError[] {

@@ -649,6 +649,18 @@ for a second server on the same database.
   the request is held until something lands. A person token reads the teams of its org it is in;
   `team` narrows it, and a team they are not in answers 403. `selfhost tail` in a team follows it.
 
+- `GET /v1/presence?team&repo&idle_minutes` (both kinds of token): `selfhost.presence/v1`, who
+  (people and named agents) is working right now on which repo, branch and files, each run's one
+  human owner and how it was picked (`owner_via`), and `overlaps`: files two active runs in one
+  repo both edited. A person token sees the teams of its org it can read; the admin token sees
+  every team and runs with no team. `selfhost who`, the console's Overview and the MCP tool `who`
+  read it.
+
+Every minute the server also warns the owners of runs that edit the same file: one `alert.raised`
+(`data.alert: "edit_overlap"`) per owner, which becomes an `overlap` review item for them, raised
+once per file and set of runs. Named agents with `[agents.<name>] daily_usd` that spent their day's
+budget get one `budget` item for their owner per UTC day.
+
 Every minute the server also looks at the requests of the last hour for sessions past `[alerts]
 cache_min_requests` whose prompt cache hit rate over their last 10 requests fell under
 `cache_hit_floor`, and records one `alert.raised` (`data.alert: "cache_hit_low"`) per session in

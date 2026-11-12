@@ -20,6 +20,7 @@ import {
   McpPolicyQuerySchema,
   McpReviewItemQuerySchema,
   type PolicyResponse,
+  PresenceQuerySchema,
   RecordDecisionInputSchema,
   RequestExceptionInputSchema,
   type ReviewItem,
@@ -276,6 +277,22 @@ const HANDLERS: Record<string, Handler> = {
   list_file_runs: (deps, args) => fileRuns(deps, parse(FileRunsQuerySchema, args)),
 
   list_active_on_file: (deps, args) => activeOnFile(deps, parse(ActiveOnFileQuerySchema, args)),
+
+  who: async ({ data }, args) => {
+    const presence = await data.presence(parse(PresenceQuerySchema, args));
+    // A busy team's answer comes back with its newest runs only, overlaps kept, within budget.
+    let runs = presence.runs;
+    while (runs.length > 1 && estimateTokens({ ...presence, runs }) > MCP_RESPONSE_TOKEN_BUDGET) {
+      const kept = new Set(
+        [...runs]
+          .sort((a, b) => Date.parse(b.last_event_at) - Date.parse(a.last_event_at))
+          .slice(0, Math.floor(runs.length / 2))
+          .map((run) => run.id),
+      );
+      runs = runs.filter((run) => kept.has(run.id));
+    }
+    return { ...presence, runs };
+  },
 
   ask_human: async (deps, args) =>
     status(deps, await deps.data.ask(parse(AskHumanInputSchema, args), deps.context)),
