@@ -113,5 +113,8 @@ export function laptopDirectory(person: string, settings: NotifySettingsInForce)
     settingsFor: async (other) => (same(other) ? settings : undefined),
     unowned: async () => [person],
     budgetOwners: async () => [person],
+    // The laptop's one person reads all of its ledger.
+    advisor: async (other) =>
+      same(other) && settings.advisor !== "off" ? { teams: null } : undefined,
   };
 }

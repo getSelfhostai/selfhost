@@ -275,6 +275,10 @@ digest = "daily"            # for people who did not pick their own: daily, week
 digest_hour = 9             # UTC
 budget_owners = []          # who gets budget alerts and the spend digest; default the team's owners
 spend_digest = true         # daily: top spenders, fastest-growing teams, runs that hit caps
+advisor = "admins"          # weekly advisor note: admins, everyone (members get their own) or off
+advisor_day = "monday"
+advisor_hour = 9            # in advisor_timezone
+advisor_timezone = "UTC"    # IANA name, such as Europe/Berlin
 ```
 
 The person's own settings and targets are `/v1/notify` (`src/notify.ts`), for a person token only.

@@ -1,6 +1,7 @@
 import { homedir, hostname } from "node:os";
 import { detectAgents, type Env, type Probes, systemProbes } from "@selfhost/agents";
 import { Command } from "commander";
+import { registerAdvisor } from "./advisor.js";
 import {
   type AgentsOptions,
   agentsCommand,
@@ -787,6 +788,19 @@ export function createProgram(overrides: Partial<CliDeps> = {}): Command {
       configPath: deps.configPath ?? defaultConfigPath(),
       fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
       ...(deps.sleep ? { sleep: deps.sleep } : {}),
+    }),
+    fail,
+  );
+
+  registerAdvisor(
+    program,
+    () => ({
+      env: deps.env,
+      cwd: deps.cwd,
+      write: deps.write,
+      configPath: deps.configPath ?? defaultConfigPath(),
+      fetch: deps.fetch ?? ((url, init) => fetch(url, init)),
+      ...(deps.now ? { now: deps.now } : {}),
     }),
     fail,
   );

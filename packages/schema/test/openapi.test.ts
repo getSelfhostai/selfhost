@@ -46,6 +46,7 @@ describe("openapi.yaml", () => {
         "DELETE /v1/notify/targets/{name}",
         "DELETE /v1/teams/{team}/people/{person}/tokens",
         "DELETE /v1/teams/{team}/repos/{owner}/{name}",
+        "GET /v1/advisor",
         "GET /v1/background-runs",
         "GET /v1/background-runs/{id}",
         "GET /v1/budget",

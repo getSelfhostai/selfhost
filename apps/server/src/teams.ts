@@ -28,6 +28,7 @@ import {
   personCaller,
   type Router,
 } from "./access.js";
+import { advisorRoutes } from "./advisor.js";
 import { requireBearerToken } from "./auth.js";
 import { type Background, backgroundRoutes } from "./background.js";
 import { contextRoutes } from "./context.js";
@@ -385,6 +386,7 @@ function sharedRoutes(
   laptopRoutes(router, ledger, now ? { now } : {});
   orgRoutes(router, ledger, { ...(now ? { now } : {}), ...(gateway ? { gateway } : {}) });
   usageRoutes(router, ledger, now ? { now } : {});
+  advisorRoutes(router, ledger, now ? { now } : {});
   vendorImportRoutes(router, ledger, vendorImporters);
   roiRoutes(router, ledger, now ? { now } : {});
   sandboxRoutes(router, ledger, now ? { now } : {});

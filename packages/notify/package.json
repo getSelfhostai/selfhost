@@ -2,7 +2,7 @@
   "name": "@selfhost/notify",
   "version": "0.0.0",
   "private": true,
-  "description": "Phone, chat and email notifications through Apprise: instant pushes for agents that wait, budget alerts, and each person's digest, with every send recorded and no secrets in a message.",
+  "description": "Phone, chat and email notifications through Apprise: instant pushes for agents that wait, budget alerts, each person's digest and the weekly agent advisor note, with every send recorded and no secrets in a message.",
   "license": "Apache-2.0",
   "type": "module",
   "exports": {

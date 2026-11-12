@@ -877,6 +877,43 @@
           "default": true,
           "description": "Send budget owners a daily digest of top spenders, fastest-growing teams and runs that hit caps.",
           "type": "boolean"
+        },
+        "advisor": {
+          "default": "admins",
+          "description": "Who gets the weekly agent advisor note (what shipped, what got blocked, where money went, reverts, who worked where, and up to 3 changes to make): admins (the team's owners and admins, about the team), everyone (also each member, about their own work) or off.",
+          "type": "string",
+          "enum": [
+            "admins",
+            "everyone",
+            "off"
+          ]
+        },
+        "advisor_day": {
+          "default": "monday",
+          "description": "Day of the week the advisor note goes out.",
+          "type": "string",
+          "enum": [
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday"
+          ]
+        },
+        "advisor_hour": {
+          "minimum": 0,
+          "maximum": 23,
+          "default": 9,
+          "description": "Hour of advisor_day the advisor note goes out, in advisor_timezone.",
+          "type": "integer"
+        },
+        "advisor_timezone": {
+          "minLength": 1,
+          "default": "UTC",
+          "description": "The team's timezone for the advisor schedule, an IANA name such as Europe/Berlin or Asia/Kolkata.",
+          "type": "string"
         }
       }
     },

@@ -1,3 +1,4 @@
+export * from "./advisor.js";
 export * from "./api.js";
 export * from "./background.js";
 export * from "./common.js";

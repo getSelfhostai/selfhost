@@ -1,6 +1,7 @@
 import { type Static, Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { parse as parseToml, TomlError } from "smol-toml";
+import { ADVISOR_AUDIENCES, ADVISOR_DAYS_OF_WEEK } from "./advisor.js";
 import { type BackgroundConfig, BackgroundConfigSchema } from "./background.js";
 import { NonEmpty, StringEnum, Url } from "./common.js";
 import { parseCron } from "./cron.js";
@@ -901,6 +902,34 @@ export const NotifyConfigSchema = Type.Object(
           "Send budget owners a daily digest of top spenders, fastest-growing teams and runs that hit caps.",
       }),
     ),
+    advisor: Type.Optional(
+      StringEnum(ADVISOR_AUDIENCES, {
+        default: "admins",
+        description:
+          "Who gets the weekly agent advisor note (what shipped, what got blocked, where money went, reverts, who worked where, and up to 3 changes to make): admins (the team's owners and admins, about the team), everyone (also each member, about their own work) or off.",
+      }),
+    ),
+    advisor_day: Type.Optional(
+      StringEnum(ADVISOR_DAYS_OF_WEEK, {
+        default: "monday",
+        description: "Day of the week the advisor note goes out.",
+      }),
+    ),
+    advisor_hour: Type.Optional(
+      Type.Integer({
+        minimum: 0,
+        maximum: 23,
+        default: 9,
+        description: "Hour of advisor_day the advisor note goes out, in advisor_timezone.",
+      }),
+    ),
+    advisor_timezone: Type.Optional(
+      NonEmpty({
+        default: "UTC",
+        description:
+          "The team's timezone for the advisor schedule, an IANA name such as Europe/Berlin or Asia/Kolkata.",
+      }),
+    ),
   },
   {
     additionalProperties: false,
@@ -1742,6 +1771,16 @@ export function foldRuntimeAlias(config: ResolvedSelfhostConfig): string[] {
 
 const configCheck = lazyCheck(SelfhostConfigSchema);
 
+/** Whether the runtime knows an IANA timezone name. */
+export function isTimeZone(name: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: name });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function regexError(pattern: string): string | undefined {
   try {
     new RegExp(pattern);
@@ -1827,6 +1866,12 @@ function semanticErrors(
   errors.push(...routeErrors(config.review.routes));
   if (config.background) errors.push(...backgroundErrors(config.background));
   errors.push(...namedAgentErrors(config));
+  if (!isTimeZone(config.notify.advisor_timezone)) {
+    errors.push({
+      segments: ["notify", "advisor_timezone"],
+      message: `Unknown timezone "${config.notify.advisor_timezone}": use an IANA name such as UTC, Europe/Berlin or America/New_York`,
+    });
+  }
   return errors;
 }
 

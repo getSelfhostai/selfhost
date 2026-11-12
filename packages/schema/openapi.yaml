@@ -3097,6 +3097,46 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /v1/advisor:
+    get:
+      operationId: getAdvisor
+      summary: "The weekly agent advisor: what shipped, what got blocked, where money went, quality, who worked where, and up to 3 changes to make."
+      description: Both kinds of token. Reads the 7 days before to (default now) from the ledger, over one team or every team the caller reads; the admin token reads every team and events with no team. Owners and admins of every team read get the team report; anyone else gets a report about their own sessions, pull requests and spend (scope self), with no learned signals or rule changes. Recommendations are picked by fixed rules from the numbers, with no model. The same report goes out weekly through each person's notification targets ([notify] advisor, advisor_day, advisor_hour, advisor_timezone).
+      parameters:
+        - name: team
+          in: query
+          required: false
+          description: "Only this team. Default: every team the caller reads; the admin token reads every team and events with no team."
+          schema:
+            type: string
+        - name: to
+          in: query
+          required: false
+          description: "End of the week read. Default: now. It starts 7 days before."
+          schema:
+            format: date-time
+            type: string
+      responses:
+        "200":
+          description: The report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdvisorReport"
+        "400":
+          description: Invalid query.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team, or their role there does not allow this. The message names the role needed and the caller's own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /v1/vendor-imports:
     get:
       operationId: getVendorImports
@@ -8727,6 +8767,956 @@ components:
           type: array
           items:
             type: string
+    AdvisorShippedRow:
+      additionalProperties: false
+      title: AdvisorShippedRow
+      type: object
+      required:
+        - person
+        - agent
+        - opened
+        - merged
+      properties:
+        person:
+          description: Whose sessions the pull requests came from, or unknown.
+          type: string
+        agent:
+          type: string
+          enum:
+            - claude_code
+            - codex
+            - opencode
+            - goose
+            - cursor
+            - copilot
+            - other
+        opened:
+          minimum: 0
+          description: Agent pull requests opened in the week.
+          type: integer
+        merged:
+          minimum: 0
+          description: Agent pull requests merged in the week.
+          type: integer
+    AdvisorRuleRow:
+      additionalProperties: false
+      title: AdvisorRuleRow
+      type: object
+      required:
+        - rule_id
+        - blocked
+        - asked
+        - would_block
+        - would_ask
+        - likely_false_positives
+        - top_person
+        - top_person_hits
+        - run
+      properties:
+        rule_id:
+          minLength: 1
+          description: The rule or guardrail.
+          type: string
+        blocked:
+          minimum: 0
+          description: Calls it blocked.
+          type: integer
+        asked:
+          minimum: 0
+          description: Calls it sent to a person.
+          type: integer
+        would_block:
+          minimum: 0
+          description: Calls it would have blocked while recording only (observe mode).
+          type: integer
+        would_ask:
+          minimum: 0
+          description: Calls it would have sent to a person while recording only.
+          type: integer
+        likely_false_positives:
+          minimum: 0
+          description: Of the recorded hits, those that look like false positives.
+          type: integer
+        top_person:
+          description: Whose agents it stopped most, when it stopped anyone's.
+          anyOf:
+            - type: string
+            - type: "null"
+        top_person_hits:
+          minimum: 0
+          description: How often it stopped top_person's agents.
+          type: integer
+        run:
+          description: A run (agent session or background run) behind the row, for the console's run view and its trace; null when no event named one.
+          anyOf:
+            - type: string
+            - type: "null"
+    AdvisorSpendRow:
+      additionalProperties: false
+      title: AdvisorSpendRow
+      type: object
+      required:
+        - person
+        - agent
+        - usd
+        - vendor_usd
+      properties:
+        person:
+          type: string
+        agent:
+          type: string
+        usd:
+          minimum: 0
+          description: Spend in the week, counted as GET /v1/usage counts it.
+          type: number
+        vendor_usd:
+          minimum: 0
+          description: Of usd, the part only a vendor admin API reported (daily totals).
+          type: number
+    AdvisorBillingRow:
+      additionalProperties: false
+      title: AdvisorBillingRow
+      type: object
+      required:
+        - person
+        - agent
+        - verdict
+        - tier
+        - monthly_api_usd
+        - saving_usd
+      properties:
+        person:
+          type: string
+        agent:
+          type: string
+          enum:
+            - claude_code
+            - codex
+            - opencode
+            - goose
+            - cursor
+            - copilot
+            - other
+        verdict:
+          description: "What costs less for this use: a subscription seat, or an API key."
+          type: string
+          enum:
+            - seat
+            - api
+        tier:
+          description: The seat tier, for seat.
+          anyOf:
+            - type: string
+            - type: "null"
+        monthly_api_usd:
+          minimum: 0
+          description: The week's use at API rates, scaled to 30 days.
+          type: number
+        saving_usd:
+          minimum: 0
+          description: What the cheaper option saves a month.
+          type: number
+    AdvisorSignal:
+      additionalProperties: false
+      title: AdvisorSignal
+      type: object
+      required:
+        - repo
+        - agent
+        - model
+        - module
+        - pulls
+        - reverted
+        - reworked
+        - rate
+        - state
+        - item_id
+        - suggestion
+      properties:
+        repo:
+          type: string
+        agent:
+          type: string
+          enum:
+            - claude_code
+            - codex
+            - opencode
+            - goose
+            - cursor
+            - copilot
+            - other
+        model:
+          anyOf:
+            - type: string
+            - type: "null"
+        module:
+          description: The module whose pull requests keep being reverted.
+          type: string
+        pulls:
+          minimum: 0
+          description: Merged pull requests the rate is over.
+          type: integer
+        reverted:
+          minimum: 0
+          type: integer
+        reworked:
+          minimum: 0
+          type: integer
+        rate:
+          minimum: 0
+          maximum: 1
+          type: number
+        state:
+          description: "open: its review item waits for a person. approved or denied: answered. cleared: the rate fell back under the threshold."
+          type: string
+          enum:
+            - open
+            - approved
+            - denied
+            - cleared
+        item_id:
+          description: Its review item.
+          anyOf:
+            - type: string
+            - type: "null"
+        suggestion:
+          anyOf:
+            - type: string
+            - type: "null"
+    AdvisorRevert:
+      additionalProperties: false
+      title: AdvisorRevert
+      type: object
+      required:
+        - kind
+        - pr_url
+        - repo
+        - agent
+        - run
+      properties:
+        kind:
+          type: string
+          enum:
+            - revert
+            - rework
+        pr_url:
+          type: string
+        repo:
+          anyOf:
+            - type: string
+            - type: "null"
+        agent:
+          anyOf:
+            - type: string
+              enum:
+                - claude_code
+                - codex
+                - opencode
+                - goose
+                - cursor
+                - copilot
+                - other
+            - type: "null"
+        run:
+          description: A run (agent session or background run) behind the row, for the console's run view and its trace; null when no event named one.
+          anyOf:
+            - type: string
+            - type: "null"
+    AdvisorWork:
+      additionalProperties: false
+      title: AdvisorWork
+      type: object
+      required:
+        - person
+        - repos
+      properties:
+        person:
+          type: string
+        repos:
+          description: Busiest first.
+          type: array
+          items:
+            additionalProperties: false
+            type: object
+            required:
+              - repo
+              - sessions
+            properties:
+              repo:
+                type: string
+              sessions:
+                minimum: 0
+                description: Agent sessions in the repo in the week.
+                type: integer
+    AdvisorOverlap:
+      additionalProperties: false
+      title: AdvisorOverlap
+      type: object
+      required:
+        - repo
+        - file
+        - owners
+        - times
+        - run
+      properties:
+        repo:
+          type: string
+        file:
+          type: string
+        owners:
+          type: array
+          items:
+            type: string
+        times:
+          minimum: 0
+          description: How many overlap alerts the file raised in the week.
+          type: integer
+        run:
+          description: A run (agent session or background run) behind the row, for the console's run view and its trace; null when no event named one.
+          anyOf:
+            - type: string
+            - type: "null"
+    AdvisorRecommendation:
+      additionalProperties: false
+      title: AdvisorRecommendation
+      type: object
+      required:
+        - action
+        - title
+        - why
+        - saving_usd
+        - screen
+        - item_id
+        - run
+      properties:
+        action:
+          type: string
+          enum:
+            - review_learned_signal
+            - check_repeated_blocks
+            - enforce_rule
+            - switch_billing
+            - trim_idle_sandboxes
+        title:
+          minLength: 1
+          description: What to change, in one line.
+          type: string
+        why:
+          minLength: 1
+          description: The numbers behind it.
+          type: string
+        saving_usd:
+          description: Estimated saving a month, when the data states one.
+          anyOf:
+            - minimum: 0
+              type: number
+            - type: "null"
+        screen:
+          description: The console screen to act on it in.
+          type: string
+          enum:
+            - review
+            - rules
+            - spend
+            - runs
+            - code
+        item_id:
+          description: The review item to answer, when there is one.
+          anyOf:
+            - type: string
+            - type: "null"
+        run:
+          description: A run (agent session or background run) behind the row, for the console's run view and its trace; null when no event named one.
+          anyOf:
+            - type: string
+            - type: "null"
+    AdvisorReport:
+      additionalProperties: false
+      title: AdvisorReport
+      type: object
+      required:
+        - schema
+        - from
+        - to
+        - scope
+        - person
+        - teams
+        - shipped
+        - blocked
+        - spend
+        - quality
+        - presence
+        - recommendations
+      properties:
+        schema:
+          const: selfhost.advisor/v1
+          type: string
+        from:
+          format: date-time
+          type: string
+        to:
+          format: date-time
+          type: string
+        scope:
+          type: string
+          enum:
+            - team
+            - self
+        person:
+          description: Whose report a self report is; null for a team report.
+          anyOf:
+            - type: string
+            - type: "null"
+        teams:
+          description: Teams read; null for every team and events with no team (the admin token).
+          anyOf:
+            - type: array
+              items:
+                type: string
+            - type: "null"
+        shipped:
+          additionalProperties: false
+          type: object
+          required:
+            - opened
+            - merged
+            - by
+          properties:
+            opened:
+              minimum: 0
+              description: Agent pull requests opened.
+              type: integer
+            merged:
+              minimum: 0
+              description: Agent pull requests merged.
+              type: integer
+            by:
+              description: Most merged first.
+              type: array
+              items:
+                additionalProperties: false
+                title: AdvisorShippedRow
+                type: object
+                required:
+                  - person
+                  - agent
+                  - opened
+                  - merged
+                properties:
+                  person:
+                    description: Whose sessions the pull requests came from, or unknown.
+                    type: string
+                  agent:
+                    type: string
+                    enum:
+                      - claude_code
+                      - codex
+                      - opencode
+                      - goose
+                      - cursor
+                      - copilot
+                      - other
+                  opened:
+                    minimum: 0
+                    description: Agent pull requests opened in the week.
+                    type: integer
+                  merged:
+                    minimum: 0
+                    description: Agent pull requests merged in the week.
+                    type: integer
+        blocked:
+          additionalProperties: false
+          type: object
+          required:
+            - blocked
+            - asked
+            - would_block
+            - would_ask
+            - rules
+            - exceptions
+          properties:
+            blocked:
+              minimum: 0
+              type: integer
+            asked:
+              minimum: 0
+              type: integer
+            would_block:
+              minimum: 0
+              type: integer
+            would_ask:
+              minimum: 0
+              type: integer
+            rules:
+              description: Busiest first, at most 10.
+              type: array
+              items:
+                additionalProperties: false
+                title: AdvisorRuleRow
+                type: object
+                required:
+                  - rule_id
+                  - blocked
+                  - asked
+                  - would_block
+                  - would_ask
+                  - likely_false_positives
+                  - top_person
+                  - top_person_hits
+                  - run
+                properties:
+                  rule_id:
+                    minLength: 1
+                    description: The rule or guardrail.
+                    type: string
+                  blocked:
+                    minimum: 0
+                    description: Calls it blocked.
+                    type: integer
+                  asked:
+                    minimum: 0
+                    description: Calls it sent to a person.
+                    type: integer
+                  would_block:
+                    minimum: 0
+                    description: Calls it would have blocked while recording only (observe mode).
+                    type: integer
+                  would_ask:
+                    minimum: 0
+                    description: Calls it would have sent to a person while recording only.
+                    type: integer
+                  likely_false_positives:
+                    minimum: 0
+                    description: Of the recorded hits, those that look like false positives.
+                    type: integer
+                  top_person:
+                    description: Whose agents it stopped most, when it stopped anyone's.
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  top_person_hits:
+                    minimum: 0
+                    description: How often it stopped top_person's agents.
+                    type: integer
+                  run:
+                    description: A run (agent session or background run) behind the row, for the console's run view and its trace; null when no event named one.
+                    anyOf:
+                      - type: string
+                      - type: "null"
+            exceptions:
+              additionalProperties: false
+              type: object
+              required:
+                - requested
+                - approved
+                - denied
+                - used
+              properties:
+                requested:
+                  minimum: 0
+                  description: One-time exceptions agents asked for.
+                  type: integer
+                approved:
+                  minimum: 0
+                  type: integer
+                denied:
+                  minimum: 0
+                  type: integer
+                used:
+                  minimum: 0
+                  description: Signed grants a laptop reported used.
+                  type: integer
+        spend:
+          additionalProperties: false
+          type: object
+          required:
+            - usd
+            - vendor_usd
+            - cache_hit_rate
+            - by
+            - billing
+            - sandbox
+          properties:
+            usd:
+              minimum: 0
+              description: Model spend in the week.
+              type: number
+            vendor_usd:
+              minimum: 0
+              description: Of usd, the part only a vendor admin API reported.
+              type: number
+            cache_hit_rate:
+              description: Cache reads over all prompt input, of sessions that report cache tokens; null when none do.
+              anyOf:
+                - minimum: 0
+                  maximum: 1
+                  type: number
+                - type: "null"
+            by:
+              description: Most first, at most 10.
+              type: array
+              items:
+                additionalProperties: false
+                title: AdvisorSpendRow
+                type: object
+                required:
+                  - person
+                  - agent
+                  - usd
+                  - vendor_usd
+                properties:
+                  person:
+                    type: string
+                  agent:
+                    type: string
+                  usd:
+                    minimum: 0
+                    description: Spend in the week, counted as GET /v1/usage counts it.
+                    type: number
+                  vendor_usd:
+                    minimum: 0
+                    description: Of usd, the part only a vendor admin API reported (daily totals).
+                    type: number
+            billing:
+              description: Seat or API key per person and agent, as GET /v1/usage/break-even prices it, where the cheaper option saves something.
+              type: array
+              items:
+                additionalProperties: false
+                title: AdvisorBillingRow
+                type: object
+                required:
+                  - person
+                  - agent
+                  - verdict
+                  - tier
+                  - monthly_api_usd
+                  - saving_usd
+                properties:
+                  person:
+                    type: string
+                  agent:
+                    type: string
+                    enum:
+                      - claude_code
+                      - codex
+                      - opencode
+                      - goose
+                      - cursor
+                      - copilot
+                      - other
+                  verdict:
+                    description: "What costs less for this use: a subscription seat, or an API key."
+                    type: string
+                    enum:
+                      - seat
+                      - api
+                  tier:
+                    description: The seat tier, for seat.
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  monthly_api_usd:
+                    minimum: 0
+                    description: The week's use at API rates, scaled to 30 days.
+                    type: number
+                  saving_usd:
+                    minimum: 0
+                    description: What the cheaper option saves a month.
+                    type: number
+            sandbox:
+              description: null when no background run used a sandbox.
+              anyOf:
+                - additionalProperties: false
+                  type: object
+                  required:
+                    - billed_usd
+                    - idle_usd
+                    - idle_share
+                    - monthly_saving_usd
+                    - suggestion
+                  properties:
+                    billed_usd:
+                      minimum: 0
+                      description: Background run sandbox cost in the week.
+                      type: number
+                    idle_usd:
+                      minimum: 0
+                      description: Of it, paid while no command ran.
+                      type: number
+                    idle_share:
+                      minimum: 0
+                      maximum: 1
+                      type: number
+                    monthly_saving_usd:
+                      description: What a cheaper billing model saves a month, when one is suggested.
+                      anyOf:
+                        - minimum: 0
+                          type: number
+                        - type: "null"
+                    suggestion:
+                      anyOf:
+                        - type: string
+                        - type: "null"
+                - type: "null"
+        quality:
+          additionalProperties: false
+          type: object
+          required:
+            - merged
+            - reverted
+            - reworked
+            - reverts
+            - signals
+          properties:
+            merged:
+              minimum: 0
+              description: Agent pull requests merged.
+              type: integer
+            reverted:
+              minimum: 0
+              description: Merged agent pull requests found reverted in the week.
+              type: integer
+            reworked:
+              minimum: 0
+              description: Found reworked (lines changed again) in the week.
+              type: integer
+            reverts:
+              description: At most 10.
+              type: array
+              items:
+                additionalProperties: false
+                title: AdvisorRevert
+                type: object
+                required:
+                  - kind
+                  - pr_url
+                  - repo
+                  - agent
+                  - run
+                properties:
+                  kind:
+                    type: string
+                    enum:
+                      - revert
+                      - rework
+                  pr_url:
+                    type: string
+                  repo:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  agent:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - claude_code
+                          - codex
+                          - opencode
+                          - goose
+                          - cursor
+                          - copilot
+                          - other
+                      - type: "null"
+                  run:
+                    description: A run (agent session or background run) behind the row, for the console's run view and its trace; null when no event named one.
+                    anyOf:
+                      - type: string
+                      - type: "null"
+            signals:
+              description: Learned risk signals recorded in the week, newest state of each.
+              type: array
+              items:
+                additionalProperties: false
+                title: AdvisorSignal
+                type: object
+                required:
+                  - repo
+                  - agent
+                  - model
+                  - module
+                  - pulls
+                  - reverted
+                  - reworked
+                  - rate
+                  - state
+                  - item_id
+                  - suggestion
+                properties:
+                  repo:
+                    type: string
+                  agent:
+                    type: string
+                    enum:
+                      - claude_code
+                      - codex
+                      - opencode
+                      - goose
+                      - cursor
+                      - copilot
+                      - other
+                  model:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  module:
+                    description: The module whose pull requests keep being reverted.
+                    type: string
+                  pulls:
+                    minimum: 0
+                    description: Merged pull requests the rate is over.
+                    type: integer
+                  reverted:
+                    minimum: 0
+                    type: integer
+                  reworked:
+                    minimum: 0
+                    type: integer
+                  rate:
+                    minimum: 0
+                    maximum: 1
+                    type: number
+                  state:
+                    description: "open: its review item waits for a person. approved or denied: answered. cleared: the rate fell back under the threshold."
+                    type: string
+                    enum:
+                      - open
+                      - approved
+                      - denied
+                      - cleared
+                  item_id:
+                    description: Its review item.
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  suggestion:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+        presence:
+          additionalProperties: false
+          type: object
+          required:
+            - work
+            - overlaps
+          properties:
+            work:
+              description: Busiest person first, at most 10.
+              type: array
+              items:
+                additionalProperties: false
+                title: AdvisorWork
+                type: object
+                required:
+                  - person
+                  - repos
+                properties:
+                  person:
+                    type: string
+                  repos:
+                    description: Busiest first.
+                    type: array
+                    items:
+                      additionalProperties: false
+                      type: object
+                      required:
+                        - repo
+                        - sessions
+                      properties:
+                        repo:
+                          type: string
+                        sessions:
+                          minimum: 0
+                          description: Agent sessions in the repo in the week.
+                          type: integer
+            overlaps:
+              description: Files two runs edited at once in the week, at most 10.
+              type: array
+              items:
+                additionalProperties: false
+                title: AdvisorOverlap
+                type: object
+                required:
+                  - repo
+                  - file
+                  - owners
+                  - times
+                  - run
+                properties:
+                  repo:
+                    type: string
+                  file:
+                    type: string
+                  owners:
+                    type: array
+                    items:
+                      type: string
+                  times:
+                    minimum: 0
+                    description: How many overlap alerts the file raised in the week.
+                    type: integer
+                  run:
+                    description: A run (agent session or background run) behind the row, for the console's run view and its trace; null when no event named one.
+                    anyOf:
+                      - type: string
+                      - type: "null"
+        recommendations:
+          maxItems: 3
+          description: At most 3, most pressing first. Picked by fixed rules from the numbers above.
+          type: array
+          items:
+            additionalProperties: false
+            title: AdvisorRecommendation
+            type: object
+            required:
+              - action
+              - title
+              - why
+              - saving_usd
+              - screen
+              - item_id
+              - run
+            properties:
+              action:
+                type: string
+                enum:
+                  - review_learned_signal
+                  - check_repeated_blocks
+                  - enforce_rule
+                  - switch_billing
+                  - trim_idle_sandboxes
+              title:
+                minLength: 1
+                description: What to change, in one line.
+                type: string
+              why:
+                minLength: 1
+                description: The numbers behind it.
+                type: string
+              saving_usd:
+                description: Estimated saving a month, when the data states one.
+                anyOf:
+                  - minimum: 0
+                    type: number
+                  - type: "null"
+              screen:
+                description: The console screen to act on it in.
+                type: string
+                enum:
+                  - review
+                  - rules
+                  - spend
+                  - runs
+                  - code
+              item_id:
+                description: The review item to answer, when there is one.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              run:
+                description: A run (agent session or background run) behind the row, for the console's run view and its trace; null when no event named one.
+                anyOf:
+                  - type: string
+                  - type: "null"
     VendorImportStatus:
       additionalProperties: false
       title: VendorImportStatus
@@ -13981,7 +14971,7 @@ components:
             - spend_digest
             - test
         subject:
-          description: The review item id, the alert event id or the digest window it was about.
+          description: The review item id, the alert event id or the digest window it was about; advisor:<window start> for the weekly advisor note, which is sent as a digest.
           type: string
         ok:
           type: boolean
@@ -14024,7 +15014,7 @@ components:
                   - spend_digest
                   - test
               subject:
-                description: The review item id, the alert event id or the digest window it was about.
+                description: The review item id, the alert event id or the digest window it was about; advisor:<window start> for the weekly advisor note, which is sent as a digest.
                 type: string
               ok:
                 type: boolean
@@ -14067,7 +15057,7 @@ components:
                   - spend_digest
                   - test
               subject:
-                description: The review item id, the alert event id or the digest window it was about.
+                description: The review item id, the alert event id or the digest window it was about; advisor:<window start> for the weekly advisor note, which is sent as a digest.
                 type: string
               ok:
                 type: boolean

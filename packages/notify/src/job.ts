@@ -1,6 +1,7 @@
 import { databaseOf, type Ledger } from "@selfhost/ledger";
 import { isSnoozed, openReviewList } from "@selfhost/review";
 import {
+  ADVISOR_DAYS,
   DEFAULT_ORG_ID,
   type LedgerEvent,
   type NotifyCadence,
@@ -8,8 +9,15 @@ import {
   type NotifyKind,
   type ReviewItem,
 } from "@selfhost/schema";
+import {
+  type AdvisorReader,
+  advisorMessage,
+  advisorReport,
+  isQuietWeek,
+  readAdvisorData,
+} from "./advisor.js";
 import type { Deliver, Message } from "./apprise.js";
-import { digestWindow, spendDigestWindow } from "./cadence.js";
+import { advisorWindow, digestWindow, spendDigestWindow } from "./cadence.js";
 import { scrub } from "./mask.js";
 import {
   digestMessage,
@@ -29,6 +37,10 @@ export const NOTIFY_DEFAULTS: NotifySettingsInForce = {
   digest_hour: 9,
   budget_owners: [],
   spend_digest: true,
+  advisor: "admins",
+  advisor_day: "monday",
+  advisor_hour: 9,
+  advisor_timezone: "UTC",
 };
 
 /** Who gets what, from the team server's teams and policies, or the laptop's one person. */
@@ -55,6 +67,11 @@ export interface Directory {
    * Default: no such limit, as on a laptop.
    */
   teamsOf?(person: string, org: string): Promise<string[]>;
+  /**
+   * What a person's weekly advisor note covers in an org: the teams they read it for, and their
+   * own id for a member's note about their own work. undefined when they get none.
+   */
+  advisor?(person: string, org: string): Promise<AdvisorReader | undefined>;
 }
 
 export interface NotifyOptions {
@@ -289,6 +306,28 @@ async function notifyOrg(
           });
           const items = page.items.filter((item) => !isSnoozed(item, now));
           return items.length > 0 ? digestMessage(items, cadence, consoleUrl) : undefined;
+        },
+        window.start.toISOString(),
+      );
+    }
+    const reader = await directory.advisor?.(person, org);
+    if (reader) {
+      const window = advisorWindow(now, {
+        day: settings.advisor_day,
+        hour: settings.advisor_hour,
+        timeZone: settings.advisor_timezone,
+      });
+      // The advisor note is a digest: sent and recorded as one, under its own subject.
+      await send(
+        person,
+        "digest",
+        window.key,
+        async () => {
+          const to = window.start;
+          const from = new Date(to.getTime() - ADVISOR_DAYS * 86_400_000);
+          const data = await readAdvisorData(ledger, { from, to, teams: reader.teams });
+          const report = advisorReport(data, { ...reader, from, to });
+          return isQuietWeek(report) ? undefined : advisorMessage(report, consoleUrl);
         },
         window.start.toISOString(),
       );

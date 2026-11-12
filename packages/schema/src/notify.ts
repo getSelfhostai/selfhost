@@ -104,7 +104,8 @@ export const NotifySendSchema = Type.Object(
     kind: StringEnum(NOTIFY_KINDS),
     subject: Type.Optional(
       Type.String({
-        description: "The review item id, the alert event id or the digest window it was about.",
+        description:
+          "The review item id, the alert event id or the digest window it was about; advisor:<window start> for the weekly advisor note, which is sent as a digest.",
       }),
     ),
     ok: Type.Boolean(),
