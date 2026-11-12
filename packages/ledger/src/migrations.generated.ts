@@ -93,4 +93,9 @@ export const MIGRATIONS: readonly Migration[] = [
     sql: "-- Review requests GitHub accepted but did not keep, by agent pull request: GitHub answers 201 to a\n-- request for a team without access to the repository and keeps nothing, so the pull request\n-- sync does not ask for them again. Kept here so a restart does not ask again either. One row per\n-- pull request (owner/repo#number); users and teams are JSON arrays of logins and team slugs.\nCREATE TABLE github_dropped_reviewers (\n  pull text PRIMARY KEY,\n  users jsonb NOT NULL DEFAULT '[]',\n  teams jsonb NOT NULL DEFAULT '[]',\n  updated_at timestamptz NOT NULL DEFAULT now()\n);\n\nCREATE INDEX github_dropped_reviewers_updated_idx ON github_dropped_reviewers (updated_at);\n",
     down: "-- Rolls back 0017_github_dropped_reviewers.sql. The pull request sync then asks once more for the\n-- reviewers GitHub did not keep, and remembers them until the next restart.\nDROP TABLE github_dropped_reviewers;\n",
   },
+  {
+    version: "0018_vendor_imports",
+    sql: "-- Where each vendor usage importer (Anthropic, OpenAI and Cursor admin APIs) has read up to, and\n-- how its last run went. One row per importer. through_day is the last UTC day imported; the next\n-- run starts the day after. state is ok, not_available (the key may not read the admin API) or\n-- error. detail never holds a key.\nCREATE TABLE vendor_imports (\n  importer text PRIMARY KEY,\n  through_day date,\n  state text NOT NULL CHECK (state IN ('ok', 'not_available', 'error')),\n  detail text,\n  events integer NOT NULL DEFAULT 0,\n  last_run_at timestamptz NOT NULL DEFAULT now()\n);\n",
+    down: "-- Rolls back 0018_vendor_imports.sql. The imported events stay in the ledger; the importers then\n-- read their first window again, and its events are already stored, so nothing counts twice.\nDROP TABLE vendor_imports;\n",
+  },
 ];

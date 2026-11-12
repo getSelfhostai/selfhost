@@ -47,3 +47,4 @@ export {
   type ValidationResult,
   type Validator,
 } from "./validate.js";
+export * from "./vendor-usage.js";

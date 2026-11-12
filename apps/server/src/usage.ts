@@ -1,5 +1,7 @@
 import { databaseOf, type Ledger } from "@selfhost/ledger";
 import {
+  BREAK_EVEN_SCHEMA,
+  type BreakEvenResponse,
   createValidator,
   DEFAULT_ORG_ID,
   parseGroupBy,
@@ -11,6 +13,7 @@ import {
   type UsageResponse,
   type UsageRow,
 } from "@selfhost/schema";
+import { BREAK_EVEN_NOTES, breakEven, SEAT_PRICES_AS_OF } from "@selfhost/spend";
 import type { Context } from "hono";
 import { apiError, authorize, type Caller, type Router } from "./access.js";
 import { invalidQuery } from "./http.js";
@@ -105,6 +108,30 @@ export function usageRoutes(router: Router, ledger: Ledger, options: UsageRouteO
       rows,
       total,
     } satisfies UsageResponse);
+  });
+
+  // Seat or API key per developer: the range's spend by person and agent, counted as /v1/usage
+  // counts it, priced against the seat tiers of each agent's plan.
+  router.on("GET", "/v1/usage/break-even", async (c, caller) => {
+    const query = await resolve(c, caller);
+    if (query instanceof Response) return query;
+    const { rows } = await usage({ ...query, groupBy: ["person", "agent"] });
+    const spend = rows.flatMap((row) => {
+      const person = row.group.person;
+      const agent = row.group.agent;
+      return person && agent && person !== USAGE_UNKNOWN ? [{ person, agent, usd: row.usd }] : [];
+    });
+    const days = (query.to.getTime() - query.from.getTime()) / DAY_MS;
+    return c.json({
+      schema: BREAK_EVEN_SCHEMA,
+      org: query.org,
+      from: query.from.toISOString(),
+      to: query.to.toISOString(),
+      days: Math.round(days * 1000) / 1000,
+      prices_as_of: SEAT_PRICES_AS_OF,
+      rows: breakEven(spend, days),
+      notes: BREAK_EVEN_NOTES,
+    } satisfies BreakEvenResponse);
   });
 
   router.on("GET", "/v1/usage.csv", async (c, caller) => {

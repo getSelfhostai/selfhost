@@ -451,6 +451,9 @@ importers:
       '@selfhost/github':
         specifier: workspace:*
         version: link:../../packages/github
+      '@selfhost/importers':
+        specifier: workspace:*
+        version: link:../../packages/importers
       '@selfhost/integrations':
         specifier: workspace:*
         version: link:../../packages/integrations

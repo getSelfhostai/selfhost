@@ -19,8 +19,14 @@ import type { EventSource, LedgerEvent } from "@selfhost/schema";
  *    more than one source counts the events of one, in the order of COST_SOURCE_PREFERENCE. That
  *    keeps the session log for sessions that did not go through the gateway.
  *
- * Every reader applies both: oneSourcePerSession here, countedCostsSql for the server's SQL
- * (usage, ROI), and the ROI report's own rows.
+ * 3. One person-day, one source, for vendor-reported daily totals: the vendor usage importers
+ *    (Anthropic, OpenAI, Cursor admin APIs) write a person's usage of a model per UTC day, with
+ *    no session and data.rollup "day" (isVendorRollup). Such a total counts only when no other
+ *    source recorded spend for the same person, agent and day, so a day the laptop logs, a hook
+ *    or the gateway already saw is counted from them, request by request, and not again.
+ *
+ * Every reader applies all three: oneSourcePerSession here, countedCostsSql and
+ * vendorRollupCountsSql for the server's SQL (usage, ROI), and the ROI report's own rows.
  */
 
 /**
@@ -160,10 +166,58 @@ export function oneSourcePerSession(events: Iterable<LedgerEvent>): LedgerEvent[
       chosen.set(session, event.source);
     }
   }
+  const covered = new Set<string>();
+  for (const event of list) {
+    if (event.kind === "cost.recorded" && !isVendorRollup(event)) {
+      const key = personDay(event);
+      if (key !== undefined) covered.add(key);
+    }
+  }
   return counted.filter((event) => {
+    if (isVendorRollup(event)) return !covered.has(personDay(event) ?? "");
     const session = sessionOf(event);
     return session === undefined || chosen.get(session) === event.source;
   });
+}
+
+/** data.rollup of a vendor-reported daily total (rule 3). */
+export const VENDOR_ROLLUP = "day";
+
+/** A vendor-reported daily total: counted only for a person-day no other source reported. */
+export function isVendorRollup(event: LedgerEvent): boolean {
+  return event.source === "vendor_api" && event.data?.rollup === VENDOR_ROLLUP;
+}
+
+/** Person, agent and UTC day of a person's event, the key of rule 3. */
+function personDay(event: LedgerEvent): string | undefined {
+  if (event.actor.kind !== "person") return undefined;
+  return `${event.actor.id}\n${event.agent?.vendor ?? ""}\n${event.ts.slice(0, 10)}`;
+}
+
+/**
+ * Rule 3 in SQL: true for a cost row that counts, given the SQL of its source, body, person
+ * (actor id when a person), agent vendor and ts columns, qualified with the row's table alias
+ * (the check reads the events table as `other`, whose own columns would shadow bare names). A vendor-reported daily total (written
+ * at the start of its UTC day) counts only when the events table holds no other cost.recorded for
+ * that person and agent on that day.
+ */
+export function vendorRollupCountsSql(columns: {
+  source: string;
+  body: string;
+  person: string;
+  agent: string;
+  ts: string;
+}): string {
+  const rollup = (source: string, body: string) =>
+    `(${source} = 'vendor_api' AND coalesce(${body}#>>'{data,rollup}', '') = '${VENDOR_ROLLUP}')`;
+  return `(NOT ${rollup(columns.source, columns.body)} OR NOT EXISTS (
+    SELECT 1 FROM events other
+    WHERE other.kind = 'cost.recorded' AND other.actor_kind = 'person'
+      AND other.actor_id = ${columns.person}
+      AND other.agent IS NOT DISTINCT FROM ${columns.agent}
+      AND other.ts >= date_trunc('day', ${columns.ts}, 'UTC')
+      AND other.ts < date_trunc('day', ${columns.ts}, 'UTC') + interval '1 day'
+      AND NOT ${rollup("other.source", "other.body")}))`;
 }
 
 /** SQL CASE giving a source's place in COST_SOURCE_PREFERENCE. */

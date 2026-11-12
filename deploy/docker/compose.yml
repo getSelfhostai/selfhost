@@ -59,6 +59,12 @@ services:
       SELFHOST_GATEWAY_URL: ${SELFHOST_GATEWAY_URL:-}
       SELFHOST_GATEWAY_PUBLIC_URL: ${SELFHOST_GATEWAY_PUBLIC_URL:-}
       SELFHOST_GATEWAY_ADMIN_KEY: ${SELFHOST_GATEWAY_ADMIN_KEY:-}
+      # Vendor usage importers, optional: admin keys for the Anthropic, OpenAI and Cursor usage
+      # APIs, each sent only to its vendor. The skip list names the OpenAI key ids the gateway uses.
+      SELFHOST_ANTHROPIC_ADMIN_KEY: ${SELFHOST_ANTHROPIC_ADMIN_KEY:-}
+      SELFHOST_OPENAI_ADMIN_KEY: ${SELFHOST_OPENAI_ADMIN_KEY:-}
+      SELFHOST_OPENAI_SKIP_KEY_IDS: ${SELFHOST_OPENAI_SKIP_KEY_IDS:-}
+      SELFHOST_CURSOR_ADMIN_KEY: ${SELFHOST_CURSOR_ADMIN_KEY:-}
       # An Apprise API server the team already runs (compose.notify.yml sets its own).
       SELFHOST_APPRISE_URL: ${SELFHOST_APPRISE_URL:-}
       # Background runs: the server's selfhost.toml (put it in ./config), and runtime keys and urls.

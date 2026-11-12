@@ -1,8 +1,8 @@
 # @selfhost/importers
 
 Turns agent session logs on disk into `selfhost.event/v1` ledger events with `source: "local_log"`.
-Today that is Claude Code and Codex. OpenTelemetry exports, hook payloads and vendor audit APIs come
-later.
+Today that is Claude Code and Codex. It also reads per-person daily usage from vendor admin APIs
+(see [Vendor usage APIs](#vendor-usage-apis)), which the team server runs.
 
 ```ts
 import { importAll, watchLogs } from "@selfhost/importers";
@@ -20,7 +20,9 @@ await watcher.close();
 | `watchLogs(writer, opts, onBatch)` | `importAll`, then tails the logs by polling (`pollIntervalMs`, default 1000). New lines and new files are written without a restart.                                  |
 
 `writer` is anything with `append(events): Promise<{ accepted: string[]; duplicates: string[] }>`,
-such as the ledger store. Nothing here opens a network connection; a test fails on any attempt.
+such as the ledger store. The log importers open no network connection; a test fails on any
+attempt. Only the vendor usage importers below call out, to the vendor named, with the `fetch`
+they are given.
 
 ## Events
 
@@ -137,3 +139,22 @@ pnpm biome format --write packages/importers/src/vendor/ccusage/pricing-snapshot
 Not ported yet: Codex subagent replay markers (verbatim replays still collapse by id), the
 service tier default from Codex `config.toml`, `.jsonl.zst` rollouts, `CCUSAGE_MODEL_ALIASES` and
 live price refresh.
+
+## Vendor usage APIs
+
+`anthropicImporter`, `openAiImporter` and `cursorImporter` read one person's usage of one model
+per UTC day from a vendor's admin API, with an admin key that goes only in that vendor's headers:
+
+| Importer            | API                                                                                        | Usage                                                                                                                           |
+| ------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `anthropicImporter` | Claude Code Analytics, `GET /v1/organizations/usage_report/claude_code`, one call a day    | `model_breakdown` tokens and `estimated_cost.amount` (cents), added up over a person's records; API key records are skipped.    |
+| `openAiImporter`    | `GET /v1/organization/usage/completions` by user, model and key, and `/organization/users` | Tokens priced at the bundled table's base rates (estimated), as Codex; keys in `skipKeyIds` and usage of no person are skipped. |
+| `cursorImporter`    | Admin API `POST /teams/filtered-usage-events`                                              | `tokenUsage` and `totalCents` (API rates) per request, added up; `chargedCents` goes in `data.charged_usd`.                     |
+
+`readVendorEvents(importer, from, through, person)` maps the rows to `cost.recorded` events with
+`source: "vendor_api"`, at the start of the day, no session, and `data.rollup: "day"`, which the
+spend readers count only for a person-day no other source reported (rule 3 in
+[`packages/spend`](../spend/README.md)). Ids come from the importer, day, email and model, so a
+day read twice stores nothing new. A 401, 403 or 404 throws `VendorNotAvailableError`; other
+failures throw `VendorApiError`, whose message has the status and a short slice of the body,
+never a header. Tests answer from a fake `fetch`.

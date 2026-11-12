@@ -312,6 +312,35 @@ cannot reach `https://<domain>/llm`, so set it to an address sandboxes reach, su
 so the run's model cost is there when it ends; requests the gateway logs later update it. A run
 the gateway refused for its budget says so in its reason.
 
+## Vendor usage
+
+Subscription logins and tools that send model traffic from their own servers (Cursor) never pass
+the gateway. Where a vendor offers an admin usage API, the server reads each person's daily usage
+from it every hour, so the console's Spend screen and `GET /v1/usage` show it. Set the keys in
+`.env`, which `compose.yml` passes to the server, then run `docker compose up -d` again:
+
+```sh
+# Anthropic: an Admin API key of your Claude Console organization (Claude Code Analytics API)
+SELFHOST_ANTHROPIC_ADMIN_KEY=sk-ant-admin01-...
+# OpenAI: an Admin key, and the API key ids the gateway calls OpenAI with
+SELFHOST_OPENAI_ADMIN_KEY=...
+SELFHOST_OPENAI_SKIP_KEY_IDS=key_abc
+# Cursor: a team Admin API key
+SELFHOST_CURSOR_ADMIN_KEY=...
+```
+
+- Each key goes only to its vendor and is never logged or returned. `GET /v1/vendor-imports`
+  (or the Spend screen) shows each importer's state: `not_available` means the key may not read
+  that admin API, which stops nothing else.
+- Each person's usage of a model on a day becomes one `cost.recorded` event marked
+  vendor-reported. A day the person's laptop logs, hooks or the gateway already reported is
+  counted from them, so nothing counts twice. Vendor emails map to people with the same id
+  (ignoring case); others are kept under their email.
+- What the APIs cannot see: Anthropic's covers Claude Code used with a Claude Console login, not
+  personal Pro or Max plans or claude.ai Team and Enterprise seats; OpenAI's covers API keys, not
+  Codex on a ChatGPT plan. That use comes from each laptop's logs (`selfhost import`).
+- With several servers on one database, set `SELFHOST_VENDOR_IMPORT=off` on all but one.
+
 ## Notifications
 
 `compose.notify.yml` runs the [Apprise API](https://github.com/caronc/apprise-api) (BSD-2,

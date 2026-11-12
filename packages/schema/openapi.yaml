@@ -2958,6 +2958,121 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /v1/usage/break-even:
+    get:
+      operationId: getUsageBreakEven
+      summary: "Seat or API key for each developer: their usage at API rates against seat prices."
+      description: "Same query and scope as GET /v1/usage (default: the last 30 days); group_by is ignored. Spend per person and agent is counted as /v1/usage counts it, scaled to 30 days and compared with each seat tier of the agent's plan (Claude Code and Codex): the tier's list price plus API rates for use past its approximate limit. The cheaper choice is the verdict. Heaviest use first."
+      parameters:
+        - name: group_by
+          in: query
+          required: false
+          description: One or two of team, person, agent, model and day, comma separated, such as person or day,model. Without it, rows holds one row with the total.
+          schema:
+            pattern: ^(?:team|person|agent|model|day)(?:,(?:team|person|agent|model|day))?$
+            type: string
+        - name: from
+          in: query
+          required: false
+          description: "Events at or after this time. Default: 30 days before to."
+          schema:
+            format: date-time
+            type: string
+        - name: to
+          in: query
+          required: false
+          description: "Events before this time. Default: now."
+          schema:
+            format: date-time
+            type: string
+        - name: team
+          in: query
+          required: false
+          description: "Only this team: the team that owns the run's repo, else the team that wrote it. unknown matches events with none."
+          schema:
+            minLength: 1
+            maxLength: 256
+            type: string
+        - name: person
+          in: query
+          required: false
+          description: Only this person (actor.id of a person). unknown matches events with none.
+          schema:
+            minLength: 1
+            maxLength: 256
+            type: string
+        - name: agent
+          in: query
+          required: false
+          description: Only this agent (agent.vendor), such as claude_code or codex. unknown matches events with none.
+          schema:
+            minLength: 1
+            maxLength: 256
+            type: string
+        - name: model
+          in: query
+          required: false
+          description: Only this model, as the vendor reports it. unknown matches events with none.
+          schema:
+            minLength: 1
+            maxLength: 256
+            type: string
+        - name: org
+          in: query
+          required: false
+          description: "Org whose repos assign runs to teams. Default: the person token's org, or default with the admin token."
+          schema:
+            pattern: ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$
+            type: string
+      responses:
+        "200":
+          description: One row per person and agent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BreakEvenResponse"
+        "400":
+          description: Invalid query or time range.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not in the team or the org asked for.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /v1/vendor-imports:
+    get:
+      operationId: getVendorImports
+      summary: Status of the vendor usage importers (Anthropic, OpenAI and Cursor admin APIs).
+      description: Either kind of token. One entry per importer whose admin key is set on the server (SELFHOST_ANTHROPIC_ADMIN_KEY, SELFHOST_OPENAI_ADMIN_KEY, SELFHOST_CURSOR_ADMIN_KEY), with the last UTC day imported, how the last run went and what the importer cannot see. No key is ever returned. Imported rows are cost.recorded events with source vendor_api and data.rollup day, counted only for a person, agent and day no other source reported.
+      responses:
+        "200":
+          description: The importers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VendorImportsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/vendor-imports/run:
+    post:
+      operationId: runVendorImports
+      summary: Import vendor usage now.
+      description: "Admin token only. The server also does this every hour. Safe to repeat: a day already imported stores nothing new."
+      responses:
+        "200":
+          description: The importers after the run.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VendorImportsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /v1/usage.csv:
     get:
       operationId: getUsageCsv
@@ -8181,6 +8296,297 @@ components:
               minimum: 0
               description: Distinct pull requests with a pr.merged event in the range.
               type: integer
+    BreakEvenRow:
+      additionalProperties: false
+      title: BreakEvenRow
+      type: object
+      required:
+        - person
+        - agent
+        - api_usd
+        - monthly_api_usd
+        - verdict
+        - tier
+        - seat_usd
+        - monthly_cost_usd
+        - saving_usd
+        - break_even_usd
+        - over_limit
+      properties:
+        person:
+          type: string
+        agent:
+          type: string
+          enum:
+            - claude_code
+            - codex
+            - opencode
+            - goose
+            - cursor
+            - copilot
+            - other
+        api_usd:
+          minimum: 0
+          description: Spend in the range, priced at API rates, as the ledger counts it.
+          type: number
+        monthly_api_usd:
+          minimum: 0
+          description: api_usd scaled to 30 days.
+          type: number
+        verdict:
+          description: "seat: a subscription seat costs less than paying for the same use with an API key. api: an API key costs less."
+          type: string
+          enum:
+            - seat
+            - api
+        tier:
+          description: The cheapest seat tier for this use, such as max_5x; null with verdict api.
+          anyOf:
+            - type: string
+            - type: "null"
+        seat_usd:
+          anyOf:
+            - minimum: 0
+              description: That tier's price a month.
+              type: number
+            - type: "null"
+        monthly_cost_usd:
+          minimum: 0
+          description: "What the verdict costs a month: the seat, plus API spend past its limits, or the API spend."
+          type: number
+        saving_usd:
+          minimum: 0
+          description: A month, against the other choice.
+          type: number
+        break_even_usd:
+          minimum: 0
+          description: "Monthly API spend at which the cheapest seat starts to pay for itself: its price."
+          type: number
+        over_limit:
+          description: The use is past the chosen tier's approximate monthly limit, so the rest goes to an API key.
+          type: boolean
+    BreakEvenResponse:
+      additionalProperties: false
+      title: BreakEvenResponse
+      description: For each developer, the range's usage priced at API rates against the seat tiers of the agent's plan, with a verdict.
+      type: object
+      required:
+        - schema
+        - org
+        - from
+        - to
+        - days
+        - prices_as_of
+        - rows
+        - notes
+      properties:
+        schema:
+          const: selfhost.break_even/v1
+          type: string
+        org:
+          type: string
+        from:
+          format: date-time
+          type: string
+        to:
+          format: date-time
+          type: string
+        days:
+          exclusiveMinimum: 0
+          type: number
+        prices_as_of:
+          description: Day the seat prices were checked, YYYY-MM-DD.
+          type: string
+        rows:
+          description: One per person and agent with a seat plan to compare (Claude Code and Codex), heaviest use first.
+          type: array
+          items:
+            additionalProperties: false
+            title: BreakEvenRow
+            type: object
+            required:
+              - person
+              - agent
+              - api_usd
+              - monthly_api_usd
+              - verdict
+              - tier
+              - seat_usd
+              - monthly_cost_usd
+              - saving_usd
+              - break_even_usd
+              - over_limit
+            properties:
+              person:
+                type: string
+              agent:
+                type: string
+                enum:
+                  - claude_code
+                  - codex
+                  - opencode
+                  - goose
+                  - cursor
+                  - copilot
+                  - other
+              api_usd:
+                minimum: 0
+                description: Spend in the range, priced at API rates, as the ledger counts it.
+                type: number
+              monthly_api_usd:
+                minimum: 0
+                description: api_usd scaled to 30 days.
+                type: number
+              verdict:
+                description: "seat: a subscription seat costs less than paying for the same use with an API key. api: an API key costs less."
+                type: string
+                enum:
+                  - seat
+                  - api
+              tier:
+                description: The cheapest seat tier for this use, such as max_5x; null with verdict api.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              seat_usd:
+                anyOf:
+                  - minimum: 0
+                    description: That tier's price a month.
+                    type: number
+                  - type: "null"
+              monthly_cost_usd:
+                minimum: 0
+                description: "What the verdict costs a month: the seat, plus API spend past its limits, or the API spend."
+                type: number
+              saving_usd:
+                minimum: 0
+                description: A month, against the other choice.
+                type: number
+              break_even_usd:
+                minimum: 0
+                description: "Monthly API spend at which the cheapest seat starts to pay for itself: its price."
+                type: number
+              over_limit:
+                description: The use is past the chosen tier's approximate monthly limit, so the rest goes to an API key.
+                type: boolean
+        notes:
+          type: array
+          items:
+            type: string
+    VendorImportStatus:
+      additionalProperties: false
+      title: VendorImportStatus
+      type: object
+      required:
+        - importer
+        - state
+        - detail
+        - through_day
+        - last_run_at
+        - events
+        - notes
+      properties:
+        importer:
+          type: string
+          enum:
+            - anthropic
+            - openai
+            - cursor
+        state:
+          description: "ok: the last read worked. not_available: the key may not read the vendor's admin API (401, 403 or 404), so nothing is imported and nothing fails. error: the last read failed and is tried again at the next run. pending: no run yet."
+          type: string
+          enum:
+            - ok
+            - not_available
+            - error
+            - pending
+        detail:
+          description: What went wrong, or what was left out. Never holds a key.
+          anyOf:
+            - type: string
+            - type: "null"
+        through_day:
+          description: Last UTC day imported, YYYY-MM-DD; the next run starts the day after.
+          anyOf:
+            - pattern: ^\d{4}-\d{2}-\d{2}$
+              type: string
+            - type: "null"
+        last_run_at:
+          anyOf:
+            - format: date-time
+              type: string
+            - type: "null"
+        events:
+          minimum: 0
+          description: Events the last run wrote.
+          type: integer
+        notes:
+          description: What the importer covers and what it cannot see.
+          type: array
+          items:
+            type: string
+    VendorImportsResponse:
+      additionalProperties: false
+      title: VendorImportsResponse
+      type: object
+      required:
+        - importers
+      properties:
+        importers:
+          description: One per importer with a key set on the server.
+          type: array
+          items:
+            additionalProperties: false
+            title: VendorImportStatus
+            type: object
+            required:
+              - importer
+              - state
+              - detail
+              - through_day
+              - last_run_at
+              - events
+              - notes
+            properties:
+              importer:
+                type: string
+                enum:
+                  - anthropic
+                  - openai
+                  - cursor
+              state:
+                description: "ok: the last read worked. not_available: the key may not read the vendor's admin API (401, 403 or 404), so nothing is imported and nothing fails. error: the last read failed and is tried again at the next run. pending: no run yet."
+                type: string
+                enum:
+                  - ok
+                  - not_available
+                  - error
+                  - pending
+              detail:
+                description: What went wrong, or what was left out. Never holds a key.
+                anyOf:
+                  - type: string
+                  - type: "null"
+              through_day:
+                description: Last UTC day imported, YYYY-MM-DD; the next run starts the day after.
+                anyOf:
+                  - pattern: ^\d{4}-\d{2}-\d{2}$
+                    type: string
+                  - type: "null"
+              last_run_at:
+                anyOf:
+                  - format: date-time
+                    type: string
+                  - type: "null"
+              events:
+                minimum: 0
+                description: Events the last run wrote.
+                type: integer
+              notes:
+                description: What the importer covers and what it cannot see.
+                type: array
+                items:
+                  type: string
     RoiAgentRow:
       additionalProperties: false
       title: RoiAgentRow
