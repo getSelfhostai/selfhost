@@ -127,7 +127,7 @@ WHERE e.ingested_at >= $1::timestamptz
   AND (e.kind IN ('pr.opened', 'pr.merged', 'pr.closed', 'pr.linked', 'decision.recorded',
       'review.submitted', 'run.handed_off')
     OR (e.ts >= $2::timestamptz AND (
-      e.kind IN ('approval.requested', 'alert.raised')
+      e.kind IN ('approval.requested', 'alert.raised', 'risk.learned')
       OR (e.kind = 'policy.evaluated'
         AND coalesce(e.body#>>'{decision,mode}', 'enforce') = 'enforce'
         AND e.body#>>'{decision,verdict}' IN ('block', 'ask')))))

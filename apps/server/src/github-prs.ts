@@ -142,14 +142,16 @@ interface ClosedPayload {
 
 /**
  * pr.merged or pr.closed for an agent pull request GitHub closed, so the review list closes its
- * item and the run view shows it merged or closed. Nothing is read from GitHub. Written once:
- * not again when the newest pull request event already says so.
+ * item and the run view shows it merged or closed. Nothing is read from GitHub here; `lines`, the
+ * lines a merge added by file (read by learning from reverts), go in pr.merged's data. Written
+ * once: not again when the newest pull request event already says so.
  */
 export async function recordPullClosed(
   ledger: Ledger,
   team: string | undefined,
   payload: unknown,
   now: Date,
+  extra: { lines?: Record<string, [number, number][]> } = {},
 ): Promise<{ kind: PullKind; where: string } | { skip: string }> {
   const body = payload as ClosedPayload;
   const pr = body.pull_request;
@@ -175,6 +177,7 @@ export async function recordPullClosed(
         title: pr.title,
         ...(typeof pr.additions === "number" ? { additions: pr.additions } : {}),
         ...(typeof pr.deletions === "number" ? { deletions: pr.deletions } : {}),
+        ...(pr.merged && extra.lines ? { lines: extra.lines } : {}),
       },
     }),
   ]);

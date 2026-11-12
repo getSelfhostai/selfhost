@@ -69,10 +69,17 @@ Approvals, questions and alerts older than seven days open nothing.
 | `budget`            | `alert.raised`: `limit_forecast` (50), `usage_limit` (60), `budget`, `budget_exceeded`           | alert, person, plan and window  | no       | 50 or 60 |
 | `spend_spike`       | `alert.raised`: `spend_spike`                                                                    | the alarm's series              | no       | 90       |
 | `quality`           | `alert.raised`: `quality`, `quality_alarm`                                                       | metric, else model              | no       | 60       |
+| `quality`           | `risk.learned` with `data.state` `proposed` (learning from reverts), item id in `links.item_id`  | repo, agent, model and module   | no       | 40       |
 | `policy_report`     | Observe-mode `policy.evaluated` block and ask hits of the last full week (Monday to Monday UTC)  | the week                        | no       | 10       |
 | `context_promotion` | `approval.requested` with `data.request` `context_promotion`, written by the team server         | the item (`rule:<name>`, ...)   | no       | 20       |
 | `security`          | `alert.raised` `grant_unverified` from the team server (source `server` only)                    | the flagged event               | no       | 95       |
 
+- A `risk.learned` item says that an agent and model's merged pull requests in one module were
+  reverted or reworked above `[review] revert_rate_threshold`, lists the reverts and reworks
+  behind it (pull request, by what, days after the merge, run, reason) and the `selfhost.toml`
+  change a person could make by hand. Approving it is what lets the GitHub App's risk score count
+  the signal (see [`apps/server`](../../apps/server/README.md#learning-from-reverts)); selfhost
+  never changes `selfhost.toml` from it.
 - A PR's risk score is an input: `data.risk` (`{ score, reasons }`) or `data.risk_score` on
   `pr.opened`. The scoring itself (`ee/risk`) is not imported here. Without one the score is 50.
 - Where two scores are given, the higher one is for a rule with `irreversible = true`. A file

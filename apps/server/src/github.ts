@@ -30,6 +30,7 @@ import {
   requestNote,
 } from "./github-pull.js";
 import { type PullReads, pullReads } from "./github-reads.js";
+import { learnedRisk, type RevertLearning, revertLearning } from "./github-reverts.js";
 import { reviewBrief, reviewOwner, reviewRoute, reviewRouting } from "./github-review.js";
 import { backgroundRunTests, eeRisk } from "./github-risk.js";
 import {
@@ -86,6 +87,11 @@ export interface GitHubRouteOptions {
   pulls?: PullSync;
   /** How long one pull request sync may hold its queue. Default SERIAL_JOB_TIMEOUT_MS. */
   serialTimeoutMs?: number;
+  /**
+   * Learning from reverts on merged pull requests and pushes (src/github-reverts.ts). Default:
+   * on, through ee/risk; false turns it off. Without ee/ in the build it records nothing.
+   */
+  learning?: RevertLearning | false;
 }
 
 /** What POST /v1/github/webhooks answers to a verified delivery. */
@@ -161,6 +167,18 @@ export async function unclaimedRepo(
   return owner.team === team
     ? undefined
     : `${repo} belongs to team ${owner.team}, not ${team} (SELFHOST_GITHUB_TEAM)`;
+}
+
+/** One log line for a recorded revert, rework or learned signal: kinds and URLs, no text. */
+function learnedLine(event: {
+  kind: string;
+  target?: { value: string };
+  data?: Record<string, unknown>;
+}): string {
+  const by = typeof event.data?.by_pr === "string" ? ` by ${event.data.by_pr}` : "";
+  const state = typeof event.data?.state === "string" ? ` ${event.data.state}` : "";
+  const module = typeof event.data?.module === "string" ? ` ${event.data.module}` : "";
+  return `${event.kind}${state} ${event.target?.value ?? ""}${module}${by}`;
 }
 
 /** The agent pull request a delivery is about, or why it is not acted on. */
@@ -295,6 +313,7 @@ export function pullSync(
       ledger,
       ledgerSecondOpinions(ledger),
       backgroundRunTests(ledger),
+      learnedRisk(ledger),
     ),
     owner: reviewOwner(ledger, options.team, routing),
     brief: reviewBrief(ledger),
@@ -477,6 +496,11 @@ export function githubRoutes(
   const now = options.now ?? (() => new Date());
   const installed = github;
   const logSkipped = skippedDeliveryLog(log, now);
+  const learning =
+    options.learning === false
+      ? undefined
+      : (options.learning ??
+        revertLearning(ledger, { ...(options.team ? { team: options.team } : {}), now }));
 
   /**
    * A reviewer's verdict on an agent pull request: recorded once as a review.submitted event
@@ -684,13 +708,37 @@ export function githubRoutes(
           return c.json({ delivery, handled: false, duplicate: true } satisfies WebhookResponse);
         }
         try {
-          const closed = await recordPullClosed(ledger, options.team, payload, now());
+          const merged = (payload as { pull_request?: { merged?: boolean } }).pull_request?.merged;
+          const config = learning && merged ? await pulls.config() : undefined;
+          const installation = (payload as { installation?: { id?: number } }).installation?.id;
+          const learned =
+            learning && config
+              ? await learning.merged(
+                  installation ? installed.installation(installation) : undefined,
+                  payload,
+                  config,
+                )
+              : undefined;
+          const closed = await recordPullClosed(
+            ledger,
+            options.team,
+            payload,
+            now(),
+            learned?.lines ? { lines: learned.lines } : {},
+          );
+          const relearned =
+            learning && config && repo && (learned?.recorded.length || !("skip" in closed))
+              ? await learning.relearn(repo, config)
+              : [];
+          for (const recorded of [...(learned?.recorded ?? []), ...relearned]) {
+            log(`github: delivery ${delivery} learned ${learnedLine(recorded)}`);
+          }
           if ("skip" in closed) {
-            return c.json({
-              delivery,
-              handled: false,
-              skipped: closed.skip,
-            } satisfies WebhookResponse);
+            return c.json(
+              (learned?.recorded.length
+                ? { delivery, handled: true, writes: 0 }
+                : { delivery, handled: false, skipped: closed.skip }) satisfies WebhookResponse,
+            );
           }
           log(`github: delivery ${delivery} pull_request.closed ${closed.where}: ${closed.kind}`);
           return c.json({ delivery, handled: true, writes: 0 } satisfies WebhookResponse);
@@ -701,6 +749,33 @@ export function githubRoutes(
             apiError("ledger_write_failed", "Could not record the closed pull request"),
             500,
           );
+        }
+      }
+
+      if (event === "push" && learning) {
+        if (!(await ledger.deliveries.claim(delivery, { event }))) {
+          return c.json({ delivery, handled: false, duplicate: true } satisfies WebhookResponse);
+        }
+        try {
+          const config = await pulls.config();
+          const recorded = await learning.pushed(payload, config);
+          const relearned = recorded.length > 0 && repo ? await learning.relearn(repo, config) : [];
+          for (const event of [...recorded, ...relearned]) {
+            log(`github: delivery ${delivery} learned ${learnedLine(event)}`);
+          }
+          return c.json(
+            (recorded.length > 0
+              ? { delivery, handled: true, writes: 0 }
+              : {
+                  delivery,
+                  handled: false,
+                  skipped: "no revert of an agent pull request",
+                }) satisfies WebhookResponse,
+          );
+        } catch (error) {
+          await ledger.deliveries.release(delivery);
+          log(`github: delivery ${delivery} push failed: ${errorLine(error)}`);
+          return c.json(apiError("ledger_write_failed", "Could not record the push"), 500);
         }
       }
 

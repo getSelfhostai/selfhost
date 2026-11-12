@@ -260,7 +260,7 @@ jobs:
           echo "previous release: $previous, this release: $latest"
 
           serve dist-previous
-          jq -s '{events: .}' packages/schema/fixtures/event/valid/*.json > "$RUNNER_TEMP/events.json"
+          jq -s '{events: .}' "$RUNNER_TEMP/previous/packages/schema/fixtures/event/valid/"*.json > "$RUNNER_TEMP/events.json"
           fixtures=$(jq '.events | length' "$RUNNER_TEMP/events.json")
           api -X POST --data-binary @"$RUNNER_TEMP/events.json" http://127.0.0.1:4400/v1/events \
             | jq -e --argjson n "$fixtures" '.accepted == $n'

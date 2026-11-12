@@ -18,6 +18,7 @@ export const RISK_INPUTS = [
   "guardrails",
   "reverts",
   "module_reverts",
+  "learned_reverts",
   "second_opinion",
 ] as const;
 
@@ -60,6 +61,21 @@ export interface ModuleReverts {
   modules: ModuleRevertRate[];
 }
 
+/**
+ * A revert signal a person approved: this agent and model's merged pull requests in a module the
+ * change touches were reverted or reworked above `[review] revert_rate_threshold`.
+ */
+export interface LearnedRevertRisk {
+  module: string;
+  /** Merged pull requests the rate was read from. */
+  pulls: number;
+  reverted: number;
+  reworked: number;
+  rate: number;
+  /** `[review] revert_window_days`: how long after a merge a revert or rework counted. */
+  days: number;
+}
+
 /** What the team's AI reviewer said about the pull request: the newest review from one tool. */
 export interface SecondOpinionInput {
   tool: ReviewerTool;
@@ -81,6 +97,11 @@ export interface RiskInputs {
   run?: RunInput;
   reverts?: RevertHistory;
   modules?: ModuleReverts;
+  /**
+   * Approved revert signals for the agent, model and touched modules. Left undefined or empty,
+   * the input is not part of the score and not listed as missing.
+   */
+  learned?: LearnedRevertRisk[];
   /**
    * The newest review from each AI reviewer ([integrations.reviewer]) on the pull request. Left
    * undefined with no reason in `unavailable`, the input is not part of the score and not listed

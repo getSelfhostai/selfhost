@@ -124,6 +124,9 @@ paths:
               - sandbox.started
               - sandbox.stopped
               - run.handed_off
+              - pr.reverted
+              - pr.reworked
+              - risk.learned
         - name: team
           in: query
           required: false
@@ -2340,7 +2343,7 @@ paths:
           required: false
           description: Comma-separated event kinds, or their first part (tool for tool.called and tool.result).
           schema:
-            pattern: ^(?:session\.started|session\.ended|prompt\.submitted|tool\.called|tool\.result|approval\.requested|decision\.recorded|cost\.recorded|commit\.created|pr\.opened|pr\.merged|pr\.closed|pr\.linked|policy\.evaluated|alert\.raised|config\.reported|review\.submitted|credential\.issued|credential\.revoked|egress\.blocked|run\.triggered|run\.updated|run\.output|run\.health|run\.gate|sandbox\.started|sandbox\.stopped|run\.handed_off|session|prompt|tool|approval|decision|cost|commit|pr|policy|alert|config|review|credential|egress|run|sandbox)(?:,(?:session\.started|session\.ended|prompt\.submitted|tool\.called|tool\.result|approval\.requested|decision\.recorded|cost\.recorded|commit\.created|pr\.opened|pr\.merged|pr\.closed|pr\.linked|policy\.evaluated|alert\.raised|config\.reported|review\.submitted|credential\.issued|credential\.revoked|egress\.blocked|run\.triggered|run\.updated|run\.output|run\.health|run\.gate|sandbox\.started|sandbox\.stopped|run\.handed_off|session|prompt|tool|approval|decision|cost|commit|pr|policy|alert|config|review|credential|egress|run|sandbox))*$
+            pattern: ^(?:session\.started|session\.ended|prompt\.submitted|tool\.called|tool\.result|approval\.requested|decision\.recorded|cost\.recorded|commit\.created|pr\.opened|pr\.merged|pr\.closed|pr\.linked|policy\.evaluated|alert\.raised|config\.reported|review\.submitted|credential\.issued|credential\.revoked|egress\.blocked|run\.triggered|run\.updated|run\.output|run\.health|run\.gate|sandbox\.started|sandbox\.stopped|run\.handed_off|pr\.reverted|pr\.reworked|risk\.learned|session|prompt|tool|approval|decision|cost|commit|pr|policy|alert|config|review|credential|egress|run|sandbox|risk)(?:,(?:session\.started|session\.ended|prompt\.submitted|tool\.called|tool\.result|approval\.requested|decision\.recorded|cost\.recorded|commit\.created|pr\.opened|pr\.merged|pr\.closed|pr\.linked|policy\.evaluated|alert\.raised|config\.reported|review\.submitted|credential\.issued|credential\.revoked|egress\.blocked|run\.triggered|run\.updated|run\.output|run\.health|run\.gate|sandbox\.started|sandbox\.stopped|run\.handed_off|pr\.reverted|pr\.reworked|risk\.learned|session|prompt|tool|approval|decision|cost|commit|pr|policy|alert|config|review|credential|egress|run|sandbox|risk))*$
             type: string
         - name: person
           in: query

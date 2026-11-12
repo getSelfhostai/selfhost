@@ -30,6 +30,26 @@ export {
   type RiskTarget,
 } from "./gather.js";
 export {
+  addedLines,
+  type LearnedRate,
+  type LineRanges,
+  learnedChange,
+  learnedKey,
+  learnedRates,
+  learnedSuggestion,
+  looksLikeRevert,
+  MAX_FILE_RANGES,
+  MAX_LINE_FILES,
+  type MergedPull,
+  MIN_LEARNING_PULLS,
+  overlappingLines,
+  type PullOutcome,
+  type RevertClaims,
+  removedLines,
+  revertClaims,
+  revertReason,
+} from "./learning.js";
+export {
   formatRiskReport,
   parseTestStatus,
   REVIEW_RISK_SCHEMA,
@@ -48,6 +68,7 @@ export {
 export {
   type ChangedFile,
   type GuardrailHit,
+  type LearnedRevertRisk,
   type MissingInput,
   type ModuleRevertRate,
   type ModuleReverts,

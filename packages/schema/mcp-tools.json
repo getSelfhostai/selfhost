@@ -3020,7 +3020,10 @@
               "run.gate",
               "sandbox.started",
               "sandbox.stopped",
-              "run.handed_off"
+              "run.handed_off",
+              "pr.reverted",
+              "pr.reworked",
+              "risk.learned"
             ]
           },
           "team": {
@@ -3240,7 +3243,10 @@
                     "run.gate",
                     "sandbox.started",
                     "sandbox.stopped",
-                    "run.handed_off"
+                    "run.handed_off",
+                    "pr.reverted",
+                    "pr.reworked",
+                    "risk.learned"
                   ]
                 },
                 "actor": {
@@ -3809,7 +3815,10 @@
                     "run.gate",
                     "sandbox.started",
                     "sandbox.stopped",
-                    "run.handed_off"
+                    "run.handed_off",
+                    "pr.reverted",
+                    "pr.reworked",
+                    "risk.learned"
                   ]
                 },
                 "actor": {
@@ -5887,7 +5896,10 @@
                   "run.gate",
                   "sandbox.started",
                   "sandbox.stopped",
-                  "run.handed_off"
+                  "run.handed_off",
+                  "pr.reverted",
+                  "pr.reworked",
+                  "risk.learned"
                 ]
               },
               "actor": {
