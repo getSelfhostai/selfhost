@@ -217,17 +217,27 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # No release is tagged yet, so the previous release is the code as it was just before the
-      # newest migration was added: its own server, not this one with a migration removed.
-      - name: Build this release's server, and the previous one from before the newest migration
+      # The previous release is the newest v* tag whose newest migration is older than this
+      # code's. With none, it is the newest commit whose migrations stop below this code's newest
+      # (by number, so renaming a migration on a branch cannot pick a newer schema).
+      - name: Build this release's server, and the previous release's
         run: |
           pnpm --filter @selfhost/console build
           pnpm --filter @selfhost/server build
           mv apps/server/dist apps/server/dist-current
-          newest=$(ls packages/ledger/migrations/*.sql | grep -v '[.]down[.]sql$' | sort | tail -n 1)
-          added=$(git log -1 --format=%H --diff-filter=A -- "$newest")
-          echo "previous release: the parent of $added, which added $newest"
-          git worktree add --detach "$RUNNER_TEMP/previous" "$added^"
+          top() { git ls-tree --name-only "$1" packages/ledger/migrations/ | grep '[.]sql$' | grep -v '[.]down[.]sql$' | sort | tail -n 1 | xargs basename | cut -d_ -f1; }
+          newest=$(top HEAD)
+          previous=""
+          for tag in $(git tag --list 'v*' --sort=-version:refname --merged HEAD); do
+            if [ "$(top "$tag")" \< "$newest" ]; then previous=$tag; break; fi
+          done
+          if [ -z "$previous" ]; then
+            for c in $(git log --format=%H -- packages/ledger/migrations); do
+              if [ "$(top "$c")" \< "$newest" ]; then previous=$c; break; fi
+            done
+          fi
+          echo "previous release: $previous (migrations up to $(top "$previous")), this release up to $newest"
+          git worktree add --detach "$RUNNER_TEMP/previous" "$previous"
           (cd "$RUNNER_TEMP/previous" && pnpm install --frozen-lockfile \
             && pnpm --filter @selfhost/console build && pnpm --filter @selfhost/server build)
           ln -s "$RUNNER_TEMP/previous/apps/server/dist" apps/server/dist-previous
