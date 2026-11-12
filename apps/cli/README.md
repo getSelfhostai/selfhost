@@ -38,8 +38,9 @@ are always by request type. See [`packages/spend`](../../packages/spend/README.m
 In a team, `selfhost spend` reads the team server instead, like `selfhost inbox` and `selfhost
 tail`: every member's synced spend in the teams the person is in (`GET /v1/usage`, `--by` one or
 two of `person` (default), `agent`, `model`, `team`, `day`), then this month's spend and every
-budget that applies to them (`GET /v1/budget`). `--json` prints one `selfhost.team_spend/v1`
-object. Request types, flags and cost tips come from a laptop's own ledger: `--local`,
+budget that applies to them (`GET /v1/budget`), then the team's sandboxes as below (`GET
+/v1/teams/{team}/sandboxes`). `--json` prints one `selfhost.team_spend/v1` object, with the
+same `sandboxes` as on a laptop. Request types, flags and cost tips come from a laptop's own ledger: `--local`,
 `--database` or `--data-dir` read it as on a laptop with no team.
 
 Each row and the total also show the prompt cache hit rate: cache reads over cache reads plus
@@ -1048,6 +1049,7 @@ a selfhost server. Team mode connects the same install to a shared server
 
 ```sh
 selfhost team init --server https://selfhost.example.com --name Platform   # admin token: --token or SELFHOST_TOKEN
+selfhost team init --name Platform                                         # after selfhost up: its server and token
 selfhost join https://selfhost.example.com selfhost_inv_...                 # on each laptop
 selfhost status
 selfhost team invite --email bob@example.com --ttl 2d                      # owner or admin
@@ -1058,7 +1060,8 @@ selfhost team laptops                                                      # who
 selfhost team leave
 ```
 
-- `selfhost team init [--invite-ttl 7d]` creates a team with the server's admin token (`--token`,
+- `selfhost team init [--server <url>] [--invite-ttl 7d]` creates a team on `--server`, else on
+  the server `selfhost up` set up last, with the server's admin token (`--token`,
   else `SELFHOST_TOKEN`, else the one `selfhost up` saved for that server) and
   prints the `selfhost join` command to share. The invite expires after `--invite-ttl` (30m,
   12h, 7d and so on, up to 365d; default 7d). It does not join the machine it runs on.

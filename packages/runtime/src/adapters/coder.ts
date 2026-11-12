@@ -347,6 +347,7 @@ export function coderRuntime(options: CoderOptions): RuntimeAdapter {
         name: `${CODER_PREFIX}${randomBytes(6).toString("hex")}`,
         ttl_ms: spec.timeoutMinutes * 60_000,
       });
+      await spec.onCreated?.(created.id);
       envs.set(created.id, { ...spec.env, ...(await secretValues(spec, options.secrets)) });
       const sandbox = wrap(await ready(created.id));
       if (spec.repo) {

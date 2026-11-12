@@ -95,6 +95,18 @@ const HOSTNAME =
   /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$/;
 export const isHostname = (value: string) => HOSTNAME.test(value);
 
+/** Suffixes of names no public CA issues for, as Caddy decides (certmagic's SubjectIsInternal). */
+const INTERNAL_SUFFIXES = [".localhost", ".local", ".internal", ".home.arpa"];
+
+/**
+ * Whether Caddy signs the certificate for this name with its own local CA instead of asking
+ * Let's Encrypt: localhost and the private suffixes above.
+ */
+export const caddyInternalName = (domain: string) => {
+  const name = domain.toLowerCase().replace(/\.$/, "");
+  return name === "localhost" || INTERNAL_SUFFIXES.some((suffix) => name.endsWith(suffix));
+};
+
 /**
  * The .env the bootstrap script writes, without the domain lines it adds on the server. It holds
  * no secret: install.sh generates them there, and sign-in comes later over SSH.

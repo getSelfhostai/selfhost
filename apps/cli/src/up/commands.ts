@@ -24,6 +24,7 @@ import {
 import { finishOverSsh, parseSshTarget, ssh, sshDomain } from "./ssh.js";
 import {
   bootstrapScript,
+  caddyInternalName,
   DEFAULT_IMAGE,
   defaultVersion,
   finishScript,
@@ -517,9 +518,11 @@ function gatewayText(report: UpReport): string {
 function printDone(report: UpReport, plan: UpPlan, deployed: Deployed, io: UpIo) {
   const { write } = io;
   const tls =
-    report.domain_source === "sslip.io"
-      ? `certificate from Let's Encrypt through Caddy. ${report.domain} is a sslip.io name that resolves to the IP; pass --domain for your own`
-      : `certificate for ${report.domain} from Let's Encrypt through Caddy`;
+    report.domain && caddyInternalName(report.domain)
+      ? `certificate for ${report.domain} from Caddy's own local CA, as no public CA issues for that name; browsers and the CLI trust it once its root, /data/caddy/pki/authorities/local/root.crt in the caddy container, is added (NODE_EXTRA_CA_CERTS for the CLI)`
+      : report.domain_source === "sslip.io"
+        ? `certificate from Let's Encrypt through Caddy. ${report.domain} is a sslip.io name that resolves to the IP; pass --domain for your own`
+        : `certificate for ${report.domain} from Let's Encrypt through Caddy`;
   write("");
   write(`selfhost is up at ${report.url}`);
   const server =
@@ -551,7 +554,7 @@ function printDone(report: UpReport, plan: UpPlan, deployed: Deployed, io: UpIo)
         ? [
             [
               "",
-              "The server already ran selfhost: it kept its database and tokens, and no team was created.",
+              "The server already ran selfhost: it kept its database and tokens, and no team was created. selfhost team init creates one.",
             ],
           ]
         : []),

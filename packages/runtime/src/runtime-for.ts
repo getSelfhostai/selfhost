@@ -57,6 +57,9 @@ export interface RuntimeForOptions {
   capCheckMs?: number;
 }
 
+/** The label every sandbox of a run carries, to find what a failed create left behind. */
+const RUN_LABEL = "selfhost-run";
+
 const isKind = (value: string | undefined): value is RuntimeKind =>
   value !== undefined && (RUNTIME_KINDS as readonly string[]).includes(value);
 
@@ -82,21 +85,24 @@ export function runtimeFor(options: RuntimeForOptions) {
         ...(options.now ? { now: options.now } : {}),
       }));
 
+  // Caps are read from the policy each run passes in, so a cap lowered or removed by a policy
+  // push holds from the next run on, and for the sandboxes already running at the next check.
   const guardFor = (team: string, config: RuntimeConfig) => {
     const caps = runtimeCaps(config.budget);
-    if (caps.daily === undefined && caps.run === undefined) return undefined;
     let guard = guards.get(team);
-    if (!guard) {
-      guard = new RuntimeGuard({
-        caps,
-        spentToday: (exclude, day) =>
-          options.spentToday?.(team, exclude, day) ?? Promise.resolve(0),
-        emit: options.emit ?? (() => {}),
-        now,
-      });
-      guard.start(options.capCheckMs);
-      guards.set(team, guard);
+    if (guard) {
+      guard.setCaps(caps);
+      return guard;
     }
+    if (caps.daily === undefined && caps.run === undefined) return undefined;
+    guard = new RuntimeGuard({
+      caps,
+      spentToday: (exclude, day) => options.spentToday?.(team, exclude, day) ?? Promise.resolve(0),
+      emit: options.emit ?? (() => {}),
+      now,
+    });
+    guard.start(options.capCheckMs);
+    guards.set(team, guard);
     return guard;
   };
 
@@ -149,12 +155,23 @@ export function runtimeFor(options: RuntimeForOptions) {
       get: (id) => adapter.get(id),
       list: (labels) => adapter.list(labels),
       async create(spec) {
-        const sandbox = await adapter.create({
-          ...spec,
-          ...(spec.size ? {} : { size: choice.size }),
-          ...(spec.region || !choice.region ? {} : { region: choice.region }),
-          labels: { ...spec.labels, "selfhost-run": run.id },
-        });
+        const created = new Set<string>();
+        let sandbox: Sandbox;
+        try {
+          sandbox = await adapter.create({
+            ...spec,
+            ...(spec.size ? {} : { size: choice.size }),
+            ...(spec.region || !choice.region ? {} : { region: choice.region }),
+            labels: { ...spec.labels, [RUN_LABEL]: run.id },
+            onCreated: async (id) => {
+              created.add(id);
+              await spec.onCreated?.(id);
+            },
+          });
+        } catch (error) {
+          await stopAfterFailedCreate(adapter, run.id, created);
+          throw error;
+        }
         if (!options.emit && !guard) return sandbox;
         const tracked = await trackSandbox(sandbox, {
           emit: options.emit ?? (() => {}),
@@ -169,6 +186,31 @@ export function runtimeFor(options: RuntimeForOptions) {
       },
     };
   };
+}
+
+/**
+ * Stops what a failed create may have left running: the sandboxes the adapter reported, and
+ * where the provider lists by label, any carrying the run's label (a create call that timed out
+ * on the client can still finish on the provider). Coder lists every workspace selfhost made, so
+ * there only the reported ones are stopped. Best effort: the create's own error is what counts.
+ */
+async function stopAfterFailedCreate(
+  adapter: RuntimeAdapter,
+  runId: string,
+  created: ReadonlySet<string>,
+): Promise<void> {
+  const ids = new Set(created);
+  if (adapter.capabilities.labels !== false) {
+    const listed = await adapter.list({ [RUN_LABEL]: runId }).catch(() => []);
+    for (const { id } of listed) ids.add(id);
+  }
+  for (const id of ids) {
+    try {
+      await (await adapter.get(id))?.stop();
+    } catch {
+      // Left for `selfhost runtime reap`, which finds it by the managed label.
+    }
+  }
 }
 
 /** The runner stops a run's sandbox when the run ends: that stop is recorded as run_ended. */

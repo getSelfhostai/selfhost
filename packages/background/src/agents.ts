@@ -25,6 +25,8 @@ export interface AgentCli {
   footer: string;
   /** Environment that sends the agent's model traffic through the gateway with a run's key. */
   gatewayEnv(gateway: GatewayAccess): Record<string, string>;
+  /** Plain variables the agent needs to run headless in a sandbox. */
+  env?: Readonly<Record<string, string>>;
   /** Whether the agent has hook settings selfhost can install, so the team's rules apply. */
   hooks: boolean;
 }
@@ -48,6 +50,9 @@ export const AGENT_CLIS: Readonly<Record<BackgroundAgent, AgentCli>> = {
     branchPrefix: "claude/",
     footer: "Generated with [Claude Code](https://claude.com/claude-code)",
     gatewayEnv: anthropicEnv,
+    // Claude Code refuses bypassPermissions as root unless it knows it is in a sandbox, and
+    // the default sandbox images (node:22 on OpenSandbox, for one) run commands as root.
+    env: { IS_SANDBOX: "1" },
     hooks: true,
   },
   codex: {

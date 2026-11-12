@@ -1,5 +1,12 @@
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -267,6 +274,41 @@ describe("Dockerfile", () => {
     expect(users.at(-1)).toBe("node");
     expect(dockerfile).toMatch(/^\s+HOST=0\.0\.0\.0 \\$/m);
   });
+
+  it("includes every runtime SDK, at the versions @selfhost/runtime pins, where the server finds them", () => {
+    const runtime = JSON.parse(
+      readFileSync(join(DIR, "..", "..", "packages", "runtime", "package.json"), "utf8"),
+    ) as { peerDependencies: Record<string, string> };
+    expect(Object.keys(runtime.peerDependencies).sort()).toEqual([
+      "@alibaba-group/opensandbox",
+      "@daytona/sdk",
+      "e2b",
+      "modal",
+    ]);
+    expect(dockerfile).toContain("require('/src/packages/runtime/package.json').peerDependencies");
+    expect(dockerfile).toContain("COPY --from=build /runtimes/node_modules /node_modules");
+  });
+});
+
+describe("background runs on Docker", () => {
+  it("passes the runtime keys, urls and the server config file to the server", () => {
+    const server = service("selfhost");
+    for (const name of [
+      "SELFHOST_CONFIG",
+      "SELFHOST_RUNTIME_OPENSANDBOX_URL",
+      "SELFHOST_RUNTIME_CODER_URL",
+      "OPEN_SANDBOX_API_KEY",
+      "E2B_API_KEY",
+      "DAYTONA_API_KEY",
+      "MODAL_TOKEN_ID",
+      "MODAL_TOKEN_SECRET",
+      "CODER_SESSION_TOKEN",
+    ]) {
+      expect(server.environment?.[name], name).toBe(`\${${name}:-}`);
+    }
+    expect(server.volumes).toContain("./config:/config:ro");
+    expect(readEnvExample().documented.has("SELFHOST_CONFIG")).toBe(true);
+  });
 });
 
 describe("backup, restore, upgrade and install scripts", () => {
@@ -379,6 +421,85 @@ describe("install.sh installing Docker", () => {
     expect(install.indexOf("get.docker.com")).toBeGreaterThan(install.indexOf("debian | ubuntu)"));
     // Each path says which one it took.
     expect(install.match(/say "installing Docker/g)).toHaveLength(2);
+  });
+});
+
+/**
+ * Runs install.sh in a copy of docker/ as a stand-in root, with a docker that answers from the
+ * environment: FAKE_DOCKER_DOWN makes `docker info` fail, FAKE_PGDATA is the database volume's
+ * mount point. It refuses to pull, so a run stops there, after the checks this looks at.
+ */
+function runInstall(env: Record<string, string>) {
+  const work = mkdtempSync(join(tmpdir(), "selfhost-install-"));
+  const bin = join(work, "bin");
+  const stack = join(work, "stack");
+  mkdirSync(bin);
+  mkdirSync(stack);
+  copyFileSync(join(DIR, "install.sh"), join(stack, "install.sh"));
+  writeFileSync(join(stack, ".env"), "SELFHOST_VERSION=0.0.0-test\n");
+  const tool = (name: string, body: string) =>
+    writeFileSync(join(bin, name), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  tool("id", "echo 0");
+  tool("sleep", "exit 0");
+  tool("systemctl", "exit 0");
+  tool(
+    "docker",
+    [
+      `echo "$*" >>"${join(work, "docker.log")}"`,
+      'case "$1 $2" in',
+      '  "compose version") exit 0 ;;',
+      '  "info "*) [ -z "$FAKE_DOCKER_DOWN" ] && exit 0',
+      '    echo "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?" >&2',
+      "    exit 1 ;;",
+      '  "volume inspect") [ -n "$FAKE_PGDATA" ] && echo "$FAKE_PGDATA" && exit 0',
+      '    echo "Error response from daemon: get selfhost_postgres-data: no such volume" >&2',
+      "    exit 1 ;;",
+      '  "image inspect") exit 1 ;;',
+      '  "pull -q") echo "Error response from daemon: unauthorized" >&2; exit 1 ;;',
+      "esac",
+      'echo "unexpected docker $*" >&2',
+      "exit 2",
+    ].join("\n"),
+  );
+  const result = spawnSync("sh", [join(stack, "install.sh")], {
+    env: { ...process.env, ...env, PATH: `${bin}:${process.env.PATH ?? ""}` },
+    encoding: "utf8",
+  });
+  const docker = (() => {
+    try {
+      return readFileSync(join(work, "docker.log"), "utf8");
+    } catch {
+      return "";
+    }
+  })();
+  return { ...result, work, docker };
+}
+
+describe.skipIf(process.platform === "win32")("install.sh checks before it pulls", () => {
+  it("says the Docker daemon does not answer, instead of that the image could not be pulled", () => {
+    const run = runInstall({ FAKE_DOCKER_DOWN: "1" });
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain(
+      "selfhost: the Docker daemon does not answer: Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
+    );
+    expect(run.stdout + run.stderr).not.toContain("could not pull");
+    expect(run.docker).not.toContain("pull");
+  });
+
+  it("says it found an earlier database only when the volume holds a Postgres cluster", () => {
+    const marker = "selfhost: found the database of an earlier install";
+    // No volume: a first run, or one that failed before Postgres started, whatever .env keeps.
+    const first = runInstall({});
+    expect(first.stdout).not.toContain(marker);
+    expect(first.stderr).toContain("could not pull");
+    expect(first.docker).toContain("volume inspect -f {{.Mountpoint}} selfhost_postgres-data");
+
+    const empty = mkdtempSync(join(tmpdir(), "selfhost-pgdata-"));
+    expect(runInstall({ FAKE_PGDATA: empty }).stdout).not.toContain(marker);
+
+    const cluster = mkdtempSync(join(tmpdir(), "selfhost-pgdata-"));
+    writeFileSync(join(cluster, "PG_VERSION"), "16\n");
+    expect(runInstall({ FAKE_PGDATA: cluster }).stdout).toContain(marker);
   });
 });
 

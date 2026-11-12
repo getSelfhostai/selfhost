@@ -30,14 +30,29 @@ export interface SandboxSpec {
   /** Plain environment variables. Never secrets: those go in `secrets`. */
   env?: Readonly<Record<string, string>>;
   secrets?: readonly SecretRef[];
+  /**
+   * The values of this sandbox's secrets, from whoever issued them for the run (the credential
+   * broker: gateway:, github-app:, vault:, infisical:). undefined for a ref it does not hold,
+   * which the adapter's own resolver (env: by default) then reads.
+   */
+  resolveSecret?: (ref: SecretRef) => string | undefined | Promise<string | undefined>;
   egress?: EgressPolicy;
   /** vCPUs and memory in GiB; adapters round up to the nearest size they offer. */
   size?: { cpu?: number; memoryGiB?: number };
   region?: string;
   /** The sandbox is stopped after this long, whatever it is doing. */
   timeoutMinutes: number;
-  /** Labels the adapter attaches where the provider supports them: run id, team, person. */
+  /**
+   * Labels the adapter attaches where the provider supports them: run id, team, person. Values a
+   * provider would refuse (an email address) are stored hashed; see labelValue.
+   */
   labels?: Readonly<Record<string, string>>;
+  /**
+   * Called with the sandbox's id as soon as the provider gives one, before the adapter waits for
+   * it to be ready or clones into it: record it here, so a sandbox whose create fails later can
+   * still be found and stopped.
+   */
+  onCreated?: (id: string) => void | Promise<void>;
   /**
    * The provider's own egress and secret settings, as `@selfhost/credentials` writes them
    * (`egressFor(kind).native`, `secretsFor(kind).native`). When set, they are applied as given

@@ -60,9 +60,16 @@ export class RuntimeGuard {
   private readonly watched = new Map<string, TrackedSandbox>();
   private readonly now: () => Date;
   private timer: NodeJS.Timeout | undefined;
+  private caps: RuntimeCaps;
 
   constructor(private readonly options: GuardOptions) {
     this.now = options.now ?? (() => new Date());
+    this.caps = options.caps;
+  }
+
+  /** The caps from the team's current policy: a lowered cap applies to the next run and check. */
+  setCaps(caps: RuntimeCaps): void {
+    this.caps = caps;
   }
 
   private day() {
@@ -85,7 +92,7 @@ export class RuntimeGuard {
 
   /** Throws RuntimeCapError when today's sandbox spend has reached the daily cap. */
   async admit(): Promise<void> {
-    const cap = this.options.caps.daily;
+    const cap = this.caps.daily;
     if (cap === undefined) return;
     const spent = await this.spentToday();
     if (spent >= cap) {
@@ -107,7 +114,7 @@ export class RuntimeGuard {
   /** Stops what is over a cap. Call it every minute or so while runs are active. */
   async check(): Promise<CapStop[]> {
     const stops: CapStop[] = [];
-    const { run, daily } = this.options.caps;
+    const { run, daily } = this.caps;
     if (run !== undefined) {
       for (const sandbox of [...this.watched.values()]) {
         const cost = await sandbox.cost();

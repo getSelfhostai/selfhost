@@ -41,3 +41,8 @@ export function deploymentToken(configPath: string, server: string): string | un
     ? found.admin_token
     : undefined;
 }
+
+/** The server selfhost up saved last, the default for selfhost team init. */
+export function latestDeployment(configPath: string): DeploymentRecord | undefined {
+  return records(readConfigFile(configPath)).at(-1);
+}

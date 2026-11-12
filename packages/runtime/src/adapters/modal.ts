@@ -8,6 +8,7 @@ import {
   loadSdk,
   MANAGED_LABEL,
   pollLogs,
+  providerLabels,
   ranOutOfTime,
   readFileCommand,
   readFileOutput,
@@ -260,6 +261,7 @@ export function modalRuntime(options: AdapterOptions<ModalSdk>): RuntimeAdapter 
             ? { outboundDomainAllowlist: [...spec.egress.allow] }
             : {}),
       });
+      await spec.onCreated?.(box.sandboxId);
       const sandbox = wrap(box, tags);
       if (spec.repo) {
         const cloned = await sandbox.exec(cloneCommand(spec.repo));
@@ -285,7 +287,7 @@ export function modalRuntime(options: AdapterOptions<ModalSdk>): RuntimeAdapter 
       const modal = await connect();
       if (!appId) await app();
       const out: { id: string; state: SandboxState }[] = [];
-      const want = { ...labels, [MANAGED_LABEL.key]: MANAGED_LABEL.value };
+      const want = providerLabels({ ...labels, [MANAGED_LABEL.key]: MANAGED_LABEL.value });
       for await (const box of modal.sandboxes.list({ ...(appId ? { appId } : {}), tags: want })) {
         if (stopped.has(box.sandboxId)) continue;
         if ((await box.poll()) !== null) continue;

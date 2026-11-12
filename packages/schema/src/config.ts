@@ -483,7 +483,7 @@ const HttpUrl = (description: string) => Type.String({ pattern: "^https?://", de
 const RUNTIME_CONNECTION_FIELDS = {
   url: Type.Optional(
     HttpUrl(
-      "The provider's API address: required for coder and opensandbox (the team's own server), optional for the hosted ones. On a team server only the server's own selfhost.toml (SELFHOST_CONFIG) sets it; a team's stored policy cannot.",
+      "The provider's API address: required for coder and opensandbox (the team's own server), optional for the hosted ones. On a team server only the server's own selfhost.toml (SELFHOST_CONFIG) or its SELFHOST_RUNTIME_<NAME>_URL variable sets it; a team's stored policy cannot.",
     ),
   ),
   api_key_env: Type.Optional(
@@ -516,6 +516,14 @@ export const RuntimeProviderSchema = Type.Object(
         minimum: 0,
         description:
           "What one sandbox costs an hour, in USD, when the provider publishes no rate: the team's own server (opensandbox) or Coder. Overrides the built-in list price for the others.",
+      }),
+    ),
+    create_timeout_seconds: Type.Optional(
+      Type.Integer({
+        minimum: 30,
+        maximum: 3600,
+        description:
+          "How long creating one sandbox may take before the run's attempt fails, in seconds: opensandbox, whose server answers only once the container and its egress sidecar are up. Default 600. A sandbox whose create fails is stopped either way.",
       }),
     ),
   },

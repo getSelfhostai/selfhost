@@ -61,6 +61,18 @@ services:
       SELFHOST_GATEWAY_ADMIN_KEY: ${SELFHOST_GATEWAY_ADMIN_KEY:-}
       # An Apprise API server the team already runs (compose.notify.yml sets its own).
       SELFHOST_APPRISE_URL: ${SELFHOST_APPRISE_URL:-}
+      # Background runs: the server's selfhost.toml (put it in ./config), and runtime keys and urls.
+      SELFHOST_CONFIG: ${SELFHOST_CONFIG:-}
+      SELFHOST_RUNTIME_OPENSANDBOX_URL: ${SELFHOST_RUNTIME_OPENSANDBOX_URL:-}
+      SELFHOST_RUNTIME_CODER_URL: ${SELFHOST_RUNTIME_CODER_URL:-}
+      OPEN_SANDBOX_API_KEY: ${OPEN_SANDBOX_API_KEY:-}
+      E2B_API_KEY: ${E2B_API_KEY:-}
+      DAYTONA_API_KEY: ${DAYTONA_API_KEY:-}
+      MODAL_TOKEN_ID: ${MODAL_TOKEN_ID:-}
+      MODAL_TOKEN_SECRET: ${MODAL_TOKEN_SECRET:-}
+      CODER_SESSION_TOKEN: ${CODER_SESSION_TOKEN:-}
+    volumes:
+      - ./config:/config:ro
     ports:
       - "${SELFHOST_BIND:-127.0.0.1}:${SELFHOST_PORT:-4400}:4400"
     # Health check: HEALTHCHECK in the image, GET /v1/health.

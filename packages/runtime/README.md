@@ -92,6 +92,13 @@ to its Kubernetes operator, with per-sandbox egress policy built in.
 - Egress: the sandbox's network policy, deny by default with the spec's hosts allowed. Snapshots:
   the server's snapshot API; create from one with image `snapshot:<id>`.
 - Price: none; set `usd_per_hour` to what a sandbox costs the team.
+- Create: the server answers the create call only once the container and its egress sidecar are
+  up, so it gets `create_timeout_seconds` (default 600) instead of the SDK's 30 seconds. The id
+  goes to `spec.onCreated` before readiness is awaited, and a sandbox that never becomes ready is
+  stopped. Output arrives one message per line without its line break; the adapter puts the
+  breaks back, which the conformance check `exec.multiline` holds every adapter to.
+- Labels: metadata values must be Kubernetes label values, so a value such as an email address
+  is stored as `h-` and a hash (`labelValue`). Every adapter writes and lists labels this way.
 - Local server: `uv pip install opensandbox-server`, then
   `opensandbox-server init-config ~/.sandbox.toml --example docker` and `opensandbox-server`
   (Docker must be running). On Kubernetes, install its operator and point `url` at the server.

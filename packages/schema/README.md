@@ -292,7 +292,7 @@ is the default.
 It also says where background runs may run (`packages/runtime`): `default`, `allow`, `policy`
 (`default` or `cheapest_allowed`), `region`, `max_size` and `leftover_minutes`, and how to reach
 each runtime in `[runtime.providers.<name>]` (`url`, `api_key_env`, `api_secret_env`,
-`template`, `usd_per_hour`). A `default` that `allow` leaves out is an error. `[runtime]` is the
+`template`, `usd_per_hour`, `create_timeout_seconds`). A `default` that `allow` leaves out is an error. `[runtime]` is the
 one place for the runtime: the deprecated `[integrations.runtime]` (`tool` plus the same fields)
 is read as `[runtime] default = <tool>` with its settings in `[runtime.providers.<tool>]`, where
 `[runtime]` does not set them already, and `parseConfig` returns a one-line `warnings` entry for

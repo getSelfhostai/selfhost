@@ -14,9 +14,11 @@ import { HETZNER_METADATA } from "../src/up/hetzner.js";
 import type { UpIo } from "../src/up/plan.js";
 import { imageLocation, registryImageCheck } from "../src/up/registry.js";
 import type { ExecOptions, ExecResult } from "../src/up/resources.js";
+import { EXISTING_INSTALL } from "../src/up/ssh.js";
 import {
   BOOTSTRAP_FILES,
   bootstrapScript,
+  caddyInternalName,
   DEFAULT_IMAGE,
   envFile,
   finishScript,
@@ -1137,7 +1139,11 @@ describe("selfhost up --provider ssh", () => {
 
   it("on a server that ran selfhost before, keeps its secrets, saves its token and creates no team", async () => {
     const dir = home();
-    const ssh = sshServer({ install: ok("selfhost: kept the secrets already in .env\n") });
+    const ssh = sshServer({
+      install: ok(
+        "selfhost: kept the secrets already in .env\nselfhost: found the database of an earlier install\n",
+      ),
+    });
     const api = cloud([], origin);
     const deps = io(dir, {}, { fetch: api.fetch, exec: ssh.exec });
     const report = await runUp({ provider: "ssh", host: "203.0.113.10" }, deps);
@@ -1145,7 +1151,63 @@ describe("selfhost up --provider ssh", () => {
     expect(report.otel?.header).toBe(`Authorization=Bearer ${OTLP}`);
     expect(config(deps.configPath).deployments[0].admin_token).toBe(ADMIN);
     expect(deps.out.join("\n")).toContain(
-      "The server already ran selfhost: it kept its database and tokens, and no team was created.",
+      "The server already ran selfhost: it kept its database and tokens, and no team was created. selfhost team init creates one.",
+    );
+  });
+
+  it("creates the team on a rerun after an install that failed before Postgres started", async () => {
+    // The first install generated the secrets, then could not pull the image: .env holds them,
+    // but there is no database, so install.sh keeps them and finds no earlier database.
+    const dir = home();
+    const ssh = sshServer({
+      install: ok("selfhost: kept the secrets already in .env\nselfhost: ready\n"),
+    });
+    const api = cloud([], origin, await selfhostServer());
+    const deps = io(dir, {}, { fetch: api.fetch, exec: ssh.exec });
+    const report = await runUp({ provider: "ssh", host: "203.0.113.10" }, deps);
+    expect(report.team).toMatchObject({ id: "default", name: "default" });
+    const text = deps.out.join("\n");
+    expect(text).not.toContain("The server already ran selfhost");
+    expect(text).toContain("Created team default (default).");
+  });
+
+  it("matches the line the embedded install.sh prints when it finds an earlier database", () => {
+    const install = STACK_FILES.find((file) => file.path === "install.sh")?.content ?? "";
+    expect(EXISTING_INSTALL.startsWith("selfhost: ")).toBe(true);
+    expect(install).toContain(`say "${EXISTING_INSTALL.slice("selfhost: ".length)}"`);
+    // Only behind the check that the Postgres volume holds a cluster, never for kept secrets.
+    const check = install.indexOf("-name PG_VERSION");
+    expect(check).toBeGreaterThan(-1);
+    expect(install.indexOf(EXISTING_INSTALL.slice("selfhost: ".length))).toBeGreaterThan(check);
+  });
+
+  it("names the CA that signs the certificate: Caddy's own for a .local name", async () => {
+    expect(caddyInternalName("selfhost-test.orb.local")).toBe(true);
+    expect(caddyInternalName("box.internal")).toBe(true);
+    expect(caddyInternalName("a.home.arpa")).toBe(true);
+    expect(caddyInternalName("selfhost.example.com")).toBe(false);
+    expect(caddyInternalName("1-2-3-4.sslip.io")).toBe(false);
+    expect(caddyInternalName("localization.example.com")).toBe(false);
+
+    const dir = home();
+    const ssh = sshServer();
+    const local = "https://selfhost-test.orb.local";
+    const api = cloud([], local);
+    const deps = io(dir, {}, { fetch: api.fetch, exec: ssh.exec });
+    await runUp({ provider: "ssh", host: "selfhost-test.orb.local", team: false }, deps);
+    const https = deps.out.find((line) => line.startsWith("  HTTPS")) ?? "";
+    expect(https).toContain("certificate for selfhost-test.orb.local from Caddy's own local CA");
+    expect(https).not.toContain("Let's Encrypt");
+
+    const publicDir = home();
+    const named = io(
+      publicDir,
+      {},
+      { fetch: cloud([], "https://selfhost.example.com").fetch, exec: sshServer().exec },
+    );
+    await runUp({ provider: "ssh", host: "selfhost.example.com", team: false }, named);
+    expect(named.out.find((line) => line.startsWith("  HTTPS"))).toMatch(
+      /certificate for selfhost\.example\.com from Let's Encrypt through Caddy$/,
     );
   });
 

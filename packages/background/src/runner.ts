@@ -1,5 +1,11 @@
 import type { Fetch } from "@selfhost/package-guard";
-import type { RuntimeAdapter, Sandbox, SandboxCost, SandboxSpec } from "@selfhost/runtime";
+import {
+  labelValue,
+  type RuntimeAdapter,
+  type Sandbox,
+  type SandboxCost,
+  type SandboxSpec,
+} from "@selfhost/runtime";
 import {
   BACKGROUND_RUN_SCHEMA,
   type BackgroundAgent,
@@ -569,10 +575,17 @@ export function createRunner(options: RunnerOptions): Runner {
       const base: SandboxSpec = {
         timeoutMinutes: run.timeout_minutes + SANDBOX_GRACE_MINUTES,
         env: { SELFHOST_RUN_ID: run.id },
+        // A person id may be an email address, which providers refuse as a label value: it is
+        // hashed here, and the run in the ledger maps it back.
         labels: {
           selfhost_run: run.id,
           selfhost_team: run.team,
-          ...(run.person ? { selfhost_person: run.person } : {}),
+          ...(run.person ? { selfhost_person: labelValue(run.person) } : {}),
+        },
+        // Recorded on the run before the provider is waited on, so a create that fails or hangs
+        // later still leaves the sandbox's id where cancel, recover and the reaper look.
+        onCreated: async (id) => {
+          await save(entry, { sandbox_id: id, runtime: adapter.kind });
         },
       };
       sandbox = await adapter.create(
@@ -604,6 +617,7 @@ export function createRunner(options: RunnerOptions): Runner {
 
     const gateway = await options.gateway?.(entry.run);
     const env = {
+      ...agent.env,
       ...runEnv(entry.run, prepared.home, settings.policyText !== undefined),
       ...(gateway ? agent.gatewayEnv(gateway) : {}),
     };

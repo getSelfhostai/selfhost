@@ -112,6 +112,7 @@ export function fakeRuntime(options: FakeRuntimeOptions = {}): RuntimeAdapter & 
     async create(spec) {
       const sandbox = make(spec);
       sandboxes.set(sandbox.id, sandbox);
+      await spec.onCreated?.(sandbox.id);
       return sandbox;
     },
     async get(id) {

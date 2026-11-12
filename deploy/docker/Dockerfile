@@ -20,6 +20,15 @@ RUN pnpm --filter @selfhost/console build && pnpm --filter @selfhost/server buil
 # Production dependencies only: the bundle keeps hono, postgres and pglite external.
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm --filter @selfhost/server deploy --prod --legacy /out
+# The runtime SDKs background runs drive (E2B, Daytona, Modal, OpenSandbox): optional peer
+# dependencies of @selfhost/runtime, at the versions it pins. They go in /node_modules, which
+# Node searches after /app/node_modules, so the server's own tree stays as pnpm deployed it.
+RUN --mount=type=cache,id=npm,target=/root/.npm \
+    mkdir /runtimes && cd /runtimes && echo '{"private":true}' >package.json && \
+    npm install --omit=dev --no-audit --no-fund --no-package-lock $(node -p \
+      "Object.entries(require('/src/packages/runtime/package.json').peerDependencies).map(([n,v])=>n+'@'+v).join(' ')") && \
+    find node_modules -type f \( -name '*.map' -o -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts' \
+      -o -name 'README.md' -o -name 'CHANGELOG.md' \) -delete
 
 FROM ${NODE_IMAGE}
 ENV NODE_ENV=production \
@@ -30,6 +39,7 @@ WORKDIR /app
 COPY --from=build /out/package.json ./package.json
 COPY --from=build /out/node_modules ./node_modules
 COPY --from=build /out/dist ./dist
+COPY --from=build /runtimes/node_modules /node_modules
 # The data dir holds the generated API token when SELFHOST_TOKEN is unset, and the embedded
 # database when DATABASE_URL is unset.
 RUN mkdir -p /data && chown node:node /data

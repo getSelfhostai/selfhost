@@ -7,6 +7,7 @@ export {
 export {
   envSecrets,
   LogBuffer,
+  labelValue,
   MANAGED_LABEL,
   REPO_DIR,
   type SecretResolver,

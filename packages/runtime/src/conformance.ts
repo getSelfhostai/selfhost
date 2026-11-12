@@ -7,6 +7,7 @@ export const CONFORMANCE_CHECKS = [
   "create",
   "status.running",
   "exec.stdout",
+  "exec.multiline",
   "exec.exit_code",
   "exec.stderr",
   "exec.cwd_env",
@@ -149,6 +150,16 @@ export async function runConformance(
       expect(result.exitCode === 0, `exit code ${result.exitCode}`);
       expect(result.stdout.trim() === "selfhost-ok", `stdout was ${JSON.stringify(result.stdout)}`);
       expect(result.timedOut === false, "timedOut was true");
+    });
+    await check("exec.multiline", async () => {
+      const chunks: string[] = [];
+      const result = await live().exec("printf 'a\\nb\\nc'", {
+        onOutput: (chunk) => {
+          if (chunk.stream === "stdout") chunks.push(chunk.text);
+        },
+      });
+      expect(result.stdout === "a\nb\nc", `stdout was ${JSON.stringify(result.stdout)}`);
+      expect(chunks.join("") === "a\nb\nc", `onOutput streamed ${JSON.stringify(chunks.join(""))}`);
     });
     await check("exec.exit_code", async () => {
       const result = await live().exec("exit 3");

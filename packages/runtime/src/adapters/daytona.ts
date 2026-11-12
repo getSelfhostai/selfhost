@@ -8,6 +8,7 @@ import {
   labelsOf,
   loadSdk,
   MANAGED_LABEL,
+  providerLabels,
   secretValues,
   timedOutResult,
   withTimeout,
@@ -211,7 +212,9 @@ export function daytonaRuntime(options: AdapterOptions<DaytonaSdk>): RuntimeAdap
                 : {}),
             }
           : { ...base, ...(image ? { snapshot: image } : {}) };
-      const sandbox = wrap(await daytona.create(params));
+      const box = await daytona.create(params);
+      await spec.onCreated?.(box.id);
+      const sandbox = wrap(box);
       if (spec.repo) {
         const cloned = await sandbox.exec(cloneCommand(spec.repo));
         if (cloned.exitCode !== 0) {
@@ -235,7 +238,7 @@ export function daytonaRuntime(options: AdapterOptions<DaytonaSdk>): RuntimeAdap
       const daytona = await connect();
       const out: { id: string; state: SandboxState }[] = [];
       for await (const box of daytona.list({
-        labels: { ...labels, [MANAGED_LABEL.key]: MANAGED_LABEL.value },
+        labels: providerLabels({ ...labels, [MANAGED_LABEL.key]: MANAGED_LABEL.value }),
       })) {
         const state = daytonaState(box.state);
         if (stopped.has(box.id) || state === "stopped" || !labelsMatch(box.labels, labels))
