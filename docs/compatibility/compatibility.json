@@ -1,7 +1,7 @@
 {
   "schema": "selfhost.vendor_compat/v1",
-  "updated": "2026-11-13T07:25:27.902Z",
-  "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/43385386841",
+  "updated": "2026-11-13T20:07:50.492Z",
+  "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/43498289146",
   "event_schemas": {
     "schema": "selfhost.event_versions/v1",
     "support_months": 12,
@@ -27,7 +27,7 @@
           "live": "not_run",
           "first_tested": "2026-11-13",
           "last_tested": "2026-11-13",
-          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/43385386841",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/43498289146",
           "checks": [
             {
               "id": "install",
@@ -483,6 +483,90 @@
       "source": "@openai/codex",
       "versions": [
         {
+          "version": "0.169.0",
+          "status": "passing",
+          "live": "not_run",
+          "first_tested": "2026-11-13",
+          "last_tested": "2026-11-13",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/43498289146",
+          "checks": [
+            {
+              "id": "install",
+              "status": "pass",
+              "detail": "Installed @openai/codex@0.169.0, linux-x64"
+            },
+            {
+              "id": "version",
+              "status": "pass",
+              "detail": "Reports 0.169.0"
+            },
+            {
+              "id": "hook-events",
+              "status": "pass",
+              "detail": "All 13 hook events found: SessionStart, SessionEnd, UserPromptSubmit, PreToolUse, PermissionRequest, PostToolUse, PostModelRequest, Stop, SubagentStart, SubagentStop, PreCompact, PostCompact, Interrupt"
+            },
+            {
+              "id": "hook-fields",
+              "status": "pass",
+              "detail": "All 18 payload, notify and answer fields found: cwd, hook_event_name, prompt, reason, session_id, source, tool_input, tool_name, trigger, turn_id, agent-turn-complete, thread-id, turn-id, input-messages, hookSpecificOutput, permissionDecision, permissionDecisionReason, systemMessage"
+            },
+            {
+              "id": "config",
+              "status": "pass",
+              "detail": "Codex loads the requirements.toml selfhost compiles for this version"
+            },
+            {
+              "id": "gateway-connect",
+              "status": "pass",
+              "detail": "With the settings selfhost gateway connect writes, POST /llm/openai/v1/responses reached the stand-in gateway with the virtual key in authorization"
+            },
+            {
+              "id": "live-session",
+              "status": "skip",
+              "detail": "No OPENAI_API_KEY secret, so no live session ran"
+            },
+            {
+              "id": "suite:schema",
+              "status": "pass",
+              "detail": "Hook payload fixtures and frozen v1 contracts against the payload schemas, and event schema versions"
+            },
+            {
+              "id": "suite:hook-mappers",
+              "status": "pass",
+              "detail": "Hook payload fixtures mapped to ledger events, and ingest of older event versions"
+            },
+            {
+              "id": "suite:importers",
+              "status": "pass",
+              "detail": "Fixture session logs through the local log importers"
+            },
+            {
+              "id": "suite:hooks",
+              "status": "pass",
+              "detail": "Each agent's pre-tool payloads through selfhost hook, the spool and the ledger"
+            },
+            {
+              "id": "suite:compile",
+              "status": "pass",
+              "detail": "Policy compile golden files per vendor config version"
+            },
+            {
+              "id": "suite:gateway-connect",
+              "status": "pass",
+              "detail": "selfhost gateway connect's settings on fixture configs per agent, and disconnect restoring them byte for byte"
+            },
+            {
+              "id": "suite:context",
+              "status": "pass",
+              "detail": "Context compile golden files per agent"
+            }
+          ],
+          "unmodeled_events": [],
+          "notes": [
+            "No compile golden files for 0.169.0 yet (newest: 0.167.0). Review its config changes and add it to VENDOR_VERSIONS."
+          ]
+        },
+        {
           "version": "0.168.0",
           "status": "passing",
           "live": "not_run",
@@ -829,7 +913,7 @@
           "live": "not_run",
           "first_tested": "2026-11-11",
           "last_tested": "2026-11-13",
-          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/43385386841",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/43498289146",
           "checks": [
             {
               "id": "install",
@@ -940,7 +1024,7 @@
           "live": "not_run",
           "first_tested": "2026-11-08",
           "last_tested": "2026-11-13",
-          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/43385386841",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/43498289146",
           "checks": [
             {
               "id": "install",
