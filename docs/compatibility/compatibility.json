@@ -1,7 +1,7 @@
 {
   "schema": "selfhost.vendor_compat/v1",
-  "updated": "2026-11-14T07:06:37.263Z",
-  "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/43569340547",
+  "updated": "2026-11-16T13:45:10.482Z",
+  "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/43878447061",
   "event_schemas": {
     "schema": "selfhost.event_versions/v1",
     "support_months": 12,
@@ -26,8 +26,8 @@
           "status": "passing",
           "live": "not_run",
           "first_tested": "2026-11-14",
-          "last_tested": "2026-11-14",
-          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/43569340547",
+          "last_tested": "2026-11-16",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/43878447061",
           "checks": [
             {
               "id": "install",
@@ -601,8 +601,8 @@
           "status": "passing",
           "live": "not_run",
           "first_tested": "2026-11-13",
-          "last_tested": "2026-11-14",
-          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/43569340547",
+          "last_tested": "2026-11-16",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/43878447061",
           "checks": [
             {
               "id": "install",
@@ -1026,8 +1026,8 @@
           "status": "passing",
           "live": "not_run",
           "first_tested": "2026-11-14",
-          "last_tested": "2026-11-14",
-          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/43569340547",
+          "last_tested": "2026-11-16",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/43878447061",
           "checks": [
             {
               "id": "install",
@@ -1189,8 +1189,8 @@
           "status": "passing",
           "live": "not_run",
           "first_tested": "2026-11-08",
-          "last_tested": "2026-11-14",
-          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/43569340547",
+          "last_tested": "2026-11-16",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/43878447061",
           "checks": [
             {
               "id": "install",
