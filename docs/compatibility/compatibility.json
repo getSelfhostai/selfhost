@@ -1,7 +1,7 @@
 {
   "schema": "selfhost.vendor_compat/v1",
-  "updated": "2026-11-16T22:35:16.470Z",
-  "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/43971211598",
+  "updated": "2026-11-17T08:33:40.177Z",
+  "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/44047538095",
   "event_schemas": {
     "schema": "selfhost.event_versions/v1",
     "support_months": 12,
@@ -26,8 +26,8 @@
           "status": "passing",
           "live": "not_run",
           "first_tested": "2026-11-16",
-          "last_tested": "2026-11-16",
-          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/43971211598",
+          "last_tested": "2026-11-17",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/44047538095",
           "checks": [
             {
               "id": "install",
@@ -715,8 +715,8 @@
           "status": "passing",
           "live": "not_run",
           "first_tested": "2026-11-13",
-          "last_tested": "2026-11-16",
-          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/43971211598",
+          "last_tested": "2026-11-17",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/44047538095",
           "checks": [
             {
               "id": "install",
@@ -1140,8 +1140,8 @@
           "status": "passing",
           "live": "not_run",
           "first_tested": "2026-11-14",
-          "last_tested": "2026-11-16",
-          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/43971211598",
+          "last_tested": "2026-11-17",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/44047538095",
           "checks": [
             {
               "id": "install",
@@ -1298,6 +1298,63 @@
       "name": "OpenCode",
       "source": "opencode-ai",
       "versions": [
+        {
+          "version": "1.19.6",
+          "status": "broken",
+          "live": "not_run",
+          "first_tested": "2026-11-17",
+          "last_tested": "2026-11-17",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/44047538095",
+          "checks": [
+            {
+              "id": "install",
+              "status": "pass",
+              "detail": "Installed opencode-ai@1.19.6, linux-x64"
+            },
+            {
+              "id": "version",
+              "status": "pass",
+              "detail": "Reports 1.19.6"
+            },
+            {
+              "id": "hook-events",
+              "status": "pass",
+              "detail": "All 1 plugin hooks found: tool.execute.before"
+            },
+            {
+              "id": "hook-fields",
+              "status": "pass",
+              "detail": "All 2 plugin event fields found: sessionID, callID"
+            },
+            {
+              "id": "gateway-connect",
+              "status": "fail",
+              "detail": "No /llm/anthropic/v1/messages request with the virtual key.\nThe stand-in gateway got no request.\n\u001b[91m\u001b[1mError: \u001b[0m{\n  \"name\": \"UnknownError\",\n  \"data\": {\n    \"message\": \"Unexpected server error. Check server logs for details.\",\n    \"ref\": \"err_5229075c\"\n  }\n}"
+            },
+            {
+              "id": "live-session",
+              "status": "skip",
+              "detail": "No live session for this CLI yet"
+            },
+            {
+              "id": "suite:hooks",
+              "status": "pass",
+              "detail": "Each agent's pre-tool payloads through selfhost hook, the spool and the ledger"
+            },
+            {
+              "id": "suite:gateway-connect",
+              "status": "pass",
+              "detail": "selfhost gateway connect's settings on fixture configs per agent, and disconnect restoring them byte for byte"
+            },
+            {
+              "id": "suite:context",
+              "status": "pass",
+              "detail": "Context compile golden files per agent"
+            }
+          ],
+          "unmodeled_events": [],
+          "notes": []
+        },
         {
           "version": "1.19.5",
           "status": "passing",
