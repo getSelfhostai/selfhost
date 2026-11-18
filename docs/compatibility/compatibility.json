@@ -1,7 +1,7 @@
 {
   "schema": "selfhost.vendor_compat/v1",
-  "updated": "2026-11-17T21:25:08.072Z",
-  "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/44179223325",
+  "updated": "2026-11-18T08:00:36.483Z",
+  "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/44263048378",
   "event_schemas": {
     "schema": "selfhost.event_versions/v1",
     "support_months": 12,
@@ -21,6 +21,120 @@
       "name": "Claude Code",
       "source": "@anthropic-ai/claude-code",
       "versions": [
+        {
+          "version": "2.1.327",
+          "status": "passing",
+          "live": "not_run",
+          "first_tested": "2026-11-18",
+          "last_tested": "2026-11-18",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/44263048378",
+          "checks": [
+            {
+              "id": "install",
+              "status": "pass",
+              "detail": "Installed @anthropic-ai/claude-code@2.1.327, linux-x64"
+            },
+            {
+              "id": "version",
+              "status": "pass",
+              "detail": "Reports 2.1.327"
+            },
+            {
+              "id": "hook-events",
+              "status": "pass",
+              "detail": "claude doctor lists all 9 hook events selfhost uses among its 33"
+            },
+            {
+              "id": "hook-fields",
+              "status": "pass",
+              "detail": "All 17 payload and answer fields found: cwd, hook_event_name, message, prompt, reason, session_id, source, tool_input, tool_name, tool_response, trigger, transcript_path, tool_use_id, hookSpecificOutput, permissionDecision, permissionDecisionReason, systemMessage"
+            },
+            {
+              "id": "tool-inputs",
+              "status": "pass",
+              "detail": "sdk-tools.d.ts still declares BashInput.command, FileReadInput.file_path, FileEditInput.file_path, FileWriteInput.file_path, NotebookEditInput.notebook_path, WebFetchInput.url"
+            },
+            {
+              "id": "config",
+              "status": "pass",
+              "detail": "claude doctor accepts the managed settings selfhost compiles for this version"
+            },
+            {
+              "id": "gateway-connect",
+              "status": "pass",
+              "detail": "With the settings selfhost gateway connect writes, POST /llm/anthropic/v1/messages reached the stand-in gateway with the virtual key in authorization"
+            },
+            {
+              "id": "live-session",
+              "status": "skip",
+              "detail": "No ANTHROPIC_API_KEY secret, so no live session ran"
+            },
+            {
+              "id": "suite:schema",
+              "status": "pass",
+              "detail": "Hook payload fixtures and frozen v1 contracts against the payload schemas, and event schema versions"
+            },
+            {
+              "id": "suite:hook-mappers",
+              "status": "pass",
+              "detail": "Hook payload fixtures mapped to ledger events, and ingest of older event versions"
+            },
+            {
+              "id": "suite:importers",
+              "status": "pass",
+              "detail": "Fixture session logs through the local log importers"
+            },
+            {
+              "id": "suite:hooks",
+              "status": "pass",
+              "detail": "Each agent's pre-tool payloads through selfhost hook, the spool and the ledger"
+            },
+            {
+              "id": "suite:compile",
+              "status": "pass",
+              "detail": "Policy compile golden files per vendor config version"
+            },
+            {
+              "id": "suite:gateway-connect",
+              "status": "pass",
+              "detail": "selfhost gateway connect's settings on fixture configs per agent, and disconnect restoring them byte for byte"
+            },
+            {
+              "id": "suite:context",
+              "status": "pass",
+              "detail": "Context compile golden files per agent"
+            }
+          ],
+          "unmodeled_events": [
+            "PostToolUseFailure",
+            "PostToolBatch",
+            "UserPromptExpansion",
+            "StopFailure",
+            "SubagentStart",
+            "PostCompact",
+            "PreModelSwitch",
+            "PostModelSwitch",
+            "PermissionRequest",
+            "PermissionDenied",
+            "Setup",
+            "TeammateIdle",
+            "TaskCreated",
+            "TaskCompleted",
+            "Elicitation",
+            "ElicitationResult",
+            "ConfigChange",
+            "WorktreeCreate",
+            "WorktreeRemove",
+            "InstructionsLoaded",
+            "CwdChanged",
+            "FileChanged",
+            "DirectoryAdded",
+            "MessageDisplay"
+          ],
+          "notes": [
+            "No compile golden files for 2.1.327 yet (newest: 2.1.319). Review its config changes and add it to VENDOR_VERSIONS."
+          ]
+        },
         {
           "version": "2.1.326",
           "status": "passing",
@@ -711,6 +825,90 @@
       "source": "@openai/codex",
       "versions": [
         {
+          "version": "0.170.0",
+          "status": "passing",
+          "live": "not_run",
+          "first_tested": "2026-11-18",
+          "last_tested": "2026-11-18",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/44263048378",
+          "checks": [
+            {
+              "id": "install",
+              "status": "pass",
+              "detail": "Installed @openai/codex@0.170.0, linux-x64"
+            },
+            {
+              "id": "version",
+              "status": "pass",
+              "detail": "Reports 0.170.0"
+            },
+            {
+              "id": "hook-events",
+              "status": "pass",
+              "detail": "All 13 hook events found: SessionStart, SessionEnd, UserPromptSubmit, PreToolUse, PermissionRequest, PostToolUse, PostModelRequest, Stop, SubagentStart, SubagentStop, PreCompact, PostCompact, Interrupt"
+            },
+            {
+              "id": "hook-fields",
+              "status": "pass",
+              "detail": "All 18 payload, notify and answer fields found: cwd, hook_event_name, prompt, reason, session_id, source, tool_input, tool_name, trigger, turn_id, agent-turn-complete, thread-id, turn-id, input-messages, hookSpecificOutput, permissionDecision, permissionDecisionReason, systemMessage"
+            },
+            {
+              "id": "config",
+              "status": "pass",
+              "detail": "Codex loads the requirements.toml selfhost compiles for this version"
+            },
+            {
+              "id": "gateway-connect",
+              "status": "pass",
+              "detail": "With the settings selfhost gateway connect writes, POST /llm/openai/v1/responses reached the stand-in gateway with the virtual key in authorization"
+            },
+            {
+              "id": "live-session",
+              "status": "skip",
+              "detail": "No OPENAI_API_KEY secret, so no live session ran"
+            },
+            {
+              "id": "suite:schema",
+              "status": "pass",
+              "detail": "Hook payload fixtures and frozen v1 contracts against the payload schemas, and event schema versions"
+            },
+            {
+              "id": "suite:hook-mappers",
+              "status": "pass",
+              "detail": "Hook payload fixtures mapped to ledger events, and ingest of older event versions"
+            },
+            {
+              "id": "suite:importers",
+              "status": "pass",
+              "detail": "Fixture session logs through the local log importers"
+            },
+            {
+              "id": "suite:hooks",
+              "status": "pass",
+              "detail": "Each agent's pre-tool payloads through selfhost hook, the spool and the ledger"
+            },
+            {
+              "id": "suite:compile",
+              "status": "pass",
+              "detail": "Policy compile golden files per vendor config version"
+            },
+            {
+              "id": "suite:gateway-connect",
+              "status": "pass",
+              "detail": "selfhost gateway connect's settings on fixture configs per agent, and disconnect restoring them byte for byte"
+            },
+            {
+              "id": "suite:context",
+              "status": "pass",
+              "detail": "Context compile golden files per agent"
+            }
+          ],
+          "unmodeled_events": [],
+          "notes": [
+            "No compile golden files for 0.170.0 yet (newest: 0.167.0). Review its config changes and add it to VENDOR_VERSIONS."
+          ]
+        },
+        {
           "version": "0.169.0",
           "status": "passing",
           "live": "not_run",
@@ -1136,6 +1334,58 @@
       "source": "https://cursor.com/install",
       "versions": [
         {
+          "version": "2026.11.17-f532c45",
+          "status": "passing",
+          "live": "not_run",
+          "first_tested": "2026-11-18",
+          "last_tested": "2026-11-18",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/44263048378",
+          "checks": [
+            {
+              "id": "install",
+              "status": "pass",
+              "detail": "Installed https://cursor.com/install (2026.11.17-f532c45), linux-x64"
+            },
+            {
+              "id": "version",
+              "status": "pass",
+              "detail": "Reports 2026.11.17-f532c45"
+            },
+            {
+              "id": "hook-events",
+              "status": "pass",
+              "detail": "All 12 hook events found: sessionStart, sessionEnd, beforeSubmitPrompt, preToolUse, postToolUse, beforeShellExecution, afterShellExecution, beforeMCPExecution, afterMCPExecution, beforeReadFile, afterFileEdit, stop"
+            },
+            {
+              "id": "hook-fields",
+              "status": "pass",
+              "detail": "All 8 payload and answer fields found: hook_event_name, conversation_id, workspace_roots, tool_name, tool_input, file_path, user_message, agent_message"
+            },
+            {
+              "id": "live-session",
+              "status": "skip",
+              "detail": "No live session for this CLI yet"
+            },
+            {
+              "id": "suite:hooks",
+              "status": "pass",
+              "detail": "Each agent's pre-tool payloads through selfhost hook, the spool and the ledger"
+            },
+            {
+              "id": "suite:compile",
+              "status": "pass",
+              "detail": "Policy compile golden files per vendor config version"
+            },
+            {
+              "id": "suite:context",
+              "status": "pass",
+              "detail": "Context compile golden files per agent"
+            }
+          ],
+          "unmodeled_events": [],
+          "notes": []
+        },
+        {
           "version": "2026.11.13-eacade1",
           "status": "passing",
           "live": "not_run",
@@ -1303,8 +1553,8 @@
           "status": "broken",
           "live": "not_run",
           "first_tested": "2026-11-17",
-          "last_tested": "2026-11-17",
-          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/44179223325",
+          "last_tested": "2026-11-18",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/44263048378",
           "checks": [
             {
               "id": "install",
@@ -1329,7 +1579,7 @@
             {
               "id": "gateway-connect",
               "status": "fail",
-              "detail": "No /llm/anthropic/v1/messages request with the virtual key.\nThe stand-in gateway got no request.\n\u001b[91m\u001b[1mError: \u001b[0m{\n  \"name\": \"UnknownError\",\n  \"data\": {\n    \"message\": \"Unexpected server error. Check server logs for details.\",\n    \"ref\": \"err_3f323fff\"\n  }\n}"
+              "detail": "No /llm/anthropic/v1/messages request with the virtual key.\nThe stand-in gateway got no request.\n\u001b[91m\u001b[1mError: \u001b[0m{\n  \"name\": \"UnknownError\",\n  \"data\": {\n    \"message\": \"Unexpected server error. Check server logs for details.\",\n    \"ref\": \"err_1e66789a\"\n  }\n}"
             },
             {
               "id": "live-session",
