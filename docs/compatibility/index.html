@@ -68,13 +68,13 @@ dd { margin: 2px 0 0 0; color: var(--muted); }
 <body>
 <main>
 <h1>Vendor compatibility</h1>
-<p>Each new release of the coding agent CLIs selfhost supports is installed in CI and checked against selfhost's hooks, log importers, policy compiler and gateway connect: every week, and within hours of a release. A failing run marks that release broken here and opens an issue. Last run 2026-11-21 19:51 UTC, <a href="https://github.com/getSelfhostai/selfhost/actions/runs/44943033191">CI run</a>.</p>
+<p>Each new release of the coding agent CLIs selfhost supports is installed in CI and checked against selfhost's hooks, log importers, policy compiler and gateway connect: every week, and within hours of a release. A failing run marks that release broken here and opens an issue. Last run 2026-11-22 07:32 UTC, <a href="https://github.com/getSelfhostai/selfhost/actions/runs/44998517347">CI run</a>.</p>
 <div class="scroll"><table>
 <thead><tr><th>CLI</th><th>Newest tested</th><th>Status</th><th>Live session</th></tr></thead>
 <tbody>
 <tr><td><a href="#claude_code">Claude Code</a></td><td><code>2.1.330</code></td><td><span class="status status-passing">Passing</span></td><td><span class="status status-not-run">Not run</span></td></tr>
 <tr><td><a href="#codex">Codex</a></td><td><code>0.171.0</code></td><td><span class="status status-passing">Passing</span></td><td><span class="status status-not-run">Not run</span></td></tr>
-<tr><td><a href="#cursor">Cursor CLI</a></td><td><code>2026.11.19-f005e9d</code></td><td><span class="status status-passing">Passing</span></td><td><span class="status status-not-run">Not run</span></td></tr>
+<tr><td><a href="#cursor">Cursor CLI</a></td><td><code>2026.11.22-e9042b2</code></td><td><span class="status status-passing">Passing</span></td><td><span class="status status-not-run">Not run</span></td></tr>
 <tr><td><a href="#opencode">OpenCode</a></td><td><code>1.19.6</code></td><td><span class="status status-broken">Broken</span></td><td><span class="status status-not-run">Not run</span></td></tr>
 </tbody></table></div>
 <section id="gateway-connect"><h2>Gateway connect</h2>
@@ -86,7 +86,7 @@ dd { margin: 2px 0 0 0; color: var(--muted); }
 <tr><td>Codex</td><td>model_provider and model_providers.selfhost at the top of ~/.codex/config.toml</td><td><code>0.171.0</code></td><td><span class="status status-pass">Works</span></td></tr>
 <tr><td>OpenCode</td><td>provider.anthropic and provider.openai baseURL and apiKey in opencode.json</td><td><code>1.19.6</code></td><td><span class="status status-fail">Broken</span></td></tr>
 <tr><td>Goose</td><td>a custom provider, custom_providers/selfhost.json, picked with --provider selfhost</td><td></td><td><span class="muted">Fixture tests only: not installed by CI yet</span></td></tr>
-<tr><td>Cursor CLI</td><td>Nothing: its model traffic leaves from Cursor's servers. Usage comes from Cursor's admin API.</td><td><code>2026.11.19-f005e9d</code></td><td><span class="muted">Not applicable</span></td></tr>
+<tr><td>Cursor CLI</td><td>Nothing: its model traffic leaves from Cursor's servers. Usage comes from Cursor's admin API.</td><td><code>2026.11.22-e9042b2</code></td><td><span class="muted">Not applicable</span></td></tr>
 <tr><td>GitHub Copilot</td><td>Nothing: its model traffic leaves from GitHub's servers. Usage comes from GitHub's admin API.</td><td></td><td><span class="muted">Not applicable</span></td></tr>
 </tbody></table></div>
 </section>
@@ -101,7 +101,7 @@ dd { margin: 2px 0 0 0; color: var(--muted); }
 <td><span class="status status-not-run">Not run</span></td>
 <td><span class="status status-pass">Works</span></td>
 <td>2026-11-21</td>
-<td>2026-11-21</td>
+<td>2026-11-22</td>
 <td><details><summary>Checks</summary>
 <table class="checks"><thead><tr><th>Check</th><th>Result</th><th>Detail</th></tr></thead>
 <tbody>
@@ -123,7 +123,7 @@ dd { margin: 2px 0 0 0; color: var(--muted); }
 </tbody></table>
 <p>Hook events not modeled by selfhost yet: <code>PostToolUseFailure</code>, <code>PostToolBatch</code>, <code>UserPromptExpansion</code>, <code>StopFailure</code>, <code>SubagentStart</code>, <code>PostCompact</code>, <code>PreModelSwitch</code>, <code>PostModelSwitch</code>, <code>PermissionRequest</code>, <code>PermissionDenied</code>, <code>Setup</code>, <code>TeammateIdle</code>, <code>TaskCreated</code>, <code>TaskCompleted</code>, <code>Elicitation</code>, <code>ElicitationResult</code>, <code>ConfigChange</code>, <code>WorktreeCreate</code>, <code>WorktreeRemove</code>, <code>InstructionsLoaded</code>, <code>CwdChanged</code>, <code>FileChanged</code>, <code>DirectoryAdded</code>, <code>MessageDisplay</code></p>
 <p>No compile golden files for 2.1.330 yet (newest: 2.1.319). Review its config changes and add it to VENDOR_VERSIONS.</p>
-<p><a href="https://github.com/getSelfhostai/selfhost/actions/runs/44943033191">CI run</a></p>
+<p><a href="https://github.com/getSelfhostai/selfhost/actions/runs/44998517347">CI run</a></p>
 </details></td>
 </tr>
 <tr>
@@ -416,7 +416,7 @@ dd { margin: 2px 0 0 0; color: var(--muted); }
 <td><span class="status status-not-run">Not run</span></td>
 <td><span class="status status-pass">Works</span></td>
 <td>2026-11-20</td>
-<td>2026-11-21</td>
+<td>2026-11-22</td>
 <td><details><summary>Checks</summary>
 <table class="checks"><thead><tr><th>Check</th><th>Result</th><th>Detail</th></tr></thead>
 <tbody>
@@ -437,7 +437,7 @@ dd { margin: 2px 0 0 0; color: var(--muted); }
 </tbody></table>
 
 <p>No compile golden files for 0.171.0 yet (newest: 0.167.0). Review its config changes and add it to VENDOR_VERSIONS.</p>
-<p><a href="https://github.com/getSelfhostai/selfhost/actions/runs/44943033191">CI run</a></p>
+<p><a href="https://github.com/getSelfhostai/selfhost/actions/runs/44998517347">CI run</a></p>
 </details></td>
 </tr>
 <tr>
@@ -626,6 +626,29 @@ dd { margin: 2px 0 0 0; color: var(--muted); }
 <thead><tr><th>Version</th><th>Status</th><th>Live session</th><th>Gateway connect</th><th>First tested</th><th>Last tested</th><th></th></tr></thead>
 <tbody>
 <tr>
+<td><code>2026.11.22-e9042b2</code></td>
+<td><span class="status status-passing">Passing</span> <span class="muted"></span></td>
+<td><span class="status status-not-run">Not run</span></td>
+<td><span class="muted">Not applicable</span></td>
+<td>2026-11-22</td>
+<td>2026-11-22</td>
+<td><details><summary>Checks</summary>
+<table class="checks"><thead><tr><th>Check</th><th>Result</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td><code>install</code></td><td><span class="status status-pass">pass</span></td><td><pre>Installed https://cursor.com/install (2026.11.22-e9042b2), linux-x64</pre></td></tr>
+<tr><td><code>version</code></td><td><span class="status status-pass">pass</span></td><td><pre>Reports 2026.11.22-e9042b2</pre></td></tr>
+<tr><td><code>hook-events</code></td><td><span class="status status-pass">pass</span></td><td><pre>All 12 hook events found: sessionStart, sessionEnd, beforeSubmitPrompt, preToolUse, postToolUse, beforeShellExecution, afterShellExecution, beforeMCPExecution, afterMCPExecution, beforeReadFile, afterFileEdit, stop</pre></td></tr>
+<tr><td><code>hook-fields</code></td><td><span class="status status-pass">pass</span></td><td><pre>All 8 payload and answer fields found: hook_event_name, conversation_id, workspace_roots, tool_name, tool_input, file_path, user_message, agent_message</pre></td></tr>
+<tr><td><code>live-session</code></td><td><span class="status status-skip">skipped</span></td><td><pre>No live session for this CLI yet</pre></td></tr>
+<tr><td><code>suite:hooks</code></td><td><span class="status status-pass">pass</span></td><td><pre>Each agent's pre-tool payloads through selfhost hook, the spool and the ledger</pre></td></tr>
+<tr><td><code>suite:compile</code></td><td><span class="status status-pass">pass</span></td><td><pre>Policy compile golden files per vendor config version</pre></td></tr>
+<tr><td><code>suite:context</code></td><td><span class="status status-pass">pass</span></td><td><pre>Context compile golden files per agent</pre></td></tr>
+</tbody></table>
+
+<p><a href="https://github.com/getSelfhostai/selfhost/actions/runs/44998517347">CI run</a></p>
+</details></td>
+</tr>
+<tr>
 <td><code>2026.11.19-f005e9d</code></td>
 <td><span class="status status-passing">Passing</span> <span class="muted"></span></td>
 <td><span class="status status-not-run">Not run</span></td>
@@ -752,7 +775,7 @@ dd { margin: 2px 0 0 0; color: var(--muted); }
 <td><span class="status status-not-run">Not run</span></td>
 <td><span class="status status-fail">Broken</span></td>
 <td>2026-11-17</td>
-<td>2026-11-21</td>
+<td>2026-11-22</td>
 <td><details><summary>Checks</summary>
 <table class="checks"><thead><tr><th>Check</th><th>Result</th><th>Detail</th></tr></thead>
 <tbody>
@@ -766,7 +789,7 @@ The stand-in gateway got no request.
   &quot;name&quot;: &quot;UnknownError&quot;,
   &quot;data&quot;: {
     &quot;message&quot;: &quot;Unexpected server error. Check server logs for details.&quot;,
-    &quot;ref&quot;: &quot;err_3730092d&quot;
+    &quot;ref&quot;: &quot;err_4880c5de&quot;
   }
 }</pre></td></tr>
 <tr><td><code>live-session</code></td><td><span class="status status-skip">skipped</span></td><td><pre>No live session for this CLI yet</pre></td></tr>
@@ -775,7 +798,7 @@ The stand-in gateway got no request.
 <tr><td><code>suite:context</code></td><td><span class="status status-pass">pass</span></td><td><pre>Context compile golden files per agent</pre></td></tr>
 </tbody></table>
 
-<p><a href="https://github.com/getSelfhostai/selfhost/actions/runs/44943033191">CI run</a></p>
+<p><a href="https://github.com/getSelfhostai/selfhost/actions/runs/44998517347">CI run</a></p>
 </details></td>
 </tr>
 <tr>

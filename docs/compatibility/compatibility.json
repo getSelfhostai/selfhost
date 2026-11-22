@@ -1,7 +1,7 @@
 {
   "schema": "selfhost.vendor_compat/v1",
-  "updated": "2026-11-21T19:51:55.727Z",
-  "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/44943033191",
+  "updated": "2026-11-22T07:32:17.298Z",
+  "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/44998517347",
   "event_schemas": {
     "schema": "selfhost.event_versions/v1",
     "support_months": 12,
@@ -26,8 +26,8 @@
           "status": "passing",
           "live": "not_run",
           "first_tested": "2026-11-21",
-          "last_tested": "2026-11-21",
-          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/44943033191",
+          "last_tested": "2026-11-22",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/44998517347",
           "checks": [
             {
               "id": "install",
@@ -1171,8 +1171,8 @@
           "status": "passing",
           "live": "not_run",
           "first_tested": "2026-11-20",
-          "last_tested": "2026-11-21",
-          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/44943033191",
+          "last_tested": "2026-11-22",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/44998517347",
           "checks": [
             {
               "id": "install",
@@ -1760,6 +1760,58 @@
       "source": "https://cursor.com/install",
       "versions": [
         {
+          "version": "2026.11.22-e9042b2",
+          "status": "passing",
+          "live": "not_run",
+          "first_tested": "2026-11-22",
+          "last_tested": "2026-11-22",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/44998517347",
+          "checks": [
+            {
+              "id": "install",
+              "status": "pass",
+              "detail": "Installed https://cursor.com/install (2026.11.22-e9042b2), linux-x64"
+            },
+            {
+              "id": "version",
+              "status": "pass",
+              "detail": "Reports 2026.11.22-e9042b2"
+            },
+            {
+              "id": "hook-events",
+              "status": "pass",
+              "detail": "All 12 hook events found: sessionStart, sessionEnd, beforeSubmitPrompt, preToolUse, postToolUse, beforeShellExecution, afterShellExecution, beforeMCPExecution, afterMCPExecution, beforeReadFile, afterFileEdit, stop"
+            },
+            {
+              "id": "hook-fields",
+              "status": "pass",
+              "detail": "All 8 payload and answer fields found: hook_event_name, conversation_id, workspace_roots, tool_name, tool_input, file_path, user_message, agent_message"
+            },
+            {
+              "id": "live-session",
+              "status": "skip",
+              "detail": "No live session for this CLI yet"
+            },
+            {
+              "id": "suite:hooks",
+              "status": "pass",
+              "detail": "Each agent's pre-tool payloads through selfhost hook, the spool and the ledger"
+            },
+            {
+              "id": "suite:compile",
+              "status": "pass",
+              "detail": "Policy compile golden files per vendor config version"
+            },
+            {
+              "id": "suite:context",
+              "status": "pass",
+              "detail": "Context compile golden files per agent"
+            }
+          ],
+          "unmodeled_events": [],
+          "notes": []
+        },
+        {
           "version": "2026.11.19-f005e9d",
           "status": "passing",
           "live": "not_run",
@@ -2031,8 +2083,8 @@
           "status": "broken",
           "live": "not_run",
           "first_tested": "2026-11-17",
-          "last_tested": "2026-11-21",
-          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/44943033191",
+          "last_tested": "2026-11-22",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/44998517347",
           "checks": [
             {
               "id": "install",
@@ -2057,7 +2109,7 @@
             {
               "id": "gateway-connect",
               "status": "fail",
-              "detail": "No /llm/anthropic/v1/messages request with the virtual key.\nThe stand-in gateway got no request.\n\u001b[91m\u001b[1mError: \u001b[0m{\n  \"name\": \"UnknownError\",\n  \"data\": {\n    \"message\": \"Unexpected server error. Check server logs for details.\",\n    \"ref\": \"err_3730092d\"\n  }\n}"
+              "detail": "No /llm/anthropic/v1/messages request with the virtual key.\nThe stand-in gateway got no request.\n\u001b[91m\u001b[1mError: \u001b[0m{\n  \"name\": \"UnknownError\",\n  \"data\": {\n    \"message\": \"Unexpected server error. Check server logs for details.\",\n    \"ref\": \"err_4880c5de\"\n  }\n}"
             },
             {
               "id": "live-session",
