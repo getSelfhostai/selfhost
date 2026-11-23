@@ -1,7 +1,7 @@
 {
   "schema": "selfhost.vendor_compat/v1",
-  "updated": "2026-11-22T20:01:11.682Z",
-  "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45063810149",
+  "updated": "2026-11-23T08:20:40.963Z",
+  "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45137569215",
   "event_schemas": {
     "schema": "selfhost.event_versions/v1",
     "support_months": 12,
@@ -26,8 +26,8 @@
           "status": "passing",
           "live": "not_run",
           "first_tested": "2026-11-21",
-          "last_tested": "2026-11-22",
-          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45063810149",
+          "last_tested": "2026-11-23",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45137569215",
           "checks": [
             {
               "id": "install",
@@ -1171,8 +1171,8 @@
           "status": "passing",
           "live": "not_run",
           "first_tested": "2026-11-20",
-          "last_tested": "2026-11-22",
-          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45063810149",
+          "last_tested": "2026-11-23",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45137569215",
           "checks": [
             {
               "id": "install",
@@ -1764,8 +1764,8 @@
           "status": "passing",
           "live": "not_run",
           "first_tested": "2026-11-22",
-          "last_tested": "2026-11-22",
-          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45063810149",
+          "last_tested": "2026-11-23",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45137569215",
           "checks": [
             {
               "id": "install",
@@ -2083,8 +2083,8 @@
           "status": "broken",
           "live": "not_run",
           "first_tested": "2026-11-17",
-          "last_tested": "2026-11-22",
-          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45063810149",
+          "last_tested": "2026-11-23",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45137569215",
           "checks": [
             {
               "id": "install",
@@ -2109,7 +2109,7 @@
             {
               "id": "gateway-connect",
               "status": "fail",
-              "detail": "No /llm/anthropic/v1/messages request with the virtual key.\nThe stand-in gateway got no request.\n\u001b[91m\u001b[1mError: \u001b[0m{\n  \"name\": \"UnknownError\",\n  \"data\": {\n    \"message\": \"Unexpected server error. Check server logs for details.\",\n    \"ref\": \"err_69920ac3\"\n  }\n}"
+              "detail": "No /llm/anthropic/v1/messages request with the virtual key.\nThe stand-in gateway got no request.\n\u001b[91m\u001b[1mError: \u001b[0m{\n  \"name\": \"UnknownError\",\n  \"data\": {\n    \"message\": \"Unexpected server error. Check server logs for details.\",\n    \"ref\": \"err_97319a1a\"\n  }\n}"
             },
             {
               "id": "live-session",
