@@ -1,7 +1,7 @@
 {
   "schema": "selfhost.vendor_compat/v1",
-  "updated": "2026-11-23T08:20:40.963Z",
-  "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45137569215",
+  "updated": "2026-11-23T16:05:48.927Z",
+  "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45212168414",
   "event_schemas": {
     "schema": "selfhost.event_versions/v1",
     "support_months": 12,
@@ -27,7 +27,7 @@
           "live": "not_run",
           "first_tested": "2026-11-21",
           "last_tested": "2026-11-23",
-          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45137569215",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45212168414",
           "checks": [
             {
               "id": "install",
@@ -1172,7 +1172,7 @@
           "live": "not_run",
           "first_tested": "2026-11-20",
           "last_tested": "2026-11-23",
-          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45137569215",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45212168414",
           "checks": [
             {
               "id": "install",
@@ -1765,7 +1765,7 @@
           "live": "not_run",
           "first_tested": "2026-11-22",
           "last_tested": "2026-11-23",
-          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45137569215",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45212168414",
           "checks": [
             {
               "id": "install",
@@ -2084,7 +2084,7 @@
           "live": "not_run",
           "first_tested": "2026-11-17",
           "last_tested": "2026-11-23",
-          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45137569215",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45212168414",
           "checks": [
             {
               "id": "install",
@@ -2109,7 +2109,7 @@
             {
               "id": "gateway-connect",
               "status": "fail",
-              "detail": "No /llm/anthropic/v1/messages request with the virtual key.\nThe stand-in gateway got no request.\n\u001b[91m\u001b[1mError: \u001b[0m{\n  \"name\": \"UnknownError\",\n  \"data\": {\n    \"message\": \"Unexpected server error. Check server logs for details.\",\n    \"ref\": \"err_97319a1a\"\n  }\n}"
+              "detail": "No /llm/anthropic/v1/messages request with the virtual key.\nThe stand-in gateway got no request.\n\u001b[91m\u001b[1mError: \u001b[0m{\n  \"name\": \"UnknownError\",\n  \"data\": {\n    \"message\": \"Unexpected server error. Check server logs for details.\",\n    \"ref\": \"err_e1694709\"\n  }\n}"
             },
             {
               "id": "live-session",
