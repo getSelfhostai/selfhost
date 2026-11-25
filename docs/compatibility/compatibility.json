@@ -1,7 +1,7 @@
 {
   "schema": "selfhost.vendor_compat/v1",
-  "updated": "2026-11-24T22:49:53.011Z",
-  "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45504197295",
+  "updated": "2026-11-25T09:16:42.190Z",
+  "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45583522673",
   "event_schemas": {
     "schema": "selfhost.event_versions/v1",
     "support_months": 12,
@@ -21,6 +21,121 @@
       "name": "Claude Code",
       "source": "@anthropic-ai/claude-code",
       "versions": [
+        {
+          "version": "2.1.332",
+          "status": "passing",
+          "live": "not_run",
+          "first_tested": "2026-11-25",
+          "last_tested": "2026-11-25",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45583522673",
+          "checks": [
+            {
+              "id": "install",
+              "status": "pass",
+              "detail": "Installed @anthropic-ai/claude-code@2.1.332, linux-x64"
+            },
+            {
+              "id": "version",
+              "status": "pass",
+              "detail": "Reports 2.1.332"
+            },
+            {
+              "id": "hook-events",
+              "status": "pass",
+              "detail": "claude doctor lists all 9 hook events selfhost uses among its 34"
+            },
+            {
+              "id": "hook-fields",
+              "status": "pass",
+              "detail": "All 17 payload and answer fields found: cwd, hook_event_name, message, prompt, reason, session_id, source, tool_input, tool_name, tool_response, trigger, transcript_path, tool_use_id, hookSpecificOutput, permissionDecision, permissionDecisionReason, systemMessage"
+            },
+            {
+              "id": "tool-inputs",
+              "status": "pass",
+              "detail": "sdk-tools.d.ts still declares BashInput.command, FileReadInput.file_path, FileEditInput.file_path, FileWriteInput.file_path, NotebookEditInput.notebook_path, WebFetchInput.url"
+            },
+            {
+              "id": "config",
+              "status": "pass",
+              "detail": "claude doctor accepts the managed settings selfhost compiles for this version"
+            },
+            {
+              "id": "gateway-connect",
+              "status": "pass",
+              "detail": "With the settings selfhost gateway connect writes, POST /llm/anthropic/v1/messages reached the stand-in gateway with the virtual key in authorization"
+            },
+            {
+              "id": "live-session",
+              "status": "skip",
+              "detail": "No ANTHROPIC_API_KEY secret, so no live session ran"
+            },
+            {
+              "id": "suite:schema",
+              "status": "pass",
+              "detail": "Hook payload fixtures and frozen v1 contracts against the payload schemas, and event schema versions"
+            },
+            {
+              "id": "suite:hook-mappers",
+              "status": "pass",
+              "detail": "Hook payload fixtures mapped to ledger events, and ingest of older event versions"
+            },
+            {
+              "id": "suite:importers",
+              "status": "pass",
+              "detail": "Fixture session logs through the local log importers"
+            },
+            {
+              "id": "suite:hooks",
+              "status": "pass",
+              "detail": "Each agent's pre-tool payloads through selfhost hook, the spool and the ledger"
+            },
+            {
+              "id": "suite:compile",
+              "status": "pass",
+              "detail": "Policy compile golden files per vendor config version"
+            },
+            {
+              "id": "suite:gateway-connect",
+              "status": "pass",
+              "detail": "selfhost gateway connect's settings on fixture configs per agent, and disconnect restoring them byte for byte"
+            },
+            {
+              "id": "suite:context",
+              "status": "pass",
+              "detail": "Context compile golden files per agent"
+            }
+          ],
+          "unmodeled_events": [
+            "PostToolUseFailure",
+            "PostToolBatch",
+            "UserPromptExpansion",
+            "StopFailure",
+            "SubagentStart",
+            "PostCompact",
+            "PreModelSwitch",
+            "PostModelSwitch",
+            "PermissionRequest",
+            "PermissionDenied",
+            "Setup",
+            "TeammateIdle",
+            "TaskCreated",
+            "TaskCompleted",
+            "Elicitation",
+            "ElicitationResult",
+            "ConfigChange",
+            "WorktreeCreate",
+            "WorktreeRemove",
+            "InstructionsLoaded",
+            "CwdChanged",
+            "FileChanged",
+            "DirectoryAdded",
+            "MessageDisplay",
+            "PreSkillShellCommand"
+          ],
+          "notes": [
+            "No compile golden files for 2.1.332 yet (newest: 2.1.319). Review its config changes and add it to VENDOR_VERSIONS."
+          ]
+        },
         {
           "version": "2.1.331",
           "status": "passing",
@@ -1285,8 +1400,8 @@
           "status": "passing",
           "live": "not_run",
           "first_tested": "2026-11-24",
-          "last_tested": "2026-11-24",
-          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45504197295",
+          "last_tested": "2026-11-25",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45583522673",
           "checks": [
             {
               "id": "install",
@@ -1962,8 +2077,8 @@
           "status": "passing",
           "live": "not_run",
           "first_tested": "2026-11-22",
-          "last_tested": "2026-11-24",
-          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45504197295",
+          "last_tested": "2026-11-25",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45583522673",
           "checks": [
             {
               "id": "install",
@@ -2281,8 +2396,8 @@
           "status": "broken",
           "live": "not_run",
           "first_tested": "2026-11-17",
-          "last_tested": "2026-11-24",
-          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45504197295",
+          "last_tested": "2026-11-25",
+          "run_url": "https://github.com/getSelfhostai/selfhost/actions/runs/45583522673",
           "checks": [
             {
               "id": "install",
@@ -2307,7 +2422,7 @@
             {
               "id": "gateway-connect",
               "status": "fail",
-              "detail": "No /llm/anthropic/v1/messages request with the virtual key.\nThe stand-in gateway got no request.\n\u001b[91m\u001b[1mError: \u001b[0m{\n  \"name\": \"UnknownError\",\n  \"data\": {\n    \"message\": \"Unexpected server error. Check server logs for details.\",\n    \"ref\": \"err_8dca93a9\"\n  }\n}"
+              "detail": "No /llm/anthropic/v1/messages request with the virtual key.\nThe stand-in gateway got no request.\n\u001b[91m\u001b[1mError: \u001b[0m{\n  \"name\": \"UnknownError\",\n  \"data\": {\n    \"message\": \"Unexpected server error. Check server logs for details.\",\n    \"ref\": \"err_978b9931\"\n  }\n}"
             },
             {
               "id": "live-session",
